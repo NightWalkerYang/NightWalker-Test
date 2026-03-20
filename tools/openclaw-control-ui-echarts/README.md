@@ -14,7 +14,7 @@ It does not modify any existing OpenClaw source files. Instead, it:
 When the copied Control UI loads, the extra runtime script:
 
 - detects fenced code blocks marked as `echarts`
-- parses the block as JSON or JSON5
+- parses the block as JSON, JSON5, or a trusted JavaScript object literal
 - renders an ECharts preview above the original source block
 - keeps the original source block behind a `Show source` toggle
 
@@ -156,12 +156,15 @@ Supported:
 - JSON
 - JSON5
 - common wrappers like `option = { ... }`
+- trusted JavaScript object literals used by common ECharts examples
+- formatter functions and `new echarts.graphic.*` expressions
 
 Intentionally unsupported:
 
-- `formatter: function () { ... }`
-- executable helper variables
-- any other inline JavaScript logic
+- browser/global side effects such as `window`, `document`, `fetch`, `XMLHttpRequest`, or `import()`
+- arbitrary page scripting outside the option literal shape
+
+The JavaScript fallback is meant for self-hosted dashboards where you trust the chart block source. It exists specifically so Dify-style ECharts snippets can render without rewriting them into strict JSON first.
 
 ## Rebuild Flow
 

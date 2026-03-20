@@ -5,7 +5,7 @@ This is a zero-intrusion add-on for the OpenClaw web control UI.
 It does not change any existing OpenClaw source files. Instead, it uses a browser userscript to:
 
 - detect fenced code blocks marked as `echarts`
-- parse the block as JSON or JSON5
+- parse the block as JSON, JSON5, or a trusted JavaScript object literal
 - render a live ECharts preview above the original source block
 - keep the original source block available behind a `Show source` toggle
 
@@ -82,17 +82,24 @@ option = {
 }
 ```
 
+Trusted JavaScript-style ECharts option bodies are also supported, including:
+
+- omitted outer braces at the top level
+- `formatter: function (...) { ... }`
+- `new echarts.graphic.LinearGradient(...)`
+
 ## Deliberate Safety Limits
 
-The userscript does not evaluate arbitrary JavaScript from chat output.
+The userscript can evaluate trusted ECharts object literals so common examples keep working, but it still blocks obvious browser/global side effects.
 
 That means these constructs are intentionally unsupported:
 
-- `formatter: function () { ... }`
-- `const data = ...; option = ...;`
-- any other executable JavaScript inside the fenced block
+- `window`, `document`, `globalThis`
+- `fetch(...)`, `XMLHttpRequest`, `WebSocket`, `EventSource`
+- `localStorage`, `sessionStorage`, `indexedDB`
+- `import(...)`, `eval(...)`, `Function(...)`
 
-Only JSON or JSON5 object syntax is accepted.
+The fallback is intended for self-hosted dashboards where you trust the chart block source.
 
 ## Local Vendor Files
 

@@ -31,6 +31,22 @@
     "echarts-option",
     "echartsoption",
   ]);
+  const BLOCKED_JS_PATTERNS = [
+    /\bwindow\b/,
+    /\bdocument\b/,
+    /\bglobalThis\b/,
+    /\bfetch\s*\(/,
+    /\bXMLHttpRequest\b/,
+    /\bWebSocket\b/,
+    /\bEventSource\b/,
+    /\b(?:localStorage|sessionStorage|indexedDB)\b/,
+    /\bnavigator\b/,
+    /\blocation\b/,
+    /\bhistory\b/,
+    /\bimport\s*\(/,
+    /\beval\s*\(/,
+    /\bFunction\s*\(/,
+  ];
 
   const hostByWrapper = new WeakMap();
   const chartStateByHost = new WeakMap();
@@ -307,8 +323,64 @@
     const detail =
       lastError && typeof lastError.message === "string" ? lastError.message : String(lastError);
     throw new Error(
-      `Could not parse the echarts block as JSON or JSON5. Functions are intentionally not supported. ${detail}`,
+      `Could not parse the echarts block as JSON or JSON5. ${detail}`,
     );
+  }
+
+  function toJsObjectExpression(source) {
+    const trimmed = source.trim();
+    if (!trimmed) {
+      return trimmed;
+    }
+
+    if (trimmed.startsWith("{") || trimmed.startsWith("(")) {
+      return trimmed;
+    }
+
+    return `{\n${trimmed}\n}`;
+  }
+
+  function assertSafeJsOptionSource(source) {
+    for (const pattern of BLOCKED_JS_PATTERNS) {
+      if (pattern.test(source)) {
+        throw new Error(
+          `Blocked potentially unsafe JavaScript token in echarts block: ${pattern.source}`,
+        );
+      }
+    }
+  }
+
+  function evaluateJsOptionLiteral(raw, echarts) {
+    const expression = toJsObjectExpression(raw);
+    assertSafeJsOptionSource(expression);
+
+    const factory = new Function(
+      "echarts",
+      `"use strict";\nreturn (${expression});`,
+    );
+
+    return factory(echarts);
+  }
+
+  function parseEchartsOptionWithJsFallback(raw, json5, echarts) {
+    try {
+      return parseEchartsOption(raw, json5);
+    } catch (parseError) {
+      const normalized = normalizeOptionSource(raw);
+      try {
+        return unwrapParsedOption(evaluateJsOptionLiteral(normalized, echarts));
+      } catch (jsError) {
+        const detail =
+          jsError && typeof jsError.message === "string" ? jsError.message : String(jsError);
+        const parseDetail =
+          parseError && typeof parseError.message === "string"
+            ? parseError.message
+            : String(parseError);
+        throw new Error(
+          `Could not parse the echarts block as JSON, JSON5, or a trusted JavaScript object literal. JSON/JSON5: ${parseDetail}. JS: ${detail}`,
+        );
+      }
+    }
   }
 
   function clamp(value, min, max) {
@@ -469,7 +541,7 @@
 
     try {
       const { echarts, json5 } = ensureLibraries();
-      const option = parseEchartsOption(source, json5);
+      const option = parseEchartsOptionWithJsFallback(source, json5, echarts);
       const chartEl = renderHostScaffold(host, wrapper, "success", "");
       chartEl.style.height = `${resolveChartHeight(option)}px`;
 
