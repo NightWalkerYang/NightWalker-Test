@@ -33,11 +33,25 @@
     loadingRuntimeDetail: "正在加载本地图表运行时...",
     loadingStreamingDetail: "正在等待 AI 输出完整的图表配置",
     errorTitle: "无法渲染该图表。",
+    detailTitle: "图表元素详情",
+    detailClose: "关闭",
+    detailSeries: "系列",
+    detailName: "名称",
+    detailValue: "值",
+    detailComponent: "组件",
+    detailSeriesType: "系列类型",
+    detailDataType: "数据类型",
+    detailDataIndex: "数据索引",
+    detailColor: "颜色",
+    detailRawData: "原始数据",
+    detailRawParams: "事件参数",
+    detailNoData: "当前元素没有可展示的详情。",
   });
 
   const libraryPromiseByKey = new Map();
   const hostByWrapper = new WeakMap();
   const chartStateByHost = new WeakMap();
+  let detailModalElements = null;
 
   let stylesInstalled = false;
   let scanQueued = false;
@@ -233,6 +247,150 @@
         display: block;
         white-space: pre-wrap;
         word-break: break-word;
+      }
+
+      .oc-echarts-detail-modal[hidden] {
+        display: none;
+      }
+
+      .oc-echarts-detail-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(15, 23, 42, 0.42);
+        backdrop-filter: blur(6px);
+      }
+
+      .oc-echarts-detail-modal__dialog {
+        width: min(720px, calc(100vw - 32px));
+        max-height: min(80vh, 880px);
+        overflow: hidden;
+        border-radius: 18px;
+        border: 1px solid rgba(127, 127, 127, 0.2);
+        background: rgba(255, 255, 255, 0.96);
+        color: #0f172a;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+      }
+
+      .oc-echarts-detail-modal__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 18px;
+        border-bottom: 1px solid rgba(127, 127, 127, 0.14);
+      }
+
+      .oc-echarts-detail-modal__title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .oc-echarts-detail-modal__close {
+        appearance: none;
+        border: 1px solid rgba(127, 127, 127, 0.22);
+        border-radius: 999px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font: inherit;
+        font-size: 13px;
+        padding: 7px 12px;
+      }
+
+      .oc-echarts-detail-modal__close:hover {
+        background: rgba(127, 127, 127, 0.08);
+      }
+
+      .oc-echarts-detail-modal__body {
+        padding: 18px;
+        overflow: auto;
+        max-height: calc(min(80vh, 880px) - 74px);
+      }
+
+      .oc-echarts-detail-modal__grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .oc-echarts-detail-modal__card {
+        border-radius: 14px;
+        border: 1px solid rgba(127, 127, 127, 0.16);
+        background: rgba(248, 250, 252, 0.92);
+        padding: 12px 14px;
+      }
+
+      .oc-echarts-detail-modal__label {
+        margin-bottom: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(15, 23, 42, 0.68);
+      }
+
+      .oc-echarts-detail-modal__value {
+        font-size: 14px;
+        line-height: 1.55;
+        word-break: break-word;
+      }
+
+      .oc-echarts-detail-modal__value--mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
+
+      .oc-echarts-detail-modal__swatch {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .oc-echarts-detail-modal__swatch-chip {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 23, 42, 0.12);
+        flex: 0 0 auto;
+      }
+
+      .oc-echarts-detail-modal__section {
+        margin-top: 18px;
+      }
+
+      .oc-echarts-detail-modal__section:first-child {
+        margin-top: 0;
+      }
+
+      .oc-echarts-detail-modal__section-title {
+        margin: 0 0 10px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .oc-echarts-detail-modal__pre {
+        margin: 0;
+        padding: 12px 14px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border-radius: 14px;
+        border: 1px solid rgba(127, 127, 127, 0.16);
+        background: rgba(248, 250, 252, 0.92);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .oc-echarts-detail-modal__empty {
+        font-size: 14px;
+        line-height: 1.6;
+        color: rgba(15, 23, 42, 0.7);
       }
 
       @keyframes oc-echarts-spin {
@@ -559,6 +717,237 @@
       <div class="oc-echarts-renderer__error-title">${escapeHtml(UI_TEXT.errorTitle)}</div>
       <code class="oc-echarts-renderer__error-detail">${escapeHtml(localizeErrorMessage(detail))}</code>
     `;
+  }
+
+  function truncateString(value, maxLength = 160) {
+    const text = String(value ?? "");
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+  }
+
+  function toDisplayString(value) {
+    if (value == null) {
+      return "";
+    }
+    if (typeof value === "string") {
+      return value;
+    }
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+      return String(value);
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  function cloneSerializableValue(value, seen = new WeakSet(), depth = 0) {
+    if (value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "bigint") {
+      return String(value);
+    }
+
+    if (typeof value === "function") {
+      return "[Function]";
+    }
+
+    if (typeof value !== "object") {
+      return String(value);
+    }
+
+    if (seen.has(value)) {
+      return "[Circular]";
+    }
+
+    if (depth >= 4) {
+      return "[MaxDepth]";
+    }
+
+    seen.add(value);
+    try {
+      if (Array.isArray(value)) {
+        return value.slice(0, 60).map((item) => cloneSerializableValue(item, seen, depth + 1));
+      }
+
+      const result = {};
+      const entries = Object.entries(value).slice(0, 60);
+      for (const [key, child] of entries) {
+        result[key] = cloneSerializableValue(child, seen, depth + 1);
+      }
+      return result;
+    } finally {
+      seen.delete(value);
+    }
+  }
+
+  function stringifyDetailJson(value) {
+    if (typeof value === "undefined") {
+      return "";
+    }
+
+    try {
+      return JSON.stringify(cloneSerializableValue(value), null, 2);
+    } catch {
+      return toDisplayString(value);
+    }
+  }
+
+  function isSafeCssColor(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return false;
+    }
+
+    return /^(#[0-9a-fA-F]{3,8}|rgba?\([^)]{1,64}\)|hsla?\([^)]{1,64}\)|[a-zA-Z]{3,24})$/.test(text);
+  }
+
+  function formatDetailValueHtml(value, options = {}) {
+    if (typeof value === "undefined" || value === null || value === "") {
+      return "";
+    }
+
+    if (options.colorSwatch && typeof value === "string" && isSafeCssColor(value)) {
+      return `
+        <span class="oc-echarts-detail-modal__swatch">
+          <span class="oc-echarts-detail-modal__swatch-chip" style="background:${escapeHtml(value)}"></span>
+          <span class="oc-echarts-detail-modal__value--mono">${escapeHtml(value)}</span>
+        </span>
+      `;
+    }
+
+    const text = options.mono ? toDisplayString(value) : truncateString(toDisplayString(value), 220);
+    return `<span class="${options.mono ? "oc-echarts-detail-modal__value oc-echarts-detail-modal__value--mono" : "oc-echarts-detail-modal__value"}">${escapeHtml(text)}</span>`;
+  }
+
+  function buildDetailCardsHtml(rows) {
+    const visibleRows = rows.filter((row) => typeof row.value !== "undefined" && row.value !== null && row.value !== "");
+    if (visibleRows.length === 0) {
+      return `<div class="oc-echarts-detail-modal__empty">${escapeHtml(UI_TEXT.detailNoData)}</div>`;
+    }
+
+    return `
+      <div class="oc-echarts-detail-modal__grid">
+        ${visibleRows
+          .map(
+            (row) => `
+              <section class="oc-echarts-detail-modal__card">
+                <div class="oc-echarts-detail-modal__label">${escapeHtml(row.label)}</div>
+                <div class="oc-echarts-detail-modal__value">
+                  ${formatDetailValueHtml(row.value, row.options)}
+                </div>
+              </section>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  function buildDetailSectionHtml(title, content) {
+    if (!content) {
+      return "";
+    }
+
+    return `
+      <section class="oc-echarts-detail-modal__section">
+        <h4 class="oc-echarts-detail-modal__section-title">${escapeHtml(title)}</h4>
+        <pre class="oc-echarts-detail-modal__pre">${escapeHtml(content)}</pre>
+      </section>
+    `;
+  }
+
+  function extractClickDetailRows(params) {
+    return [
+      { label: UI_TEXT.detailSeries, value: params.seriesName },
+      { label: UI_TEXT.detailName, value: params.name },
+      { label: UI_TEXT.detailValue, value: params.value, options: { mono: Array.isArray(params.value) || typeof params.value === "object" } },
+      { label: UI_TEXT.detailComponent, value: params.componentType },
+      { label: UI_TEXT.detailSeriesType, value: params.seriesType },
+      { label: UI_TEXT.detailDataType, value: params.dataType },
+      { label: UI_TEXT.detailDataIndex, value: params.dataIndex, options: { mono: true } },
+      { label: UI_TEXT.detailColor, value: typeof params.color === "string" ? params.color : undefined, options: { colorSwatch: true } },
+    ];
+  }
+
+  function ensureDetailModal() {
+    if (detailModalElements?.root?.isConnected) {
+      return detailModalElements;
+    }
+
+    const root = document.createElement("div");
+    root.className = "oc-echarts-detail-modal";
+    root.hidden = true;
+    root.innerHTML = `
+      <div class="oc-echarts-detail-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="oc-echarts-detail-title">
+        <div class="oc-echarts-detail-modal__header">
+          <h3 id="oc-echarts-detail-title" class="oc-echarts-detail-modal__title">${escapeHtml(UI_TEXT.detailTitle)}</h3>
+          <button type="button" class="oc-echarts-detail-modal__close">${escapeHtml(UI_TEXT.detailClose)}</button>
+        </div>
+        <div class="oc-echarts-detail-modal__body"></div>
+      </div>
+    `;
+
+    const body = root.querySelector(".oc-echarts-detail-modal__body");
+    const closeButton = root.querySelector(".oc-echarts-detail-modal__close");
+
+    const closeModal = () => {
+      root.hidden = true;
+    };
+
+    root.addEventListener("click", (event) => {
+      if (event.target === root) {
+        closeModal();
+      }
+    });
+
+    closeButton?.addEventListener("click", closeModal);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !root.hidden) {
+        closeModal();
+      }
+    });
+
+    document.body.append(root);
+    detailModalElements = { root, body, closeModal };
+    return detailModalElements;
+  }
+
+  function openChartDetailModal(params) {
+    installStyles();
+
+    const modal = ensureDetailModal();
+    const detailRows = extractClickDetailRows(params);
+    const rawData = stringifyDetailJson(params.data);
+    const rawParams = stringifyDetailJson({
+      componentType: params.componentType,
+      componentSubType: params.componentSubType,
+      seriesType: params.seriesType,
+      seriesIndex: params.seriesIndex,
+      seriesName: params.seriesName,
+      name: params.name,
+      value: params.value,
+      dataIndex: params.dataIndex,
+      dataType: params.dataType,
+      color: params.color,
+      dimensionNames: params.dimensionNames,
+      encode: params.encode,
+      percent: params.percent,
+    });
+
+    modal.body.innerHTML = `
+      ${buildDetailCardsHtml(detailRows)}
+      ${buildDetailSectionHtml(UI_TEXT.detailRawData, rawData)}
+      ${buildDetailSectionHtml(UI_TEXT.detailRawParams, rawParams)}
+    `;
+
+    modal.root.hidden = false;
   }
 
   function normalizeOptionSource(raw) {
@@ -1355,6 +1744,13 @@
       }
 
       const instance = echarts.init(chartEl, null, { renderer: "canvas" });
+      instance.on("click", (params) => {
+        try {
+          openChartDetailModal(params);
+        } catch {
+          // Ignore modal rendering failures so the chart interaction remains usable.
+        }
+      });
       instance.setOption(option, true);
 
       let resizeObserver = null;
