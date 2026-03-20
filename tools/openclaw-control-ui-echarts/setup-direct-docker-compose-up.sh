@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TOOL_DIR="$ROOT_DIR/tools/openclaw-control-ui-echarts"
 OUTPUT_DIR="$TOOL_DIR/generated/control-ui"
 CONTROL_UI_RUNTIME_SCRIPT="$TOOL_DIR/openclaw-echarts-renderer.js"
+CONTROL_UI_RUNTIME_MODULE_DIR="$TOOL_DIR/runtime"
 OFFLINE_BUNDLED_USERSCRIPT="$ROOT_DIR/tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js"
 OVERRIDE_PATH="$ROOT_DIR/docker-compose.override.yml"
 
@@ -31,6 +32,12 @@ require_file() {
   local file_path="$1"
   local label="$2"
   [[ -f "$file_path" ]] || fail "$label not found at $file_path"
+}
+
+require_dir() {
+  local dir_path="$1"
+  local label="$2"
+  [[ -d "$dir_path" ]] || fail "$label not found at $dir_path"
 }
 
 resolve_python() {
@@ -122,7 +129,7 @@ inject_runtime_script() {
 
   awk '
     $0 == "  </body>" {
-      print "    <script defer src=\"./assets/openclaw-echarts-renderer.js\"></script>"
+      print "    <script type=\"module\" src=\"./assets/openclaw-echarts-renderer.js\"></script>"
     }
     { print }
   ' "$index_path" >"$temp_index"
@@ -194,6 +201,7 @@ resolve_source_dir() {
 
 main() {
   require_file "$CONTROL_UI_RUNTIME_SCRIPT" "Control UI ECharts runtime"
+  require_dir "$CONTROL_UI_RUNTIME_MODULE_DIR" "Control UI ECharts runtime modules"
   require_file "$OFFLINE_BUNDLED_USERSCRIPT" "Offline bundled ECharts userscript"
 
   local source_dir
@@ -204,6 +212,7 @@ main() {
   cp -R "$source_dir"/. "$OUTPUT_DIR"/
 
   cp "$CONTROL_UI_RUNTIME_SCRIPT" "$OUTPUT_DIR/assets/openclaw-echarts-renderer.js"
+  cp -R "$CONTROL_UI_RUNTIME_MODULE_DIR" "$OUTPUT_DIR/assets/runtime"
   extract_offline_vendors "$OFFLINE_BUNDLED_USERSCRIPT" "$OUTPUT_DIR/assets/vendor"
 
   [[ -f "$OUTPUT_DIR/index.html" ]] || fail "Generated Control UI root is missing index.html"
