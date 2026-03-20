@@ -125,7 +125,7 @@ The shell variant also works when the host has no `dist/control-ui` yet:
 
 - if `dist/control-ui` exists on the host, it uses that
 - otherwise it extracts `/app/dist/control-ui` from the local `openclaw-gateway` Docker image
-- if that image does not exist yet, it runs `docker compose build openclaw-gateway` first
+- if that image does not exist yet, it builds `openclaw:local` from `Dockerfile` or pulls `OPENCLAW_IMAGE` when you set a non-default image
 - the injected chart runtime comes from the tracked offline userscript file, so the target host does not need extra vendor downloads
 
 After that, from the same repo root, this is enough:

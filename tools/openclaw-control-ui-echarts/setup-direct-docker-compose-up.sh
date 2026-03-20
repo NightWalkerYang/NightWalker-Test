@@ -32,6 +32,55 @@ require_file() {
   [[ -f "$file_path" ]] || fail "$label not found at $file_path"
 }
 
+resolve_gateway_image_ref() {
+  if [[ -n "${OPENCLAW_IMAGE:-}" ]]; then
+    printf '%s\n' "$OPENCLAW_IMAGE"
+    return 0
+  fi
+
+  local compose_image=""
+  compose_image="$(
+    docker compose config 2>/dev/null | awk '
+      $1 == "openclaw-gateway:" {
+        in_service = 1
+        next
+      }
+      in_service && /^[^[:space:]]/ {
+        in_service = 0
+      }
+      in_service && $1 == "image:" {
+        print $2
+        exit
+      }
+    '
+  )"
+
+  if [[ -n "$compose_image" ]]; then
+    printf '%s\n' "$compose_image"
+    return 0
+  fi
+
+  printf '%s\n' "openclaw:local"
+}
+
+ensure_gateway_image_available() {
+  local image_ref="$1"
+
+  if docker image inspect "$image_ref" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "$image_ref" == "openclaw:local" ]]; then
+    printf '%s\n' "No local $image_ref image found; building it from Dockerfile..."
+    docker build -t "$image_ref" -f Dockerfile .
+  else
+    printf '%s\n' "Image $image_ref is not available locally; pulling it now..."
+    docker pull "$image_ref"
+  fi
+
+  docker image inspect "$image_ref" >/dev/null 2>&1 || fail "Could not resolve a local openclaw-gateway image."
+}
+
 write_override() {
   if [[ -f "$OVERRIDE_PATH" ]]; then
     if ! grep -Fq "$GENERATED_MARKER" "$OVERRIDE_PATH" && \
@@ -76,21 +125,14 @@ resolve_source_dir() {
 
   printf '%s\n' "Host dist/control-ui is missing; extracting it from the Docker image..."
 
-  local image_id
-  image_id="$(docker compose images -q openclaw-gateway 2>/dev/null | awk 'NF { print; exit }')"
-
-  if [[ -z "$image_id" ]]; then
-    printf '%s\n' "No local openclaw-gateway image found; building it now..."
-    docker compose build openclaw-gateway
-    image_id="$(docker compose images -q openclaw-gateway 2>/dev/null | awk 'NF { print; exit }')"
-  fi
-
-  [[ -n "$image_id" ]] || fail "Could not resolve a local openclaw-gateway image."
+  local image_ref
+  image_ref="$(resolve_gateway_image_ref)"
+  ensure_gateway_image_available "$image_ref"
 
   local extracted_dir="$tmp_dir/source-control-ui"
   mkdir -p "$extracted_dir"
 
-  container_id="$(docker create "$image_id")"
+  container_id="$(docker create "$image_ref")"
   docker cp "$container_id:/app/dist/control-ui/." "$extracted_dir"
   docker rm -f "$container_id" >/dev/null 2>&1 || true
   container_id=""
