@@ -15,6 +15,19 @@ This feature was added without modifying any existing OpenClaw source files.
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\setup-direct-docker-compose-up.mjs`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\setup-direct-docker-compose-up.sh`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\README.md`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\RUNTIME_ARCHITECTURE.md`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\shared.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\styles.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\chat-composer.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\adapter-registry.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\fenced-block-runtime.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\ui-text.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\styles.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\libraries.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\parser.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\prompt.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\detail-modal.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\adapter.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\generated\.gitignore`
 - `D:\code\work\OpenClaw\openclaw\docker-compose.override.yml`
 - `D:\code\work\OpenClaw\openclaw\ZERO_INTRUSIVE_ECHARTS_ADDITIONS.md`
@@ -25,6 +38,7 @@ This feature was added without modifying any existing OpenClaw source files.
 - It works without a browser plugin by generating a separate UI directory for `gateway.controlUi.root`.
 - The generated custom Control UI root currently lives at `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\generated\control-ui`.
 - The Control UI path now extracts `echarts` and `json5` from the tracked offline bundle at `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\openclaw-echarts-renderer.user.js`, then writes them into the generated UI as same-origin static assets.
+- The runtime source is now modularized into a generic fenced-block framework plus adapter registration and an `echarts` adapter so future blocks such as `file` can reuse the same scanning and action pipeline.
 - This change is required because OpenClaw serves the Control UI with `script-src 'self'`, so inline vendor injection is blocked by CSP.
 - A one-time helper can also generate a root `docker-compose.override.yml` so later repo-root `docker compose up -d` runs automatically mount the custom UI into `/app/dist/control-ui`.
 - The generated root `docker-compose.override.yml` also mounts `docs/reference/templates` into `/app/docs/reference/templates` to avoid workspace-template bootstrap failures in images missing those docs assets.

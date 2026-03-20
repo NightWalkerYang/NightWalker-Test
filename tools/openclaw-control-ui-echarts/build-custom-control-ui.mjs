@@ -13,6 +13,7 @@ const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(
   here,
   "openclaw-echarts-renderer.js",
 );
+const CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE = path.join(here, "runtime");
 const OFFLINE_BUNDLED_USERSCRIPT_SOURCE = path.join(
   repoRoot,
   "tools",
@@ -77,7 +78,8 @@ function ensureDirectoryExists(dirPath, label) {
 }
 
 function injectRuntimeScript(indexHtml) {
-  const scriptTag = '    <script defer src="./assets/openclaw-echarts-renderer.js"></script>\n';
+  const scriptTag =
+    '    <script type="module" src="./assets/openclaw-echarts-renderer.js"></script>\n';
   if (indexHtml.includes("openclaw-echarts-renderer.js")) {
     return indexHtml;
   }
@@ -128,6 +130,7 @@ function main() {
   ensureDirectoryExists(sourceDir, "Source control-ui directory");
   ensureFileExists(path.join(sourceDir, "index.html"), "Source control-ui index.html");
   ensureFileExists(CONTROL_UI_RUNTIME_SCRIPT_SOURCE, "Control UI ECharts runtime");
+  ensureDirectoryExists(CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE, "Control UI ECharts runtime modules");
   ensureFileExists(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "Offline bundled ECharts userscript");
 
   fs.rmSync(outputDir, { recursive: true, force: true });
@@ -145,6 +148,14 @@ function main() {
   copyFileIntoOutput(
     CONTROL_UI_RUNTIME_SCRIPT_SOURCE,
     path.join(outputDir, "assets", "openclaw-echarts-renderer.js"),
+  );
+  fs.cpSync(
+    CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE,
+    path.join(outputDir, "assets", "runtime"),
+    {
+      recursive: true,
+      force: true,
+    },
   );
   writeTextIntoOutput(
     embeddedLibraries.echarts,

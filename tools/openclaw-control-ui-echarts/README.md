@@ -6,8 +6,9 @@ It does not modify any existing OpenClaw source files. Instead, it:
 
 1. copies a built `dist/control-ui` directory
 2. injects one additional runtime script into the copied `index.html`
-3. extracts local `echarts` and `json5` files from the tracked offline bundle into that copied UI root
-4. lets you point `gateway.controlUi.root` at the generated directory
+3. copies a modular fenced-block runtime into that copied UI root
+4. extracts local `echarts` and `json5` files from the tracked offline bundle into that copied UI root
+5. lets you point `gateway.controlUi.root` at the generated directory
 
 ## What It Adds
 
@@ -25,11 +26,59 @@ No browser plugin is required.
 - `tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs`
   - copies `dist/control-ui` into a separate custom UI root
   - injects the ECharts runtime script
+  - copies the modular runtime directory under `assets/runtime`
   - writes `assets/vendor/echarts.min.js` and `assets/vendor/json5.min.js`
 - `tools/openclaw-control-ui-echarts/openclaw-echarts-renderer.js`
-  - CSP-safe runtime that loads same-origin vendor assets with `script.src`
+  - module entrypoint that boots the fenced-block runtime
+- `tools/openclaw-control-ui-echarts/runtime/framework/*`
+  - generic fenced-block scanning, adapter registration, host rendering, source toggle, streaming placeholder, and chat-composer bridge
+- `tools/openclaw-control-ui-echarts/runtime/echarts/*`
+  - the ECharts-specific adapter, parser, prompt builder, styles, and detail modal
 - `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`
   - tracked offline bundle used as the source of truth for extracting vendor assets
+
+## Runtime Architecture
+
+The runtime is now split into:
+
+1. a generic fenced-block framework
+2. one `echarts` adapter
+
+That means future blocks such as:
+
+````text
+```file
+{ "url": "..." }
+```
+````
+
+can reuse the same framework pieces:
+
+- DOM scanning
+- adapter registration
+- loading-card replacement during streaming
+- source toggle behavior
+- action buttons
+- chat-box insertion / direct send bridge
+
+and only add a new adapter for:
+
+- language aliases
+- parsing
+- preview rendering
+- prompt building
+- click behavior
+
+The intended registration shape is:
+
+```js
+const runtime = createFencedBlockRuntime([
+  createEchartsAdapter({ vendorBaseUrl }),
+  createFileAdapter({ vendorBaseUrl }),
+]);
+```
+
+See `tools/openclaw-control-ui-echarts/RUNTIME_ARCHITECTURE.md`.
 
 ## Build The Base UI
 
