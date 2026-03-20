@@ -25,12 +25,8 @@ No browser plugin is required.
 - `tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs`
   - copies `dist/control-ui` into a separate custom UI root
   - injects the ECharts runtime script
-  - copies local vendor files into the generated output
-- `tools/openclaw-control-ui-echarts/openclaw-echarts-renderer.js`
-  - runtime chart renderer injected into the copied Control UI
-- `tools/openclaw-control-ui-echarts/vendor/echarts.min.js`
-- `tools/openclaw-control-ui-echarts/vendor/json5.min.js`
-  - local vendor files used by the Control UI builder
+- `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`
+  - tracked offline bundled runtime reused by the Control UI builder
 
 ## Build The Base UI
 
@@ -62,10 +58,7 @@ node tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs --source dist
 
 Relative paths are resolved from the repo root.
 
-If the local vendor files are missing, the build script automatically does one of these:
-
-1. reuses the older userscript vendor files if they exist
-2. otherwise downloads fresh local copies into `tools/openclaw-control-ui-echarts/vendor/`
+The builder reuses the already-bundled offline runtime from `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`, so the target host does not need separate vendor files.
 
 ## Configure OpenClaw
 
@@ -133,7 +126,7 @@ The shell variant also works when the host has no `dist/control-ui` yet:
 - if `dist/control-ui` exists on the host, it uses that
 - otherwise it extracts `/app/dist/control-ui` from the local `openclaw-gateway` Docker image
 - if that image does not exist yet, it runs `docker compose build openclaw-gateway` first
-- if the Control UI vendor files are missing, it downloads them into `tools/openclaw-control-ui-echarts/vendor/`
+- the injected chart runtime comes from the tracked offline userscript file, so the target host does not need extra vendor downloads
 
 After that, from the same repo root, this is enough:
 
