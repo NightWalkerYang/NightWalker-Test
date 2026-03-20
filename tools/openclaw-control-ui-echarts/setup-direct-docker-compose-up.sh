@@ -149,7 +149,7 @@ bundle_path = pathlib.Path(sys.argv[1])
 vendor_dir = pathlib.Path(sys.argv[2])
 bundle_source = bundle_path.read_text(encoding="utf-8")
 match = re.search(
-    r'const EMBEDDED_LIBRARY_SOURCES = \{\s*echarts:\s*(\"(?:\\\\.|[^\"\\\\])*\")\s*,\s*json5:\s*(\"(?:\\\\.|[^\"\\\\])*\")\s*,\s*\};',
+    r'const EMBEDDED_LIBRARY_SOURCES = \{\s*echarts:\s*("(?:\\.|[^"\\])*")\s*,\s*json5:\s*("(?:\\.|[^"\\])*")\s*,\s*\};',
     bundle_source,
     re.S,
 )
