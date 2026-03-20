@@ -10,7 +10,10 @@
   const vendorBaseUrl = new URL("./vendor/", assetBaseUrl);
 
   const SOURCE_HASH_ATTR = "data-oc-echarts-source-hash";
+  const RENDER_MODE_ATTR = "data-oc-echarts-render-mode";
   const SOURCE_STATE_ATTR = "data-oc-echarts-source-state";
+  const STREAMING_BUBBLE_ATTR = "data-oc-echarts-loading";
+  const STREAMING_PLACEHOLDER_ATTR = "data-oc-echarts-streaming-placeholder";
   const LANGUAGE_ALIASES = new Set([
     "echarts",
     "echart",
@@ -19,6 +22,18 @@
     "echartsoption",
   ]);
   const JS_PLACEHOLDER_PREFIX = "__OC_ECHARTS_JS__";
+  const UI_TEXT = Object.freeze({
+    badge: "图表",
+    toggleShowSource: "显示源码",
+    toggleHideSource: "隐藏源码",
+    summaryLoading: "图表生成中",
+    summarySuccess: "图表预览已生成",
+    summaryError: "图表预览失败",
+    loadingTitle: "图表生成中...",
+    loadingRuntimeDetail: "正在加载本地图表运行时...",
+    loadingStreamingDetail: "正在等待 AI 输出完整的图表配置",
+    errorTitle: "无法渲染该图表。",
+  });
 
   const libraryPromiseByKey = new Map();
   const hostByWrapper = new WeakMap();
@@ -46,6 +61,10 @@
           rgba(127, 127, 127, 0.04);
       }
 
+      .chat-bubble[data-oc-echarts-loading="true"] > .chat-bubble-actions {
+        display: none;
+      }
+
       .oc-echarts-renderer__toolbar {
         display: flex;
         align-items: center;
@@ -54,6 +73,10 @@
         padding: 10px 12px;
         border-bottom: 1px solid rgba(127, 127, 127, 0.18);
         background: rgba(127, 127, 127, 0.05);
+      }
+
+      .oc-echarts-renderer__toolbar--no-toggle {
+        justify-content: flex-start;
       }
 
       .oc-echarts-renderer__meta {
@@ -132,6 +155,108 @@
       .oc-echarts-renderer__status code {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-size: 12px;
+      }
+
+      .oc-echarts-renderer__loading-shell {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .oc-echarts-renderer__spinner {
+        position: relative;
+        width: 24px;
+        height: 24px;
+        flex: 0 0 auto;
+        border: 2px solid rgba(245, 158, 11, 0.18);
+        border-top-color: rgba(245, 158, 11, 0.88);
+        border-radius: 999px;
+        animation: oc-echarts-spin 1s linear infinite;
+      }
+
+      .oc-echarts-renderer__spinner::after {
+        content: "";
+        position: absolute;
+        inset: 5px;
+        border-radius: 999px;
+        background: rgba(245, 158, 11, 0.12);
+      }
+
+      .oc-echarts-renderer__loading-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .oc-echarts-renderer__loading-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+      }
+
+      .oc-echarts-renderer__loading-subtitle {
+        font-size: 12px;
+        opacity: 0.8;
+      }
+
+      .oc-echarts-renderer__pulse-dots {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .oc-echarts-renderer__pulse-dots > span {
+        width: 5px;
+        height: 5px;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.32;
+        animation: oc-echarts-pulse 1.2s ease-in-out infinite;
+      }
+
+      .oc-echarts-renderer__pulse-dots > span:nth-child(2) {
+        animation-delay: 0.16s;
+      }
+
+      .oc-echarts-renderer__pulse-dots > span:nth-child(3) {
+        animation-delay: 0.32s;
+      }
+
+      .oc-echarts-renderer__error-title {
+        margin-bottom: 6px;
+        font-weight: 600;
+      }
+
+      .oc-echarts-renderer__error-detail {
+        display: block;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      @keyframes oc-echarts-spin {
+        from {
+          transform: rotate(0deg);
+        }
+
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes oc-echarts-pulse {
+        0%,
+        80%,
+        100% {
+          opacity: 0.25;
+          transform: translateY(0);
+        }
+
+        40% {
+          opacity: 0.9;
+          transform: translateY(-1px);
+        }
       }
     `;
     document.head.append(style);
@@ -236,6 +361,204 @@
 
   function findCandidateCodeBlocks(root) {
     return Array.from(root.querySelectorAll("pre > code")).filter(isEchartsLanguage);
+  }
+
+  function isStreamingBubble(node) {
+    return Boolean(node?.closest?.(".chat-bubble.streaming"));
+  }
+
+  function getRenderMode(anchor) {
+    return anchor.getAttribute(RENDER_MODE_ATTR) || "";
+  }
+
+  function setRenderMode(anchor, mode) {
+    anchor.setAttribute(RENDER_MODE_ATTR, mode);
+  }
+
+  function setBubbleLoadingState(anchor, active) {
+    const bubble = anchor?.closest?.(".chat-bubble");
+    if (!bubble) {
+      return;
+    }
+    if (active) {
+      bubble.setAttribute(STREAMING_BUBBLE_ATTR, "true");
+      return;
+    }
+    bubble.removeAttribute(STREAMING_BUBBLE_ATTR);
+  }
+
+  function hasPendingEchartsFence(text) {
+    const normalized = String(text || "").replace(/\r\n?/g, "\n");
+    if (!normalized.includes("```")) {
+      return false;
+    }
+
+    const fencePattern = /(^|\n)(`{3,}|~{3,})[^\S\n]*([A-Za-z0-9_-]*)[^\n]*(?=\n|$)/g;
+    let openMarker = "";
+    let openLanguage = "";
+
+    for (const match of normalized.matchAll(fencePattern)) {
+      const marker = (match[2] || "")[0] || "";
+      const language = String(match[3] || "")
+        .trim()
+        .toLowerCase();
+
+      if (!openMarker) {
+        openMarker = marker;
+        openLanguage = language;
+        continue;
+      }
+
+      if (openMarker === marker) {
+        openMarker = "";
+        openLanguage = "";
+      } else {
+        openMarker = marker;
+        openLanguage = language;
+      }
+    }
+
+    return Boolean(openMarker && LANGUAGE_ALIASES.has(openLanguage));
+  }
+
+  function shouldHideStreamingTextBlock(textEl) {
+    if (!isStreamingBubble(textEl)) {
+      return false;
+    }
+    if (findCandidateCodeBlocks(textEl).length > 0) {
+      return false;
+    }
+
+    const rawText = String(textEl.textContent || "").replace(/\r\n?/g, "\n").trim();
+    if (!rawText) {
+      return false;
+    }
+
+    return /^```+\s*(?:echar|chart)/i.test(rawText) && hasPendingEchartsFence(rawText);
+  }
+
+  function localizeSourceWrapper(wrapper) {
+    const languageLabel = wrapper.querySelector(".code-block-lang");
+    const normalizedLanguage = normalizeText(languageLabel?.textContent || "").toLowerCase();
+    if (languageLabel && LANGUAGE_ALIASES.has(normalizedLanguage)) {
+      languageLabel.textContent = UI_TEXT.badge;
+    }
+
+    const copyButton = wrapper.querySelector(".code-block-copy");
+    if (copyButton) {
+      copyButton.setAttribute("aria-label", "复制代码");
+    }
+
+    const idleLabel = wrapper.querySelector(".code-block-copy__idle");
+    if (idleLabel) {
+      idleLabel.textContent = "复制";
+    }
+
+    const copiedLabel = wrapper.querySelector(".code-block-copy__done");
+    if (copiedLabel) {
+      copiedLabel.textContent = "已复制";
+    }
+  }
+
+  function localizeErrorMessage(detail) {
+    let message = normalizeText(detail);
+    if (!message) {
+      return "未知错误。";
+    }
+
+    const exactMessages = new Map([
+      ["The echarts code block is empty.", "图表代码块为空。"],
+      ["ECharts option must be an object literal.", "图表配置必须是对象字面量。"],
+      ["Unterminated block comment in echarts block.", "图表代码块中的块注释未闭合。"],
+      ["Unterminated template literal in echarts block.", "图表代码块中的模板字符串未闭合。"],
+      ["Unterminated string literal in echarts block.", "图表代码块中的字符串未闭合。"],
+      ["Unsupported function syntax in echarts block.", "图表代码块中的函数语法暂不支持。"],
+      ["Unsupported function body syntax in echarts block.", "图表代码块中的函数体语法暂不支持。"],
+      [
+        "Unsupported echarts.graphic constructor in echarts block.",
+        "图表代码块中的图形渐变构造器暂不支持。",
+      ],
+      [
+        "Unsupported echarts.graphic constructor call in echarts block.",
+        "图表代码块中的图形渐变调用暂不支持。",
+      ],
+      ["Unsupported echarts.graphic constructor.", "不支持的图形渐变构造器。"],
+      ["Unsupported echarts.graphic constructor syntax.", "不支持的图形渐变构造语法。"],
+    ]);
+
+    if (exactMessages.has(message)) {
+      return exactMessages.get(message);
+    }
+
+    const transforms = [
+      {
+        pattern: /^Could not parse the echarts block\.\s*/i,
+        replace: "无法解析图表代码块。",
+      },
+      {
+        pattern: /^Could not parse JavaScript-style ECharts value\.\s*/i,
+        replace: "无法解析 JavaScript 风格的图表配置值。",
+      },
+      {
+        pattern: /^JSON5:\s*/i,
+        replace: "JSON5 解析错误：",
+      },
+      {
+        pattern: /^Loaded .+ but window\.(\w+) is unavailable\.?$/i,
+        replace: (_, globalName) => `资源已加载，但 window.${globalName} 不可用。`,
+      },
+      {
+        pattern: /^Failed to load (.+)$/i,
+        replace: (_, url) => `资源加载失败：${url}`,
+      },
+      {
+        pattern: /^echarts\.graphic\.(\w+) is unavailable\.?$/i,
+        replace: (_, constructorName) =>
+          `当前图表运行时不支持 ${constructorName} 渐变构造器。`,
+      },
+      {
+        pattern: /^Unterminated ([^\s]+) pair in echarts block\.?$/i,
+        replace: (_, pair) => `图表代码块中的 ${pair} 结构未闭合。`,
+      },
+    ];
+
+    for (const { pattern, replace } of transforms) {
+      if (pattern.test(message)) {
+        message = message.replace(pattern, replace);
+      }
+    }
+
+    message = message
+      .replace(/Functions are intentionally not supported\./gi, "出于安全考虑，不支持直接执行函数。")
+      .replace(/Unknown error/gi, "未知错误");
+
+    return /[A-Za-z]/.test(message)
+      ? "请检查图表配置是否完整，确认括号、引号和代码块都已闭合。"
+      : message;
+  }
+
+  function createLoadingStatusMarkup(detail) {
+    return `
+      <div class="oc-echarts-renderer__loading-shell">
+        <span class="oc-echarts-renderer__spinner" aria-hidden="true"></span>
+        <div class="oc-echarts-renderer__loading-copy">
+          <div class="oc-echarts-renderer__loading-title">
+            <span>${escapeHtml(UI_TEXT.loadingTitle)}</span>
+            <span class="oc-echarts-renderer__pulse-dots" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </span>
+          </div>
+          <div class="oc-echarts-renderer__loading-subtitle">${escapeHtml(detail)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function createErrorStatusMarkup(detail) {
+    return `
+      <div class="oc-echarts-renderer__error-title">${escapeHtml(UI_TEXT.errorTitle)}</div>
+      <code class="oc-echarts-renderer__error-detail">${escapeHtml(localizeErrorMessage(detail))}</code>
+    `;
   }
 
   function normalizeOptionSource(raw) {
@@ -860,55 +1183,60 @@
     const host = hostByWrapper.get(wrapper);
     const button = host?.querySelector(".oc-echarts-renderer__toggle");
     if (button) {
-      button.textContent = state === "hidden" ? "Show source" : "Hide source";
+      button.textContent = state === "hidden" ? UI_TEXT.toggleShowSource : UI_TEXT.toggleHideSource;
     }
   }
 
-  function renderHostScaffold(host, wrapper, mode, detail) {
+  function renderHostScaffold(host, wrapper, mode, detail, options = {}) {
+    const allowSourceToggle = options.allowSourceToggle ?? true;
+    const summaryText =
+      options.summaryText ??
+      (mode === "loading"
+        ? UI_TEXT.summaryLoading
+        : mode === "error"
+          ? UI_TEXT.summaryError
+          : UI_TEXT.summarySuccess);
+
     host.replaceChildren();
 
     const toolbar = document.createElement("div");
-    toolbar.className = "oc-echarts-renderer__toolbar";
+    toolbar.className = `oc-echarts-renderer__toolbar${allowSourceToggle ? "" : " oc-echarts-renderer__toolbar--no-toggle"}`;
 
     const meta = document.createElement("div");
     meta.className = "oc-echarts-renderer__meta";
 
     const badge = document.createElement("span");
     badge.className = "oc-echarts-renderer__badge";
-    badge.textContent = "ECharts";
+    badge.textContent = UI_TEXT.badge;
 
     const summary = document.createElement("span");
     summary.className = "oc-echarts-renderer__summary";
-    if (mode === "loading") {
-      summary.textContent = "Rendering chart from fenced code block";
-    } else if (mode === "error") {
-      summary.textContent = "Chart preview failed";
-    } else {
-      summary.textContent = "Rendered from fenced code block";
-    }
+    summary.textContent = summaryText;
 
     meta.append(badge, summary);
+    toolbar.append(meta);
 
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "oc-echarts-renderer__toggle";
-    toggle.addEventListener("click", () => {
-      const nextState = getSourceState(wrapper) === "hidden" ? "visible" : "hidden";
-      setSourceState(wrapper, nextState);
-      const chartState = chartStateByHost.get(host);
-      if (!chartState?.instance) {
-        return;
-      }
-      queueMicrotask(() => {
-        try {
-          chartState.instance.resize();
-        } catch {
-          // Ignore transient resize failures while layout settles.
+    if (allowSourceToggle) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "oc-echarts-renderer__toggle";
+      toggle.addEventListener("click", () => {
+        const nextState = getSourceState(wrapper) === "hidden" ? "visible" : "hidden";
+        setSourceState(wrapper, nextState);
+        const chartState = chartStateByHost.get(host);
+        if (!chartState?.instance) {
+          return;
         }
+        queueMicrotask(() => {
+          try {
+            chartState.instance.resize();
+          } catch {
+            // Ignore transient resize failures while layout settles.
+          }
+        });
       });
-    });
-
-    toolbar.append(meta, toggle);
+      toolbar.append(toggle);
+    }
 
     const body = document.createElement("div");
     body.className = "oc-echarts-renderer__body";
@@ -920,14 +1248,53 @@
     } else {
       const status = document.createElement("div");
       status.className = `oc-echarts-renderer__status oc-echarts-renderer__status--${mode}`;
-      status.innerHTML = detail;
+      status.innerHTML =
+        mode === "loading" ? createLoadingStatusMarkup(detail) : createErrorStatusMarkup(detail);
       body.append(status);
     }
 
     host.append(toolbar, body);
-    setSourceState(wrapper, getSourceState(wrapper));
+    if (allowSourceToggle) {
+      setSourceState(wrapper, getSourceState(wrapper));
+    }
 
     return body.querySelector(".oc-echarts-renderer__chart");
+  }
+
+  function clearStreamingPlaceholder(textEl) {
+    const host = hostByWrapper.get(textEl);
+    if (host?.getAttribute(STREAMING_PLACEHOLDER_ATTR) === "true") {
+      disposeChart(host);
+      host.remove();
+      hostByWrapper.delete(textEl);
+    }
+
+    if (textEl.getAttribute(STREAMING_PLACEHOLDER_ATTR) === "true") {
+      textEl.hidden = false;
+      textEl.removeAttribute(STREAMING_PLACEHOLDER_ATTR);
+    }
+
+    setBubbleLoadingState(textEl, false);
+  }
+
+  function syncStreamingPlaceholders(root) {
+    const textBlocks = Array.from(root.querySelectorAll(".chat-bubble .chat-text"));
+    for (const textEl of textBlocks) {
+      if (!shouldHideStreamingTextBlock(textEl)) {
+        clearStreamingPlaceholder(textEl);
+        continue;
+      }
+
+      installStyles();
+      const host = getOrCreateHost(textEl);
+      host.setAttribute(STREAMING_PLACEHOLDER_ATTR, "true");
+      textEl.setAttribute(STREAMING_PLACEHOLDER_ATTR, "true");
+      textEl.hidden = true;
+      setBubbleLoadingState(textEl, true);
+      renderHostScaffold(host, textEl, "loading", UI_TEXT.loadingStreamingDetail, {
+        allowSourceToggle: false,
+      });
+    }
   }
 
   async function processCodeBlock(codeEl) {
@@ -942,18 +1309,39 @@
     }
 
     const sourceHash = hashText(source);
+    const streaming = isStreamingBubble(wrapper);
+    const renderMode = getRenderMode(wrapper);
     if (
       wrapper.getAttribute(SOURCE_HASH_ATTR) === sourceHash &&
-      hostByWrapper.get(wrapper)?.isConnected
+      hostByWrapper.get(wrapper)?.isConnected &&
+      ((streaming && renderMode === "streaming") ||
+        (!streaming && (renderMode === "success" || renderMode === "error")))
     ) {
       return;
     }
 
     installStyles();
+    localizeSourceWrapper(wrapper);
 
     const host = getOrCreateHost(wrapper);
     disposeChart(host);
-    renderHostScaffold(host, wrapper, "loading", "Loading local ECharts runtime...");
+
+    if (streaming) {
+      setBubbleLoadingState(wrapper, true);
+      renderHostScaffold(host, wrapper, "loading", UI_TEXT.loadingStreamingDetail, {
+        allowSourceToggle: false,
+      });
+      wrapper.setAttribute(SOURCE_HASH_ATTR, sourceHash);
+      setRenderMode(wrapper, "streaming");
+      setSourceState(wrapper, "hidden");
+      return;
+    }
+
+    renderHostScaffold(host, wrapper, "loading", UI_TEXT.loadingRuntimeDetail, {
+      allowSourceToggle: false,
+    });
+    setSourceState(wrapper, "hidden");
+    setBubbleLoadingState(wrapper, true);
 
     try {
       const { echarts, json5 } = await ensureLibraries();
@@ -983,18 +1371,17 @@
 
       chartStateByHost.set(host, { instance, resizeObserver });
       wrapper.setAttribute(SOURCE_HASH_ATTR, sourceHash);
+      setRenderMode(wrapper, "success");
       setSourceState(wrapper, wrapper.hasAttribute(SOURCE_STATE_ATTR) ? getSourceState(wrapper) : "hidden");
+      setBubbleLoadingState(wrapper, false);
     } catch (error) {
       const detail =
         error && typeof error.message === "string" ? error.message : String(error || "Unknown error");
-      renderHostScaffold(
-        host,
-        wrapper,
-        "error",
-        `Could not render this chart.<br><code>${escapeHtml(detail)}</code>`,
-      );
+      renderHostScaffold(host, wrapper, "error", detail);
       wrapper.setAttribute(SOURCE_HASH_ATTR, sourceHash);
+      setRenderMode(wrapper, "error");
       setSourceState(wrapper, "visible");
+      setBubbleLoadingState(wrapper, false);
     }
   }
 
@@ -1008,6 +1395,7 @@
     scanRunning = true;
 
     try {
+      syncStreamingPlaceholders(document);
       const candidates = findCandidateCodeBlocks(document);
       for (const codeEl of candidates) {
         // Keep processing sequential to reduce DOM thrash during streaming updates.
