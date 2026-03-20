@@ -118,6 +118,7 @@ That script:
 1. rebuilds `tools/openclaw-control-ui-echarts/generated/control-ui`
 2. writes a root-level `docker-compose.override.yml`
 3. mounts the generated UI directly to `/app/dist/control-ui` inside `openclaw-gateway`
+4. mounts `docs/reference/templates` to `/app/docs/reference/templates` so agent workspace bootstrap files are available even when an image is missing those docs assets
 
 Because the mount replaces the container's default Control UI asset directory, this path does not need `gateway.controlUi.root`.
 

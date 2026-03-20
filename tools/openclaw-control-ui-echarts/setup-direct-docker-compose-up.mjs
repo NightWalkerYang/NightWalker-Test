@@ -20,6 +20,7 @@ services:
   openclaw-gateway:
     volumes:
       - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro
+      - ./docs/reference/templates:/app/docs/reference/templates:ro
 `;
 
 function buildCustomControlUi() {
