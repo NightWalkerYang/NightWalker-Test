@@ -24,6 +24,8 @@
   const JS_PLACEHOLDER_PREFIX = "__OC_ECHARTS_JS__";
   const UI_TEXT = Object.freeze({
     badge: "图表",
+    actionInsert: "发送至聊天框",
+    actionAsk: "询问该图表",
     toggleShowSource: "显示源码",
     toggleHideSource: "隐藏源码",
     summaryLoading: "图表生成中",
@@ -46,6 +48,15 @@
     detailRawData: "原始数据",
     detailRawParams: "事件参数",
     detailNoData: "当前元素没有可展示的详情。",
+    promptPrefix: "展开说说:",
+    promptLead: "请基于这张图表的结构化摘要继续展开说明；如果你已经连接数据库，可以结合数据库进一步补充分析。",
+    promptTitle: "图表标题",
+    promptSubtitle: "图表副标题",
+    promptTypes: "图表类型",
+    promptLegend: "图例",
+    promptAxes: "坐标轴",
+    promptSeries: "系列概览",
+    promptData: "数据摘要",
   });
 
   const libraryPromiseByKey = new Map();
@@ -100,6 +111,14 @@
         min-width: 0;
       }
 
+      .oc-echarts-renderer__controls {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
       .oc-echarts-renderer__badge {
         display: inline-flex;
         align-items: center;
@@ -133,6 +152,23 @@
         font: inherit;
         font-size: 12px;
         padding: 6px 10px;
+      }
+
+      .oc-echarts-renderer__action {
+        appearance: none;
+        border: 1px solid rgba(127, 127, 127, 0.22);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.62);
+        color: inherit;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 10px;
+      }
+
+      .oc-echarts-renderer__action:hover {
+        background: rgba(127, 127, 127, 0.08);
       }
 
       .oc-echarts-renderer__toggle:hover {
@@ -950,6 +986,341 @@
     modal.root.hidden = false;
   }
 
+  function ensureArray(value) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (value && typeof value === "object") {
+      return [value];
+    }
+    return [];
+  }
+
+  function formatNumber(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    const abs = Math.abs(numeric);
+    if (abs >= 1000 || Number.isInteger(numeric)) {
+      return numeric.toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+    }
+    return numeric.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  }
+
+  function chartTypeLabel(type) {
+    const map = {
+      bar: "柱状图",
+      line: "折线图",
+      scatter: "散点图",
+      pie: "饼图",
+      radar: "雷达图",
+      heatmap: "热力图",
+      map: "地图",
+      candlestick: "K 线图",
+      boxplot: "箱线图",
+      treemap: "矩形树图",
+      sunburst: "旭日图",
+      funnel: "漏斗图",
+      gauge: "仪表盘",
+      sankey: "桑基图",
+      graph: "关系图",
+    };
+    return map[type] || type || "未命名图表";
+  }
+
+  function extractValuePayload(item) {
+    if (item && typeof item === "object" && "value" in item) {
+      return item.value;
+    }
+    return item;
+  }
+
+  function extractNumericVector(item) {
+    const raw = extractValuePayload(item);
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      return [raw];
+    }
+    if (Array.isArray(raw)) {
+      return raw
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isFinite(entry));
+    }
+    return [];
+  }
+
+  function summarizeNumericSeries(data) {
+    const numbers = data
+      .map((item) => extractNumericVector(item))
+      .filter((vector) => vector.length > 0)
+      .map((vector) => vector[0]);
+
+    if (numbers.length === 0) {
+      return "";
+    }
+
+    const total = numbers.reduce((sum, current) => sum + current, 0);
+    const minimum = Math.min(...numbers);
+    const maximum = Math.max(...numbers);
+    const latest = numbers[numbers.length - 1];
+    const average = total / numbers.length;
+
+    return [
+      `共 ${numbers.length} 个点`,
+      `最小 ${formatNumber(minimum)}`,
+      `最大 ${formatNumber(maximum)}`,
+      `平均 ${formatNumber(average)}`,
+      `最新 ${formatNumber(latest)}`,
+    ].join("；");
+  }
+
+  function summarizeVectorSeries(data) {
+    const vectors = data
+      .map((item) => extractNumericVector(item))
+      .filter((vector) => vector.length >= 2);
+
+    if (vectors.length === 0) {
+      return "";
+    }
+
+    const dimensionCount = Math.max(...vectors.map((vector) => vector.length));
+    const parts = [`共 ${vectors.length} 个点`];
+
+    for (let index = 0; index < dimensionCount; index += 1) {
+      const values = vectors
+        .map((vector) => vector[index])
+        .filter((value) => Number.isFinite(value));
+      if (values.length === 0) {
+        continue;
+      }
+      parts.push(`维度 ${index + 1} ${formatNumber(Math.min(...values))} - ${formatNumber(Math.max(...values))}`);
+    }
+
+    return parts.join("；");
+  }
+
+  function summarizeAxis(axis, axisName) {
+    if (!axis || typeof axis !== "object") {
+      return "";
+    }
+
+    const type = axis.type || "value";
+    const name = normalizeText(axis.name || "");
+    const categoryData = Array.isArray(axis.data)
+      ? axis.data
+          .slice(0, 6)
+          .map((entry) => truncateString(toDisplayString(entry), 16))
+          .filter(Boolean)
+      : [];
+
+    const segments = [`${axisName}（${type}）`];
+    if (name) {
+      segments.push(name);
+    }
+    if (categoryData.length > 0) {
+      segments.push(`示例：${categoryData.join("、")}`);
+    }
+    return segments.join("：");
+  }
+
+  function summarizeSeries(option) {
+    const seriesList = ensureArray(option?.series);
+    const lines = seriesList
+      .map((series, index) => {
+        if (!series || typeof series !== "object") {
+          return "";
+        }
+
+        const name = normalizeText(series.name || "") || `系列 ${index + 1}`;
+        const type = chartTypeLabel(series.type);
+        const data = Array.isArray(series.data) ? series.data : [];
+        const summary =
+          data.length === 0
+            ? ""
+            : series.type === "scatter" || series.type === "radar"
+              ? summarizeVectorSeries(data) || summarizeNumericSeries(data)
+              : summarizeNumericSeries(data) || summarizeVectorSeries(data);
+
+        return summary ? `- ${name}（${type}）：${summary}` : `- ${name}（${type}）`;
+      })
+      .filter(Boolean);
+
+    if (lines.length <= 8) {
+      return lines;
+    }
+
+    return [...lines.slice(0, 8), `- 其余 ${lines.length - 8} 个系列已省略`];
+  }
+
+  function summarizeAxes(option) {
+    const lines = [];
+    ensureArray(option?.xAxis).forEach((axis, index, list) => {
+      lines.push(summarizeAxis(axis, `X 轴${list.length > 1 ? index + 1 : ""}`));
+    });
+    ensureArray(option?.yAxis).forEach((axis, index, list) => {
+      lines.push(summarizeAxis(axis, `Y 轴${list.length > 1 ? index + 1 : ""}`));
+    });
+    ensureArray(option?.angleAxis).forEach((axis, index, list) => {
+      lines.push(summarizeAxis(axis, `角度轴${list.length > 1 ? index + 1 : ""}`));
+    });
+    ensureArray(option?.radiusAxis).forEach((axis, index, list) => {
+      lines.push(summarizeAxis(axis, `半径轴${list.length > 1 ? index + 1 : ""}`));
+    });
+    return lines.filter(Boolean);
+  }
+
+  function extractLegendNames(option) {
+    const legends = ensureArray(option?.legend);
+    const names = [];
+    for (const legend of legends) {
+      if (!legend || typeof legend !== "object" || !Array.isArray(legend.data)) {
+        continue;
+      }
+      for (const entry of legend.data) {
+        if (typeof entry === "string" && entry.trim()) {
+          names.push(entry.trim());
+        } else if (entry && typeof entry === "object" && typeof entry.name === "string" && entry.name.trim()) {
+          names.push(entry.name.trim());
+        }
+      }
+    }
+
+    if (names.length > 0) {
+      return [...new Set(names)];
+    }
+
+    return ensureArray(option?.series)
+      .map((series) => normalizeText(series?.name || ""))
+      .filter(Boolean);
+  }
+
+  function buildChartPrompt(payload) {
+    const option = payload?.option ?? {};
+    const title = normalizeText(option?.title?.text || "");
+    const subtitle = normalizeText(option?.title?.subtext || "");
+    const types = [...new Set(ensureArray(option?.series).map((series) => chartTypeLabel(series?.type)).filter(Boolean))];
+    const legendNames = extractLegendNames(option);
+    const axisLines = summarizeAxes(option);
+    const seriesLines = summarizeSeries(option);
+
+    const lines = [UI_TEXT.promptPrefix, UI_TEXT.promptLead];
+
+    if (title) {
+      lines.push(`- ${UI_TEXT.promptTitle}：${title}`);
+    }
+    if (subtitle) {
+      lines.push(`- ${UI_TEXT.promptSubtitle}：${subtitle}`);
+    }
+    if (types.length > 0) {
+      lines.push(`- ${UI_TEXT.promptTypes}：${types.join("、")}`);
+    }
+    if (legendNames.length > 0) {
+      const visibleLegendNames = legendNames.slice(0, 12);
+      const legendText =
+        legendNames.length > 12
+          ? `${visibleLegendNames.join("、")} 等 ${legendNames.length} 项`
+          : visibleLegendNames.join("、");
+      lines.push(`- ${UI_TEXT.promptLegend}：${legendText}`);
+    }
+    if (axisLines.length > 0) {
+      lines.push(`${UI_TEXT.promptAxes}：`);
+      lines.push(...axisLines.map((line) => `- ${line}`));
+    }
+    if (seriesLines.length > 0) {
+      lines.push(`${UI_TEXT.promptSeries}：`);
+      lines.push(...seriesLines);
+    }
+
+    return lines.join("\n");
+  }
+
+  function findChatComposerElements() {
+    const textarea = document.querySelector(".agent-chat__input > textarea");
+    const sendButton = Array.from(document.querySelectorAll(".agent-chat__toolbar-right .chat-send-btn")).find(
+      (button) => !button.classList.contains("chat-send-btn--stop"),
+    );
+    return { textarea, sendButton };
+  }
+
+  function setComposerDraft(textarea, value) {
+    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value");
+    if (descriptor?.set) {
+      descriptor.set.call(textarea, value);
+    } else {
+      textarea.value = value;
+    }
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function focusComposer(textarea) {
+    textarea.focus();
+    const end = textarea.value.length;
+    try {
+      textarea.setSelectionRange(end, end);
+    } catch {
+      // Ignore unsupported selection operations.
+    }
+  }
+
+  function waitForFrame(count = 1) {
+    return new Promise((resolve) => {
+      const step = (remaining) => {
+        if (remaining <= 0) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(() => step(remaining - 1));
+      };
+      step(count);
+    });
+  }
+
+  async function insertPromptIntoChatBox(promptText) {
+    const { textarea } = findChatComposerElements();
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      return false;
+    }
+
+    const current = textarea.value || "";
+    const next = current.trim() ? `${current.replace(/\s+$/, "")}\n\n${promptText}` : promptText;
+    setComposerDraft(textarea, next);
+    focusComposer(textarea);
+    await waitForFrame(1);
+    return true;
+  }
+
+  async function askAboutChart(promptText) {
+    const { textarea } = findChatComposerElements();
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      return false;
+    }
+
+    const previousDraft = textarea.value || "";
+    setComposerDraft(textarea, promptText);
+    focusComposer(textarea);
+    await waitForFrame(2);
+
+    const refreshed = findChatComposerElements();
+    if (!(refreshed.sendButton instanceof HTMLButtonElement) || refreshed.sendButton.disabled) {
+      setComposerDraft(textarea, previousDraft.trim() ? `${previousDraft.replace(/\s+$/, "")}\n\n${promptText}` : promptText);
+      focusComposer(textarea);
+      return false;
+    }
+
+    refreshed.sendButton.click();
+
+    if (previousDraft.trim()) {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const latest = findChatComposerElements().textarea;
+      if (latest instanceof HTMLTextAreaElement && !latest.value.trim()) {
+        setComposerDraft(latest, previousDraft);
+      }
+    }
+
+    return true;
+  }
+
   function normalizeOptionSource(raw) {
     let text = normalizeText(raw);
     if (!text) {
@@ -1578,6 +1949,7 @@
 
   function renderHostScaffold(host, wrapper, mode, detail, options = {}) {
     const allowSourceToggle = options.allowSourceToggle ?? true;
+    const actions = Array.isArray(options.actions) ? options.actions : [];
     const summaryText =
       options.summaryText ??
       (mode === "loading"
@@ -1605,6 +1977,23 @@
     meta.append(badge, summary);
     toolbar.append(meta);
 
+    const controls = document.createElement("div");
+    controls.className = "oc-echarts-renderer__controls";
+
+    for (const action of actions) {
+      if (!action || typeof action.onClick !== "function") {
+        continue;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "oc-echarts-renderer__action";
+      button.textContent = String(action.label || "");
+      button.addEventListener("click", () => {
+        void action.onClick();
+      });
+      controls.append(button);
+    }
+
     if (allowSourceToggle) {
       const toggle = document.createElement("button");
       toggle.type = "button";
@@ -1624,7 +2013,11 @@
           }
         });
       });
-      toolbar.append(toggle);
+      controls.append(toggle);
+    }
+
+    if (controls.childElementCount > 0) {
+      toolbar.append(controls);
     }
 
     const body = document.createElement("div");
@@ -1736,7 +2129,19 @@
       const { echarts, json5 } = await ensureLibraries();
       const payload = parseEchartsPayload(source, json5, echarts);
       const option = payload.option;
-      const chartEl = renderHostScaffold(host, wrapper, "success", "");
+      const promptText = buildChartPrompt(payload);
+      const chartEl = renderHostScaffold(host, wrapper, "success", "", {
+        actions: [
+          {
+            label: UI_TEXT.actionInsert,
+            onClick: () => insertPromptIntoChatBox(promptText),
+          },
+          {
+            label: UI_TEXT.actionAsk,
+            onClick: () => askAboutChart(promptText),
+          },
+        ],
+      });
       chartEl.style.height = `${resolveChartHeight(payload)}px`;
 
       if (typeof option.backgroundColor === "undefined") {
@@ -1765,7 +2170,7 @@
         resizeObserver.observe(chartEl);
       }
 
-      chartStateByHost.set(host, { instance, resizeObserver });
+      chartStateByHost.set(host, { instance, resizeObserver, promptText });
       wrapper.setAttribute(SOURCE_HASH_ATTR, sourceHash);
       setRenderMode(wrapper, "success");
       setSourceState(wrapper, wrapper.hasAttribute(SOURCE_STATE_ATTR) ? getSourceState(wrapper) : "hidden");
