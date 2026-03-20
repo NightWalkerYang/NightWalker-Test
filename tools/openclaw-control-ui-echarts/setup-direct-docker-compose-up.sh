@@ -71,10 +71,10 @@ ensure_gateway_image_available() {
   fi
 
   if [[ "$image_ref" == "openclaw:local" ]]; then
-    printf '%s\n' "No local $image_ref image found; building it from Dockerfile..."
+    printf '%s\n' "No local $image_ref image found; building it from Dockerfile..." >&2
     docker build -t "$image_ref" -f Dockerfile .
   else
-    printf '%s\n' "Image $image_ref is not available locally; pulling it now..."
+    printf '%s\n' "Image $image_ref is not available locally; pulling it now..." >&2
     docker pull "$image_ref"
   fi
 
@@ -123,7 +123,7 @@ resolve_source_dir() {
 
   command -v docker >/dev/null 2>&1 || fail "docker is required when dist/control-ui is not present on the host."
 
-  printf '%s\n' "Host dist/control-ui is missing; extracting it from the Docker image..."
+  printf '%s\n' "Host dist/control-ui is missing; extracting it from the Docker image..." >&2
 
   local image_ref
   image_ref="$(resolve_gateway_image_ref)"
