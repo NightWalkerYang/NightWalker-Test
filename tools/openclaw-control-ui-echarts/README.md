@@ -6,7 +6,7 @@ It does not modify any existing OpenClaw source files. Instead, it:
 
 1. copies a built `dist/control-ui` directory
 2. injects one additional runtime script into the copied `index.html`
-3. copies local vendored `echarts` and `json5` files into that copied UI root
+3. extracts local `echarts` and `json5` files from the tracked offline bundle into that copied UI root
 4. lets you point `gateway.controlUi.root` at the generated directory
 
 ## What It Adds
@@ -25,8 +25,11 @@ No browser plugin is required.
 - `tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs`
   - copies `dist/control-ui` into a separate custom UI root
   - injects the ECharts runtime script
+  - writes `assets/vendor/echarts.min.js` and `assets/vendor/json5.min.js`
+- `tools/openclaw-control-ui-echarts/openclaw-echarts-renderer.js`
+  - CSP-safe runtime that loads same-origin vendor assets with `script.src`
 - `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`
-  - tracked offline bundled runtime reused by the Control UI builder
+  - tracked offline bundle used as the source of truth for extracting vendor assets
 
 ## Build The Base UI
 
@@ -58,7 +61,9 @@ node tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs --source dist
 
 Relative paths are resolved from the repo root.
 
-The builder reuses the already-bundled offline runtime from `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`, so the target host does not need separate vendor files.
+The builder extracts `echarts` and `json5` from the tracked offline bundle at `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`, then writes them into the generated Control UI as same-origin static assets.
+
+This matters because the gateway serves the Control UI with a CSP that allows `script-src 'self'` but blocks inline scripts. The generated overlay therefore avoids inline vendor injection and stays compatible with the gateway CSP.
 
 ## Configure OpenClaw
 
@@ -127,7 +132,7 @@ The shell variant also works when the host has no `dist/control-ui` yet:
 - if `dist/control-ui` exists on the host, it uses that
 - otherwise it extracts `/app/dist/control-ui` from the local `openclaw-gateway` Docker image
 - if that image does not exist yet, it builds `openclaw:local` from `Dockerfile` or pulls `OPENCLAW_IMAGE` when you set a non-default image
-- the injected chart runtime comes from the tracked offline userscript file, so the target host does not need extra vendor downloads
+- the injected chart runtime stays CSP-safe by loading same-origin `assets/vendor/*.js` files extracted from the tracked offline bundle
 
 After that, from the same repo root, this is enough:
 

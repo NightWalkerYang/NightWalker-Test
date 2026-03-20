@@ -9,12 +9,18 @@ const repoRoot = path.resolve(here, "../..");
 
 const DEFAULT_SOURCE_DIR = path.join(repoRoot, "dist", "control-ui");
 const DEFAULT_OUTPUT_DIR = path.join(here, "generated", "control-ui");
-const BUNDLED_RUNTIME_SCRIPT_SOURCE = path.join(
+const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(
+  here,
+  "openclaw-echarts-renderer.js",
+);
+const OFFLINE_BUNDLED_USERSCRIPT_SOURCE = path.join(
   repoRoot,
   "tools",
   "openclaw-echarts-userscript",
   "openclaw-echarts-renderer.user.js",
 );
+const EMBEDDED_LIBRARY_PATTERN =
+  /const EMBEDDED_LIBRARY_SOURCES = \{\s*echarts:\s*(?<echarts>"(?:\\.|[^"\\])*"),\s*json5:\s*(?<json5>"(?:\\.|[^"\\])*"),\s*\};/s;
 
 function usage() {
   process.stderr.write(
@@ -86,6 +92,25 @@ function copyFileIntoOutput(sourceFile, outputFile) {
   fs.copyFileSync(sourceFile, outputFile);
 }
 
+function writeTextIntoOutput(content, outputFile) {
+  fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+  fs.writeFileSync(outputFile, content, "utf8");
+}
+
+function extractEmbeddedLibraries(bundleSource) {
+  const match = bundleSource.match(EMBEDDED_LIBRARY_PATTERN);
+  if (!match?.groups) {
+    throw new Error(
+      `Could not extract embedded vendor libraries from ${OFFLINE_BUNDLED_USERSCRIPT_SOURCE}.`,
+    );
+  }
+
+  return {
+    echarts: JSON.parse(match.groups.echarts),
+    json5: JSON.parse(match.groups.json5),
+  };
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
@@ -102,7 +127,8 @@ function main() {
 
   ensureDirectoryExists(sourceDir, "Source control-ui directory");
   ensureFileExists(path.join(sourceDir, "index.html"), "Source control-ui index.html");
-  ensureFileExists(BUNDLED_RUNTIME_SCRIPT_SOURCE, "Bundled offline ECharts runtime");
+  ensureFileExists(CONTROL_UI_RUNTIME_SCRIPT_SOURCE, "Control UI ECharts runtime");
+  ensureFileExists(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "Offline bundled ECharts userscript");
 
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(outputDir, { recursive: true });
@@ -112,9 +138,21 @@ function main() {
   const outputIndex = fs.readFileSync(outputIndexPath, "utf8");
   fs.writeFileSync(outputIndexPath, injectRuntimeScript(outputIndex), "utf8");
 
+  const embeddedLibraries = extractEmbeddedLibraries(
+    fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),
+  );
+
   copyFileIntoOutput(
-    BUNDLED_RUNTIME_SCRIPT_SOURCE,
+    CONTROL_UI_RUNTIME_SCRIPT_SOURCE,
     path.join(outputDir, "assets", "openclaw-echarts-renderer.js"),
+  );
+  writeTextIntoOutput(
+    embeddedLibraries.echarts,
+    path.join(outputDir, "assets", "vendor", "echarts.min.js"),
+  );
+  writeTextIntoOutput(
+    embeddedLibraries.json5,
+    path.join(outputDir, "assets", "vendor", "json5.min.js"),
   );
 
   process.stdout.write(

@@ -10,8 +10,6 @@ This feature was added without modifying any existing OpenClaw source files.
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\build-offline-userscript.mjs`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\README.md`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\VENDOR_NOTES.md`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\vendor\echarts.min.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\vendor\json5.min.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\openclaw-echarts-renderer.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\build-custom-control-ui.mjs`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\setup-direct-docker-compose-up.mjs`
@@ -26,10 +24,11 @@ This feature was added without modifying any existing OpenClaw source files.
 - The current recommended implementation is the custom Control UI root generator under `tools/openclaw-control-ui-echarts`.
 - It works without a browser plugin by generating a separate UI directory for `gateway.controlUi.root`.
 - The generated custom Control UI root currently lives at `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\generated\control-ui`.
-- The Control UI path now reuses the tracked offline bundled runtime at `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\openclaw-echarts-renderer.user.js`, so target hosts do not need separate vendor files or CDN access.
+- The Control UI path now extracts `echarts` and `json5` from the tracked offline bundle at `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\openclaw-echarts-renderer.user.js`, then writes them into the generated UI as same-origin static assets.
+- This change is required because OpenClaw serves the Control UI with `script-src 'self'`, so inline vendor injection is blocked by CSP.
 - A one-time helper can also generate a root `docker-compose.override.yml` so later repo-root `docker compose up -d` runs automatically mount the custom UI into `/app/dist/control-ui`.
 - The generated root `docker-compose.override.yml` also mounts `docs/reference/templates` into `/app/docs/reference/templates` to avoid workspace-template bootstrap failures in images missing those docs assets.
 - The earlier userscript implementation is still present as an alternative zero-intrusion path.
 - `openclaw-echarts-renderer.user.js` is now the offline bundled version.
-- The Control UI path is now self-contained and no longer requires the userscript vendor directory to exist on the target host.
+- The Control UI path is now self-contained and no longer requires a vendor cache or CDN access on the target host.
 - Existing files under `src/`, `ui/`, `apps/`, and `extensions/` were not edited.
