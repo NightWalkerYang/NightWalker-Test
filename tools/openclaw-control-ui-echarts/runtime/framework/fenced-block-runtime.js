@@ -9,6 +9,7 @@ const BLOCK_SOURCE_HASH_ATTR = "data-oc-block-source-hash";
 const BLOCK_RENDER_MODE_ATTR = "data-oc-block-render-mode";
 const BLOCK_SOURCE_STATE_ATTR = "data-oc-block-source-state";
 const BLOCK_STREAMING_PLACEHOLDER_ATTR = "data-oc-block-streaming-placeholder";
+const SOURCE_TOGGLE_DISABLED = true;
 
 function getLanguageFromCodeBlock(codeEl) {
   for (const className of codeEl.classList) {
@@ -42,6 +43,9 @@ function setRenderMode(anchor, mode) {
 }
 
 function getSourceState(anchor) {
+  if (SOURCE_TOGGLE_DISABLED) {
+    return "hidden";
+  }
   return anchor.getAttribute(BLOCK_SOURCE_STATE_ATTR) || "hidden";
 }
 
@@ -262,9 +266,18 @@ export function createFencedBlockRuntime(adaptersInput) {
   }
 
   function setSourceState(anchor, state) {
+    // 中文标记：源码展示入口已停用，统一强制隐藏源码块。
+    if (SOURCE_TOGGLE_DISABLED) {
+      anchor.setAttribute(BLOCK_SOURCE_STATE_ATTR, "hidden");
+      anchor.hidden = true;
+      return;
+    }
+
     anchor.setAttribute(BLOCK_SOURCE_STATE_ATTR, state);
     anchor.hidden = state === "hidden";
 
+    // 中文标记：下面这段是原来的“显示源码 / 隐藏源码”按钮文案同步逻辑，现已停用。
+    /*
     const host = hostByAnchor.get(anchor);
     const button = host?.querySelector(".oc-block-renderer__toggle");
     const adapter = getAdapterForAnchor(anchor) || getAdapterForHost(host);
@@ -274,10 +287,13 @@ export function createFencedBlockRuntime(adaptersInput) {
           ? adapter.uiText.toggleShowSource
           : adapter.uiText.toggleHideSource;
     }
+    */
   }
 
   function renderHostScaffold(adapter, host, anchor, mode, detail, options = {}) {
-    const allowSourceToggle = options.allowSourceToggle ?? true;
+    // 中文标记：源码切换按钮已停用，统一不再渲染“显示源码 / 隐藏源码”入口。
+    const allowSourceToggle =
+      SOURCE_TOGGLE_DISABLED ? false : (options.allowSourceToggle ?? true);
     const actions = Array.isArray(options.actions) ? options.actions : [];
     const summaryText =
       options.summaryText ??
@@ -326,6 +342,8 @@ export function createFencedBlockRuntime(adaptersInput) {
       controls.append(button);
     }
 
+    // 中文标记：下面这段是原来的源码开关按钮创建逻辑，现已注释停用。
+    /*
     if (allowSourceToggle) {
       const toggle = document.createElement("button");
       toggle.type = "button";
@@ -338,6 +356,7 @@ export function createFencedBlockRuntime(adaptersInput) {
       });
       controls.append(toggle);
     }
+    */
 
     if (controls.childElementCount > 0) {
       toolbar.append(controls);
@@ -361,9 +380,8 @@ export function createFencedBlockRuntime(adaptersInput) {
     }
 
     host.append(toolbar, body);
-    if (allowSourceToggle) {
-      setSourceState(anchor, getSourceState(anchor));
-    }
+    // 中文标记：源码开关已停用，渲染完成后仍统一隐藏源码。
+    setSourceState(anchor, "hidden");
 
     return body.querySelector(".oc-block-renderer__chart");
   }
@@ -494,10 +512,8 @@ export function createFencedBlockRuntime(adaptersInput) {
       }
       wrapper.setAttribute(BLOCK_SOURCE_HASH_ATTR, sourceHash);
       setRenderMode(wrapper, "success");
-      setSourceState(
-        wrapper,
-        wrapper.hasAttribute(BLOCK_SOURCE_STATE_ATTR) ? getSourceState(wrapper) : "hidden",
-      );
+      // 中文标记：成功态也不再恢复源码显示。
+      setSourceState(wrapper, "hidden");
       setBubbleLoadingState(wrapper, false);
     } catch (error) {
       const detail =
@@ -507,7 +523,9 @@ export function createFencedBlockRuntime(adaptersInput) {
       renderHostScaffold(adapter, host, wrapper, "error", detail);
       wrapper.setAttribute(BLOCK_SOURCE_HASH_ATTR, sourceHash);
       setRenderMode(wrapper, "error");
-      setSourceState(wrapper, "visible");
+      // 中文标记：错误态原本会回退显示源码，现已改为继续隐藏。
+      // setSourceState(wrapper, "visible");
+      setSourceState(wrapper, "hidden");
       setBubbleLoadingState(wrapper, false);
     }
   }

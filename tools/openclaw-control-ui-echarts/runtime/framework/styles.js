@@ -66,6 +66,7 @@ export function getFrameworkStyles() {
       text-overflow: ellipsis;
     }
 
+    /* 中文标记：源码开关按钮已停用，这里仅保留历史样式定义供后续回看。 */
     .oc-block-renderer__toggle,
     .oc-block-renderer__action {
       appearance: none;
