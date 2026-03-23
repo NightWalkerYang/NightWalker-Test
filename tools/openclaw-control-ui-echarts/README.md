@@ -173,6 +173,7 @@ That script:
 2. writes a root-level `docker-compose.override.yml`
 3. mounts the generated UI directly to `/app/dist/control-ui` inside `openclaw-gateway`
 4. mounts `docs/reference/templates` to `/app/docs/reference/templates` so agent workspace bootstrap files are available even when an image is missing those docs assets
+5. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
 
 Because the mount replaces the container's default Control UI asset directory, this path does not need `gateway.controlUi.root`.
 
@@ -188,6 +189,14 @@ After that, from the same repo root, this is enough:
 ```bash
 docker compose up -d
 ```
+
+If you want files committed under the repo, such as `excel_Test`, to appear inside the agent workspace, add this to `.env` before rerunning the setup script:
+
+```bash
+OPENCLAW_EXTRA_MOUNTS=./excel_Test:/home/node/.openclaw/workspace/excel_Test:ro
+```
+
+The setup script will copy that bind mount into the generated `docker-compose.override.yml` for both `openclaw-gateway` and `openclaw-cli`.
 
 Important:
 
