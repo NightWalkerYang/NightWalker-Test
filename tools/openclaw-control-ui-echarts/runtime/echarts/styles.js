@@ -64,16 +64,64 @@ export function getEchartsStyles() {
     }
 
     .oc-echarts-detail-modal__body {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
       padding: 18px;
-      overflow: auto;
       max-height: calc(min(80vh, 880px) - 74px);
+    }
+
+    .oc-echarts-detail-modal__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .oc-echarts-detail-modal__action {
+      appearance: none;
+      border-radius: 999px;
+      border: 1px solid rgba(37, 99, 235, 0.16);
+      background: rgba(241, 245, 249, 0.94);
+      color: #0f172a;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 9px 14px;
+      transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        background 0.18s ease,
+        border-color 0.18s ease;
+    }
+
+    .oc-echarts-detail-modal__action:hover {
+      transform: translateY(-1px);
+    }
+
+    .oc-echarts-detail-modal__action[data-variant="primary"] {
+      border-color: rgba(37, 99, 235, 0.28);
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff;
+      box-shadow: 0 16px 30px rgba(37, 99, 235, 0.2);
+    }
+
+    .oc-echarts-detail-modal__action[data-variant="secondary"]:hover {
+      background: rgba(226, 232, 240, 0.98);
+      border-color: rgba(37, 99, 235, 0.24);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    .oc-echarts-detail-modal__content {
+      overflow: auto;
+      min-height: 0;
+      padding-right: 2px;
     }
 
     .oc-echarts-detail-modal__grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 12px;
-      margin-bottom: 16px;
     }
 
     .oc-echarts-detail-modal__card {
@@ -113,34 +161,6 @@ export function getEchartsStyles() {
       border-radius: 999px;
       border: 1px solid rgba(15, 23, 42, 0.12);
       flex: 0 0 auto;
-    }
-
-    .oc-echarts-detail-modal__section {
-      margin-top: 18px;
-    }
-
-    .oc-echarts-detail-modal__section:first-child {
-      margin-top: 0;
-    }
-
-    .oc-echarts-detail-modal__section-title {
-      margin: 0 0 10px;
-      font-size: 13px;
-      font-weight: 700;
-    }
-
-    .oc-echarts-detail-modal__pre {
-      margin: 0;
-      padding: 12px 14px;
-      overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-      border-radius: 14px;
-      border: 1px solid rgba(127, 127, 127, 0.16);
-      background: rgba(248, 250, 252, 0.92);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.6;
     }
 
     .oc-echarts-detail-modal__empty {

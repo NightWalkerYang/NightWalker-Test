@@ -21,6 +21,7 @@ This feature was added without modifying any existing OpenClaw source files.
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\chat-composer.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\adapter-registry.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\fenced-block-runtime.js`
+- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\branding\brand-replacer.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\ui-text.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\styles.js`
 - `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\libraries.js`

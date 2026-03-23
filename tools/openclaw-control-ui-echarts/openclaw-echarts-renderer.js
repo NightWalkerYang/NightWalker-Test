@@ -1,4 +1,5 @@
 import { createFencedBlockRuntime } from "./runtime/framework/fenced-block-runtime.js";
+import { bootBrandReplacer } from "./runtime/branding/brand-replacer.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
 
 const scriptUrl = new URL(import.meta.url);
@@ -10,8 +11,13 @@ const runtime = createFencedBlockRuntime([
   }),
 ]);
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => runtime.boot(), { once: true });
-} else {
+function boot() {
+  bootBrandReplacer();
   runtime.boot();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot, { once: true });
+} else {
+  boot();
 }

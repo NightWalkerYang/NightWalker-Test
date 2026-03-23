@@ -3,6 +3,10 @@ import {
   toDisplayString,
   truncateString,
 } from "../framework/shared.js";
+import {
+  insertPromptIntoChatBox,
+  sendPromptToChat,
+} from "../framework/chat-composer.js";
 
 let detailModalElements = null;
 
@@ -130,17 +134,43 @@ function buildDetailCardsHtml(rows, uiText) {
   `;
 }
 
-function buildDetailSectionHtml(title, content) {
-  if (!content) {
+function formatPromptValue(value) {
+  if (typeof value === "undefined" || value === null || value === "") {
     return "";
   }
 
-  return `
-    <section class="oc-echarts-detail-modal__section">
-      <h4 class="oc-echarts-detail-modal__section-title">${escapeHtml(title)}</h4>
-      <pre class="oc-echarts-detail-modal__pre">${escapeHtml(content)}</pre>
-    </section>
-  `;
+  if (typeof value === "object") {
+    return truncateString(
+      stringifyDetailJson(value).replace(/\s+/g, " ").trim(),
+      320,
+    );
+  }
+
+  return truncateString(toDisplayString(value), 220);
+}
+
+function buildDetailPrompt(params, uiText) {
+  const lines = [uiText.detailPromptLead];
+  const visibleRows = extractClickDetailRows(params, uiText).filter(
+    (row) =>
+      typeof row.value !== "undefined" &&
+      row.value !== null &&
+      row.value !== "",
+  );
+
+  visibleRows.forEach((row) => {
+    const value = formatPromptValue(row.value);
+    if (value) {
+      lines.push(`- ${row.label}：${value}`);
+    }
+  });
+
+  const dataValue = formatPromptValue(params.data);
+  if (dataValue) {
+    lines.push(`- ${uiText.detailPromptData}：${dataValue}`);
+  }
+
+  return lines.join("\n");
 }
 
 function extractClickDetailRows(params, uiText) {
@@ -184,12 +214,24 @@ function ensureDetailModal(uiText) {
         <h3 id="oc-echarts-detail-title" class="oc-echarts-detail-modal__title">${escapeHtml(uiText.detailTitle)}</h3>
         <button type="button" class="oc-echarts-detail-modal__close">${escapeHtml(uiText.detailClose)}</button>
       </div>
-      <div class="oc-echarts-detail-modal__body"></div>
+      <div class="oc-echarts-detail-modal__body">
+        <div class="oc-echarts-detail-modal__actions">
+          <button type="button" class="oc-echarts-detail-modal__action" data-variant="primary">${escapeHtml(uiText.detailActionAsk)}</button>
+          <button type="button" class="oc-echarts-detail-modal__action" data-variant="secondary">${escapeHtml(uiText.detailActionInsert)}</button>
+        </div>
+        <div class="oc-echarts-detail-modal__content"></div>
+      </div>
     </div>
   `;
 
-  const body = root.querySelector(".oc-echarts-detail-modal__body");
+  const content = root.querySelector(".oc-echarts-detail-modal__content");
   const closeButton = root.querySelector(".oc-echarts-detail-modal__close");
+  const askButton = root.querySelector(
+    '.oc-echarts-detail-modal__action[data-variant="primary"]',
+  );
+  const insertButton = root.querySelector(
+    '.oc-echarts-detail-modal__action[data-variant="secondary"]',
+  );
 
   const closeModal = () => {
     root.hidden = true;
@@ -209,35 +251,56 @@ function ensureDetailModal(uiText) {
   });
 
   document.body.append(root);
-  detailModalElements = { root, body, closeModal };
+  detailModalElements = {
+    root,
+    content,
+    closeModal,
+    askButton,
+    insertButton,
+  };
   return detailModalElements;
 }
 
 export function openChartDetailModal(params, uiText) {
   const modal = ensureDetailModal(uiText);
   const detailRows = extractClickDetailRows(params, uiText);
-  const rawData = stringifyDetailJson(params.data);
-  const rawParams = stringifyDetailJson({
-    componentType: params.componentType,
-    componentSubType: params.componentSubType,
-    seriesType: params.seriesType,
-    seriesIndex: params.seriesIndex,
-    seriesName: params.seriesName,
-    name: params.name,
-    value: params.value,
-    dataIndex: params.dataIndex,
-    dataType: params.dataType,
-    color: params.color,
-    dimensionNames: params.dimensionNames,
-    encode: params.encode,
-    percent: params.percent,
-  });
+  const promptText = buildDetailPrompt(params, uiText);
 
-  modal.body.innerHTML = `
-    ${buildDetailCardsHtml(detailRows, uiText)}
-    ${buildDetailSectionHtml(uiText.detailRawData, rawData)}
-    ${buildDetailSectionHtml(uiText.detailRawParams, rawParams)}
-  `;
+  // const rawData = stringifyDetailJson(params.data);
+  // const rawParams = stringifyDetailJson({
+  //   componentType: params.componentType,
+  //   componentSubType: params.componentSubType,
+  //   seriesType: params.seriesType,
+  //   seriesIndex: params.seriesIndex,
+  //   seriesName: params.seriesName,
+  //   name: params.name,
+  //   value: params.value,
+  //   dataIndex: params.dataIndex,
+  //   dataType: params.dataType,
+  //   color: params.color,
+  //   dimensionNames: params.dimensionNames,
+  //   encode: params.encode,
+  //   percent: params.percent,
+  // });
+
+  modal.content.innerHTML = buildDetailCardsHtml(detailRows, uiText);
+
+  const bindAction = (button, action, label) => {
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+    button.textContent = label;
+    button.onclick = () => {
+      void action(promptText).then((ok) => {
+        if (ok) {
+          modal.closeModal();
+        }
+      });
+    };
+  };
+
+  bindAction(modal.askButton, sendPromptToChat, uiText.detailActionAsk);
+  bindAction(modal.insertButton, insertPromptIntoChatBox, uiText.detailActionInsert);
 
   modal.root.hidden = false;
 }
