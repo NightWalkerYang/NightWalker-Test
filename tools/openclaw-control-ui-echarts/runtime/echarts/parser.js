@@ -638,9 +638,9 @@ function compileSimpleFunctionFallback(source, path) {
     return undefined;
   }
 
-  const index = Number(inverse ? match[3] : match[2]);
-  const operator = inverse ? match[2] : match[3];
-  const scalar = Number(inverse ? match[1] : match[4]);
+  const index = Number(inverse ? match[4] : match[2]);
+  const operator = match[3];
+  const scalar = Number(inverse ? match[2] : match[4]);
 
   return function compiledSymbolSize(value) {
     const sample = Array.isArray(value) ? Number(value[index]) : Number.NaN;
