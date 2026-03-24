@@ -250,6 +250,50 @@ function createJsPlaceholder(index) {
   return `${JS_PLACEHOLDER_PREFIX}${index}__`;
 }
 
+function scanSupportedArrayExpression(source, start) {
+  if (source[start] !== "[") {
+    return null;
+  }
+
+  let cursor = scanBalanced(source, start, "[", "]");
+  let matched = false;
+
+  while (cursor < source.length) {
+    let nextCursor = skipWhitespace(source, cursor);
+    if (source[nextCursor] !== ".") {
+      break;
+    }
+
+    nextCursor += 1;
+    const nameStart = nextCursor;
+    if (!isIdentifierStart(source[nextCursor])) {
+      break;
+    }
+
+    nextCursor += 1;
+    while (nextCursor < source.length && isIdentifierChar(source[nextCursor])) {
+      nextCursor += 1;
+    }
+
+    const methodName = source.slice(nameStart, nextCursor);
+    nextCursor = skipWhitespace(source, nextCursor);
+    if (source[nextCursor] !== "(") {
+      break;
+    }
+
+    const callEnd = scanBalanced(source, nextCursor, "(", ")");
+    const argsSource = source.slice(nextCursor + 1, callEnd - 1).trim();
+    if (methodName !== "reverse" || argsSource) {
+      break;
+    }
+
+    cursor = callEnd;
+    matched = true;
+  }
+
+  return matched ? cursor : null;
+}
+
 function extractJsOnlyConstructs(source) {
   let result = "";
   let cursor = 0;
@@ -308,11 +352,173 @@ function extractJsOnlyConstructs(source) {
       continue;
     }
 
+    if (char === "[") {
+      const endIndex = scanSupportedArrayExpression(source, cursor);
+      if (endIndex !== null) {
+        const token = createJsPlaceholder(placeholders.size);
+        placeholders.set(token, {
+          type: "expression",
+          source: source.slice(cursor, endIndex),
+        });
+        result += JSON.stringify(token);
+        cursor = endIndex;
+        continue;
+      }
+    }
+
     result += char;
     cursor += 1;
   }
 
   return { sanitizedSource: result, placeholders };
+}
+
+function countLeadingIndent(text) {
+  let indent = 0;
+  while (indent < text.length && /\s/.test(text[indent])) {
+    indent += 1;
+  }
+  return indent;
+}
+
+function looksLikePropertyLine(text) {
+  return /^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_$][\w$-]*)\s*:/.test(text);
+}
+
+function matchingCloserFor(openChar) {
+  if (openChar === "{") {
+    return "}";
+  }
+  if (openChar === "[") {
+    return "]";
+  }
+  return "";
+}
+
+function repairLikelyMissingClosers(source) {
+  const lines = source.split("\n");
+  const repairedLines = [];
+  const stack = [];
+  let changed = false;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const rawLine = lines[lineIndex];
+    const trimmedStart = rawLine.trimStart();
+    const indent = countLeadingIndent(rawLine);
+
+    if (trimmedStart && looksLikePropertyLine(trimmedStart)) {
+      let closers = "";
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        if (top.lineIndex === lineIndex || !top.openedAfterColon || top.indent < indent) {
+          break;
+        }
+        const closer = matchingCloserFor(top.kind);
+        if (!closer) {
+          break;
+        }
+        closers += closer;
+        stack.pop();
+      }
+
+      if (closers) {
+        repairedLines.push(`${" ".repeat(indent)}${closers},`);
+        changed = true;
+      }
+    }
+
+    let cursor = 0;
+    let repairedLine = "";
+    let lastSignificantChar = "";
+
+    while (cursor < rawLine.length) {
+      const char = rawLine[cursor];
+      const next = rawLine[cursor + 1];
+
+      if (char === "'" || char === '"' || char === "`") {
+        const endIndex = scanQuotedString(rawLine, cursor, char);
+        repairedLine += rawLine.slice(cursor, endIndex);
+        lastSignificantChar = char;
+        cursor = endIndex;
+        continue;
+      }
+
+      if (char === "/" && next === "/") {
+        repairedLine += rawLine.slice(cursor);
+        cursor = rawLine.length;
+        continue;
+      }
+
+      if (char === "/" && next === "*") {
+        const endIndex = scanBlockComment(rawLine, cursor);
+        repairedLine += rawLine.slice(cursor, endIndex);
+        cursor = endIndex;
+        continue;
+      }
+
+      if (char === "{" || char === "[" || char === "(") {
+        stack.push({
+          kind: char,
+          indent,
+          lineIndex,
+          openedAfterColon: lastSignificantChar === ":",
+        });
+        repairedLine += char;
+        lastSignificantChar = char;
+        cursor += 1;
+        continue;
+      }
+
+      if (char === "}" || char === "]" || char === ")") {
+        while (stack.length > 0) {
+          const top = stack[stack.length - 1];
+          const expectedCloser = matchingCloserFor(top.kind) || (top.kind === "(" ? ")" : "");
+          if (expectedCloser === char) {
+            stack.pop();
+            break;
+          }
+
+          if (!expectedCloser) {
+            break;
+          }
+
+          repairedLine += expectedCloser;
+          stack.pop();
+          changed = true;
+        }
+
+        repairedLine += char;
+        lastSignificantChar = char;
+        cursor += 1;
+        continue;
+      }
+
+      repairedLine += char;
+      if (!/\s/.test(char)) {
+        lastSignificantChar = char;
+      }
+      cursor += 1;
+    }
+
+    repairedLines.push(repairedLine);
+  }
+
+  let trailingClosers = "";
+  while (stack.length > 0) {
+    const top = stack.pop();
+    const closer = matchingCloserFor(top.kind);
+    if (!closer) {
+      continue;
+    }
+    trailingClosers += closer;
+    changed = true;
+  }
+
+  if (trailingClosers) {
+    repairedLines.push(trailingClosers);
+  }
+
+  return changed ? repairedLines.join("\n") : source;
 }
 
 function splitTopLevelCommaSeparated(source) {
@@ -478,6 +684,49 @@ function parseLooseJsValue(source, json5, echarts) {
   return reviveJsPlaceholders(parsedValue, placeholders, echarts, json5, []);
 }
 
+function materializeSimpleExpression(source, json5, echarts) {
+  const trimmed = source.trim();
+  const literalEnd = scanBalanced(trimmed, 0, "[", "]");
+  const literalSource = trimmed.slice(0, literalEnd);
+  let cursor = literalEnd;
+  const operations = [];
+
+  while (cursor < trimmed.length) {
+    cursor = skipWhitespace(trimmed, cursor);
+    if (trimmed[cursor] !== ".") {
+      break;
+    }
+
+    cursor += 1;
+    const nameStart = cursor;
+    while (cursor < trimmed.length && isIdentifierChar(trimmed[cursor])) {
+      cursor += 1;
+    }
+    const methodName = trimmed.slice(nameStart, cursor);
+    cursor = skipWhitespace(trimmed, cursor);
+    if (trimmed[cursor] !== "(") {
+      break;
+    }
+
+    const callEnd = scanBalanced(trimmed, cursor, "(", ")");
+    const argsSource = trimmed.slice(cursor + 1, callEnd - 1).trim();
+    if (methodName !== "reverse" || argsSource) {
+      break;
+    }
+
+    operations.push(methodName);
+    cursor = callEnd;
+  }
+
+  let value = parseLooseJsValue(literalSource, json5, echarts);
+  for (const methodName of operations) {
+    if (methodName === "reverse" && Array.isArray(value)) {
+      value = [...value].reverse();
+    }
+  }
+  return value;
+}
+
 function materializeGraphicConstructor(source, echarts, json5) {
   const prefix = "new echarts.graphic.";
   if (!source.startsWith(prefix)) {
@@ -542,6 +791,9 @@ function reviveJsPlaceholders(value, placeholders, echarts, json5, path) {
   if (placeholder.type === "function") {
     return compileSimpleFunctionFallback(placeholder.source, path);
   }
+  if (placeholder.type === "expression") {
+    return materializeSimpleExpression(placeholder.source, json5, echarts);
+  }
   if (placeholder.type === "graphic-constructor") {
     return materializeGraphicConstructor(placeholder.source, echarts, json5);
   }
@@ -556,16 +808,21 @@ export function parseEchartsPayload(raw, json5, echarts) {
 
   const preparedSource = wrapBareObjectLiteral(normalized);
   const { sanitizedSource, placeholders } = extractJsOnlyConstructs(preparedSource);
-  const parsers = [() => JSON.parse(sanitizedSource), () => json5.parse(sanitizedSource)];
+  const repairedSource = repairLikelyMissingClosers(sanitizedSource);
+  const sourceVariants =
+    repairedSource === sanitizedSource ? [sanitizedSource] : [sanitizedSource, repairedSource];
 
   let lastError = null;
-  for (const parse of parsers) {
-    try {
-      const payload = unwrapParsedPayload(parse());
-      payload.option = reviveJsPlaceholders(payload.option, placeholders, echarts, json5, []);
-      return payload;
-    } catch (error) {
-      lastError = error;
+  for (const candidateSource of sourceVariants) {
+    const parsers = [() => JSON.parse(candidateSource), () => json5.parse(candidateSource)];
+    for (const parse of parsers) {
+      try {
+        const payload = unwrapParsedPayload(parse());
+        payload.option = reviveJsPlaceholders(payload.option, placeholders, echarts, json5, []);
+        return payload;
+      } catch (error) {
+        lastError = error;
+      }
     }
   }
 
