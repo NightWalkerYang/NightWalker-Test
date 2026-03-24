@@ -1,5 +1,20 @@
 import { waitForFrame } from "./shared.js";
 
+function sanitizeComposerText(value) {
+  const normalized = String(value ?? "")
+    .replace(/\r\n?/g, "\n")
+    .normalize("NFC");
+
+  let output = "";
+  for (const char of normalized) {
+    const code = char.charCodeAt(0);
+    if (code === 9 || code === 10 || (code >= 32 && code !== 127)) {
+      output += char;
+    }
+  }
+  return output;
+}
+
 function findChatComposerElements() {
   const textarea = document.querySelector(".agent-chat__input > textarea");
   const sendButton = Array.from(
@@ -9,14 +24,15 @@ function findChatComposerElements() {
 }
 
 function setComposerDraft(textarea, value) {
+  const nextValue = sanitizeComposerText(value);
   const descriptor = Object.getOwnPropertyDescriptor(
     window.HTMLTextAreaElement.prototype,
     "value",
   );
   if (descriptor?.set) {
-    descriptor.set.call(textarea, value);
+    descriptor.set.call(textarea, nextValue);
   } else {
-    textarea.value = value;
+    textarea.value = nextValue;
   }
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
   textarea.dispatchEvent(new Event("change", { bubbles: true }));
@@ -38,10 +54,15 @@ export async function insertPromptIntoChatBox(promptText) {
     return false;
   }
 
+  const sanitizedPrompt = sanitizeComposerText(promptText);
+  if (!sanitizedPrompt.trim()) {
+    return false;
+  }
+
   const current = textarea.value || "";
   const next = current.trim()
-    ? `${current.replace(/\s+$/, "")}\n\n${promptText}`
-    : promptText;
+    ? `${current.replace(/\s+$/, "")}\n\n${sanitizedPrompt}`
+    : sanitizedPrompt;
   setComposerDraft(textarea, next);
   focusComposer(textarea);
   await waitForFrame(1);
@@ -54,8 +75,13 @@ export async function sendPromptToChat(promptText) {
     return false;
   }
 
+  const sanitizedPrompt = sanitizeComposerText(promptText);
+  if (!sanitizedPrompt.trim()) {
+    return false;
+  }
+
   const previousDraft = textarea.value || "";
-  setComposerDraft(textarea, promptText);
+  setComposerDraft(textarea, sanitizedPrompt);
   focusComposer(textarea);
   await waitForFrame(2);
 
@@ -67,8 +93,8 @@ export async function sendPromptToChat(promptText) {
     setComposerDraft(
       textarea,
       previousDraft.trim()
-        ? `${previousDraft.replace(/\s+$/, "")}\n\n${promptText}`
-        : promptText,
+        ? `${previousDraft.replace(/\s+$/, "")}\n\n${sanitizedPrompt}`
+        : sanitizedPrompt,
     );
     focusComposer(textarea);
     return false;
