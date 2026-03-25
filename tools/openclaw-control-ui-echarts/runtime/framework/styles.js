@@ -95,8 +95,8 @@ export function getFrameworkStyles() {
       position: relative;
       z-index: 1;
       order: 3;
-      min-height: 72px;
-      padding: 18px 70px 18px 18px;
+      min-height: 56px;
+      padding: 14px 64px 14px 16px;
       border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
       border-radius: 20px;
       background:
@@ -163,8 +163,8 @@ export function getFrameworkStyles() {
     }
 
     .agent-chat__toolbar {
-      position: relative;
-      z-index: 1;
+      position: static;
+      z-index: auto;
       order: 1;
       display: flex;
       justify-content: center;
@@ -223,8 +223,8 @@ export function getFrameworkStyles() {
 
     .agent-chat__token-count {
       position: absolute;
-      left: 18px;
-      bottom: 16px;
+      left: 16px;
+      bottom: 12px;
       z-index: 2;
       display: inline-flex;
       align-items: center;
@@ -242,8 +242,8 @@ export function getFrameworkStyles() {
 
     .chat-send-btn {
       position: absolute;
-      right: 14px;
-      bottom: 14px;
+      right: 10px;
+      bottom: 8px;
       z-index: 3;
       width: 40px;
       height: 40px;
@@ -465,18 +465,18 @@ export function getFrameworkStyles() {
       }
 
       .agent-chat__input > textarea {
-        min-height: 68px;
-        padding-right: 64px;
+        min-height: 54px;
+        padding-right: 60px;
       }
 
       .agent-chat__token-count {
-        left: 16px;
-        bottom: 14px;
+        left: 14px;
+        bottom: 11px;
       }
 
       .chat-send-btn {
-        right: 12px;
-        bottom: 12px;
+        right: 9px;
+        bottom: 7px;
       }
     }
 

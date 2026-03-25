@@ -18,10 +18,12 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain("background: transparent;");
     expect(styles).toContain(".chat-attachments-preview");
     expect(styles).toContain(".agent-chat__toolbar");
+    expect(styles).toContain("position: static;");
     expect(styles).toContain("justify-content: center;");
     expect(styles).toContain("display: contents;");
     expect(styles).toContain(".chat-send-btn");
     expect(styles).toContain("position: absolute;");
+    expect(styles).toContain("min-height: 56px;");
     expect(styles).toContain(".agent-chat__input-btn");
   });
 });
