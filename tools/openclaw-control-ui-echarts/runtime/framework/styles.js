@@ -14,81 +14,6 @@ export function getFrameworkStyles() {
       display: none;
     }
 
-    /* Focus mode: keep only the chat thread, compose box, and native exit button. */
-    .shell--chat-focus {
-      grid-template-columns: 0 minmax(0, 1fr) !important;
-      grid-template-rows: 0 minmax(0, 1fr) !important;
-    }
-
-    .shell--chat-focus .topbar,
-    .shell--chat-focus .shell-nav,
-    .shell--chat-focus .shell-nav-backdrop,
-    .shell--chat-focus .content-header {
-      display: none !important;
-    }
-
-    .shell--chat-focus .content,
-    .shell--chat-focus .content.content--chat {
-      height: 100%;
-      min-height: 0;
-      padding: 0 !important;
-    }
-
-    .shell--chat-focus .card.chat {
-      min-height: 100%;
-      height: 100%;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: none !important;
-      border-radius: 0 !important;
-      box-shadow: none !important;
-      background: transparent !important;
-    }
-
-    .shell--chat-focus .agent-chat__search-bar,
-    .shell--chat-focus .agent-chat__pinned,
-    .shell--chat-focus .chat-queue,
-    .shell--chat-focus .context-notice,
-    .shell--chat-focus .compaction-indicator,
-    .shell--chat-focus .chat-new-messages,
-    .shell--chat-focus .chat-sidebar,
-    .shell--chat-focus resizable-divider {
-      display: none !important;
-    }
-
-    .shell--chat-focus .chat-split-container {
-      flex: 1 1 auto;
-      min-height: 0;
-      height: 100%;
-    }
-
-    .shell--chat-focus .chat-main {
-      min-width: 0;
-      width: 100%;
-      flex: 1 1 100% !important;
-    }
-
-    .shell--chat-focus .chat-thread {
-      padding: 22px 18px 8px !important;
-      border-radius: 0 !important;
-    }
-
-    .shell--chat-focus .chat-thread-inner {
-      padding-right: 42px;
-    }
-
-    .shell--chat-focus .chat-focus-exit {
-      position: fixed;
-      top: calc(env(safe-area-inset-top, 0px) + 12px);
-      right: calc(env(safe-area-inset-right, 0px) + 12px);
-      z-index: 120;
-    }
-
-    .shell--chat-focus .agent-chat__input {
-      margin: 0 18px calc(env(safe-area-inset-bottom, 0px) + 18px) !important;
-      flex-shrink: 0;
-    }
-
     .agent-chat__input {
       position: relative;
       overflow: hidden;
@@ -120,12 +45,35 @@ export function getFrameworkStyles() {
       pointer-events: none;
     }
 
+    .agent-chat__input::after {
+      content: "";
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      width: 84px;
+      height: 84px;
+      border-radius: 999px;
+      background: radial-gradient(circle, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%);
+      opacity: 0.8;
+      pointer-events: none;
+      filter: blur(6px);
+    }
+
     .agent-chat__input > textarea {
+      position: relative;
+      z-index: 1;
       letter-spacing: 0.01em;
       color: var(--text-strong, var(--text));
+      text-wrap: pretty;
+    }
+
+    .agent-chat__input > textarea::placeholder {
+      color: color-mix(in srgb, var(--text) 48%, transparent);
     }
 
     .agent-chat__toolbar {
+      position: relative;
+      z-index: 1;
       border-top-color: color-mix(in srgb, var(--border) 62%, transparent);
       background:
         linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 92%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 86%, transparent));
@@ -142,6 +90,8 @@ export function getFrameworkStyles() {
       background: color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 78%, transparent);
       color: color-mix(in srgb, var(--text) 78%, transparent);
       box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
 
     :root[data-theme-mode="light"] .agent-chat__input-btn,
@@ -171,6 +121,7 @@ export function getFrameworkStyles() {
       background: color-mix(in srgb, var(--panel, var(--card)) 82%, transparent);
       color: color-mix(in srgb, var(--text) 72%, transparent);
       line-height: 22px;
+      border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
     }
 
     .chat-send-btn {

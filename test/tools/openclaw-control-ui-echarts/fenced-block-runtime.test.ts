@@ -50,7 +50,6 @@ describe("zero-intrusive fenced-block runtime", () => {
       .map((element) => element.textContent || "")
       .join("\n");
 
-    expect(styleText).toContain(".shell--chat-focus .topbar");
     expect(styleText).toContain(".agent-chat__input");
     expect(styleText).toContain(".oc-test-adapter { color: red; }");
   });

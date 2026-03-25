@@ -2,23 +2,18 @@ import { describe, expect, it } from "vitest";
 import { getFrameworkStyles } from "../../../tools/openclaw-control-ui-echarts/runtime/framework/styles.js";
 
 describe("zero-intrusive framework styles", () => {
-  it("collapses focus mode into a pure chat canvas", () => {
+  it("does not override native focus mode shell selectors", () => {
     const styles = getFrameworkStyles();
 
-    expect(styles).toContain(".shell--chat-focus .topbar");
-    expect(styles).toContain(".shell--chat-focus .content-header");
-    expect(styles).toContain(".shell--chat-focus .agent-chat__search-bar");
-    expect(styles).toContain(".shell--chat-focus .chat-queue");
-    expect(styles).toContain(".shell--chat-focus .chat-sidebar");
-    expect(styles).toContain(".shell--chat-focus resizable-divider");
-    expect(styles).toContain(".shell--chat-focus .card.chat");
-    expect(styles).toContain("grid-template-rows: 0 minmax(0, 1fr) !important");
+    expect(styles).not.toContain(".shell--chat-focus .topbar");
+    expect(styles).not.toContain(".shell--chat-focus .chat-sidebar");
   });
 
   it("restyles the native chat composer without changing its footprint selectors", () => {
     const styles = getFrameworkStyles();
 
     expect(styles).toContain(".agent-chat__input");
+    expect(styles).toContain(".agent-chat__input::after");
     expect(styles).toContain(".agent-chat__toolbar");
     expect(styles).toContain(".chat-send-btn");
     expect(styles).toContain(".agent-chat__input-btn");
