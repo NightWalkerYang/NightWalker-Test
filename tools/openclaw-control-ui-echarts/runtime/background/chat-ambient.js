@@ -100,43 +100,12 @@ function createAmbientSvgMarkup(id) {
           d="M-60 626C178 500 388 490 592 548C784 600 954 562 1136 420C1292 300 1450 252 1632 300"
           filter="url(#${id}-glow-orbit)"
         ></path>
-        <circle class="oc-chat-ambient__node oc-chat-ambient__node--lg" cx="478" cy="546" r="4.6"></circle>
-        <circle class="oc-chat-ambient__node" cx="794" cy="516" r="3.6"></circle>
-        <circle class="oc-chat-ambient__node" cx="1116" cy="422" r="4"></circle>
-        <circle class="oc-chat-ambient__node" cx="1450" cy="252" r="4.2"></circle>
 
         <path
           class="oc-chat-ambient__orbit oc-chat-ambient__orbit--low"
           d="M44 760C224 664 402 656 556 688C710 720 856 748 1036 706C1204 666 1344 568 1490 580"
           filter="url(#${id}-glow-orbit)"
         ></path>
-        <circle class="oc-chat-ambient__node oc-chat-ambient__node--soft" cx="356" cy="668" r="3.8"></circle>
-        <circle class="oc-chat-ambient__node oc-chat-ambient__node--soft" cx="906" cy="730" r="4.4"></circle>
-        <circle class="oc-chat-ambient__node oc-chat-ambient__node--soft" cx="1322" cy="582" r="4.2"></circle>
-      </g>
-
-      <g class="oc-chat-ambient__trendline">
-        <polyline
-          class="oc-chat-ambient__trend"
-          points="662,726 704,690 736,692 764,650 790,656 816,624 846,630 872,586 900,596 928,560 954,570 980,534 1010,548 1038,506 1068,522 1094,488 1128,504 1160,470 1192,478 1224,450 1260,458 1292,426 1328,438 1362,402 1394,414 1426,392 1458,406 1490,374 1520,388"
-          filter="url(#${id}-glow-orbit)"
-        ></polyline>
-        <circle class="oc-chat-ambient__spark oc-chat-ambient__spark--bright" cx="790" cy="656" r="1.8"></circle>
-        <circle class="oc-chat-ambient__spark oc-chat-ambient__spark--bright" cx="980" cy="534" r="2"></circle>
-        <circle class="oc-chat-ambient__spark oc-chat-ambient__spark--bright" cx="1224" cy="450" r="1.8"></circle>
-        <circle class="oc-chat-ambient__spark oc-chat-ambient__spark--bright" cx="1490" cy="374" r="2.2"></circle>
-      </g>
-
-      <g class="oc-chat-ambient__particles">
-        <circle class="oc-chat-ambient__spark" cx="108" cy="370" r="2.2"></circle>
-        <circle class="oc-chat-ambient__spark" cx="202" cy="622" r="2.8"></circle>
-        <circle class="oc-chat-ambient__spark" cx="322" cy="340" r="1.8"></circle>
-        <circle class="oc-chat-ambient__spark" cx="530" cy="792" r="2"></circle>
-        <circle class="oc-chat-ambient__spark" cx="726" cy="494" r="1.7"></circle>
-        <circle class="oc-chat-ambient__spark" cx="958" cy="332" r="2"></circle>
-        <circle class="oc-chat-ambient__spark" cx="1178" cy="704" r="2.2"></circle>
-        <circle class="oc-chat-ambient__spark" cx="1414" cy="324" r="1.8"></circle>
-        <circle class="oc-chat-ambient__spark" cx="1548" cy="514" r="1.6"></circle>
       </g>
     </svg>
   `;

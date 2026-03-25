@@ -65,10 +65,6 @@ export function getFrameworkStyles() {
       --oc-chat-trace-warm-end: rgba(255, 243, 215, 0.82);
       --oc-chat-orbit: rgba(255, 245, 228, 0.44);
       --oc-chat-orbit-soft: rgba(172, 216, 240, 0.3);
-      --oc-chat-node: rgba(255, 249, 238, 0.92);
-      --oc-chat-node-soft: rgba(182, 224, 246, 0.72);
-      --oc-chat-trend: rgba(242, 247, 255, 0.72);
-      --oc-chat-particle: rgba(255, 250, 242, 0.88);
       background:
         radial-gradient(circle at 14% 84%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 24%),
         radial-gradient(circle at 82% 34%, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 24%),
@@ -95,10 +91,6 @@ export function getFrameworkStyles() {
       --oc-chat-trace-warm-end: rgba(252, 238, 207, 0.68);
       --oc-chat-orbit: rgba(255, 244, 221, 0.3);
       --oc-chat-orbit-soft: rgba(152, 204, 235, 0.22);
-      --oc-chat-node: rgba(255, 248, 237, 0.84);
-      --oc-chat-node-soft: rgba(171, 218, 246, 0.62);
-      --oc-chat-trend: rgba(231, 239, 249, 0.58);
-      --oc-chat-particle: rgba(255, 250, 242, 0.76);
     }
 
     .content--chat > :not(.oc-chat-ambient),
@@ -131,44 +123,66 @@ export function getFrameworkStyles() {
 
     .oc-chat-ambient__bands {
       transform-origin: 50% 62%;
-      will-change: transform, opacity;
+      will-change: transform, opacity, filter;
     }
 
     .oc-chat-ambient__bands--back {
       opacity: 0.98;
-      filter: blur(16px) saturate(1.08);
-      animation: oc-chat-ambient-sway 24s ease-in-out infinite alternate;
+      filter: blur(30px) saturate(1.08);
+      animation:
+        oc-chat-ambient-sway 18s ease-in-out infinite alternate,
+        oc-chat-ambient-blur-pulse 9s ease-in-out infinite alternate;
     }
 
     .oc-chat-ambient__bands--front {
-      opacity: 0.9;
-      filter: blur(6px);
-      animation: oc-chat-ambient-glide 30s ease-in-out infinite alternate-reverse;
+      opacity: 0.92;
+      filter: blur(14px);
+      animation:
+        oc-chat-ambient-glide 14s ease-in-out infinite alternate-reverse,
+        oc-chat-ambient-blur-pulse 7s ease-in-out infinite alternate-reverse;
+    }
+
+    .oc-chat-ambient__band--primary {
+      animation: oc-chat-ambient-ribbon-flow 12s ease-in-out infinite alternate;
+    }
+
+    .oc-chat-ambient__band--secondary {
+      animation: oc-chat-ambient-ribbon-flow-alt 16s ease-in-out infinite alternate;
+    }
+
+    .oc-chat-ambient__band--accent {
+      animation: oc-chat-ambient-ribbon-flow 10s ease-in-out infinite alternate-reverse;
     }
 
     .oc-chat-ambient__band,
     .oc-chat-ambient__thread,
-    .oc-chat-ambient__orbit,
-    .oc-chat-ambient__trend {
+    .oc-chat-ambient__orbit {
       fill: none;
       stroke-linecap: round;
       stroke-linejoin: round;
+      transform-box: fill-box;
+      transform-origin: center;
     }
 
     .oc-chat-ambient__thread {
       stroke-width: 3;
-      opacity: 0.92;
+      opacity: 0.88;
+      filter: blur(2px);
     }
 
     .oc-chat-ambient__thread--cool,
     .oc-chat-ambient__thread--dash {
       stroke-dasharray: 10 14;
-      animation: oc-chat-ambient-trace 18s linear infinite;
+      animation:
+        oc-chat-ambient-trace 16s linear infinite,
+        oc-chat-ambient-thread-drift 8s ease-in-out infinite alternate;
     }
 
     .oc-chat-ambient__thread--warm {
       stroke-dasharray: 6 18;
-      animation: oc-chat-ambient-trace 22s linear infinite reverse;
+      animation:
+        oc-chat-ambient-trace 20s linear infinite reverse,
+        oc-chat-ambient-thread-drift 10s ease-in-out infinite alternate-reverse;
     }
 
     .oc-chat-ambient__thread--dash {
@@ -180,46 +194,13 @@ export function getFrameworkStyles() {
     .oc-chat-ambient__orbit {
       stroke: var(--oc-chat-orbit);
       stroke-width: 1.8;
-      opacity: 0.7;
+      opacity: 0.34;
+      filter: blur(4px);
     }
 
     .oc-chat-ambient__orbit--low {
       stroke: var(--oc-chat-orbit-soft);
-      opacity: 0.62;
-    }
-
-    .oc-chat-ambient__trend {
-      stroke: var(--oc-chat-trend);
-      stroke-width: 2.1;
-      filter: drop-shadow(0 0 18px color-mix(in srgb, white 54%, transparent));
-      opacity: 0.78;
-      animation: oc-chat-ambient-trend 14s ease-in-out infinite alternate;
-    }
-
-    .oc-chat-ambient__node {
-      fill: var(--oc-chat-node);
-      opacity: 0.92;
-      animation: oc-chat-ambient-pulse 4.8s ease-in-out infinite;
-    }
-
-    .oc-chat-ambient__node--soft {
-      fill: var(--oc-chat-node-soft);
-      animation-duration: 5.8s;
-    }
-
-    .oc-chat-ambient__node--lg {
-      filter: drop-shadow(0 0 10px color-mix(in srgb, white 42%, transparent));
-    }
-
-    .oc-chat-ambient__spark {
-      fill: var(--oc-chat-particle);
-      opacity: 0.84;
-      animation: oc-chat-ambient-twinkle 5.6s ease-in-out infinite;
-    }
-
-    .oc-chat-ambient__spark--bright {
-      filter: drop-shadow(0 0 10px color-mix(in srgb, white 58%, transparent));
-      animation-duration: 4.2s;
+      opacity: 0.24;
     }
 
     .content--chat .callout.danger,
@@ -676,9 +657,7 @@ export function getFrameworkStyles() {
       .oc-chat-ambient__wash,
       .oc-chat-ambient__bands,
       .oc-chat-ambient__thread,
-      .oc-chat-ambient__trend,
-      .oc-chat-ambient__node,
-      .oc-chat-ambient__spark {
+      .oc-chat-ambient__band {
         animation: none;
       }
     }
@@ -699,15 +678,15 @@ export function getFrameworkStyles() {
 
     @keyframes oc-chat-ambient-glide {
       0% {
-        transform: translate3d(2%, 1%, 0) scale(1);
+        transform: translate3d(4%, 2%, 0) scale(1.01);
       }
 
       50% {
-        transform: translate3d(-1.4%, -1.2%, 0) scale(1.02);
+        transform: translate3d(-2.8%, -2.2%, 0) scale(1.05);
       }
 
       100% {
-        transform: translate3d(-2.8%, -1.8%, 0) scale(1.01);
+        transform: translate3d(-5.2%, -3.4%, 0) scale(1.03);
       }
     }
 
@@ -721,39 +700,53 @@ export function getFrameworkStyles() {
       }
     }
 
-    @keyframes oc-chat-ambient-trend {
+    @keyframes oc-chat-ambient-blur-pulse {
       0% {
-        transform: translate3d(0, 3px, 0);
+        opacity: 0.76;
+        filter: blur(20px) saturate(1.02);
       }
 
       100% {
-        transform: translate3d(0, -2px, 0);
-      }
-    }
-
-    @keyframes oc-chat-ambient-pulse {
-      0%,
-      100% {
-        opacity: 0.66;
-        transform: scale(0.9);
-      }
-
-      50% {
         opacity: 1;
-        transform: scale(1.08);
+        filter: blur(36px) saturate(1.12);
       }
     }
 
-    @keyframes oc-chat-ambient-twinkle {
-      0%,
-      100% {
-        opacity: 0.26;
-        transform: scale(0.9);
+    @keyframes oc-chat-ambient-ribbon-flow {
+      0% {
+        transform: translate3d(-2.4%, 1.8%, 0) scale(1);
       }
 
       50% {
-        opacity: 0.92;
-        transform: scale(1.12);
+        transform: translate3d(2%, -1.4%, 0) scale(1.06);
+      }
+
+      100% {
+        transform: translate3d(4.6%, -3.2%, 0) scale(1.03);
+      }
+    }
+
+    @keyframes oc-chat-ambient-ribbon-flow-alt {
+      0% {
+        transform: translate3d(2.6%, 1.4%, 0) scale(1.01);
+      }
+
+      50% {
+        transform: translate3d(-1.8%, -2.6%, 0) scale(1.05);
+      }
+
+      100% {
+        transform: translate3d(-4.8%, -1%, 0) scale(1.02);
+      }
+    }
+
+    @keyframes oc-chat-ambient-thread-drift {
+      0% {
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+
+      100% {
+        transform: translate3d(1.6%, -1.4%, 0) scale(1.02);
       }
     }
 
