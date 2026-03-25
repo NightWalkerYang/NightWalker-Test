@@ -138,9 +138,17 @@ function createToggleButton(wrapper) {
   return button;
 }
 
+function clearRunToggles(groups) {
+  for (const group of groups) {
+    for (const button of group.querySelectorAll(TOGGLE_SELECTOR)) {
+      button.remove();
+    }
+  }
+}
+
 function mountToggle(wrapper, lastGroup) {
   const bubble = lastGroup.querySelector(".chat-bubble");
-  if (!bubble || bubble.querySelector(TOGGLE_SELECTOR)) {
+  if (!bubble) {
     return;
   }
 
@@ -167,6 +175,7 @@ function wrapRun(parent, groups) {
     wrapper.append(group);
   }
 
+  clearRunToggles(groups);
   mountToggle(wrapper, groups[groups.length - 1]);
   setClusterExpanded(wrapper, expanded);
 }

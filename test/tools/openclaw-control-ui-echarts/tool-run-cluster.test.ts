@@ -113,6 +113,14 @@ describe("zero-intrusive tool run cluster", () => {
     expect(groups[1]?.hidden).toBe(true);
     expect(groups[2]?.hidden).toBe(false);
     expect(groups[2]?.querySelector(".oc-tool-run-cluster__toggle")).toBeTruthy();
+
+    const toggle = groups[2]?.querySelector<HTMLButtonElement>(".oc-tool-run-cluster__toggle");
+    toggle?.click();
+
+    expect(cluster?.getAttribute("data-oc-tool-run-open")).toBe("true");
+    expect(groups[0]?.hidden).toBe(false);
+    expect(groups[1]?.hidden).toBe(false);
+    expect(groups[2]?.hidden).toBe(false);
   });
 
   it("does not reschedule endlessly from its own regrouping mutations", async () => {
