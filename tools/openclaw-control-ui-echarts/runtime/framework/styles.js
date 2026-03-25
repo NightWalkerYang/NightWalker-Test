@@ -247,6 +247,11 @@ export function getFrameworkStyles() {
       margin-bottom: 0;
     }
 
+    .content--chat .chat-group[data-oc-tool-run-hidden="true"],
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-hidden="true"] {
+      display: none !important;
+    }
+
     .content--chat .chat-group[data-oc-tool-run="mid"],
     .content--chat .chat-group[data-oc-tool-run="end"],
     .shell--chat-focus .content .chat-group[data-oc-tool-run="mid"],

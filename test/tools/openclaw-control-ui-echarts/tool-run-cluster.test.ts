@@ -51,6 +51,10 @@ describe("zero-intrusive tool run cluster", () => {
     expect(firstClusterGroups[1]?.getAttribute("data-oc-tool-run")).toBe("mid");
     expect(firstClusterGroups[2]?.getAttribute("data-oc-tool-run")).toBe("mid");
     expect(firstClusterGroups[3]?.getAttribute("data-oc-tool-run")).toBe("end");
+    expect(firstClusterGroups[0]?.getAttribute("data-oc-tool-run-hidden")).toBe("true");
+    expect(firstClusterGroups[1]?.getAttribute("data-oc-tool-run-hidden")).toBe("true");
+    expect(firstClusterGroups[2]?.getAttribute("data-oc-tool-run-hidden")).toBe("true");
+    expect(firstClusterGroups[3]?.hasAttribute("data-oc-tool-run-hidden")).toBe(false);
     expect(firstClusterGroups[0]?.hidden).toBe(true);
     expect(firstClusterGroups[1]?.hidden).toBe(true);
     expect(firstClusterGroups[2]?.hidden).toBe(true);
@@ -69,6 +73,9 @@ describe("zero-intrusive tool run cluster", () => {
 
     expect(clusters[0]?.getAttribute("data-oc-tool-run-open")).toBe("true");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(firstClusterGroups[0]?.hasAttribute("data-oc-tool-run-hidden")).toBe(false);
+    expect(firstClusterGroups[1]?.hasAttribute("data-oc-tool-run-hidden")).toBe(false);
+    expect(firstClusterGroups[2]?.hasAttribute("data-oc-tool-run-hidden")).toBe(false);
     expect(firstClusterGroups[0]?.hidden).toBe(false);
     expect(firstClusterGroups[1]?.hidden).toBe(false);
     expect(firstClusterGroups[2]?.hidden).toBe(false);
@@ -99,6 +106,9 @@ describe("zero-intrusive tool run cluster", () => {
     const cluster = document.querySelector(".chat-thread > .oc-tool-run-cluster");
     const groups = Array.from(cluster?.querySelectorAll(":scope > .chat-group") || []);
     expect(groups).toHaveLength(3);
+    expect(groups[0]?.getAttribute("data-oc-tool-run-hidden")).toBe("true");
+    expect(groups[1]?.getAttribute("data-oc-tool-run-hidden")).toBe("true");
+    expect(groups[2]?.hasAttribute("data-oc-tool-run-hidden")).toBe(false);
     expect(groups[0]?.hidden).toBe(true);
     expect(groups[1]?.hidden).toBe(true);
     expect(groups[2]?.hidden).toBe(false);

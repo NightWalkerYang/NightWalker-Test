@@ -1,6 +1,7 @@
 const GROUP_SELECTOR = ".chat-group";
 const RUN_ATTR = "data-oc-tool-run";
 const RUN_EXPANDED_ATTR = "data-oc-tool-run-expanded";
+const RUN_HIDDEN_ATTR = "data-oc-tool-run-hidden";
 const CLUSTER_SELECTOR = ".oc-tool-run-cluster";
 const CLUSTER_OPEN_ATTR = "data-oc-tool-run-open";
 const TOGGLE_SELECTOR = ".oc-tool-run-cluster__toggle";
@@ -98,8 +99,14 @@ function syncClusterToggleState(wrapper) {
   for (const group of collectWrapperGroups(wrapper)) {
     if (expanded) {
       group.setAttribute(RUN_EXPANDED_ATTR, "true");
+      group.removeAttribute(RUN_HIDDEN_ATTR);
     } else {
       group.removeAttribute(RUN_EXPANDED_ATTR);
+      if (group.getAttribute(RUN_ATTR) === "end") {
+        group.removeAttribute(RUN_HIDDEN_ATTR);
+      } else {
+        group.setAttribute(RUN_HIDDEN_ATTR, "true");
+      }
     }
     group.hidden = !expanded && group.getAttribute(RUN_ATTR) !== "end";
   }
