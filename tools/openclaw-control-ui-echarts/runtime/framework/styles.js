@@ -19,6 +19,11 @@ export function getFrameworkStyles() {
       --shadow-glow: 0 0 24px var(--accent-glow);
       --primary: #7eaad4;
       --primary-foreground: #f8fbff;
+      --oc-chat-user-bubble-bg: rgba(255, 255, 255, 0.96);
+      --oc-chat-user-bubble-bg-hover: rgba(255, 255, 255, 0.99);
+      --oc-chat-user-bubble-border: rgba(223, 231, 241, 0.96);
+      --oc-chat-user-bubble-text: #26384d;
+      --oc-chat-user-bubble-shadow: 0 14px 34px rgba(64, 92, 126, 0.1);
     }
 
     :root[data-theme-mode="light"] .content--chat,
@@ -40,6 +45,11 @@ export function getFrameworkStyles() {
       --shadow-glow: 0 0 20px var(--accent-glow);
       --primary: #5d88b5;
       --primary-foreground: #ffffff;
+      --oc-chat-user-bubble-bg: rgba(255, 255, 255, 0.98);
+      --oc-chat-user-bubble-bg-hover: rgba(255, 255, 255, 1);
+      --oc-chat-user-bubble-border: rgba(220, 229, 239, 0.98);
+      --oc-chat-user-bubble-text: #233246;
+      --oc-chat-user-bubble-shadow: 0 12px 28px rgba(40, 64, 92, 0.08);
     }
 
     .content--chat,
@@ -222,6 +232,33 @@ export function getFrameworkStyles() {
       gap: 0;
       margin-left: 0;
       margin-right: 0;
+    }
+
+    .content--chat .chat-group.user .chat-bubble,
+    .shell--chat-focus .content .chat-group.user .chat-bubble {
+      background: var(--oc-chat-user-bubble-bg);
+      border-color: var(--oc-chat-user-bubble-border);
+      color: var(--oc-chat-user-bubble-text);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.88),
+        var(--oc-chat-user-bubble-shadow);
+    }
+
+    .content--chat .chat-group.user .chat-bubble:hover,
+    .shell--chat-focus .content .chat-group.user .chat-bubble:hover {
+      background: var(--oc-chat-user-bubble-bg-hover);
+      border-color: color-mix(in srgb, var(--oc-chat-user-bubble-border) 82%, white 18%);
+    }
+
+    .content--chat .chat-group.user .chat-bubble .chat-text,
+    .content--chat .chat-group.user .chat-bubble p,
+    .content--chat .chat-group.user .chat-bubble li,
+    .content--chat .chat-group.user .chat-bubble code,
+    .shell--chat-focus .content .chat-group.user .chat-bubble .chat-text,
+    .shell--chat-focus .content .chat-group.user .chat-bubble p,
+    .shell--chat-focus .content .chat-group.user .chat-bubble li,
+    .shell--chat-focus .content .chat-group.user .chat-bubble code {
+      color: inherit;
     }
 
     .oc-block-renderer {

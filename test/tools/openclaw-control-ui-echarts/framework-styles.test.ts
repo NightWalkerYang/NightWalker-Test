@@ -20,6 +20,9 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain("@keyframes oc-chat-ambient-trace");
     expect(styles).toContain(".chat-avatar");
     expect(styles).toContain("display: none;");
+    expect(styles).toContain(".chat-group.user .chat-bubble");
+    expect(styles).toContain("--oc-chat-user-bubble-bg");
+    expect(styles).toContain("color: var(--oc-chat-user-bubble-text);");
     expect(styles).toContain(".agent-chat__input");
     expect(styles).toContain("background: transparent;");
     expect(styles).toContain(".chat-attachments-preview");
