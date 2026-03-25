@@ -14,6 +14,8 @@ describe("zero-intrusive framework styles", () => {
 
     expect(styles).toContain(".content--chat");
     expect(styles).toContain("--accent: #7eaad4;");
+    expect(styles).toContain(".chat-avatar");
+    expect(styles).toContain("display: none;");
     expect(styles).toContain(".agent-chat__input");
     expect(styles).toContain("background: transparent;");
     expect(styles).toContain(".chat-attachments-preview");

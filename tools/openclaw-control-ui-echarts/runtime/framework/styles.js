@@ -51,6 +51,18 @@ export function getFrameworkStyles() {
       box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
     }
 
+    .content--chat .chat-avatar,
+    .shell--chat-focus .content .chat-avatar {
+      display: none;
+    }
+
+    .content--chat .chat-group,
+    .shell--chat-focus .content .chat-group {
+      gap: 0;
+      margin-left: 0;
+      margin-right: 0;
+    }
+
     .oc-block-renderer {
       margin: 12px 0;
       border: 1px solid rgba(127, 127, 127, 0.24);
