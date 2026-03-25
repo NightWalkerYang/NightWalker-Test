@@ -587,6 +587,7 @@ export function createFencedBlockRuntime(adaptersInput) {
   }
 
   function boot() {
+    installStyles();
     scheduleScan();
 
     const observer = new MutationObserver(() => {

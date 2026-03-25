@@ -89,6 +89,117 @@ export function getFrameworkStyles() {
       flex-shrink: 0;
     }
 
+    .agent-chat__input {
+      position: relative;
+      overflow: hidden;
+      border-color: color-mix(in srgb, var(--border-strong, var(--border)) 42%, transparent);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--panel, var(--card)) 96%, transparent)),
+        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 10%, transparent), transparent 52%);
+      box-shadow:
+        0 18px 42px color-mix(in srgb, var(--bg, #020617) 18%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+    }
+
+    :root[data-theme-mode="light"] .agent-chat__input {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), color-mix(in srgb, var(--card) 94%, var(--panel, white) 6%)),
+        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 7%, transparent), transparent 48%);
+      box-shadow:
+        0 16px 34px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.66);
+    }
+
+    .agent-chat__input::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 56%, transparent), transparent);
+      opacity: 0.9;
+      pointer-events: none;
+    }
+
+    .agent-chat__input > textarea {
+      letter-spacing: 0.01em;
+      color: var(--text-strong, var(--text));
+    }
+
+    .agent-chat__toolbar {
+      border-top-color: color-mix(in srgb, var(--border) 62%, transparent);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 92%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 86%, transparent));
+    }
+
+    .agent-chat__toolbar-left,
+    .agent-chat__toolbar-right {
+      gap: 6px;
+    }
+
+    .agent-chat__input-btn,
+    .agent-chat__toolbar .btn--ghost {
+      border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+      background: color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 78%, transparent);
+      color: color-mix(in srgb, var(--text) 78%, transparent);
+      box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+    }
+
+    :root[data-theme-mode="light"] .agent-chat__input-btn,
+    :root[data-theme-mode="light"] .agent-chat__toolbar .btn--ghost {
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .agent-chat__input-btn:hover:not(:disabled),
+    .agent-chat__toolbar .btn--ghost:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--accent) 26%, var(--border) 74%);
+      background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated, var(--panel, var(--card))) 88%);
+      color: var(--text-strong, var(--text));
+      box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+
+    .agent-chat__input-btn--active {
+      border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      color: color-mix(in srgb, var(--accent) 86%, white 14%);
+      box-shadow: 0 10px 20px color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+
+    .agent-chat__token-count {
+      padding: 0 8px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--panel, var(--card)) 82%, transparent);
+      color: color-mix(in srgb, var(--text) 72%, transparent);
+      line-height: 22px;
+    }
+
+    .chat-send-btn {
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--accent) 84%, white 6%), color-mix(in srgb, var(--accent-hover, var(--accent)) 86%, black 2%));
+      color: var(--primary-foreground, #fff);
+      box-shadow: 0 12px 26px color-mix(in srgb, var(--accent) 26%, transparent);
+    }
+
+    .chat-send-btn:hover:not(:disabled) {
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--accent) 90%, white 4%), color-mix(in srgb, var(--accent-hover, var(--accent)) 92%, black 4%));
+      box-shadow: 0 16px 28px color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+
+    .chat-send-btn--stop {
+      border-color: color-mix(in srgb, var(--danger, #dc2626) 28%, transparent);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--danger, #dc2626) 90%, white 4%), color-mix(in srgb, var(--danger, #dc2626) 82%, black 8%));
+      box-shadow: 0 12px 26px color-mix(in srgb, var(--danger, #dc2626) 22%, transparent);
+    }
+
+    .chat-send-btn--stop:hover:not(:disabled) {
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--danger, #dc2626) 96%, white 4%), color-mix(in srgb, var(--danger, #dc2626) 86%, black 10%));
+      box-shadow: 0 16px 28px color-mix(in srgb, var(--danger, #dc2626) 28%, transparent);
+    }
+
     .oc-block-renderer__toolbar {
       display: flex;
       align-items: center;

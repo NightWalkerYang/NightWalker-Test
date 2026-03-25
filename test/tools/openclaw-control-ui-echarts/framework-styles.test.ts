@@ -14,4 +14,13 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".shell--chat-focus .card.chat");
     expect(styles).toContain("grid-template-rows: 0 minmax(0, 1fr) !important");
   });
+
+  it("restyles the native chat composer without changing its footprint selectors", () => {
+    const styles = getFrameworkStyles();
+
+    expect(styles).toContain(".agent-chat__input");
+    expect(styles).toContain(".agent-chat__toolbar");
+    expect(styles).toContain(".chat-send-btn");
+    expect(styles).toContain(".agent-chat__input-btn");
+  });
 });
