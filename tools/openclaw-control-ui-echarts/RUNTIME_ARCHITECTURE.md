@@ -27,9 +27,10 @@ Framework files:
 
 ## 2. Adapter Layer
 
-Location:
+Locations:
 
 - `tools/openclaw-control-ui-echarts/runtime/echarts/`
+- `tools/openclaw-control-ui-echarts/runtime/file/`
 
 Responsibilities:
 
@@ -48,6 +49,14 @@ ECharts adapter files:
 - `parser.js`
 - `prompt.js`
 - `detail-modal.js`
+- `styles.js`
+- `ui-text.js`
+
+File adapter files:
+
+- `adapter.js`
+- `libraries.js`
+- `parser.js`
 - `styles.js`
 - `ui-text.js`
 
@@ -70,9 +79,9 @@ Optional hooks:
 - `onSourceToggle(state, nextState)`
 - `onViewportResize(state)`
 
-## Planned Path For Future Blocks
+## Current File Block Support
 
-For a future block like:
+The runtime now supports blocks like:
 
 ````text
 ```file
@@ -80,12 +89,12 @@ For a future block like:
 ```
 ````
 
-the recommended shape is:
+Current behavior:
 
-1. create `tools/openclaw-control-ui-echarts/runtime/file/`
-2. add a `file` adapter with its own parser / preview / prompt builder
-3. register it beside `echarts`
-4. keep using the same framework for scanning, streaming placeholders, toolbar buttons, and chat sending
+1. `https://...` and `http://...` payloads render as compact download cards
+2. workspace-relative paths render as compact file cards with copy actions
+3. absolute paths are accepted only when they normalize under a `workspace/` segment
+4. the card renderer stays inside the same framework lifecycle as `echarts`
 
 Example:
 

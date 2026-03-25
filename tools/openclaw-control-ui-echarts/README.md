@@ -1,6 +1,6 @@
 # OpenClaw Control UI ECharts Overlay
 
-This is the no-plugin, zero-intrusion version of the ECharts fenced-block renderer.
+This is the no-plugin, zero-intrusion fenced-block overlay for the OpenClaw Control UI.
 
 It does not modify any existing OpenClaw source files. Instead, it:
 
@@ -17,7 +17,9 @@ When the copied Control UI loads, the extra runtime script:
 - detects fenced code blocks marked as `echarts`
 - parses the block as JSON, JSON5, or a trusted JavaScript object literal
 - renders an ECharts preview above the original source block
-- keeps the original source block behind a `Show source` toggle
+- detects fenced code blocks marked as `file`
+- turns file URLs into compact download cards
+- turns workspace paths into compact file cards with normalized copyable paths
 
 No browser plugin is required.
 
@@ -34,17 +36,20 @@ No browser plugin is required.
   - generic fenced-block scanning, adapter registration, host rendering, source toggle, streaming placeholder, and chat-composer bridge
 - `tools/openclaw-control-ui-echarts/runtime/echarts/*`
   - the ECharts-specific adapter, parser, prompt builder, styles, and detail modal
+- `tools/openclaw-control-ui-echarts/runtime/file/*`
+  - the file-card adapter, parser, compact card styles, and JSON5 loader
 - `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`
   - tracked offline bundle used as the source of truth for extracting vendor assets
 
 ## Runtime Architecture
 
-The runtime is now split into:
+The runtime is split into:
 
 1. a generic fenced-block framework
 2. one `echarts` adapter
+3. one `file` adapter
 
-That means future blocks such as:
+That means additional blocks such as:
 
 ````text
 ```file
@@ -52,7 +57,7 @@ That means future blocks such as:
 ```
 ````
 
-can reuse the same framework pieces:
+reuse the same framework pieces:
 
 - DOM scanning
 - adapter registration
@@ -69,7 +74,7 @@ and only add a new adapter for:
 - prompt building
 - click behavior
 
-The intended registration shape is:
+The current registration shape is:
 
 ```js
 const runtime = createFencedBlockRuntime([
@@ -223,6 +228,14 @@ Intentionally unsupported:
 - arbitrary page scripting outside the option literal shape
 
 The JavaScript fallback is meant for self-hosted dashboards where you trust the chart block source. It exists specifically so Dify-style ECharts snippets can render without rewriting them into strict JSON first.
+
+For `file` blocks:
+
+- `https://...` and `http://...` values render as real download cards
+- workspace-relative paths such as `output/report.xlsx` render as compact file cards
+- absolute paths are accepted only when they clearly resolve under a `workspace/` segment, then normalized to workspace-relative paths before display
+- arbitrary host paths outside the workspace are intentionally rejected
+- workspace-path cards currently copy the normalized path; they do not become real browser downloads unless the gateway later exposes a dedicated safe download endpoint
 
 ## Rebuild Flow
 
