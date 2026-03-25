@@ -5,6 +5,7 @@ import { createFileAdapter } from "./runtime/file/adapter.js";
 
 const scriptUrl = new URL(import.meta.url);
 const vendorBaseUrl = new URL("./vendor/", scriptUrl);
+const controlUiRootUrl = new URL("../", scriptUrl);
 
 const runtime = createFencedBlockRuntime([
   createEchartsAdapter({
@@ -12,6 +13,7 @@ const runtime = createFencedBlockRuntime([
   }),
   createFileAdapter({
     vendorBaseUrl,
+    controlUiRootUrl,
   }),
 ]);
 

@@ -92,7 +92,7 @@ The runtime now supports blocks like:
 Current behavior:
 
 1. `https://...` and `http://...` payloads render as compact download cards
-2. workspace-relative paths render as compact file cards with copy actions
+2. workspace-relative paths render as compact file cards with same-origin download actions when the deployment mounts `/workspace-downloads`
 3. absolute paths are accepted only when they normalize under a `workspace/` segment
 4. the card renderer stays inside the same framework lifecycle as `echarts`
 

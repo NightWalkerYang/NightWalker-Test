@@ -178,6 +178,7 @@ services:
   openclaw-gateway:
     volumes:
       - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro
+      - \${OPENCLAW_WORKSPACE_DIR}:/app/dist/control-ui/workspace-downloads:ro
       - ./docs/reference/templates:/app/docs/reference/templates:ro
 EOF
 

@@ -3,6 +3,22 @@ import { getFileStyles } from "./styles.js";
 import { FILE_LANGUAGE_ALIASES, localizeErrorMessage, parseFilePayload } from "./parser.js";
 import { UI_TEXT } from "./ui-text.js";
 
+function encodeRelativePathForUrl(pathValue) {
+  return String(pathValue || "")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+export function buildWorkspaceDownloadUrl(controlUiRootUrl, pathValue) {
+  const encodedPath = encodeRelativePathForUrl(pathValue);
+  if (!encodedPath) {
+    return "";
+  }
+  return new URL(`workspace-downloads/${encodedPath}`, controlUiRootUrl).href;
+}
+
 function createClipboardFallback() {
   const textarea = document.createElement("textarea");
   textarea.setAttribute("aria-hidden", "true");
@@ -98,7 +114,7 @@ function markCopied(button, uiText, timers) {
   timers.push(timer);
 }
 
-function buildCard(payload, uiText, state) {
+function buildCard(payload, uiText, state, options = {}) {
   const surface = document.createElement("article");
   surface.className = "oc-file-card__surface";
 
@@ -179,10 +195,25 @@ function buildCard(payload, uiText, state) {
       }),
     );
   } else {
+    const downloadUrl = buildWorkspaceDownloadUrl(options.controlUiRootUrl, payload.path);
+    if (downloadUrl) {
+      actions.append(
+        createButton({
+          label: uiText.actionDownload,
+          primary: true,
+          href: downloadUrl,
+          onClick: (event) => {
+            event.preventDefault();
+            triggerUrlDownload(downloadUrl, payload.name);
+          },
+        }),
+      );
+    }
+
     actions.append(
       createButton({
         label: uiText.actionCopyPath,
-        primary: true,
+        primary: !downloadUrl,
         onClick: async (_, button) => {
           if (await copyText(payload.path)) {
             markCopied(button, uiText, state.timers);
@@ -197,7 +228,7 @@ function buildCard(payload, uiText, state) {
   return surface;
 }
 
-export function createFileAdapter({ vendorBaseUrl }) {
+export function createFileAdapter({ vendorBaseUrl, controlUiRootUrl }) {
   const ensureJson5 = createJson5Loader(vendorBaseUrl);
 
   return {
@@ -225,7 +256,7 @@ export function createFileAdapter({ vendorBaseUrl }) {
 
       const state = { timers: [] };
       cardEl.classList.add("oc-file-card");
-      cardEl.replaceChildren(buildCard(payload, UI_TEXT, state));
+      cardEl.replaceChildren(buildCard(payload, UI_TEXT, state, { controlUiRootUrl }));
       cardEl.setAttribute(
         "aria-label",
         `${payload.kind === "url" ? UI_TEXT.kindUrl : UI_TEXT.kindPath}: ${payload.name}`,

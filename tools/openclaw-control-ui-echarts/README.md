@@ -177,8 +177,9 @@ That script:
 1. rebuilds `tools/openclaw-control-ui-echarts/generated/control-ui`
 2. writes a root-level `docker-compose.override.yml`
 3. mounts the generated UI directly to `/app/dist/control-ui` inside `openclaw-gateway`
-4. mounts `docs/reference/templates` to `/app/docs/reference/templates` so agent workspace bootstrap files are available even when an image is missing those docs assets
-5. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
+4. mounts `${OPENCLAW_WORKSPACE_DIR}` read-only into `/app/dist/control-ui/workspace-downloads` so fenced `file` cards can download workspace files through the same origin
+5. mounts `docs/reference/templates` to `/app/docs/reference/templates` so agent workspace bootstrap files are available even when an image is missing those docs assets
+6. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
 
 Because the mount replaces the container's default Control UI asset directory, this path does not need `gateway.controlUi.root`.
 
@@ -235,7 +236,8 @@ For `file` blocks:
 - workspace-relative paths such as `output/report.xlsx` render as compact file cards
 - absolute paths are accepted only when they clearly resolve under a `workspace/` segment, then normalized to workspace-relative paths before display
 - arbitrary host paths outside the workspace are intentionally rejected
-- workspace-path cards currently copy the normalized path; they do not become real browser downloads unless the gateway later exposes a dedicated safe download endpoint
+- when you deploy through `setup-direct-docker-compose-up.*`, workspace-path cards download through the same origin under `/workspace-downloads/...`
+- this deployment path exposes the mounted workspace to anyone who can reach the Control UI and guess the file path, so prefer keeping generated downloads in a dedicated workspace subdirectory when possible
 
 ## Rebuild Flow
 
