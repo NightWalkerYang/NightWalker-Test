@@ -215,7 +215,7 @@ function buildCard(payload, uiText, state, options = {}) {
         label: uiText.actionCopyPath,
         primary: !downloadUrl,
         onClick: async (_, button) => {
-          if (await copyText(payload.path)) {
+          if (await copyText(payload.copyPath || payload.path)) {
             markCopied(button, uiText, state.timers);
           }
         },

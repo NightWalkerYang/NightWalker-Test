@@ -278,6 +278,7 @@ function normalizeDescriptor(candidate, fields = {}) {
     kind: "path",
     path: relativePath,
     rawPath: rawValue,
+    copyPath: looksLikeAbsolutePath(rawValue) ? rawValue : relativePath,
     name,
     extension,
     description: firstNonEmpty(fields.description),
