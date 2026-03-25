@@ -11,6 +11,24 @@ function normalizeLanguageAlias(alias) {
     .toLowerCase();
 }
 
+function normalizeSourceText(text) {
+  return String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+}
+
+function getLeadingSourceAlias(text) {
+  const normalized = normalizeSourceText(text);
+  if (!normalized || normalized.includes("\n")) {
+    const firstLine = normalized.split("\n", 1)[0] || "";
+    const match = firstLine.match(/^([A-Za-z0-9_-]+)\s+(.+)$/);
+    return match ? normalizeLanguageAlias(match[1]) : "";
+  }
+
+  const match = normalized.match(/^([A-Za-z0-9_-]+)\s+(.+)$/);
+  return match ? normalizeLanguageAlias(match[1]) : "";
+}
+
 export function createAdapterRegistry(adaptersInput) {
   const adapters = normalizeAdapterInput(adaptersInput);
   if (adapters.length === 0) {
@@ -59,6 +77,9 @@ export function createAdapterRegistry(adaptersInput) {
     },
     getAdapterByLanguage(language) {
       return adaptersByLanguage.get(normalizeLanguageAlias(language)) || null;
+    },
+    getAdapterBySourcePrefix(text) {
+      return adaptersByLanguage.get(getLeadingSourceAlias(text)) || null;
     },
   };
 }

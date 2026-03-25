@@ -77,6 +77,17 @@ describe("zero-intrusive file parser", () => {
     });
   });
 
+  it("accepts the compact single-line file prefix syntax from chat output", () => {
+    const payload = parse("file /home/node/.openclaw/workspace/项目收支情况统计表.xlsx");
+
+    expect(payload).toMatchObject({
+      kind: "path",
+      path: "项目收支情况统计表.xlsx",
+      name: "项目收支情况统计表.xlsx",
+      extension: "XLSX",
+    });
+  });
+
   it("normalizes windows and file:// workspace paths to relative paths", () => {
     const windowsPayload = parse(
       String.raw`C:\Users\root-ai\.openclaw\workspace\exports\预算执行\年度汇总.xls`,

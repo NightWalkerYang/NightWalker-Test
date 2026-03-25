@@ -40,6 +40,7 @@ function normalizeFileSource(raw) {
     /^(?:const|let|var)\s+(?:file|download|attachment|artifact)\s*=\s*/i,
     /^export\s+default\s+/i,
     /^return\s+/i,
+    /^(?:file|download|attachment|artifact)\s+/i,
   ];
 
   for (const pattern of wrappers) {

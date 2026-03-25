@@ -27,7 +27,23 @@ function getLanguageFromCodeBlock(codeEl) {
 }
 
 function getWrapperElement(codeEl) {
-  return codeEl.closest(".code-block-wrapper") || codeEl.closest("pre");
+  const explicitWrapper = codeEl.closest(".code-block-wrapper") || codeEl.closest("pre");
+  if (explicitWrapper) {
+    return explicitWrapper;
+  }
+
+  const parent = codeEl.parentElement;
+  if (!parent) {
+    return codeEl;
+  }
+
+  const parentText = normalizeText(parent.textContent);
+  const codeText = normalizeText(codeEl.textContent);
+  if (parentText && codeText && parentText === codeText) {
+    return parent;
+  }
+
+  return codeEl;
 }
 
 function isStreamingBubble(node) {
@@ -138,11 +154,18 @@ export function createFencedBlockRuntime(adaptersInput) {
   }
 
   function findCandidateCodeBlocks(root) {
-    return Array.from(root.querySelectorAll("pre > code"))
-      .map((codeEl) => ({
-        codeEl,
-        adapter: registry.getAdapterByLanguage(getLanguageFromCodeBlock(codeEl)),
-      }))
+    const codeElements = Array.from(root.querySelectorAll("code")).filter(
+      (codeEl) => !codeEl.closest(".oc-block-renderer"),
+    );
+
+    return codeElements
+      .map((codeEl) => {
+        const explicitLanguage = getLanguageFromCodeBlock(codeEl);
+        const adapter =
+          registry.getAdapterByLanguage(explicitLanguage) ||
+          registry.getAdapterBySourcePrefix(codeEl.textContent);
+        return { codeEl, adapter };
+      })
       .filter((entry) => Boolean(entry.adapter));
   }
 
