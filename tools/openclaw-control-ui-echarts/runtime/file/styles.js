@@ -201,13 +201,6 @@ export function getFileStyles() {
       box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 26%, transparent);
     }
 
-    .oc-file-card__button[data-copied="true"] {
-      border-color: color-mix(in srgb, var(--ok, #22c55e) 44%, transparent);
-      background: color-mix(in srgb, var(--ok, #22c55e) 14%, transparent);
-      color: color-mix(in srgb, var(--ok, #22c55e) 86%, var(--text-strong) 14%);
-      box-shadow: none;
-    }
-
     @media (max-width: 720px) {
       .oc-file-card__surface {
         grid-template-columns: 1fr;

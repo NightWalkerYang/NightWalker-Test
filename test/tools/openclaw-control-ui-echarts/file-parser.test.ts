@@ -62,7 +62,6 @@ describe("zero-intrusive file parser", () => {
     expect(payload).toMatchObject({
       kind: "path",
       path: "output/财务分析/小故事 1774409149.docx",
-      copyPath: "output/财务分析/小故事 1774409149.docx",
       name: "小故事 1774409149.docx",
       extension: "DOCX",
     });
@@ -74,7 +73,6 @@ describe("zero-intrusive file parser", () => {
     expect(payload).toMatchObject({
       kind: "path",
       path: "output/小故事_1774409149.docx",
-      copyPath: "/home/node/.openclaw/workspace/output/小故事_1774409149.docx",
       name: "小故事_1774409149.docx",
     });
   });
@@ -85,7 +83,6 @@ describe("zero-intrusive file parser", () => {
     expect(payload).toMatchObject({
       kind: "path",
       path: "项目收支情况统计表.xlsx",
-      copyPath: "/home/node/.openclaw/workspace/项目收支情况统计表.xlsx",
       name: "项目收支情况统计表.xlsx",
       extension: "XLSX",
     });

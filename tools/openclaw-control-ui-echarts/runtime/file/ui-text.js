@@ -13,7 +13,4 @@ export const UI_TEXT = Object.freeze({
   metaUrl: "来源",
   metaPath: "存放",
   actionDownload: "下载",
-  actionCopyLink: "复制链接",
-  actionCopyPath: "复制路径",
-  actionCopied: "已复制",
 });

@@ -257,8 +257,6 @@ function normalizeDescriptor(candidate, fields = {}) {
       description: firstNonEmpty(fields.description),
       sizeLabel: normalizeSizeLabel(fields.size),
       sourceLabel: inferDomainLabel(url),
-      actionLabel: "下载",
-      secondaryActionLabel: "复制链接",
       rawValue,
     };
   }
@@ -278,14 +276,11 @@ function normalizeDescriptor(candidate, fields = {}) {
     kind: "path",
     path: relativePath,
     rawPath: rawValue,
-    copyPath: looksLikeAbsolutePath(rawValue) ? rawValue : relativePath,
     name,
     extension,
     description: firstNonEmpty(fields.description),
     sizeLabel: normalizeSizeLabel(fields.size),
     sourceLabel: "workspace",
-    actionLabel: "复制路径",
-    secondaryActionLabel: "",
     rawValue,
   };
 }

@@ -1,5 +1,12 @@
+/**
+ * @vitest-environment jsdom
+ */
+
 import { describe, expect, it } from "vitest";
-import { buildWorkspaceDownloadUrl } from "../../../tools/openclaw-control-ui-echarts/runtime/file/adapter.js";
+import {
+  buildWorkspaceDownloadUrl,
+  createFileAdapter,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/file/adapter.js";
 
 describe("file adapter workspace download urls", () => {
   it("builds same-origin workspace download urls with encoded path segments", () => {
@@ -23,4 +30,45 @@ describe("file adapter workspace download urls", () => {
       "https://example.com/openclaw/workspace-downloads/%E6%8A%A5%E8%A1%A8.xlsx",
     );
   });
+
+  it("renders a single download action for url cards", async () => {
+    const { host } = await renderCard("https://files.example.com/export/report.xlsx");
+    const labels = [...host.querySelectorAll(".oc-file-card__button")].map((element) =>
+      element.textContent?.trim(),
+    );
+
+    expect(labels).toEqual(["下载"]);
+  });
+
+  it("renders a single download action for workspace path cards", async () => {
+    const { host } = await renderCard("/home/node/.openclaw/workspace/output/report.xlsx");
+    const labels = [...host.querySelectorAll(".oc-file-card__button")].map((element) =>
+      element.textContent?.trim(),
+    );
+
+    expect(labels).toEqual(["下载"]);
+  });
 });
+
+async function renderCard(source: string) {
+  const adapter = createFileAdapter({
+    vendorBaseUrl: new URL("https://hailstone.cn:18789/assets/vendor/"),
+    controlUiRootUrl: new URL("https://hailstone.cn:18789/"),
+  });
+  const host = document.createElement("div");
+  const wrapper = document.createElement("div");
+
+  await adapter.renderContent({
+    source,
+    wrapper,
+    host,
+    context: {},
+    renderHostScaffold(currentHost) {
+      const card = document.createElement("div");
+      currentHost.append(card);
+      return card;
+    },
+  });
+
+  return { host, wrapper };
+}

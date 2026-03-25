@@ -19,46 +19,6 @@ export function buildWorkspaceDownloadUrl(controlUiRootUrl, pathValue) {
   return new URL(`workspace-downloads/${encodedPath}`, controlUiRootUrl).href;
 }
 
-function createClipboardFallback() {
-  const textarea = document.createElement("textarea");
-  textarea.setAttribute("aria-hidden", "true");
-  textarea.tabIndex = -1;
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  textarea.style.pointerEvents = "none";
-  textarea.style.inset = "0 auto auto 0";
-  document.body.append(textarea);
-  return textarea;
-}
-
-async function copyText(text) {
-  const value = String(text || "");
-  if (!value) {
-    return false;
-  }
-
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return true;
-    } catch {
-      // Fall through to the execCommand fallback.
-    }
-  }
-
-  try {
-    const textarea = createClipboardFallback();
-    textarea.value = value;
-    textarea.focus();
-    textarea.select();
-    const copied = document.execCommand("copy");
-    textarea.remove();
-    return copied;
-  } catch {
-    return false;
-  }
-}
-
 function triggerUrlDownload(url, fileName) {
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -102,19 +62,7 @@ function createButton({ label, primary = false, href = "", onClick = null }) {
   return element;
 }
 
-function markCopied(button, uiText, timers) {
-  const previous = button.textContent || "";
-  button.dataset.copied = "true";
-  button.textContent = uiText.actionCopied;
-
-  const timer = window.setTimeout(() => {
-    button.removeAttribute("data-copied");
-    button.textContent = previous;
-  }, 1400);
-  timers.push(timer);
-}
-
-function buildCard(payload, uiText, state, options = {}) {
+function buildCard(payload, uiText, options = {}) {
   const surface = document.createElement("article");
   surface.className = "oc-file-card__surface";
 
@@ -185,14 +133,6 @@ function buildCard(payload, uiText, state, options = {}) {
           triggerUrlDownload(payload.url, payload.name);
         },
       }),
-      createButton({
-        label: uiText.actionCopyLink,
-        onClick: async (_, button) => {
-          if (await copyText(payload.url)) {
-            markCopied(button, uiText, state.timers);
-          }
-        },
-      }),
     );
   } else {
     const downloadUrl = buildWorkspaceDownloadUrl(options.controlUiRootUrl, payload.path);
@@ -209,18 +149,6 @@ function buildCard(payload, uiText, state, options = {}) {
         }),
       );
     }
-
-    actions.append(
-      createButton({
-        label: uiText.actionCopyPath,
-        primary: !downloadUrl,
-        onClick: async (_, button) => {
-          if (await copyText(payload.copyPath || payload.path)) {
-            markCopied(button, uiText, state.timers);
-          }
-        },
-      }),
-    );
   }
 
   content.append(actions);
@@ -241,11 +169,6 @@ export function createFileAdapter({ vendorBaseUrl, controlUiRootUrl }) {
     getStyles: getFileStyles,
     ensureReady: ensureJson5,
     localizeErrorMessage,
-    disposeState(state) {
-      for (const timer of state?.timers || []) {
-        clearTimeout(timer);
-      }
-    },
     async renderContent({ source, wrapper, host, context, renderHostScaffold }) {
       const payload = parseFilePayload(source, context?.json5);
       const summaryText =
@@ -254,15 +177,14 @@ export function createFileAdapter({ vendorBaseUrl, controlUiRootUrl }) {
         summaryText,
       });
 
-      const state = { timers: [] };
       cardEl.classList.add("oc-file-card");
-      cardEl.replaceChildren(buildCard(payload, UI_TEXT, state, { controlUiRootUrl }));
+      cardEl.replaceChildren(buildCard(payload, UI_TEXT, { controlUiRootUrl }));
       cardEl.setAttribute(
         "aria-label",
         `${payload.kind === "url" ? UI_TEXT.kindUrl : UI_TEXT.kindPath}: ${payload.name}`,
       );
 
-      return state;
+      return null;
     },
   };
 }
