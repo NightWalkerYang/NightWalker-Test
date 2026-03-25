@@ -46,7 +46,12 @@ export function getFrameworkStyles() {
     .shell--chat-focus .content {
       position: relative;
       isolation: isolate;
+      --oc-chat-flow-a: rgba(93, 136, 181, 0.34);
+      --oc-chat-flow-b: rgba(128, 191, 203, 0.28);
+      --oc-chat-flow-c: rgba(203, 184, 146, 0.2);
       background:
+        radial-gradient(circle at 10% 82%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 20%),
+        radial-gradient(circle at 84% 32%, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 22%),
         linear-gradient(180deg, color-mix(in srgb, var(--bg, #020617) 97%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--bg-content, var(--bg, #020617)) 94%, transparent));
     }
 
@@ -72,36 +77,49 @@ export function getFrameworkStyles() {
     .content--chat::before,
     .shell--chat-focus .content::before {
       background:
-        radial-gradient(circle at 14% 78%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 18%),
-        radial-gradient(circle at 76% 36%, color-mix(in srgb, var(--accent-2) 14%, transparent), transparent 20%),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' fill='none'%3E%3Cpath d='M-60 610C120 470 312 438 472 498C632 558 744 640 928 570C1112 500 1220 308 1424 292C1529 284 1610 300 1680 332' stroke='%2374a7de' stroke-width='4.5' stroke-linecap='round'/%3E%3C/svg%3E");
+        radial-gradient(circle at 18% 78%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 22%),
+        radial-gradient(circle at 76% 30%, color-mix(in srgb, var(--accent-2) 14%, transparent), transparent 24%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1800 1000' fill='none'%3E%3Cpath d='M-120 760C110 560 336 498 546 544C742 588 878 716 1058 662C1236 610 1350 382 1546 352C1656 334 1750 350 1860 430' stroke='%235f8cb9' stroke-width='86' stroke-opacity='.24' stroke-linecap='round'/%3E%3Cpath d='M-90 860C170 676 420 652 646 700C848 742 994 860 1184 776C1360 698 1476 532 1634 548C1742 560 1818 628 1886 706' stroke='%238ec6d0' stroke-width='62' stroke-opacity='.2' stroke-linecap='round'/%3E%3Cpath d='M180 694C372 574 560 566 732 638C884 700 1050 708 1226 594C1374 500 1538 456 1702 506' stroke='%23d3c0a0' stroke-width='34' stroke-opacity='.16' stroke-linecap='round'/%3E%3C/svg%3E");
       background-repeat: no-repeat, no-repeat, no-repeat;
-      background-size: 34% 34%, 40% 40%, 148% 78%;
-      background-position: 8% 84%, 82% 38%, center 63%;
-      opacity: 0.8;
+      background-size: 34% 34%, 40% 40%, 138% 82%;
+      background-position: 10% 84%, 84% 30%, center 71%;
+      opacity: 0.74;
+      filter: blur(16px) saturate(1.04);
+      mask-image: linear-gradient(180deg, transparent 6%, #000 18%, #000 88%, transparent 98%);
       animation: oc-chat-curve-drift 28s ease-in-out infinite alternate;
     }
 
     .content--chat::after,
     .shell--chat-focus .content::after {
       background:
-        radial-gradient(circle at 62% 70%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 22%),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' fill='none'%3E%3Cpath d='M-80 770C134 590 362 612 548 676C736 742 866 760 1016 676C1166 592 1258 410 1410 430C1552 448 1644 546 1700 604' stroke='%238bbfc5' stroke-width='3.5' stroke-linecap='round'/%3E%3C/svg%3E");
+        radial-gradient(circle at 66% 66%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 20%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1800 1000' fill='none'%3E%3Cpath d='M-110 752C132 552 360 494 566 540C752 582 892 716 1064 666C1236 616 1360 392 1548 366C1662 350 1768 372 1864 446' stroke='%236f9fd4' stroke-width='4.6' stroke-linecap='round'/%3E%3Cpath d='M-76 852C184 674 436 654 658 702C854 744 994 852 1180 780C1348 714 1478 548 1642 564C1748 574 1820 638 1882 702' stroke='%2399cfd7' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M202 680C392 568 584 562 746 630C892 690 1050 696 1214 590C1354 500 1508 458 1664 500' stroke='%23d9c7ab' stroke-width='2.6' stroke-linecap='round' stroke-dasharray='8 18' stroke-opacity='.82'/%3E%3C/svg%3E");
       background-repeat: no-repeat, no-repeat;
-      background-size: 42% 42%, 152% 82%;
-      background-position: 68% 72%, center 78%;
-      opacity: 0.64;
+      background-size: 42% 42%, 134% 80%;
+      background-position: 68% 68%, center 70%;
+      opacity: 0.72;
+      mask-image: linear-gradient(180deg, transparent 10%, #000 20%, #000 90%, transparent 100%);
       animation: oc-chat-curve-float 34s ease-in-out infinite alternate-reverse;
     }
 
     :root[data-theme-mode="light"] .content--chat::before,
     :root[data-theme-mode="light"] .shell--chat-focus .content::before {
-      opacity: 0.92;
+      opacity: 0.78;
     }
 
     :root[data-theme-mode="light"] .content--chat::after,
     :root[data-theme-mode="light"] .shell--chat-focus .content::after {
-      opacity: 0.72;
+      opacity: 0.66;
+    }
+
+    :root[data-theme-mode="dark"] .content--chat::before,
+    :root[data-theme-mode="dark"] .shell--chat-focus .content::before {
+      opacity: 0.7;
+    }
+
+    :root[data-theme-mode="dark"] .content--chat::after,
+    :root[data-theme-mode="dark"] .shell--chat-focus .content::after {
+      opacity: 0.58;
     }
 
     .content--chat .callout.danger,
