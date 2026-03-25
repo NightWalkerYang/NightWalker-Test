@@ -14,6 +14,81 @@ export function getFrameworkStyles() {
       display: none;
     }
 
+    /* Focus mode: keep only the chat thread, compose box, and native exit button. */
+    .shell--chat-focus {
+      grid-template-columns: 0 minmax(0, 1fr) !important;
+      grid-template-rows: 0 minmax(0, 1fr) !important;
+    }
+
+    .shell--chat-focus .topbar,
+    .shell--chat-focus .shell-nav,
+    .shell--chat-focus .shell-nav-backdrop,
+    .shell--chat-focus .content-header {
+      display: none !important;
+    }
+
+    .shell--chat-focus .content,
+    .shell--chat-focus .content.content--chat {
+      height: 100%;
+      min-height: 0;
+      padding: 0 !important;
+    }
+
+    .shell--chat-focus .card.chat {
+      min-height: 100%;
+      height: 100%;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    .shell--chat-focus .agent-chat__search-bar,
+    .shell--chat-focus .agent-chat__pinned,
+    .shell--chat-focus .chat-queue,
+    .shell--chat-focus .context-notice,
+    .shell--chat-focus .compaction-indicator,
+    .shell--chat-focus .chat-new-messages,
+    .shell--chat-focus .chat-sidebar,
+    .shell--chat-focus resizable-divider {
+      display: none !important;
+    }
+
+    .shell--chat-focus .chat-split-container {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .shell--chat-focus .chat-main {
+      min-width: 0;
+      width: 100%;
+      flex: 1 1 100% !important;
+    }
+
+    .shell--chat-focus .chat-thread {
+      padding: 22px 18px 8px !important;
+      border-radius: 0 !important;
+    }
+
+    .shell--chat-focus .chat-thread-inner {
+      padding-right: 42px;
+    }
+
+    .shell--chat-focus .chat-focus-exit {
+      position: fixed;
+      top: calc(env(safe-area-inset-top, 0px) + 12px);
+      right: calc(env(safe-area-inset-right, 0px) + 12px);
+      z-index: 120;
+    }
+
+    .shell--chat-focus .agent-chat__input {
+      margin: 0 18px calc(env(safe-area-inset-bottom, 0px) + 18px) !important;
+      flex-shrink: 0;
+    }
+
     .oc-block-renderer__toolbar {
       display: flex;
       align-items: center;
