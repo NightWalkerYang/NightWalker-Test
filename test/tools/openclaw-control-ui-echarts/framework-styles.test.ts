@@ -14,10 +14,10 @@ describe("zero-intrusive framework styles", () => {
 
     expect(styles).toContain(".content--chat");
     expect(styles).toContain("--accent: #7eaad4;");
-    expect(styles).toContain(".content--chat::before");
-    expect(styles).toContain(".content--chat::after");
-    expect(styles).toContain("@keyframes oc-chat-curve-drift");
-    expect(styles).toContain("@keyframes oc-chat-curve-float");
+    expect(styles).toContain(".oc-chat-ambient");
+    expect(styles).toContain(".oc-chat-ambient__svg");
+    expect(styles).toContain("@keyframes oc-chat-ambient-sway");
+    expect(styles).toContain("@keyframes oc-chat-ambient-trace");
     expect(styles).toContain(".chat-avatar");
     expect(styles).toContain("display: none;");
     expect(styles).toContain(".agent-chat__input");

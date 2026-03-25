@@ -46,80 +46,176 @@ export function getFrameworkStyles() {
     .shell--chat-focus .content {
       position: relative;
       isolation: isolate;
-      --oc-chat-flow-a: rgba(93, 136, 181, 0.34);
-      --oc-chat-flow-b: rgba(128, 191, 203, 0.28);
-      --oc-chat-flow-c: rgba(203, 184, 146, 0.2);
+      overflow: hidden;
+      --oc-chat-surface-top: #f8fbff;
+      --oc-chat-surface-bottom: #eef3fa;
+      --oc-chat-haze-a: rgba(121, 170, 219, 0.18);
+      --oc-chat-haze-b: rgba(128, 200, 205, 0.16);
+      --oc-chat-band-a-start: rgba(116, 177, 238, 0.12);
+      --oc-chat-band-a-mid: rgba(123, 192, 248, 0.52);
+      --oc-chat-band-a-end: rgba(223, 243, 255, 0.18);
+      --oc-chat-band-b-start: rgba(102, 190, 202, 0.1);
+      --oc-chat-band-b-mid: rgba(144, 227, 224, 0.4);
+      --oc-chat-band-b-end: rgba(215, 247, 236, 0.14);
+      --oc-chat-band-c-start: rgba(194, 165, 108, 0.08);
+      --oc-chat-band-c-end: rgba(245, 226, 183, 0.24);
+      --oc-chat-trace-soft: rgba(150, 196, 236, 0.34);
+      --oc-chat-trace-bright: rgba(241, 248, 255, 0.96);
+      --oc-chat-trace-warm-start: rgba(236, 217, 177, 0.18);
+      --oc-chat-trace-warm-end: rgba(255, 243, 215, 0.82);
+      --oc-chat-orbit: rgba(255, 245, 228, 0.44);
+      --oc-chat-orbit-soft: rgba(172, 216, 240, 0.3);
+      --oc-chat-node: rgba(255, 249, 238, 0.92);
+      --oc-chat-node-soft: rgba(182, 224, 246, 0.72);
+      --oc-chat-trend: rgba(242, 247, 255, 0.72);
+      --oc-chat-particle: rgba(255, 250, 242, 0.88);
       background:
-        radial-gradient(circle at 10% 82%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 20%),
-        radial-gradient(circle at 84% 32%, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 22%),
-        linear-gradient(180deg, color-mix(in srgb, var(--bg, #020617) 97%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--bg-content, var(--bg, #020617)) 94%, transparent));
+        radial-gradient(circle at 14% 84%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 24%),
+        radial-gradient(circle at 82% 34%, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 24%),
+        linear-gradient(180deg, var(--oc-chat-surface-top), var(--oc-chat-surface-bottom));
     }
 
-    .content--chat > *,
-    .shell--chat-focus .content > * {
+    :root[data-theme-mode="dark"] .content--chat,
+    :root[data-theme-mode="dark"] .shell--chat-focus .content {
+      --oc-chat-surface-top: #111b27;
+      --oc-chat-surface-bottom: #142033;
+      --oc-chat-haze-a: rgba(77, 134, 200, 0.2);
+      --oc-chat-haze-b: rgba(81, 185, 177, 0.18);
+      --oc-chat-band-a-start: rgba(94, 149, 214, 0.14);
+      --oc-chat-band-a-mid: rgba(123, 188, 255, 0.44);
+      --oc-chat-band-a-end: rgba(211, 234, 255, 0.16);
+      --oc-chat-band-b-start: rgba(72, 165, 171, 0.12);
+      --oc-chat-band-b-mid: rgba(118, 224, 214, 0.34);
+      --oc-chat-band-b-end: rgba(205, 246, 231, 0.12);
+      --oc-chat-band-c-start: rgba(169, 143, 92, 0.1);
+      --oc-chat-band-c-end: rgba(243, 220, 167, 0.18);
+      --oc-chat-trace-soft: rgba(141, 183, 223, 0.28);
+      --oc-chat-trace-bright: rgba(227, 242, 255, 0.84);
+      --oc-chat-trace-warm-start: rgba(229, 210, 170, 0.14);
+      --oc-chat-trace-warm-end: rgba(252, 238, 207, 0.68);
+      --oc-chat-orbit: rgba(255, 244, 221, 0.3);
+      --oc-chat-orbit-soft: rgba(152, 204, 235, 0.22);
+      --oc-chat-node: rgba(255, 248, 237, 0.84);
+      --oc-chat-node-soft: rgba(171, 218, 246, 0.62);
+      --oc-chat-trend: rgba(231, 239, 249, 0.58);
+      --oc-chat-particle: rgba(255, 250, 242, 0.76);
+    }
+
+    .content--chat > :not(.oc-chat-ambient),
+    .shell--chat-focus .content > :not(.oc-chat-ambient) {
       position: relative;
       z-index: 1;
     }
 
-    .content--chat::before,
-    .content--chat::after,
-    .shell--chat-focus .content::before,
-    .shell--chat-focus .content::after {
-      content: "";
+    .oc-chat-ambient {
       position: absolute;
       inset: 0;
-      pointer-events: none;
       z-index: 0;
-      transform: translate3d(0, 0, 0);
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .oc-chat-ambient__svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      opacity: 0.98;
+    }
+
+    .oc-chat-ambient__wash {
+      opacity: 0.9;
+      filter: blur(16px);
+      animation: oc-chat-ambient-breathe 20s ease-in-out infinite alternate;
+    }
+
+    .oc-chat-ambient__bands {
+      transform-origin: 50% 62%;
       will-change: transform, opacity;
     }
 
-    .content--chat::before,
-    .shell--chat-focus .content::before {
-      background:
-        radial-gradient(circle at 18% 78%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 22%),
-        radial-gradient(circle at 76% 30%, color-mix(in srgb, var(--accent-2) 14%, transparent), transparent 24%),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1800 1000' fill='none'%3E%3Cpath d='M-120 760C110 560 336 498 546 544C742 588 878 716 1058 662C1236 610 1350 382 1546 352C1656 334 1750 350 1860 430' stroke='%235f8cb9' stroke-width='86' stroke-opacity='.24' stroke-linecap='round'/%3E%3Cpath d='M-90 860C170 676 420 652 646 700C848 742 994 860 1184 776C1360 698 1476 532 1634 548C1742 560 1818 628 1886 706' stroke='%238ec6d0' stroke-width='62' stroke-opacity='.2' stroke-linecap='round'/%3E%3Cpath d='M180 694C372 574 560 566 732 638C884 700 1050 708 1226 594C1374 500 1538 456 1702 506' stroke='%23d3c0a0' stroke-width='34' stroke-opacity='.16' stroke-linecap='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat, no-repeat, no-repeat;
-      background-size: 34% 34%, 40% 40%, 138% 82%;
-      background-position: 10% 84%, 84% 30%, center 71%;
+    .oc-chat-ambient__bands--back {
+      opacity: 0.95;
+      animation: oc-chat-ambient-sway 24s ease-in-out infinite alternate;
+    }
+
+    .oc-chat-ambient__bands--front {
+      opacity: 0.84;
+      animation: oc-chat-ambient-glide 30s ease-in-out infinite alternate-reverse;
+    }
+
+    .oc-chat-ambient__band,
+    .oc-chat-ambient__thread,
+    .oc-chat-ambient__orbit,
+    .oc-chat-ambient__trend {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .oc-chat-ambient__thread {
+      stroke-width: 3;
+    }
+
+    .oc-chat-ambient__thread--cool,
+    .oc-chat-ambient__thread--dash {
+      stroke-dasharray: 10 14;
+      animation: oc-chat-ambient-trace 18s linear infinite;
+    }
+
+    .oc-chat-ambient__thread--warm {
+      stroke-dasharray: 6 18;
+      animation: oc-chat-ambient-trace 22s linear infinite reverse;
+    }
+
+    .oc-chat-ambient__thread--dash {
+      stroke-width: 2.2;
+      stroke-dasharray: 3 16;
       opacity: 0.74;
-      filter: blur(16px) saturate(1.04);
-      mask-image: linear-gradient(180deg, transparent 6%, #000 18%, #000 88%, transparent 98%);
-      animation: oc-chat-curve-drift 28s ease-in-out infinite alternate;
     }
 
-    .content--chat::after,
-    .shell--chat-focus .content::after {
-      background:
-        radial-gradient(circle at 66% 66%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 20%),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1800 1000' fill='none'%3E%3Cpath d='M-110 752C132 552 360 494 566 540C752 582 892 716 1064 666C1236 616 1360 392 1548 366C1662 350 1768 372 1864 446' stroke='%236f9fd4' stroke-width='4.6' stroke-linecap='round'/%3E%3Cpath d='M-76 852C184 674 436 654 658 702C854 744 994 852 1180 780C1348 714 1478 548 1642 564C1748 574 1820 638 1882 702' stroke='%2399cfd7' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M202 680C392 568 584 562 746 630C892 690 1050 696 1214 590C1354 500 1508 458 1664 500' stroke='%23d9c7ab' stroke-width='2.6' stroke-linecap='round' stroke-dasharray='8 18' stroke-opacity='.82'/%3E%3C/svg%3E");
-      background-repeat: no-repeat, no-repeat;
-      background-size: 42% 42%, 134% 80%;
-      background-position: 68% 68%, center 70%;
+    .oc-chat-ambient__orbit {
+      stroke: var(--oc-chat-orbit);
+      stroke-width: 1.8;
+      opacity: 0.8;
+    }
+
+    .oc-chat-ambient__orbit--low {
+      stroke: var(--oc-chat-orbit-soft);
       opacity: 0.72;
-      mask-image: linear-gradient(180deg, transparent 10%, #000 20%, #000 90%, transparent 100%);
-      animation: oc-chat-curve-float 34s ease-in-out infinite alternate-reverse;
     }
 
-    :root[data-theme-mode="light"] .content--chat::before,
-    :root[data-theme-mode="light"] .shell--chat-focus .content::before {
-      opacity: 0.78;
+    .oc-chat-ambient__trend {
+      stroke: var(--oc-chat-trend);
+      stroke-width: 2.1;
+      filter: drop-shadow(0 0 8px color-mix(in srgb, white 46%, transparent));
+      opacity: 0.92;
+      animation: oc-chat-ambient-trend 14s ease-in-out infinite alternate;
     }
 
-    :root[data-theme-mode="light"] .content--chat::after,
-    :root[data-theme-mode="light"] .shell--chat-focus .content::after {
-      opacity: 0.66;
+    .oc-chat-ambient__node {
+      fill: var(--oc-chat-node);
+      opacity: 0.92;
+      animation: oc-chat-ambient-pulse 4.8s ease-in-out infinite;
     }
 
-    :root[data-theme-mode="dark"] .content--chat::before,
-    :root[data-theme-mode="dark"] .shell--chat-focus .content::before {
-      opacity: 0.7;
+    .oc-chat-ambient__node--soft {
+      fill: var(--oc-chat-node-soft);
+      animation-duration: 5.8s;
     }
 
-    :root[data-theme-mode="dark"] .content--chat::after,
-    :root[data-theme-mode="dark"] .shell--chat-focus .content::after {
-      opacity: 0.58;
+    .oc-chat-ambient__node--lg {
+      filter: drop-shadow(0 0 10px color-mix(in srgb, white 42%, transparent));
+    }
+
+    .oc-chat-ambient__spark {
+      fill: var(--oc-chat-particle);
+      opacity: 0.84;
+      animation: oc-chat-ambient-twinkle 5.6s ease-in-out infinite;
+    }
+
+    .oc-chat-ambient__spark--bright {
+      filter: drop-shadow(0 0 10px color-mix(in srgb, white 58%, transparent));
+      animation-duration: 4.2s;
     }
 
     .content--chat .callout.danger,
@@ -573,39 +669,99 @@ export function getFrameworkStyles() {
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .content--chat::before,
-      .content--chat::after,
-      .shell--chat-focus .content::before,
-      .shell--chat-focus .content::after {
+      .oc-chat-ambient__wash,
+      .oc-chat-ambient__bands,
+      .oc-chat-ambient__thread,
+      .oc-chat-ambient__trend,
+      .oc-chat-ambient__node,
+      .oc-chat-ambient__spark {
         animation: none;
       }
     }
 
-    @keyframes oc-chat-curve-drift {
+    @keyframes oc-chat-ambient-sway {
       0% {
-        transform: translate3d(-2%, 1%, 0) scale(1.02);
+        transform: translate3d(-2%, 1%, 0) scale(1.01);
       }
 
       50% {
-        transform: translate3d(1%, -1.5%, 0) scale(1.05);
+        transform: translate3d(1.2%, -1.4%, 0) scale(1.03);
       }
 
       100% {
-        transform: translate3d(3%, -2%, 0) scale(1.04);
+        transform: translate3d(2.8%, -2%, 0) scale(1.02);
       }
     }
 
-    @keyframes oc-chat-curve-float {
+    @keyframes oc-chat-ambient-glide {
       0% {
-        transform: translate3d(2%, 1%, 0) scale(1.01);
+        transform: translate3d(2%, 1%, 0) scale(1);
       }
 
       50% {
-        transform: translate3d(-1%, -1%, 0) scale(1.03);
+        transform: translate3d(-1.4%, -1.2%, 0) scale(1.02);
       }
 
       100% {
-        transform: translate3d(-3%, -2%, 0) scale(1.02);
+        transform: translate3d(-2.8%, -1.8%, 0) scale(1.01);
+      }
+    }
+
+    @keyframes oc-chat-ambient-trace {
+      from {
+        stroke-dashoffset: 0;
+      }
+
+      to {
+        stroke-dashoffset: -240;
+      }
+    }
+
+    @keyframes oc-chat-ambient-trend {
+      0% {
+        transform: translate3d(0, 3px, 0);
+      }
+
+      100% {
+        transform: translate3d(0, -2px, 0);
+      }
+    }
+
+    @keyframes oc-chat-ambient-pulse {
+      0%,
+      100% {
+        opacity: 0.66;
+        transform: scale(0.9);
+      }
+
+      50% {
+        opacity: 1;
+        transform: scale(1.08);
+      }
+    }
+
+    @keyframes oc-chat-ambient-twinkle {
+      0%,
+      100% {
+        opacity: 0.26;
+        transform: scale(0.9);
+      }
+
+      50% {
+        opacity: 0.92;
+        transform: scale(1.12);
+      }
+    }
+
+    @keyframes oc-chat-ambient-breathe {
+      0% {
+        opacity: 0.72;
+        transform: scale(0.98);
+      }
+
+      100% {
+        opacity: 0.96;
+        transform: scale(1.04);
       }
     }
 
