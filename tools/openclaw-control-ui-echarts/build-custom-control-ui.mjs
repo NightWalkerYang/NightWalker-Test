@@ -136,6 +136,7 @@ function main() {
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(outputDir, { recursive: true });
   fs.cpSync(sourceDir, outputDir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(outputDir, "workspace-downloads"), { recursive: true });
 
   const outputIndexPath = path.join(outputDir, "index.html");
   const outputIndex = fs.readFileSync(outputIndexPath, "utf8");

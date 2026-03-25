@@ -288,6 +288,7 @@ main() {
   rm -rf "$OUTPUT_DIR"
   mkdir -p "$OUTPUT_DIR/assets/vendor"
   cp -R "$source_dir"/. "$OUTPUT_DIR"/
+  mkdir -p "$OUTPUT_DIR/workspace-downloads"
 
   cp "$CONTROL_UI_RUNTIME_SCRIPT" "$OUTPUT_DIR/assets/openclaw-echarts-renderer.js"
   cp -R "$CONTROL_UI_RUNTIME_MODULE_DIR" "$OUTPUT_DIR/assets/runtime"
