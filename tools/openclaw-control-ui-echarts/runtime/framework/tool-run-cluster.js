@@ -195,6 +195,52 @@ function syncToolRuns() {
 
 export function bootToolRunCluster() {
   let frame = 0;
+  let syncing = false;
+  let observing = false;
+
+  const observer = new MutationObserver(() => {
+    if (syncing) {
+      return;
+    }
+    schedule();
+  });
+
+  const observe = () => {
+    if (observing) {
+      return;
+    }
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    observing = true;
+  };
+
+  const suspendObserver = () => {
+    if (!observing) {
+      return;
+    }
+    observer.disconnect();
+    observing = false;
+  };
+
+  const runSync = () => {
+    if (syncing) {
+      return;
+    }
+
+    syncing = true;
+    suspendObserver();
+    try {
+      syncToolRuns();
+    } finally {
+      syncing = false;
+      observe();
+    }
+  };
 
   const schedule = () => {
     if (frame) {
@@ -202,19 +248,11 @@ export function bootToolRunCluster() {
     }
     frame = requestAnimationFrame(() => {
       frame = 0;
-      syncToolRuns();
+      runSync();
     });
   };
 
-  syncToolRuns();
-
-  const observer = new MutationObserver(schedule);
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["class"],
-  });
+  runSync();
 
   window.addEventListener("pageshow", schedule);
 }

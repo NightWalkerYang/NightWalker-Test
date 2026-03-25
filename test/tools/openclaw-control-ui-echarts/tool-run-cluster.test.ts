@@ -104,4 +104,46 @@ describe("zero-intrusive tool run cluster", () => {
     expect(groups[2]?.hidden).toBe(false);
     expect(groups[2]?.querySelector(".oc-tool-run-cluster__toggle")).toBeTruthy();
   });
+
+  it("does not reschedule endlessly from its own regrouping mutations", async () => {
+    document.body.innerHTML = `
+      <main class="content content--chat">
+        <section class="chat-thread">
+          ${renderGroup("user", `<div class="chat-text">ask</div>`)}
+          ${renderGroup("assistant", `<details class="chat-tools-collapse"></details>`)}
+          ${renderGroup("tool", `<details class="chat-tool-msg-collapse"></details>`)}
+        </section>
+      </main>
+    `;
+
+    bootToolRunCluster();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    const originalRaf = globalThis.requestAnimationFrame;
+    const callbacks: FrameRequestCallback[] = [];
+
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    }) as typeof globalThis.requestAnimationFrame;
+
+    try {
+      const thread = document.querySelector(".chat-thread");
+      thread?.insertAdjacentHTML(
+        "beforeend",
+        renderGroup("assistant", `<details class="chat-tools-collapse"></details>`),
+      );
+
+      await Promise.resolve();
+      expect(callbacks).toHaveLength(1);
+
+      const first = callbacks.shift();
+      first?.(0);
+
+      await Promise.resolve();
+      expect(callbacks).toHaveLength(0);
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+    }
+  });
 });
