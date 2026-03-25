@@ -15,12 +15,13 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".content--chat");
     expect(styles).toContain("--accent: #7eaad4;");
     expect(styles).toContain(".agent-chat__input");
-    expect(styles).toContain(".agent-chat__input::after");
+    expect(styles).toContain("background: transparent;");
     expect(styles).toContain(".chat-attachments-preview");
     expect(styles).toContain(".agent-chat__toolbar");
-    expect(styles).toContain("grid-template-columns: minmax(0, 1fr) auto;");
-    expect(styles).toContain(".agent-chat__toolbar-left");
+    expect(styles).toContain("justify-content: center;");
+    expect(styles).toContain("display: contents;");
     expect(styles).toContain(".chat-send-btn");
+    expect(styles).toContain("position: absolute;");
     expect(styles).toContain(".agent-chat__input-btn");
   });
 });

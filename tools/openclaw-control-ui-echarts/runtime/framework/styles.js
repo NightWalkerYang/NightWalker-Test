@@ -67,66 +67,44 @@ export function getFrameworkStyles() {
 
     .agent-chat__input {
       position: relative;
-      display: grid;
-      gap: 10px;
-      overflow: hidden;
-      padding: 14px;
-      border-radius: 20px;
-      border-color: color-mix(in srgb, var(--border-strong, var(--border)) 42%, transparent);
-      background:
-        linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--panel, var(--card)) 96%, transparent)),
-        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 12%, transparent), transparent 52%);
-      box-shadow:
-        0 18px 42px color-mix(in srgb, var(--bg, #020617) 18%, transparent),
-        inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: visible;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
     }
 
     :root[data-theme-mode="light"] .agent-chat__input {
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.98), color-mix(in srgb, var(--card) 94%, var(--panel, white) 6%)),
-        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 8%, transparent), transparent 48%);
-      box-shadow:
-        0 16px 34px rgba(15, 23, 42, 0.08),
-        inset 0 1px 0 rgba(255, 255, 255, 0.66);
+      background: transparent;
+      box-shadow: none;
     }
 
     .agent-chat__input::before {
-      content: "";
-      position: absolute;
-      inset: 0 0 auto;
-      height: 72px;
-      background:
-        linear-gradient(180deg, color-mix(in srgb, white 8%, transparent), transparent 78%),
-        linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 54%, transparent), transparent);
-      opacity: 0.92;
-      pointer-events: none;
+      display: none;
     }
 
     .agent-chat__input::after {
-      content: "";
-      position: absolute;
-      top: 8px;
-      right: 10px;
-      width: 108px;
-      height: 108px;
-      border-radius: 999px;
-      background: radial-gradient(circle, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%);
-      opacity: 0.9;
-      pointer-events: none;
-      filter: blur(8px);
+      display: none;
     }
 
     .agent-chat__input > textarea {
       position: relative;
       z-index: 1;
-      min-height: 64px;
-      padding: 14px 16px 12px;
+      order: 3;
+      min-height: 72px;
+      padding: 18px 70px 18px 18px;
       border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-      border-radius: 16px;
+      border-radius: 20px;
       background:
         linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 94%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 88%, transparent)),
-        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 8%, transparent), transparent 58%);
-      box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%);
+      box-shadow:
+        inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
+        0 14px 30px color-mix(in srgb, var(--bg, #020617) 10%, transparent);
       letter-spacing: 0.01em;
       color: var(--text-strong, var(--text));
       text-wrap: pretty;
@@ -145,7 +123,8 @@ export function getFrameworkStyles() {
       border-color: color-mix(in srgb, var(--accent) 28%, var(--border) 72%);
       box-shadow:
         inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
-        0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+        0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
+        0 16px 34px color-mix(in srgb, var(--accent) 10%, transparent);
     }
 
     .agent-chat__input > textarea::placeholder {
@@ -155,21 +134,23 @@ export function getFrameworkStyles() {
     .chat-attachments-preview {
       position: relative;
       z-index: 1;
-      margin-bottom: 0;
-      padding: 8px;
-      border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-      border-radius: 16px;
-      background:
-        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 90%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 82%, transparent));
-      box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+      order: 2;
+      margin-bottom: 2px;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
     }
 
     .agent-chat__stt-interim {
       position: relative;
       z-index: 1;
+      order: 2;
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      align-self: center;
       padding: 8px 12px;
       border-radius: 14px;
       border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border) 82%);
@@ -184,46 +165,21 @@ export function getFrameworkStyles() {
     .agent-chat__toolbar {
       position: relative;
       z-index: 1;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
+      order: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
       padding: 0;
+      margin: 0 0 2px;
       border-top: none;
       background: transparent;
     }
 
     .agent-chat__toolbar-left,
     .agent-chat__toolbar-right {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 48px;
-      border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
-      border-radius: 16px;
-      padding: 6px 8px;
-      background:
-        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 92%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 86%, transparent));
-      box-shadow:
-        inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
-        0 12px 28px color-mix(in srgb, var(--bg, #020617) 8%, transparent);
-    }
-
-    :root[data-theme-mode="light"] .agent-chat__toolbar-left,
-    :root[data-theme-mode="light"] .agent-chat__toolbar-right {
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.92));
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.84),
-        0 10px 22px rgba(15, 23, 42, 0.05);
-    }
-
-    .agent-chat__toolbar-left {
-      min-width: 0;
-      justify-content: flex-start;
-    }
-
-    .agent-chat__toolbar-right {
-      justify-content: flex-end;
+      display: contents;
     }
 
     .agent-chat__input-btn,
@@ -231,8 +187,9 @@ export function getFrameworkStyles() {
       width: 36px;
       height: 36px;
       border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
-      border-radius: 12px;
-      background: color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 78%, transparent);
+      border-radius: 999px;
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 94%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 86%, transparent));
       color: color-mix(in srgb, var(--text) 78%, transparent);
       box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
       backdrop-filter: blur(8px);
@@ -261,24 +218,33 @@ export function getFrameworkStyles() {
     }
 
     .agent-chat__input-divider {
-      height: 22px;
-      margin: 0 2px;
-      background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--border) 78%, transparent), transparent);
+      display: none;
     }
 
     .agent-chat__token-count {
+      position: absolute;
+      left: 18px;
+      bottom: 16px;
+      z-index: 2;
       display: inline-flex;
       align-items: center;
-      min-height: 36px;
-      padding: 0 10px;
+      min-height: 28px;
+      padding: 0 9px;
       border-radius: 999px;
-      background: color-mix(in srgb, var(--panel, var(--card)) 82%, transparent);
+      background: color-mix(in srgb, var(--panel, var(--card)) 88%, transparent);
       color: color-mix(in srgb, var(--text) 72%, transparent);
+      font-size: 11px;
       line-height: 1;
       border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
 
     .chat-send-btn {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index: 3;
       width: 40px;
       height: 40px;
       border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
@@ -494,23 +460,23 @@ export function getFrameworkStyles() {
     }
 
     @media (max-width: 720px) {
-      .agent-chat__input {
-        padding: 12px;
+      .agent-chat__toolbar {
         gap: 8px;
       }
 
-      .agent-chat__toolbar {
-        grid-template-columns: 1fr;
+      .agent-chat__input > textarea {
+        min-height: 68px;
+        padding-right: 64px;
       }
 
-      .agent-chat__toolbar-left,
-      .agent-chat__toolbar-right {
-        width: 100%;
-        min-width: 0;
+      .agent-chat__token-count {
+        left: 16px;
+        bottom: 14px;
       }
 
-      .agent-chat__toolbar-right {
-        justify-content: space-between;
+      .chat-send-btn {
+        right: 12px;
+        bottom: 12px;
       }
     }
 
