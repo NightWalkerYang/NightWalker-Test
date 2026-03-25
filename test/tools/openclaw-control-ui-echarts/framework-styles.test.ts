@@ -22,6 +22,9 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain("display: none;");
     expect(styles).toContain(".chat-group.user .chat-bubble");
     expect(styles).toContain('[data-oc-tool-run]');
+    expect(styles).toContain(".oc-tool-run-cluster");
+    expect(styles).toContain(".oc-tool-run-cluster__toggle");
+    expect(styles).toContain('data-oc-tool-run-open="true"');
     expect(styles).toContain('.chat-group[data-oc-tool-run="start"] .chat-group-footer');
     expect(styles).toContain('.chat-group[data-oc-tool-run="mid"] .chat-bubble');
     expect(styles).toContain("--oc-chat-user-bubble-bg");
