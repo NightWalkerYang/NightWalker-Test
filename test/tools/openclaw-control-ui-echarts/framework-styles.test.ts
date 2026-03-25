@@ -21,6 +21,9 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".chat-avatar");
     expect(styles).toContain("display: none;");
     expect(styles).toContain(".chat-group.user .chat-bubble");
+    expect(styles).toContain('[data-oc-tool-run]');
+    expect(styles).toContain('.chat-group[data-oc-tool-run="start"] .chat-group-footer');
+    expect(styles).toContain('.chat-group[data-oc-tool-run="mid"] .chat-bubble');
     expect(styles).toContain("--oc-chat-user-bubble-bg");
     expect(styles).toContain("color: var(--oc-chat-user-bubble-text);");
     expect(styles).toContain(".agent-chat__input");

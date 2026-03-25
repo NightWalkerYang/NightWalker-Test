@@ -234,6 +234,73 @@ export function getFrameworkStyles() {
       margin-right: 0;
     }
 
+    .content--chat .chat-group[data-oc-tool-run],
+    .shell--chat-focus .content .chat-group[data-oc-tool-run] {
+      margin-bottom: 0;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run="mid"],
+    .content--chat .chat-group[data-oc-tool-run="end"],
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="mid"],
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="end"] {
+      margin-top: -1px;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run] .chat-group-messages,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run] .chat-group-messages {
+      gap: 0;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run="start"] .chat-group-footer,
+    .content--chat .chat-group[data-oc-tool-run="mid"] .chat-group-footer,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="start"] .chat-group-footer,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="mid"] .chat-group-footer {
+      display: none;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run] .chat-bubble,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run] .chat-bubble {
+      position: relative;
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 96%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 94%, transparent));
+      box-shadow:
+        inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
+        0 10px 24px color-mix(in srgb, var(--bg, #020617) 5%, transparent);
+    }
+
+    .content--chat .chat-group[data-oc-tool-run="start"] .chat-bubble,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="start"] .chat-bubble {
+      border-bottom-left-radius: 8px;
+      border-bottom-right-radius: 8px;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run="mid"] .chat-bubble,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="mid"] .chat-bubble {
+      border-top: 0;
+      border-radius: 0;
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--border) 54%, transparent);
+    }
+
+    .content--chat .chat-group[data-oc-tool-run="end"] .chat-bubble,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="end"] .chat-bubble {
+      border-top: 0;
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run] .chat-tool-msg-summary,
+    .content--chat .chat-group[data-oc-tool-run] .chat-tools-summary,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run] .chat-tool-msg-summary,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run] .chat-tools-summary {
+      min-height: 34px;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run="end"] .chat-group-footer,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run="end"] .chat-group-footer {
+      margin-top: 8px;
+      padding-left: 2px;
+    }
+
     .content--chat .chat-group.user .chat-bubble,
     .shell--chat-focus .content .chat-group.user .chat-bubble {
       background: var(--oc-chat-user-bubble-bg);

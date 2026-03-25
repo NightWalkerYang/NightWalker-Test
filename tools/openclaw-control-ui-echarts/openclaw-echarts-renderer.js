@@ -1,6 +1,7 @@
 import { createFencedBlockRuntime } from "./runtime/framework/fenced-block-runtime.js";
 import { bootBrandReplacer } from "./runtime/branding/brand-replacer.js";
 import { bootChatAmbientBackground } from "./runtime/background/chat-ambient.js";
+import { bootToolRunCluster } from "./runtime/framework/tool-run-cluster.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
 import { createFileAdapter } from "./runtime/file/adapter.js";
 
@@ -21,6 +22,7 @@ const runtime = createFencedBlockRuntime([
 function boot() {
   bootBrandReplacer();
   bootChatAmbientBackground();
+  bootToolRunCluster();
   runtime.boot();
 }
 
