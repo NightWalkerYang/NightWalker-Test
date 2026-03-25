@@ -1,5 +1,29 @@
 export function getEchartsStyles() {
   return `
+    .oc-block-renderer--echarts,
+    .oc-echarts-detail-modal {
+      --accent: #7eaad4;
+      --accent-hover: #96bce0;
+      --accent-muted: #7eaad4;
+      --accent-subtle: rgba(126, 170, 212, 0.16);
+      --accent-glow: rgba(126, 170, 212, 0.24);
+      --danger: #759bc3;
+      --danger-subtle: rgba(117, 155, 195, 0.14);
+      --primary-foreground: #f8fbff;
+    }
+
+    :root[data-theme-mode="light"] .oc-block-renderer--echarts,
+    :root[data-theme-mode="light"] .oc-echarts-detail-modal {
+      --accent: #5d88b5;
+      --accent-hover: #729bc5;
+      --accent-muted: #5d88b5;
+      --accent-subtle: rgba(93, 136, 181, 0.12);
+      --accent-glow: rgba(93, 136, 181, 0.18);
+      --danger: #678db8;
+      --danger-subtle: rgba(103, 141, 184, 0.12);
+      --primary-foreground: #ffffff;
+    }
+
     .oc-block-renderer--echarts {
       --oc-chart-surface:
         linear-gradient(180deg, color-mix(in srgb, var(--panel, #0f172a) 94%, transparent), color-mix(in srgb, var(--card, #111827) 96%, transparent));
@@ -42,9 +66,9 @@ export function getEchartsStyles() {
     }
 
     .oc-block-renderer--echarts .oc-block-renderer__badge {
-      background: linear-gradient(135deg, #f59e0b, #f97316);
-      color: #fff7ed;
-      box-shadow: 0 8px 18px rgba(249, 115, 22, 0.24);
+      background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, white 8%), color-mix(in srgb, var(--accent-hover, var(--accent)) 88%, black 4%));
+      color: var(--primary-foreground, #f8fbff);
+      box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 22%, transparent);
     }
 
     .oc-block-renderer--echarts .oc-block-renderer__summary {
@@ -112,7 +136,7 @@ export function getEchartsStyles() {
       justify-content: center;
       padding: 24px;
       background:
-        radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 42%),
+        radial-gradient(circle at top, color-mix(in srgb, var(--accent) 16%, transparent), transparent 42%),
         rgba(15, 23, 42, 0.5);
       backdrop-filter: blur(10px);
     }

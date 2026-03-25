@@ -51,6 +51,7 @@ This feature was added without modifying any existing OpenClaw source files.
 - The generated root `docker-compose.override.yml` also mounts `docs/reference/templates` into `/app/docs/reference/templates` to avoid workspace-template bootstrap failures in images missing those docs assets.
 - The generated root `docker-compose.override.yml` now also mounts the agent workspace into `/app/dist/control-ui/workspace-downloads` so zero-intrusive `file` cards can trigger same-origin browser downloads.
 - The runtime now installs its shared styles as soon as the Control UI boots, so focus mode and native chat composer styling no longer depend on an `echarts` or `file` block appearing first.
+- The chat page runtime now remaps chat-local accent and danger tokens to a muted business-blue palette and rebuilds the native composer layout into a clearer editor-plus-toolbar panel without editing OpenClaw source files.
 - The earlier userscript implementation is still present as an alternative zero-intrusion path.
 - `openclaw-echarts-renderer.user.js` is now the offline bundled version.
 - The Control UI path is now self-contained and no longer requires a vendor cache or CDN access on the target host.
