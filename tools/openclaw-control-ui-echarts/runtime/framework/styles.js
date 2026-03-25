@@ -42,6 +42,68 @@ export function getFrameworkStyles() {
       --primary-foreground: #ffffff;
     }
 
+    .content--chat,
+    .shell--chat-focus .content {
+      position: relative;
+      isolation: isolate;
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--bg, #020617) 97%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--bg-content, var(--bg, #020617)) 94%, transparent));
+    }
+
+    .content--chat > *,
+    .shell--chat-focus .content > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .content--chat::before,
+    .content--chat::after,
+    .shell--chat-focus .content::before,
+    .shell--chat-focus .content::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      transform: translate3d(0, 0, 0);
+      will-change: transform, opacity;
+    }
+
+    .content--chat::before,
+    .shell--chat-focus .content::before {
+      background:
+        radial-gradient(circle at 14% 78%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 18%),
+        radial-gradient(circle at 76% 36%, color-mix(in srgb, var(--accent-2) 14%, transparent), transparent 20%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' fill='none'%3E%3Cpath d='M-60 610C120 470 312 438 472 498C632 558 744 640 928 570C1112 500 1220 308 1424 292C1529 284 1610 300 1680 332' stroke='%2374a7de' stroke-width='4.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat, no-repeat, no-repeat;
+      background-size: 34% 34%, 40% 40%, 148% 78%;
+      background-position: 8% 84%, 82% 38%, center 63%;
+      opacity: 0.8;
+      animation: oc-chat-curve-drift 28s ease-in-out infinite alternate;
+    }
+
+    .content--chat::after,
+    .shell--chat-focus .content::after {
+      background:
+        radial-gradient(circle at 62% 70%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 22%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' fill='none'%3E%3Cpath d='M-80 770C134 590 362 612 548 676C736 742 866 760 1016 676C1166 592 1258 410 1410 430C1552 448 1644 546 1700 604' stroke='%238bbfc5' stroke-width='3.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat, no-repeat;
+      background-size: 42% 42%, 152% 82%;
+      background-position: 68% 72%, center 78%;
+      opacity: 0.64;
+      animation: oc-chat-curve-float 34s ease-in-out infinite alternate-reverse;
+    }
+
+    :root[data-theme-mode="light"] .content--chat::before,
+    :root[data-theme-mode="light"] .shell--chat-focus .content::before {
+      opacity: 0.92;
+    }
+
+    :root[data-theme-mode="light"] .content--chat::after,
+    :root[data-theme-mode="light"] .shell--chat-focus .content::after {
+      opacity: 0.72;
+    }
+
     .content--chat .callout.danger,
     .shell--chat-focus .content .callout.danger {
       border-color: color-mix(in srgb, var(--danger) 26%, var(--border) 74%);
@@ -489,6 +551,43 @@ export function getFrameworkStyles() {
       .chat-send-btn {
         right: 9px;
         bottom: 7px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .content--chat::before,
+      .content--chat::after,
+      .shell--chat-focus .content::before,
+      .shell--chat-focus .content::after {
+        animation: none;
+      }
+    }
+
+    @keyframes oc-chat-curve-drift {
+      0% {
+        transform: translate3d(-2%, 1%, 0) scale(1.02);
+      }
+
+      50% {
+        transform: translate3d(1%, -1.5%, 0) scale(1.05);
+      }
+
+      100% {
+        transform: translate3d(3%, -2%, 0) scale(1.04);
+      }
+    }
+
+    @keyframes oc-chat-curve-float {
+      0% {
+        transform: translate3d(2%, 1%, 0) scale(1.01);
+      }
+
+      50% {
+        transform: translate3d(-1%, -1%, 0) scale(1.03);
+      }
+
+      100% {
+        transform: translate3d(-3%, -2%, 0) scale(1.02);
       }
     }
 
