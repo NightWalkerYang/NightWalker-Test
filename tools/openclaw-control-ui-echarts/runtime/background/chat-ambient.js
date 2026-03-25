@@ -30,11 +30,17 @@ function createAmbientSvgMarkup(id) {
           <stop offset="0%" stop-color="var(--oc-chat-trace-warm-start)"></stop>
           <stop offset="100%" stop-color="var(--oc-chat-trace-warm-end)"></stop>
         </linearGradient>
-        <filter id="${id}-glow-wide" x="-25%" y="-40%" width="150%" height="180%">
+        <filter id="${id}-glow-wide" x="-35%" y="-50%" width="170%" height="200%">
+          <feGaussianBlur stdDeviation="34"></feGaussianBlur>
+        </filter>
+        <filter id="${id}-glow-soft" x="-28%" y="-42%" width="156%" height="184%">
           <feGaussianBlur stdDeviation="18"></feGaussianBlur>
         </filter>
-        <filter id="${id}-glow-soft" x="-20%" y="-30%" width="140%" height="160%">
-          <feGaussianBlur stdDeviation="8"></feGaussianBlur>
+        <filter id="${id}-glow-trace" x="-24%" y="-36%" width="148%" height="172%">
+          <feGaussianBlur stdDeviation="7.5"></feGaussianBlur>
+        </filter>
+        <filter id="${id}-glow-orbit" x="-24%" y="-36%" width="148%" height="172%">
+          <feGaussianBlur stdDeviation="5.5"></feGaussianBlur>
         </filter>
       </defs>
 
@@ -72,16 +78,19 @@ function createAmbientSvgMarkup(id) {
           class="oc-chat-ambient__thread oc-chat-ambient__thread--cool"
           d="M-102 754C132 568 352 520 556 584C754 646 896 766 1088 726C1288 684 1406 478 1602 456C1730 444 1826 480 1920 552"
           stroke="url(#${id}-trace)"
+          filter="url(#${id}-glow-trace)"
         ></path>
         <path
           class="oc-chat-ambient__thread oc-chat-ambient__thread--warm"
           d="M-114 816C122 640 336 614 530 674C720 736 858 832 1038 768C1220 704 1352 534 1544 548C1686 560 1800 642 1904 710"
           stroke="url(#${id}-trace-warm)"
+          filter="url(#${id}-glow-trace)"
         ></path>
         <path
           class="oc-chat-ambient__thread oc-chat-ambient__thread--dash"
           d="M164 708C334 612 500 602 652 644C788 682 940 688 1094 624C1248 560 1404 518 1560 544"
           stroke="url(#${id}-trace)"
+          filter="url(#${id}-glow-trace)"
         ></path>
       </g>
 
@@ -89,6 +98,7 @@ function createAmbientSvgMarkup(id) {
         <path
           class="oc-chat-ambient__orbit"
           d="M-60 626C178 500 388 490 592 548C784 600 954 562 1136 420C1292 300 1450 252 1632 300"
+          filter="url(#${id}-glow-orbit)"
         ></path>
         <circle class="oc-chat-ambient__node oc-chat-ambient__node--lg" cx="478" cy="546" r="4.6"></circle>
         <circle class="oc-chat-ambient__node" cx="794" cy="516" r="3.6"></circle>
@@ -98,6 +108,7 @@ function createAmbientSvgMarkup(id) {
         <path
           class="oc-chat-ambient__orbit oc-chat-ambient__orbit--low"
           d="M44 760C224 664 402 656 556 688C710 720 856 748 1036 706C1204 666 1344 568 1490 580"
+          filter="url(#${id}-glow-orbit)"
         ></path>
         <circle class="oc-chat-ambient__node oc-chat-ambient__node--soft" cx="356" cy="668" r="3.8"></circle>
         <circle class="oc-chat-ambient__node oc-chat-ambient__node--soft" cx="906" cy="730" r="4.4"></circle>
@@ -108,6 +119,7 @@ function createAmbientSvgMarkup(id) {
         <polyline
           class="oc-chat-ambient__trend"
           points="662,726 704,690 736,692 764,650 790,656 816,624 846,630 872,586 900,596 928,560 954,570 980,534 1010,548 1038,506 1068,522 1094,488 1128,504 1160,470 1192,478 1224,450 1260,458 1292,426 1328,438 1362,402 1394,414 1426,392 1458,406 1490,374 1520,388"
+          filter="url(#${id}-glow-orbit)"
         ></polyline>
         <circle class="oc-chat-ambient__spark oc-chat-ambient__spark--bright" cx="790" cy="656" r="1.8"></circle>
         <circle class="oc-chat-ambient__spark oc-chat-ambient__spark--bright" cx="980" cy="534" r="2"></circle>

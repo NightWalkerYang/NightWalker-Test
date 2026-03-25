@@ -113,18 +113,19 @@ export function getFrameworkStyles() {
       z-index: 0;
       overflow: hidden;
       pointer-events: none;
+      filter: saturate(1.08);
     }
 
     .oc-chat-ambient__svg {
       width: 100%;
       height: 100%;
       display: block;
-      opacity: 0.98;
+      opacity: 0.99;
     }
 
     .oc-chat-ambient__wash {
-      opacity: 0.9;
-      filter: blur(16px);
+      opacity: 0.94;
+      filter: blur(34px);
       animation: oc-chat-ambient-breathe 20s ease-in-out infinite alternate;
     }
 
@@ -134,12 +135,14 @@ export function getFrameworkStyles() {
     }
 
     .oc-chat-ambient__bands--back {
-      opacity: 0.95;
+      opacity: 0.98;
+      filter: blur(16px) saturate(1.08);
       animation: oc-chat-ambient-sway 24s ease-in-out infinite alternate;
     }
 
     .oc-chat-ambient__bands--front {
-      opacity: 0.84;
+      opacity: 0.9;
+      filter: blur(6px);
       animation: oc-chat-ambient-glide 30s ease-in-out infinite alternate-reverse;
     }
 
@@ -154,6 +157,7 @@ export function getFrameworkStyles() {
 
     .oc-chat-ambient__thread {
       stroke-width: 3;
+      opacity: 0.92;
     }
 
     .oc-chat-ambient__thread--cool,
@@ -176,19 +180,19 @@ export function getFrameworkStyles() {
     .oc-chat-ambient__orbit {
       stroke: var(--oc-chat-orbit);
       stroke-width: 1.8;
-      opacity: 0.8;
+      opacity: 0.7;
     }
 
     .oc-chat-ambient__orbit--low {
       stroke: var(--oc-chat-orbit-soft);
-      opacity: 0.72;
+      opacity: 0.62;
     }
 
     .oc-chat-ambient__trend {
       stroke: var(--oc-chat-trend);
       stroke-width: 2.1;
-      filter: drop-shadow(0 0 8px color-mix(in srgb, white 46%, transparent));
-      opacity: 0.92;
+      filter: drop-shadow(0 0 18px color-mix(in srgb, white 54%, transparent));
+      opacity: 0.78;
       animation: oc-chat-ambient-trend 14s ease-in-out infinite alternate;
     }
 
