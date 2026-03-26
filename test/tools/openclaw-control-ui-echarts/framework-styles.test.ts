@@ -18,6 +18,9 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".oc-chat-ambient__svg");
     expect(styles).toContain("@keyframes oc-chat-ambient-sway");
     expect(styles).toContain("@keyframes oc-chat-ambient-trace");
+    expect(styles).toContain(".oc-text-logo");
+    expect(styles).toContain(".oc-text-logo--sidebar");
+    expect(styles).toContain(".oc-text-logo--badge");
     expect(styles).toContain(".chat-avatar");
     expect(styles).toContain("display: none;");
     expect(styles).toContain(".chat-group.user .chat-bubble");

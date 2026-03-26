@@ -222,6 +222,61 @@ export function getFrameworkStyles() {
       box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
     }
 
+    .oc-text-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--text) 56%, var(--accent) 44%);
+      background:
+        linear-gradient(145deg, color-mix(in srgb, white 86%, transparent), color-mix(in srgb, var(--accent-subtle) 72%, transparent));
+      border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border) 82%);
+      box-shadow:
+        0 12px 26px color-mix(in srgb, var(--bg, #020617) 8%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 46%, transparent);
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .oc-text-logo--sidebar,
+    .oc-text-logo--avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      font-size: 10px;
+    }
+
+    .oc-text-logo--login,
+    .oc-text-logo--hero {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      font-size: 12px;
+    }
+
+    .oc-text-logo--badge {
+      height: 18px;
+      padding: 0 8px;
+      margin-right: 6px;
+      border-radius: 999px;
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      vertical-align: middle;
+    }
+
+    .agent-chat__avatar--logo > .oc-text-logo--hero {
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      border: 0;
+      box-shadow: none;
+      background:
+        linear-gradient(145deg, color-mix(in srgb, white 74%, transparent), color-mix(in srgb, var(--accent-subtle) 78%, transparent));
+    }
+
     .content--chat .chat-avatar,
     .shell--chat-focus .content .chat-avatar {
       display: none;
