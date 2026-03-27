@@ -307,6 +307,16 @@ export function getFrameworkStyles() {
       display: none !important;
     }
 
+    .content--chat .chat-group[data-oc-tool-run-stack="true"] .chat-group-messages,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-stack="true"] .chat-group-messages {
+      gap: 0;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry-hidden="true"],
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry-hidden="true"] {
+      display: none !important;
+    }
+
     .content--chat .chat-group[data-oc-tool-run="mid"],
     .content--chat .chat-group[data-oc-tool-run="end"],
     .shell--chat-focus .content .chat-group[data-oc-tool-run="mid"],
@@ -358,8 +368,13 @@ export function getFrameworkStyles() {
 
     .content--chat .chat-group[data-oc-tool-run] .chat-tool-msg-summary,
     .content--chat .chat-group[data-oc-tool-run] .chat-tools-summary,
+    .content--chat .chat-group[data-oc-tool-run-stack="true"] .chat-tool-msg-summary,
+    .content--chat .chat-group[data-oc-tool-run-stack="true"] .chat-tools-summary,
     .shell--chat-focus .content .chat-group[data-oc-tool-run] .chat-tool-msg-summary,
-    .shell--chat-focus .content .chat-group[data-oc-tool-run] .chat-tools-summary {
+    .shell--chat-focus .content .chat-group[data-oc-tool-run] .chat-tools-summary,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-stack="true"] .chat-tool-msg-summary,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-stack="true"] .chat-tools-summary {
+      position: relative;
       min-height: 34px;
     }
 
@@ -382,6 +397,15 @@ export function getFrameworkStyles() {
 
     .content--chat .oc-tool-run-cluster > .chat-group[data-oc-tool-run="end"] .chat-bubble,
     .shell--chat-focus .content .oc-tool-run-cluster > .chat-group[data-oc-tool-run="end"] .chat-bubble {
+      padding-right: 52px;
+    }
+
+    .content--chat .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry="end"] > .chat-tools-summary,
+    .content--chat .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry="end"] > .chat-tool-msg-summary,
+    .content--chat .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry="end"].chat-bubble,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry="end"] > .chat-tools-summary,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry="end"] > .chat-tool-msg-summary,
+    .shell--chat-focus .content .chat-group[data-oc-tool-run-stack="true"] [data-oc-tool-run-entry="end"].chat-bubble {
       padding-right: 52px;
     }
 

@@ -21,6 +21,25 @@ function renderGroup(role: string, body: string) {
   `;
 }
 
+function renderToolGroup(entries: string[]) {
+  return `
+    <div class="chat-group tool">
+      <div class="chat-group-messages">
+        ${entries
+          .map(
+            (entry) => `
+              <details class="chat-tools-collapse">
+                <summary class="chat-tools-summary">${entry}</summary>
+              </details>
+            `,
+          )
+          .join("")}
+        <div class="chat-group-footer"></div>
+      </div>
+    </div>
+  `;
+}
+
 describe("zero-intrusive tool run cluster", () => {
   it("clusters only contiguous tool-only groups within the same turn", async () => {
     document.body.innerHTML = `
@@ -163,5 +182,77 @@ describe("zero-intrusive tool run cluster", () => {
     } finally {
       globalThis.requestAnimationFrame = originalRaf;
     }
+  });
+
+  it("collapses live tool entries that stream into a single tool group", async () => {
+    document.body.innerHTML = `
+      <main class="content content--chat">
+        <section class="chat-thread">
+          ${renderGroup("user", `<div class="chat-text">ask</div>`)}
+          ${renderToolGroup(["1 tool read", "1 tool exec", "1 tool write"])}
+        </section>
+      </main>
+    `;
+
+    bootToolRunCluster();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    const group = document.querySelector(".chat-group.tool");
+    const entries = Array.from(
+      group?.querySelectorAll(":scope > .chat-group-messages > .chat-tools-collapse") || [],
+    );
+    expect(group?.getAttribute("data-oc-tool-run-stack")).toBe("true");
+    expect(entries).toHaveLength(3);
+    expect(entries[0]?.getAttribute("data-oc-tool-run-entry-hidden")).toBe("true");
+    expect(entries[1]?.getAttribute("data-oc-tool-run-entry-hidden")).toBe("true");
+    expect(entries[2]?.getAttribute("data-oc-tool-run-entry")).toBe("end");
+    expect(entries[0]?.hidden).toBe(true);
+    expect(entries[1]?.hidden).toBe(true);
+    expect(entries[2]?.hidden).toBe(false);
+
+    const toggle = entries[2]?.querySelector<HTMLButtonElement>(".oc-tool-run-cluster__toggle");
+    expect(toggle).toBeTruthy();
+
+    toggle?.click();
+
+    expect(group?.getAttribute("data-oc-tool-run-open")).toBe("true");
+    expect(entries[0]?.hidden).toBe(false);
+    expect(entries[1]?.hidden).toBe(false);
+    expect(entries[2]?.hidden).toBe(false);
+  });
+
+  it("re-collapses newly appended live tool entries without requiring a refresh", async () => {
+    document.body.innerHTML = `
+      <main class="content content--chat">
+        <section class="chat-thread">
+          ${renderGroup("user", `<div class="chat-text">ask</div>`)}
+          ${renderToolGroup(["1 tool read"])}
+        </section>
+      </main>
+    `;
+
+    bootToolRunCluster();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    const messages = document.querySelector(".chat-group.tool .chat-group-messages");
+    messages?.insertAdjacentHTML(
+      "beforeend",
+      `
+        <details class="chat-tools-collapse">
+          <summary class="chat-tools-summary">1 tool exec</summary>
+        </details>
+      `,
+    );
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    const entries = Array.from(
+      document.querySelectorAll(".chat-group.tool > .chat-group-messages > .chat-tools-collapse"),
+    );
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.getAttribute("data-oc-tool-run-entry-hidden")).toBe("true");
+    expect(entries[1]?.getAttribute("data-oc-tool-run-entry")).toBe("end");
+    expect(entries[0]?.hidden).toBe(true);
+    expect(entries[1]?.hidden).toBe(false);
+    expect(entries[1]?.querySelector(".oc-tool-run-cluster__toggle")).toBeTruthy();
   });
 });

@@ -5,6 +5,10 @@ const RUN_HIDDEN_ATTR = "data-oc-tool-run-hidden";
 const CLUSTER_SELECTOR = ".oc-tool-run-cluster";
 const CLUSTER_OPEN_ATTR = "data-oc-tool-run-open";
 const TOGGLE_SELECTOR = ".oc-tool-run-cluster__toggle";
+const STACK_ATTR = "data-oc-tool-run-stack";
+const STACK_ENTRY_ATTR = "data-oc-tool-run-entry";
+const STACK_ENTRY_HIDDEN_ATTR = "data-oc-tool-run-entry-hidden";
+const TOOL_ENTRY_SELECTOR = ".chat-bubble, .chat-tools-collapse, .chat-tool-msg-collapse";
 
 function isElement(node) {
   return node && node.nodeType === Node.ELEMENT_NODE;
@@ -31,6 +35,18 @@ function isToolSequenceGroup(group) {
 function clearToolRunMarkers() {
   for (const group of document.querySelectorAll(`${GROUP_SELECTOR}[${RUN_ATTR}]`)) {
     group.removeAttribute(RUN_ATTR);
+  }
+}
+
+function clearToolStackMarkers() {
+  for (const group of document.querySelectorAll(`${GROUP_SELECTOR}[${STACK_ATTR}]`)) {
+    group.removeAttribute(STACK_ATTR);
+  }
+
+  for (const entry of document.querySelectorAll(`[${STACK_ENTRY_ATTR}]`)) {
+    entry.removeAttribute(STACK_ENTRY_ATTR);
+    entry.removeAttribute(STACK_ENTRY_HIDDEN_ATTR);
+    entry.hidden = false;
   }
 }
 
@@ -86,6 +102,17 @@ function collectWrapperGroups(wrapper) {
   );
 }
 
+function collectToolEntries(group) {
+  const container = group?.querySelector?.(".chat-group-messages");
+  if (!container) {
+    return [];
+  }
+
+  return Array.from(container.children).filter(
+    (child) => isElement(child) && child.matches?.(TOOL_ENTRY_SELECTOR),
+  );
+}
+
 function syncClusterToggleState(wrapper) {
   const expanded = wrapper.getAttribute(CLUSTER_OPEN_ATTR) === "true";
   const button = wrapper.querySelector(TOGGLE_SELECTOR);
@@ -121,7 +148,7 @@ function setClusterExpanded(wrapper, expanded) {
   syncClusterToggleState(wrapper);
 }
 
-function createToggleButton(wrapper) {
+function createToggleButton(host, getExpanded, setExpanded) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "oc-tool-run-cluster__toggle";
@@ -133,7 +160,7 @@ function createToggleButton(wrapper) {
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setClusterExpanded(wrapper, wrapper.getAttribute(CLUSTER_OPEN_ATTR) !== "true");
+    setExpanded(host, !getExpanded(host));
   });
   return button;
 }
@@ -147,12 +174,20 @@ function clearRunToggles(groups) {
 }
 
 function mountToggle(wrapper, lastGroup) {
-  const bubble = lastGroup.querySelector(".chat-bubble");
-  if (!bubble) {
+  const target =
+    lastGroup.querySelector(".chat-bubble") ||
+    lastGroup.querySelector(".chat-tools-summary, .chat-tool-msg-summary");
+  if (!target) {
     return;
   }
 
-  bubble.append(createToggleButton(wrapper));
+  target.append(
+    createToggleButton(
+      wrapper,
+      (node) => node.getAttribute(CLUSTER_OPEN_ATTR) === "true",
+      setClusterExpanded,
+    ),
+  );
 }
 
 function wrapRun(parent, groups) {
@@ -188,9 +223,79 @@ function clearInactiveExpandedMarkers() {
   }
 }
 
+function syncStackToggleState(group) {
+  const expanded = group.getAttribute(CLUSTER_OPEN_ATTR) === "true";
+  const button = group.querySelector(TOGGLE_SELECTOR);
+
+  if (button) {
+    button.setAttribute("aria-expanded", expanded ? "true" : "false");
+    button.setAttribute("aria-label", expanded ? "收起工具过程" : "展开工具过程");
+    button.setAttribute("title", expanded ? "收起工具过程" : "展开工具过程");
+  }
+
+  const entries = collectToolEntries(group);
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    entry.setAttribute(STACK_ENTRY_ATTR, index === entries.length - 1 ? "end" : "mid");
+    if (expanded || index === entries.length - 1) {
+      entry.removeAttribute(STACK_ENTRY_HIDDEN_ATTR);
+      entry.hidden = false;
+    } else {
+      entry.setAttribute(STACK_ENTRY_HIDDEN_ATTR, "true");
+      entry.hidden = true;
+    }
+  }
+}
+
+function setStackExpanded(group, expanded) {
+  if (expanded) {
+    group.setAttribute(CLUSTER_OPEN_ATTR, "true");
+  } else {
+    group.removeAttribute(CLUSTER_OPEN_ATTR);
+  }
+  syncStackToggleState(group);
+}
+
+function mountStackToggle(group, lastEntry) {
+  const target =
+    lastEntry.matches?.(".chat-bubble")
+      ? lastEntry
+      : lastEntry.querySelector(".chat-tools-summary, .chat-tool-msg-summary");
+  if (!target) {
+    return;
+  }
+
+  target.append(
+    createToggleButton(
+      group,
+      (node) => node.getAttribute(CLUSTER_OPEN_ATTR) === "true",
+      setStackExpanded,
+    ),
+  );
+}
+
+function syncGroupedToolStacks() {
+  for (const group of document.querySelectorAll(`${GROUP_SELECTOR}.tool`)) {
+    if (group.hasAttribute(RUN_ATTR)) {
+      continue;
+    }
+
+    const entries = collectToolEntries(group);
+    if (entries.length <= 1) {
+      continue;
+    }
+
+    group.setAttribute(STACK_ATTR, "true");
+    clearRunToggles([group]);
+    mountStackToggle(group, entries[entries.length - 1]);
+    syncStackToggleState(group);
+  }
+}
+
 function syncToolRuns() {
   unwrapExistingClusters();
   clearToolRunMarkers();
+  clearToolStackMarkers();
 
   const parents = new Set();
   for (const group of document.querySelectorAll(GROUP_SELECTOR)) {
@@ -207,6 +312,7 @@ function syncToolRuns() {
   }
 
   clearInactiveExpandedMarkers();
+  syncGroupedToolStacks();
 }
 
 export function bootToolRunCluster() {
