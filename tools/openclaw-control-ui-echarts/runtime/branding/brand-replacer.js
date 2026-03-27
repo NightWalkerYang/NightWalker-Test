@@ -1,3 +1,5 @@
+import { getBrandFaviconDataUrl } from "./favicon.js";
+
 const TARGET_BRAND = "苏博泰克";
 const TARGET_LOGO_TEXT = "SPTC";
 const SOURCE_BRAND_PATTERN = /openclaw/gi;
@@ -10,6 +12,11 @@ const LOGO_SELECTOR = [
   ".chat-avatar--logo",
   ".agent-chat__badge img",
 ].join(", ");
+const FAVICON_LINKS = [
+  { rel: "icon", type: "image/svg+xml" },
+  { rel: "shortcut icon", type: "image/svg+xml" },
+  { rel: "apple-touch-icon", type: "image/svg+xml" },
+];
 
 function replaceBrandText(text) {
   return String(text ?? "").replace(SOURCE_BRAND_PATTERN, TARGET_BRAND);
@@ -131,6 +138,34 @@ function processDocumentTitle() {
   }
 }
 
+function processFavicons() {
+  const href = getBrandFaviconDataUrl();
+  const seenRels = new Set();
+
+  for (const link of document.head.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')) {
+    if (!(link instanceof HTMLLinkElement)) {
+      continue;
+    }
+
+    const rel = link.getAttribute("rel")?.trim().toLowerCase() || "icon";
+    seenRels.add(rel);
+    link.setAttribute("href", href);
+    link.setAttribute("type", "image/svg+xml");
+  }
+
+  for (const definition of FAVICON_LINKS) {
+    if (seenRels.has(definition.rel)) {
+      continue;
+    }
+
+    const link = document.createElement("link");
+    link.setAttribute("rel", definition.rel);
+    link.setAttribute("href", href);
+    link.setAttribute("type", definition.type);
+    document.head.append(link);
+  }
+}
+
 export function bootBrandReplacer() {
   if (window.__openclawBrandReplacerBooted) {
     return;
@@ -139,6 +174,7 @@ export function bootBrandReplacer() {
 
   const run = () => {
     processDocumentTitle();
+    processFavicons();
     processSubtree(document.body);
   };
 
@@ -146,6 +182,7 @@ export function bootBrandReplacer() {
 
   const observer = new MutationObserver((mutations) => {
     processDocumentTitle();
+    processFavicons();
     mutations.forEach((mutation) => {
       if (mutation.type === "characterData") {
         processTextNode(mutation.target);

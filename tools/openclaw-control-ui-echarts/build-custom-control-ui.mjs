@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -89,6 +90,32 @@ function injectRuntimeScript(indexHtml) {
   return indexHtml.replace("  </body>", `${scriptTag}  </body>`);
 }
 
+function replaceBrandFavicons(indexHtml) {
+  const lines = indexHtml.split(/\r?\n/);
+  const filtered = lines.filter(
+    (line) =>
+      !/<link\s+rel="icon"/i.test(line) &&
+      !/<link\s+rel="shortcut icon"/i.test(line) &&
+      !/<link\s+rel="apple-touch-icon"/i.test(line),
+  );
+
+  const headCloseIndex = filtered.findIndex((line) => line.includes("</head>"));
+  if (headCloseIndex === -1) {
+    throw new Error("index.html is missing </head>; cannot replace favicon links.");
+  }
+
+  const href = getBrandFaviconDataUrl();
+  filtered.splice(
+    headCloseIndex,
+    0,
+    `    <link rel="icon" type="image/svg+xml" href="${href}" />`,
+    `    <link rel="shortcut icon" type="image/svg+xml" href="${href}" />`,
+    `    <link rel="apple-touch-icon" type="image/svg+xml" href="${href}" />`,
+  );
+
+  return filtered.join("\n");
+}
+
 function copyFileIntoOutput(sourceFile, outputFile) {
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
   fs.copyFileSync(sourceFile, outputFile);
@@ -140,7 +167,11 @@ function main() {
 
   const outputIndexPath = path.join(outputDir, "index.html");
   const outputIndex = fs.readFileSync(outputIndexPath, "utf8");
-  fs.writeFileSync(outputIndexPath, injectRuntimeScript(outputIndex), "utf8");
+  fs.writeFileSync(
+    outputIndexPath,
+    injectRuntimeScript(replaceBrandFavicons(outputIndex)),
+    "utf8",
+  );
 
   const embeddedLibraries = extractEmbeddedLibraries(
     fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),

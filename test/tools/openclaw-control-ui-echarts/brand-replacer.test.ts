@@ -14,7 +14,11 @@ afterEach(() => {
 
 describe("zero-intrusive brand replacer", () => {
   it("replaces visible OpenClaw text and swaps logo images for SPTC text chips", async () => {
-    document.title = "OpenClaw";
+    document.head.innerHTML = `
+      <title>OpenClaw</title>
+      <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+      <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    `;
     document.body.innerHTML = `
       <div class="sidebar-brand">
         <img class="sidebar-brand__logo" src="favicon.svg" alt="OpenClaw" />
@@ -33,6 +37,12 @@ describe("zero-intrusive brand replacer", () => {
 
     expect(document.title).toBe("苏博泰克");
     expect(document.body.textContent).toContain("苏博泰克");
+    expect(document.querySelector('link[rel="icon"]')?.getAttribute("href")).toContain(
+      "data:image/svg+xml",
+    );
+    expect(document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute("href")).toContain(
+      "data:image/svg+xml",
+    );
     expect(document.querySelector(".sidebar-brand__logo")).toBeNull();
     expect(document.querySelector(".login-gate__logo")).toBeNull();
     expect(document.querySelector(".agent-chat__badge img")).toBeNull();
