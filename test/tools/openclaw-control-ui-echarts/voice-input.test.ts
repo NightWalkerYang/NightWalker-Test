@@ -79,6 +79,9 @@ describe("zero-intrusive voice input bridge", () => {
     expect(FakeSpeechRecognition.instances[0]?.started).toBe(true);
     expect(stop).toHaveBeenCalled();
     expect(document.querySelector(".agent-chat__input")?.getAttribute("data-oc-voice-recording")).toBe("true");
+    expect(document.querySelector(".agent-chat__input")?.getAttribute("data-oc-voice-state")).toBe("recording");
+    expect(document.querySelector(".oc-voice-status")?.textContent).toContain("正在听写");
+    expect(document.querySelector("button")?.classList.contains("agent-chat__input-btn--recording")).toBe(true);
 
     const resultEvent = new Event("result");
     Object.assign(resultEvent, {
@@ -98,6 +101,7 @@ describe("zero-intrusive voice input bridge", () => {
 
     FakeSpeechRecognition.instances[0]?.stop();
     expect(document.querySelector(".agent-chat__input")?.hasAttribute("data-oc-voice-recording")).toBe(false);
+    expect(document.querySelector(".agent-chat__input")?.hasAttribute("data-oc-voice-state")).toBe(false);
   });
 
   it("shows a visible error when microphone permission is denied", async () => {

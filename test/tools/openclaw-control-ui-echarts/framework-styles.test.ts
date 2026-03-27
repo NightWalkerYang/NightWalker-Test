@@ -39,7 +39,13 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".agent-chat__input");
     expect(styles).toContain("background: transparent;");
     expect(styles).toContain('[data-oc-voice-recording="true"]');
+    expect(styles).toContain('[data-oc-voice-state="starting"]');
+    expect(styles).toContain('[data-oc-voice-state="recording"]');
     expect(styles).toContain(".oc-voice-status");
+    expect(styles).toContain(".oc-voice-status--active");
+    expect(styles).toContain(".agent-chat__input-btn--pending");
+    expect(styles).toContain(".agent-chat__input-btn--recording:not(.agent-chat__input-btn--pending)");
+    expect(styles).toContain("@keyframes oc-voice-pulse");
     expect(styles).toContain(".chat-attachments-preview");
     expect(styles).toContain(".agent-chat__toolbar");
     expect(styles).toContain("position: static;");

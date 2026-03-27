@@ -523,6 +523,14 @@ export function getFrameworkStyles() {
       --ring: rgba(126, 170, 212, 0.52);
     }
 
+    .agent-chat__input[data-oc-voice-state="starting"] {
+      --ring: rgba(143, 181, 221, 0.58);
+    }
+
+    .agent-chat__input[data-oc-voice-state="recording"] {
+      --ring: rgba(99, 152, 211, 0.62);
+    }
+
     :root[data-theme-mode="light"] .agent-chat__input {
       background: transparent;
       box-shadow: none;
@@ -637,6 +645,16 @@ export function getFrameworkStyles() {
       color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
     }
 
+    .oc-voice-status--active {
+      border-color: color-mix(in srgb, var(--accent) 36%, var(--border) 64%);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, var(--panel, var(--card)) 88%), color-mix(in srgb, var(--accent) 8%, var(--bg-elevated, var(--panel, var(--card))) 92%));
+      color: color-mix(in srgb, var(--text) 76%, var(--accent) 24%);
+      box-shadow:
+        0 16px 34px color-mix(in srgb, var(--accent) 14%, transparent),
+        inset 0 1px 0 rgba(255, 255, 255, 0.58);
+    }
+
     .agent-chat__toolbar {
       position: static;
       z-index: auto;
@@ -690,6 +708,27 @@ export function getFrameworkStyles() {
       background: color-mix(in srgb, var(--accent) 16%, transparent);
       color: color-mix(in srgb, var(--accent) 86%, white 14%);
       box-shadow: 0 10px 20px color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+
+    .agent-chat__input-btn--pending {
+      border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, var(--panel, var(--card)) 84%), color-mix(in srgb, var(--accent) 10%, var(--bg-elevated, var(--panel, var(--card))) 90%));
+      color: color-mix(in srgb, var(--accent) 88%, white 12%);
+      box-shadow:
+        0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent),
+        0 10px 24px color-mix(in srgb, var(--accent) 16%, transparent);
+      animation: oc-voice-pulse 1.2s ease-in-out infinite;
+    }
+
+    .agent-chat__input-btn--recording:not(.agent-chat__input-btn--pending) {
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--accent) 24%, white 6%), color-mix(in srgb, var(--accent-hover, var(--accent)) 26%, var(--panel, var(--card)) 74%));
+      color: color-mix(in srgb, white 72%, var(--accent) 28%);
+      box-shadow:
+        0 0 0 5px color-mix(in srgb, var(--accent) 10%, transparent),
+        0 14px 28px color-mix(in srgb, var(--accent) 22%, transparent);
     }
 
     .agent-chat__input-divider {
@@ -747,6 +786,22 @@ export function getFrameworkStyles() {
       background:
         linear-gradient(135deg, color-mix(in srgb, var(--danger, #dc2626) 96%, white 4%), color-mix(in srgb, var(--danger, #dc2626) 86%, black 10%));
       box-shadow: 0 16px 28px color-mix(in srgb, var(--danger, #dc2626) 28%, transparent);
+    }
+
+    @keyframes oc-voice-pulse {
+      0%,
+      100% {
+        transform: scale(1);
+        box-shadow:
+          0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent),
+          0 10px 24px color-mix(in srgb, var(--accent) 16%, transparent);
+      }
+      50% {
+        transform: scale(1.06);
+        box-shadow:
+          0 0 0 8px color-mix(in srgb, var(--accent) 6%, transparent),
+          0 14px 28px color-mix(in srgb, var(--accent) 20%, transparent);
+      }
     }
 
     .oc-block-renderer__toolbar {

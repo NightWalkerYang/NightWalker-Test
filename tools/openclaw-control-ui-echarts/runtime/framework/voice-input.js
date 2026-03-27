@@ -6,6 +6,7 @@ const BUTTON_SELECTOR =
 const INPUT_SELECTOR = ".agent-chat__input textarea";
 const STATUS_SELECTOR = ".oc-voice-status";
 const RECORDING_ATTR = "data-oc-voice-recording";
+const VOICE_STATE_ATTR = "data-oc-voice-state";
 
 function getSpeechRecognitionCtor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -27,7 +28,7 @@ function clearStatus() {
   document.querySelector(STATUS_SELECTOR)?.remove();
 }
 
-function showStatus(message, tone = "info") {
+function showStatus(message, tone = "info", sticky = false) {
   const composer = getComposer();
   if (!composer) {
     return;
@@ -40,6 +41,10 @@ function showStatus(message, tone = "info") {
   status.textContent = message;
   composer.append(status);
 
+  if (sticky) {
+    return;
+  }
+
   window.setTimeout(() => {
     if (status.isConnected) {
       status.remove();
@@ -47,13 +52,15 @@ function showStatus(message, tone = "info") {
   }, 4200);
 }
 
-function applyButtonState(active) {
+function applyButtonState(mode) {
   const composer = getComposer();
   if (composer) {
-    if (active) {
+    if (mode !== "idle") {
       composer.setAttribute(RECORDING_ATTR, "true");
+      composer.setAttribute(VOICE_STATE_ATTR, mode);
     } else {
       composer.removeAttribute(RECORDING_ATTR);
+      composer.removeAttribute(VOICE_STATE_ATTR);
     }
   }
 
@@ -62,7 +69,9 @@ function applyButtonState(active) {
     return;
   }
 
+  const active = mode === "starting" || mode === "recording";
   button.classList.toggle("agent-chat__input-btn--recording", active);
+  button.classList.toggle("agent-chat__input-btn--pending", mode === "starting");
   button.setAttribute("title", active ? "Stop recording" : "Voice input");
   button.setAttribute("aria-label", active ? "Stop recording" : "Voice input");
 }
@@ -146,7 +155,24 @@ async function requestMicrophonePermission() {
 }
 
 function syncUiFromState(state) {
-  applyButtonState(Boolean(state.recognition || state.starting));
+  const mode = getModeFromState(state);
+  applyButtonState(mode);
+
+  if (mode === "starting") {
+    showStatus("正在启动语音输入...", "info", true);
+    return;
+  }
+
+  if (mode === "recording") {
+    showStatus("正在听写，点击麦克风可结束", "active", true);
+    return;
+  }
+
+  clearStatus();
+}
+
+function getModeFromState(state) {
+  return state.starting ? "starting" : state.recognition ? "recording" : "idle";
 }
 
 function createSpeechController() {
@@ -304,7 +330,7 @@ export function bootVoiceInputBridge() {
   );
 
   const observer = new MutationObserver(() => {
-    syncUiFromState(controller.state);
+    applyButtonState(getModeFromState(controller.state));
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
