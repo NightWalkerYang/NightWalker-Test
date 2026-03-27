@@ -218,39 +218,52 @@ inject_runtime_script() {
 
 replace_brand_favicons() {
   local index_path="$1"
-  local favicon_module_path="$TOOL_DIR/runtime/branding/favicon.js"
+  local python_bin
+  python_bin="$(resolve_python)"
 
-  node --input-type=module - "$index_path" "$favicon_module_path" <<'NODE'
-import fs from "node:fs";
-import { pathToFileURL } from "node:url";
+  "$python_bin" - "$index_path" <<'PY'
+import pathlib
+import re
+import sys
+import urllib.parse
 
-const [indexPath, faviconModulePath] = process.argv.slice(2);
-const { getBrandFaviconDataUrl } = await import(pathToFileURL(faviconModulePath).href);
-
-const lines = fs.readFileSync(indexPath, "utf8").split(/\r?\n/);
-const filtered = lines.filter(
-  (line) =>
-    !/<link\s+rel="icon"/i.test(line) &&
-    !/<link\s+rel="shortcut icon"/i.test(line) &&
-    !/<link\s+rel="apple-touch-icon"/i.test(line),
-);
-
-const headCloseIndex = filtered.findIndex((line) => line.includes("</head>"));
-if (headCloseIndex === -1) {
-  throw new Error(`index.html is missing </head>: ${indexPath}`);
-}
-
-const href = getBrandFaviconDataUrl();
-filtered.splice(
-  headCloseIndex,
-  0,
-  `    <link rel="icon" type="image/svg+xml" href="${href}" />`,
-  `    <link rel="shortcut icon" type="image/svg+xml" href="${href}" />`,
-  `    <link rel="apple-touch-icon" type="image/svg+xml" href="${href}" />`,
-);
-
-fs.writeFileSync(indexPath, `${filtered.join("\n")}\n`, "utf8");
-NODE
+index_path = pathlib.Path(sys.argv[1])
+svg = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="sptc-bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7fbff" />
+      <stop offset="1" stop-color="#d9e6f4" />
+    </linearGradient>
+    <linearGradient id="sptc-stroke" x1="14" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#88acd0" />
+      <stop offset="1" stop-color="#5f88b1" />
+    </linearGradient>
+  </defs>
+  <rect x="5.5" y="5.5" width="53" height="53" rx="16" fill="url(#sptc-bg)" stroke="url(#sptc-stroke)" stroke-width="1.5" />
+  <text x="32" y="37" text-anchor="middle" font-size="18" font-weight="800" letter-spacing="2.2" fill="#48698d" font-family="Inter, Segoe UI, Arial, sans-serif">SPTC</text>
+</svg>
+""".strip()
+href = "data:image/svg+xml;charset=utf-8," + urllib.parse.quote(svg)
+lines = index_path.read_text(encoding="utf-8").splitlines()
+filtered = [
+    line
+    for line in lines
+    if not re.search(r'<link\\s+rel="icon"', line, flags=re.I)
+    and not re.search(r'<link\\s+rel="shortcut icon"', line, flags=re.I)
+    and not re.search(r'<link\\s+rel="apple-touch-icon"', line, flags=re.I)
+]
+try:
+    head_close_index = next(index for index, line in enumerate(filtered) if "</head>" in line)
+except StopIteration as exc:
+    raise SystemExit(f"index.html is missing </head>: {index_path}") from exc
+filtered[head_close_index:head_close_index] = [
+    f'    <link rel="icon" type="image/svg+xml" href="{href}" />',
+    f'    <link rel="shortcut icon" type="image/svg+xml" href="{href}" />',
+    f'    <link rel="apple-touch-icon" type="image/svg+xml" href="{href}" />',
+]
+index_path.write_text("\\n".join(filtered) + "\\n", encoding="utf-8")
+PY
 }
 
 extract_offline_vendors() {
