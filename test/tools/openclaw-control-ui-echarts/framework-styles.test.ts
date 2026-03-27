@@ -38,6 +38,8 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain("color: var(--oc-chat-user-bubble-text);");
     expect(styles).toContain(".agent-chat__input");
     expect(styles).toContain("background: transparent;");
+    expect(styles).toContain('[data-oc-voice-recording="true"]');
+    expect(styles).toContain(".oc-voice-status");
     expect(styles).toContain(".chat-attachments-preview");
     expect(styles).toContain(".agent-chat__toolbar");
     expect(styles).toContain("position: static;");

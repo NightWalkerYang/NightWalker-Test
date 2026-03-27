@@ -519,6 +519,10 @@ export function getFrameworkStyles() {
       box-shadow: none;
     }
 
+    .agent-chat__input[data-oc-voice-recording="true"] {
+      --ring: rgba(126, 170, 212, 0.52);
+    }
+
     :root[data-theme-mode="light"] .agent-chat__input {
       background: transparent;
       box-shadow: none;
@@ -601,6 +605,36 @@ export function getFrameworkStyles() {
       line-height: 1.35;
       max-width: 100%;
       word-break: break-word;
+    }
+
+    .oc-voice-status {
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 10px);
+      transform: translateX(-50%);
+      z-index: 7;
+      max-width: min(72vw, 560px);
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 95%, white 5%), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 90%, transparent));
+      color: color-mix(in srgb, var(--text) 84%, var(--accent) 16%);
+      font-size: 12px;
+      line-height: 1.35;
+      letter-spacing: 0.01em;
+      box-shadow:
+        0 14px 30px color-mix(in srgb, var(--bg, #020617) 10%, transparent),
+        inset 0 1px 0 rgba(255, 255, 255, 0.56);
+      pointer-events: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .oc-voice-status--error {
+      border-color: color-mix(in srgb, var(--accent) 28%, var(--border) 72%);
+      color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
     }
 
     .agent-chat__toolbar {
