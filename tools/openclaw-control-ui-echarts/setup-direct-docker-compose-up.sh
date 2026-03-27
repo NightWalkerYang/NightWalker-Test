@@ -262,7 +262,7 @@ filtered[head_close_index:head_close_index] = [
     f'    <link rel="shortcut icon" type="image/svg+xml" href="{href}" />',
     f'    <link rel="apple-touch-icon" type="image/svg+xml" href="{href}" />',
 ]
-index_path.write_text("\\n".join(filtered) + "\\n", encoding="utf-8")
+index_path.write_text("\n".join(filtered) + "\n", encoding="utf-8")
 PY
 }
 
