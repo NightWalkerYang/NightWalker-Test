@@ -216,6 +216,43 @@ inject_runtime_script() {
   grep -Fq 'openclaw-echarts-renderer.js' "$index_path" || fail "Failed to inject the ECharts runtime into $index_path"
 }
 
+replace_brand_favicons() {
+  local index_path="$1"
+  local favicon_module_path="$TOOL_DIR/runtime/branding/favicon.js"
+
+  node --input-type=module - "$index_path" "$favicon_module_path" <<'NODE'
+import fs from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const [indexPath, faviconModulePath] = process.argv.slice(2);
+const { getBrandFaviconDataUrl } = await import(pathToFileURL(faviconModulePath).href);
+
+const lines = fs.readFileSync(indexPath, "utf8").split(/\r?\n/);
+const filtered = lines.filter(
+  (line) =>
+    !/<link\s+rel="icon"/i.test(line) &&
+    !/<link\s+rel="shortcut icon"/i.test(line) &&
+    !/<link\s+rel="apple-touch-icon"/i.test(line),
+);
+
+const headCloseIndex = filtered.findIndex((line) => line.includes("</head>"));
+if (headCloseIndex === -1) {
+  throw new Error(`index.html is missing </head>: ${indexPath}`);
+}
+
+const href = getBrandFaviconDataUrl();
+filtered.splice(
+  headCloseIndex,
+  0,
+  `    <link rel="icon" type="image/svg+xml" href="${href}" />`,
+  `    <link rel="shortcut icon" type="image/svg+xml" href="${href}" />`,
+  `    <link rel="apple-touch-icon" type="image/svg+xml" href="${href}" />`,
+);
+
+fs.writeFileSync(indexPath, `${filtered.join("\n")}\n`, "utf8");
+NODE
+}
+
 extract_offline_vendors() {
   local bundle_path="$1"
   local vendor_dir="$2"
@@ -296,6 +333,7 @@ main() {
 
   [[ -f "$OUTPUT_DIR/index.html" ]] || fail "Generated Control UI root is missing index.html"
   inject_runtime_script "$OUTPUT_DIR/index.html"
+  replace_brand_favicons "$OUTPUT_DIR/index.html"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
 
