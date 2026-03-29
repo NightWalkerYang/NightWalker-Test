@@ -64,6 +64,14 @@ read_dotenv_value() {
   ' "$ENV_FILE"
 }
 
+resolve_auto_gateway_token() {
+  local token="${OPENCLAW_GATEWAY_TOKEN:-}"
+  if [[ -z "$token" ]]; then
+    token="$(read_dotenv_value OPENCLAW_GATEWAY_TOKEN || true)"
+  fi
+  trim_whitespace "$token"
+}
+
 validate_extra_mount_spec() {
   local mount="$1"
 
@@ -266,6 +274,146 @@ index_path.write_text("\n".join(filtered) + "\n", encoding="utf-8")
 PY
 }
 
+inject_auto_gateway_token_bootstrap() {
+  local index_path="$1"
+  local token="$2"
+  local python_bin
+
+  token="$(trim_whitespace "$token")"
+  [[ -n "$token" ]] || return 0
+
+  python_bin="$(resolve_python)"
+
+  "$python_bin" - "$index_path" "$token" <<'PY'
+import json
+import pathlib
+import sys
+
+index_path = pathlib.Path(sys.argv[1])
+token = (sys.argv[2] or "").strip()
+if not token:
+    raise SystemExit(0)
+
+html = index_path.read_text(encoding="utf-8")
+if "data-openclaw-auto-token-bootstrap" in html:
+    raise SystemExit(0)
+
+token_literal = (
+    json.dumps(token)
+    .replace("<", "\\u003c")
+    .replace(">", "\\u003e")
+    .replace("&", "\\u0026")
+    .replace("\u2028", "\\u2028")
+    .replace("\u2029", "\\u2029")
+)
+script = f"""    <script data-openclaw-auto-token-bootstrap>
+      ((rawToken) => {{
+        const CONTROL_UI_TAB_PATHS = new Set([
+          "/agents",
+          "/overview",
+          "/channels",
+          "/instances",
+          "/sessions",
+          "/usage",
+          "/cron",
+          "/skills",
+          "/nodes",
+          "/chat",
+          "/config",
+          "/communications",
+          "/appearance",
+          "/automation",
+          "/infrastructure",
+          "/ai-agents",
+          "/debug",
+          "/logs",
+        ]);
+        const normalizeBasePath = (basePath) => {{
+          if (!basePath) return "";
+          let base = String(basePath).trim();
+          if (!base) return "";
+          if (!base.startsWith("/")) base = `/${{base}}`;
+          if (base === "/") return "";
+          if (base.endsWith("/")) base = base.slice(0, -1);
+          return base;
+        }};
+        const normalizePath = (value) => {{
+          if (!value) return "/";
+          let normalized = String(value).trim();
+          if (!normalized.startsWith("/")) normalized = `/${{normalized}}`;
+          if (normalized.length > 1 && normalized.endsWith("/")) {{
+            normalized = normalized.slice(0, -1);
+          }}
+          return normalized;
+        }};
+        const inferBasePathFromPathname = (pathname) => {{
+          let normalized = normalizePath(pathname);
+          if (normalized.endsWith("/index.html")) {{
+            normalized = normalizePath(normalized.slice(0, -"/index.html".length));
+          }}
+          if (normalized === "/") return "";
+          const segments = normalized.split("/").filter(Boolean);
+          if (segments.length === 0) return "";
+          for (let index = 0; index < segments.length; index += 1) {{
+            const candidate = `/${{segments.slice(index).join("/")}}`.toLowerCase();
+            if (CONTROL_UI_TAB_PATHS.has(candidate)) {{
+              const prefix = segments.slice(0, index);
+              return prefix.length > 0 ? `/${{prefix.join("/")}}` : "";
+            }}
+          }}
+          return `/${{segments.join("/")}}`;
+        }};
+        const normalizeGatewayTokenScope = (gatewayUrl) => {{
+          const trimmed = String(gatewayUrl || "").trim();
+          if (!trimmed) return "default";
+          try {{
+            const base =
+              typeof location !== "undefined"
+                ? `${{location.protocol}}//${{location.host}}${{location.pathname || "/"}}`
+                : undefined;
+            const parsed = base ? new URL(trimmed, base) : new URL(trimmed);
+            const pathname =
+              parsed.pathname === "/"
+                ? ""
+                : parsed.pathname.replace(/\\/+$/, "") || parsed.pathname;
+            return `${{parsed.protocol}}//${{parsed.host}}${{pathname}}`;
+          }} catch {{
+            return trimmed;
+          }}
+        }};
+        const token = String(rawToken ?? "").trim();
+        if (!token || typeof window === "undefined" || typeof location === "undefined") {{
+          return;
+        }}
+        try {{
+          const storage = window.sessionStorage;
+          if (!storage) return;
+          const configured =
+            typeof window.__OPENCLAW_CONTROL_UI_BASE_PATH__ === "string" &&
+            window.__OPENCLAW_CONTROL_UI_BASE_PATH__.trim();
+          const basePath = configured
+            ? normalizeBasePath(window.__OPENCLAW_CONTROL_UI_BASE_PATH__)
+            : inferBasePathFromPathname(location.pathname);
+          const proto = location.protocol === "https:" ? "wss" : "ws";
+          const gatewayUrl = `${{proto}}://${{location.host}}${{basePath}}`;
+          const scope = normalizeGatewayTokenScope(gatewayUrl);
+          storage.setItem(`openclaw.control.token.v1:${{scope}}`, token);
+          window.__OPENCLAW_CONTROL_UI_AUTO_TOKEN__ = true;
+        }} catch {{
+          // best-effort only
+        }}
+      }})({token_literal});
+    </script>
+"""
+
+if "</head>" not in html:
+    raise SystemExit(f"index.html is missing </head>: {index_path}")
+
+html = html.replace("  </head>", f"{script}\n  </head>", 1)
+index_path.write_text(html, encoding="utf-8")
+PY
+}
+
 extract_offline_vendors() {
   local bundle_path="$1"
   local vendor_dir="$2"
@@ -345,6 +493,9 @@ main() {
   extract_offline_vendors "$OFFLINE_BUNDLED_USERSCRIPT" "$OUTPUT_DIR/assets/vendor"
 
   [[ -f "$OUTPUT_DIR/index.html" ]] || fail "Generated Control UI root is missing index.html"
+  local auto_gateway_token
+  auto_gateway_token="$(resolve_auto_gateway_token)"
+  inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
   inject_runtime_script "$OUTPUT_DIR/index.html"
   replace_brand_favicons "$OUTPUT_DIR/index.html"
   collect_extra_mounts

@@ -4,12 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
+import { injectAutoGatewayTokenBootstrap } from "./runtime/branding/auto-token.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 
 const DEFAULT_SOURCE_DIR = path.join(repoRoot, "dist", "control-ui");
 const DEFAULT_OUTPUT_DIR = path.join(here, "generated", "control-ui");
+const ENV_FILE_PATH = path.join(repoRoot, ".env");
 const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(
   here,
   "openclaw-echarts-renderer.js",
@@ -64,6 +66,24 @@ function resolveRepoPath(value, fallback) {
     return fallback;
   }
   return path.isAbsolute(value) ? value : path.resolve(repoRoot, value);
+}
+
+function readDotenvValue(key) {
+  if (!fs.existsSync(ENV_FILE_PATH)) {
+    return undefined;
+  }
+  const lines = fs.readFileSync(ENV_FILE_PATH, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    if (line.startsWith(`${key}=`)) {
+      return line.slice(key.length + 1);
+    }
+  }
+  return undefined;
+}
+
+function resolveAutoGatewayToken() {
+  return (process.env.OPENCLAW_GATEWAY_TOKEN ?? readDotenvValue("OPENCLAW_GATEWAY_TOKEN") ?? "")
+    .trim();
 }
 
 function ensureFileExists(filePath, label) {
@@ -167,9 +187,14 @@ function main() {
 
   const outputIndexPath = path.join(outputDir, "index.html");
   const outputIndex = fs.readFileSync(outputIndexPath, "utf8");
+  const autoGatewayToken = resolveAutoGatewayToken();
   fs.writeFileSync(
     outputIndexPath,
-    injectRuntimeScript(replaceBrandFavicons(outputIndex)),
+    injectRuntimeScript(
+      replaceBrandFavicons(
+        injectAutoGatewayTokenBootstrap(outputIndex, autoGatewayToken),
+      ),
+    ),
     "utf8",
   );
 
