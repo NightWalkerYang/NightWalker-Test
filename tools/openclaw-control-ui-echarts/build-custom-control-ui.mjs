@@ -17,6 +17,7 @@ const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(
   "openclaw-echarts-renderer.js",
 );
 const CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE = path.join(here, "runtime");
+const CONTROL_UI_STATIC_DIR_SOURCE = path.join(here, "static");
 const OFFLINE_BUNDLED_USERSCRIPT_SOURCE = path.join(
   repoRoot,
   "tools",
@@ -178,11 +179,13 @@ function main() {
   ensureFileExists(path.join(sourceDir, "index.html"), "Source control-ui index.html");
   ensureFileExists(CONTROL_UI_RUNTIME_SCRIPT_SOURCE, "Control UI ECharts runtime");
   ensureDirectoryExists(CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE, "Control UI ECharts runtime modules");
+  ensureDirectoryExists(CONTROL_UI_STATIC_DIR_SOURCE, "Control UI static overlay assets");
   ensureFileExists(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "Offline bundled ECharts userscript");
 
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(outputDir, { recursive: true });
   fs.cpSync(sourceDir, outputDir, { recursive: true, force: true });
+  fs.cpSync(CONTROL_UI_STATIC_DIR_SOURCE, outputDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(outputDir, "workspace-downloads"), { recursive: true });
 
   const outputIndexPath = path.join(outputDir, "index.html");

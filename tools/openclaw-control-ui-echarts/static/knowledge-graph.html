@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>苏博泰克 知识图谱</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./assets/runtime/knowledge-graph/page.css" />
+    <script src="./assets/vendor/echarts.min.js"></script>
+    <script type="module" src="./assets/runtime/knowledge-graph/page.js"></script>
+  </head>
+  <body>
+    <main class="kg-page" data-oc-knowledge-graph-page>
+      <section class="kg-stage">
+        <header class="kg-stage__header">
+          <div class="kg-stage__intro">
+            <p class="kg-stage__eyebrow">SPTC Knowledge Graph</p>
+            <h1>实体关系图谱</h1>
+            <p class="kg-stage__copy">
+              点击任意实体，图谱会突出它的直接连接关系；右侧面板可以继续补充实体和关联。
+            </p>
+          </div>
+          <div class="kg-stage__actions">
+            <button class="kg-btn kg-btn--ghost" type="button" data-kg-clear-selection>
+              取消选中
+            </button>
+            <button class="kg-btn kg-btn--primary" type="button" data-kg-reset-graph>
+              重置布局
+            </button>
+          </div>
+        </header>
+
+        <div class="kg-stage__stats" data-kg-stats>
+          <article class="kg-stat">
+            <span class="kg-stat__label">实体</span>
+            <strong class="kg-stat__value" data-kg-stat-nodes>0</strong>
+          </article>
+          <article class="kg-stat">
+            <span class="kg-stat__label">关系</span>
+            <strong class="kg-stat__value" data-kg-stat-links>0</strong>
+          </article>
+          <article class="kg-stat">
+            <span class="kg-stat__label">当前焦点</span>
+            <strong class="kg-stat__value" data-kg-stat-focus>未选中</strong>
+          </article>
+        </div>
+
+        <div class="kg-stage__canvas-wrap">
+          <div class="kg-canvas" data-kg-canvas></div>
+        </div>
+      </section>
+
+      <aside class="kg-sidebar">
+        <section class="kg-panel">
+          <div class="kg-panel__head">
+            <h2>实体详情</h2>
+            <span class="kg-panel__hint">点击图谱节点可切换焦点</span>
+          </div>
+          <div class="kg-detail" data-kg-selected-card>
+            <div class="kg-detail__empty">
+              选择一个实体后，这里会显示它的类型、描述和直接关联节点。
+            </div>
+          </div>
+        </section>
+
+        <section class="kg-panel">
+          <div class="kg-panel__head">
+            <h2>新增实体</h2>
+            <span class="kg-panel__hint">参考 Obsidian 的图谱面板思路</span>
+          </div>
+          <form class="kg-form" data-kg-node-form>
+            <label class="kg-field">
+              <span>实体名称</span>
+              <input name="name" type="text" placeholder="例如：客户画像" required />
+            </label>
+            <label class="kg-field">
+              <span>实体类型</span>
+              <input name="type" type="text" placeholder="例如：概念 / 人物 / 文档" />
+            </label>
+            <label class="kg-field">
+              <span>描述</span>
+              <textarea
+                name="description"
+                rows="3"
+                placeholder="输入该实体的说明、备注或摘要"
+              ></textarea>
+            </label>
+            <label class="kg-field">
+              <span>主题色</span>
+              <input name="color" type="color" value="#6ca8ff" />
+            </label>
+            <label class="kg-field">
+              <span>关联到</span>
+              <select name="connectTo">
+                <option value="">暂不关联</option>
+              </select>
+            </label>
+            <label class="kg-field">
+              <span>关系名称</span>
+              <input name="relationLabel" type="text" placeholder="例如：引用 / 支撑 / 依赖" />
+            </label>
+            <button class="kg-btn kg-btn--primary" type="submit">添加实体</button>
+          </form>
+        </section>
+
+        <section class="kg-panel">
+          <div class="kg-panel__head">
+            <h2>新增关系</h2>
+            <span class="kg-panel__hint">在已有实体间补一条边</span>
+          </div>
+          <form class="kg-form" data-kg-link-form>
+            <label class="kg-field">
+              <span>起点</span>
+              <select name="sourceId"></select>
+            </label>
+            <label class="kg-field">
+              <span>终点</span>
+              <select name="targetId"></select>
+            </label>
+            <label class="kg-field">
+              <span>关系</span>
+              <input name="label" type="text" placeholder="例如：关联 / 触发 / 归属" required />
+            </label>
+            <button class="kg-btn kg-btn--secondary" type="submit">添加关系</button>
+          </form>
+        </section>
+
+        <p class="kg-feedback" data-kg-feedback>
+          当前页面是零侵入静态页，数据仅保存在浏览器内存里。
+        </p>
+      </aside>
+    </main>
+  </body>
+</html>
