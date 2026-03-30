@@ -3,8 +3,11 @@ import { getBrandFaviconDataUrl } from "./favicon.js";
 const TARGET_BRAND = "苏博泰克";
 const TARGET_LOGO_TEXT = "SPTC";
 const SOURCE_BRAND_PATTERN = /openclaw/gi;
-const SKIP_SELECTOR =
-  "code, pre, samp, kbd, textarea, input, script, style, noscript, [contenteditable='true']";
+const BRAND_TEXT_SELECTOR = [
+  ".sidebar-brand__title",
+  ".login-gate__title",
+  ".dashboard-header__breadcrumb-link",
+].join(", ");
 const LOGO_SELECTOR = [
   ".sidebar-brand__logo",
   ".login-gate__logo",
@@ -22,23 +25,15 @@ function replaceBrandText(text) {
   return String(text ?? "").replace(SOURCE_BRAND_PATTERN, TARGET_BRAND);
 }
 
-function shouldSkipTextNode(node) {
-  const parent = node.parentElement;
-  if (!(parent instanceof HTMLElement)) {
-    return true;
-  }
-  return Boolean(parent.closest(SKIP_SELECTOR));
-}
-
-function processTextNode(node) {
-  if (!(node instanceof Text) || shouldSkipTextNode(node)) {
+function processBrandTextElement(element) {
+  if (!(element instanceof HTMLElement)) {
     return;
   }
 
-  const current = node.nodeValue ?? "";
+  const current = element.textContent ?? "";
   const next = replaceBrandText(current);
   if (next !== current) {
-    node.nodeValue = next;
+    element.textContent = next;
   }
 }
 
@@ -110,24 +105,27 @@ function processLogoSubtree(root) {
   }
 }
 
-function processSubtree(root) {
-  if (!root) {
+function processBrandTextSubtree(root) {
+  if (!(root instanceof Element)) {
     return;
   }
 
-  if (root instanceof Text) {
-    processTextNode(root);
+  if (root.matches(BRAND_TEXT_SELECTOR)) {
+    processBrandTextElement(root);
+  }
+
+  for (const element of root.querySelectorAll(BRAND_TEXT_SELECTOR)) {
+    processBrandTextElement(element);
+  }
+}
+
+function processSubtree(root) {
+  if (!(root instanceof Element)) {
     return;
   }
 
   processLogoSubtree(root);
-
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let current = walker.nextNode();
-  while (current) {
-    processTextNode(current);
-    current = walker.nextNode();
-  }
+  processBrandTextSubtree(root);
 }
 
 function processDocumentTitle() {
@@ -185,12 +183,22 @@ export function bootBrandReplacer() {
     processFavicons();
     mutations.forEach((mutation) => {
       if (mutation.type === "characterData") {
-        processTextNode(mutation.target);
+        const parent = mutation.target.parentElement;
+        if (!(parent instanceof HTMLElement)) {
+          return;
+        }
+
+        const brandTarget = parent.closest(BRAND_TEXT_SELECTOR);
+        if (brandTarget instanceof HTMLElement) {
+          processBrandTextElement(brandTarget);
+        }
         return;
       }
 
       mutation.addedNodes.forEach((node) => {
-        processSubtree(node);
+        if (node instanceof Element) {
+          processSubtree(node);
+        }
       });
     });
   });
