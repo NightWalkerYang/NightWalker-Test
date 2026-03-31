@@ -8,7 +8,10 @@ import {
   addKnowledgeRelation,
   bootKnowledgeGraphPage,
   buildKnowledgeGraphOption,
+  clearPersistedKnowledgeGraphState,
   createKnowledgeGraphState,
+  readPersistedKnowledgeGraphState,
+  serializeKnowledgeGraphState,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.js";
 
 class FakeResizeObserver {
@@ -19,8 +22,12 @@ class FakeResizeObserver {
 function renderPage() {
   document.body.innerHTML = `
     <main class="kg-page" data-oc-knowledge-graph-page>
+      <button type="button" data-kg-export></button>
+      <button type="button" data-kg-import-trigger></button>
+      <button type="button" data-kg-restore-defaults></button>
       <button type="button" data-kg-clear-selection></button>
       <button type="button" data-kg-reset-graph></button>
+      <input type="file" data-kg-import-file />
       <strong data-kg-stat-nodes></strong>
       <strong data-kg-stat-links></strong>
       <strong data-kg-stat-focus></strong>
@@ -52,6 +59,7 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  window.localStorage.clear();
   delete globalThis.ResizeObserver;
   delete window.echarts;
   vi.restoreAllMocks();
@@ -149,5 +157,63 @@ describe("knowledge graph page", () => {
     expect(document.querySelector("[data-kg-stat-nodes]")?.textContent).toBe("7");
     expect(document.querySelector("[data-kg-feedback]")?.textContent).toContain("已添加实体");
     expect(fakeChart.option?.series?.[0]?.data?.some((item) => item.name === "实体Y")).toBe(true);
+    expect(readPersistedKnowledgeGraphState()?.nodes.some((item) => item.name === "实体Y")).toBe(true);
+  });
+
+  it("restores a previously persisted graph snapshot on boot", () => {
+    renderPage();
+
+    window.localStorage.setItem(
+      "openclaw:knowledge-graph:v1",
+      serializeKnowledgeGraphState({
+        nodes: [
+          {
+            id: "persisted-a",
+            name: "持久节点A",
+            type: "概念",
+            description: "来自本地存储",
+            color: "#6ca8ff",
+          },
+        ],
+        links: [],
+        selectedId: "persisted-a",
+      }),
+    );
+
+    const fakeChart = {
+      option: null,
+      setOption(option) {
+        this.option = option;
+      },
+      on: vi.fn(),
+      getZr() {
+        return { on: vi.fn() };
+      },
+      resize: vi.fn(),
+      dispatchAction: vi.fn(),
+    };
+
+    window.echarts = {
+      init: vi.fn(() => fakeChart),
+    };
+
+    const result = bootKnowledgeGraphPage();
+    expect(result?.state.nodes).toHaveLength(1);
+    expect(result?.state.nodes[0]?.name).toBe("持久节点A");
+    expect(document.querySelector("[data-kg-stat-focus]")?.textContent).toBe("持久节点A");
+    expect(document.querySelector("[data-kg-feedback]")?.textContent).toContain("已从当前浏览器恢复");
+  });
+
+  it("can clear persisted graph state back to defaults", () => {
+    const state = createKnowledgeGraphState();
+    addKnowledgeEntity(state, {
+      name: "临时节点",
+      type: "概念",
+    });
+    window.localStorage.setItem("openclaw:knowledge-graph:v1", serializeKnowledgeGraphState(state));
+
+    expect(readPersistedKnowledgeGraphState()?.nodes.some((item) => item.name === "临时节点")).toBe(true);
+    expect(clearPersistedKnowledgeGraphState()).toBe(true);
+    expect(readPersistedKnowledgeGraphState()).toBeNull();
   });
 });

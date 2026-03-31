@@ -1,4 +1,5 @@
 const PAGE_SELECTOR = "[data-oc-knowledge-graph-page]";
+const LOCAL_STORAGE_KEY = "openclaw:knowledge-graph:v1";
 
 const DEFAULT_NODES = [
   { id: "entity-a", name: "实体A", type: "核心实体", description: "图谱的中心实体，用来串联上下游关系。", color: "#5f94db" },
@@ -60,13 +61,142 @@ function pickNodeColor(type, explicitColor) {
   return explicitColor || TYPE_COLOR_FALLBACKS[type] || "#6ca8ff";
 }
 
-export function createKnowledgeGraphState(seed) {
-  const nodes = (seed?.nodes ?? DEFAULT_NODES).map(cloneNode);
-  const links = (seed?.links ?? DEFAULT_LINKS).map(cloneLink);
+function sanitizeNodeRecord(rawNode, nodes) {
+  const name = String(rawNode?.name ?? "").trim();
+  if (!name) {
+    return null;
+  }
+
+  const type = String(rawNode?.type ?? "").trim() || "未分类";
+  return {
+    id: uniqueEntityId(String(rawNode?.id ?? rawNode?.name ?? name), nodes),
+    name,
+    type,
+    description: String(rawNode?.description ?? "").trim(),
+    color: pickNodeColor(type, String(rawNode?.color ?? "").trim()),
+  };
+}
+
+function sanitizeLinkRecord(rawLink, nodes) {
+  const source = String(rawLink?.source ?? "").trim();
+  const target = String(rawLink?.target ?? "").trim();
+  const label = String(rawLink?.label ?? "").trim() || "关联";
+  if (!source || !target || source === target) {
+    return null;
+  }
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  if (!nodeIds.has(source) || !nodeIds.has(target)) {
+    return null;
+  }
+
+  return { source, target, label };
+}
+
+export function normalizeKnowledgeGraphSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+
+  const nodes = [];
+  for (const rawNode of Array.isArray(snapshot.nodes) ? snapshot.nodes : []) {
+    const node = sanitizeNodeRecord(rawNode, nodes);
+    if (node) {
+      nodes.push(node);
+    }
+  }
+
+  const links = [];
+  const seenLinks = new Set();
+  for (const rawLink of Array.isArray(snapshot.links) ? snapshot.links : []) {
+    const link = sanitizeLinkRecord(rawLink, nodes);
+    if (!link) {
+      continue;
+    }
+    const signature = `${link.source}::${link.target}::${link.label}`;
+    if (seenLinks.has(signature)) {
+      continue;
+    }
+    seenLinks.add(signature);
+    links.push(link);
+  }
+
+  const requestedSelectedId = String(snapshot.selectedId ?? "").trim();
+  const selectedId =
+    nodes.some((node) => node.id === requestedSelectedId)
+      ? requestedSelectedId
+      : nodes[0]?.id ?? null;
+
   return {
     nodes,
     links,
-    selectedId: seed?.selectedId ?? nodes[0]?.id ?? null,
+    selectedId,
+  };
+}
+
+export function serializeKnowledgeGraphState(state) {
+  return JSON.stringify(
+    {
+      version: 1,
+      nodes: state.nodes.map(cloneNode),
+      links: state.links.map(cloneLink),
+      selectedId: state.selectedId ?? null,
+    },
+    null,
+    2,
+  );
+}
+
+export function readPersistedKnowledgeGraphState(storage = window.localStorage) {
+  try {
+    const raw = storage?.getItem?.(LOCAL_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return normalizeKnowledgeGraphSnapshot(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function persistKnowledgeGraphState(state, storage = window.localStorage) {
+  try {
+    storage?.setItem?.(LOCAL_STORAGE_KEY, serializeKnowledgeGraphState(state));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearPersistedKnowledgeGraphState(storage = window.localStorage) {
+  try {
+    storage?.removeItem?.(LOCAL_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function replaceKnowledgeGraphState(target, nextState) {
+  target.nodes.length = 0;
+  target.nodes.push(...nextState.nodes.map(cloneNode));
+  target.links.length = 0;
+  target.links.push(...nextState.links.map(cloneLink));
+  target.selectedId = nextState.selectedId ?? target.nodes[0]?.id ?? null;
+}
+
+export function createKnowledgeGraphState(seed) {
+  const normalizedSeed = normalizeKnowledgeGraphSnapshot({
+    nodes: Array.isArray(seed?.nodes) ? seed.nodes : DEFAULT_NODES,
+    links: Array.isArray(seed?.links) ? seed.links : DEFAULT_LINKS,
+    selectedId: seed?.selectedId,
+  });
+  const nodes = (normalizedSeed?.nodes ?? DEFAULT_NODES).map(cloneNode);
+  const links = (normalizedSeed?.links ?? DEFAULT_LINKS).map(cloneLink);
+  return {
+    nodes,
+    links,
+    selectedId: normalizedSeed?.selectedId ?? nodes[0]?.id ?? null,
   };
 }
 
@@ -376,6 +506,10 @@ export function bootKnowledgeGraphPage(root = document.querySelector(PAGE_SELECT
   const nodeCount = root.querySelector("[data-kg-stat-nodes]");
   const linkCount = root.querySelector("[data-kg-stat-links]");
   const focusName = root.querySelector("[data-kg-stat-focus]");
+  const exportButton = root.querySelector("[data-kg-export]");
+  const importTrigger = root.querySelector("[data-kg-import-trigger]");
+  const importFileInput = root.querySelector("[data-kg-import-file]");
+  const restoreDefaultsButton = root.querySelector("[data-kg-restore-defaults]");
   const clearButton = root.querySelector("[data-kg-clear-selection]");
   const resetButton = root.querySelector("[data-kg-reset-graph]");
   const nodeForm = root.querySelector("[data-kg-node-form]");
@@ -392,7 +526,8 @@ export function bootKnowledgeGraphPage(root = document.querySelector(PAGE_SELECT
     return null;
   }
 
-  const state = createKnowledgeGraphState();
+  const persistedState = readPersistedKnowledgeGraphState();
+  const state = createKnowledgeGraphState(persistedState);
   const chart = echartsApi.init(canvas, null, { renderer: "canvas" });
 
   const syncFormOptions = () => {
@@ -431,12 +566,20 @@ export function bootKnowledgeGraphPage(root = document.querySelector(PAGE_SELECT
     syncFormOptions();
   };
 
+  const persistAndRender = (message = "", stateName = "") => {
+    render();
+    const persisted = persistKnowledgeGraphState(state);
+    if (message) {
+      setFeedback(feedback, persisted ? message : "本地保存失败，但当前页面数据仍已更新。", persisted ? stateName : "error");
+    }
+  };
+
   chart.on("click", (params) => {
     if (params.dataType !== "node") {
       return;
     }
     state.selectedId = params.data.id;
-    render();
+    persistAndRender();
   });
 
   chart.getZr().on("click", (event) => {
@@ -444,13 +587,57 @@ export function bootKnowledgeGraphPage(root = document.querySelector(PAGE_SELECT
       return;
     }
     state.selectedId = null;
-    render();
+    persistAndRender();
+  });
+
+  exportButton?.addEventListener("click", () => {
+    const blob = new Blob([serializeKnowledgeGraphState(state)], {
+      type: "application/json;charset=utf-8",
+    });
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = "knowledge-graph.json";
+    anchor.click();
+    URL.revokeObjectURL(href);
+    setFeedback(feedback, "已导出知识图谱 JSON。", "success");
+  });
+
+  importTrigger?.addEventListener("click", () => {
+    if (importFileInput instanceof HTMLInputElement) {
+      importFileInput.click();
+    }
+  });
+
+  importFileInput?.addEventListener("change", async () => {
+    if (!(importFileInput instanceof HTMLInputElement) || !importFileInput.files?.[0]) {
+      return;
+    }
+
+    try {
+      const text = await importFileInput.files[0].text();
+      const snapshot = normalizeKnowledgeGraphSnapshot(JSON.parse(text));
+      if (!snapshot) {
+        throw new Error("导入文件格式不正确。");
+      }
+      replaceKnowledgeGraphState(state, snapshot);
+      persistAndRender("已从 JSON 导入知识图谱。", "success");
+    } catch (error) {
+      setFeedback(feedback, error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      importFileInput.value = "";
+    }
+  });
+
+  restoreDefaultsButton?.addEventListener("click", () => {
+    replaceKnowledgeGraphState(state, createKnowledgeGraphState());
+    clearPersistedKnowledgeGraphState();
+    persistAndRender("已恢复默认知识图谱。", "success");
   });
 
   clearButton?.addEventListener("click", () => {
     state.selectedId = null;
-    setFeedback(feedback, "已取消当前实体焦点。", "success");
-    render();
+    persistAndRender("已取消当前实体焦点。", "success");
   });
 
   resetButton?.addEventListener("click", () => {
@@ -480,8 +667,7 @@ export function bootKnowledgeGraphPage(root = document.querySelector(PAGE_SELECT
       if (colorInput instanceof HTMLInputElement) {
         colorInput.value = "#6ca8ff";
       }
-      setFeedback(feedback, `已添加实体“${node.name}”。`, "success");
-      render();
+      persistAndRender(`已添加实体“${node.name}”。`, "success");
     } catch (error) {
       setFeedback(feedback, error instanceof Error ? error.message : String(error), "error");
     }
@@ -505,7 +691,7 @@ export function bootKnowledgeGraphPage(root = document.querySelector(PAGE_SELECT
         relation ? `已建立“${relation.label}”关系。` : "这条关系已经存在，未重复添加。",
         "success",
       );
-      render();
+      persistAndRender();
     } catch (error) {
       setFeedback(feedback, error instanceof Error ? error.message : String(error), "error");
     }
@@ -519,7 +705,14 @@ export function bootKnowledgeGraphPage(root = document.querySelector(PAGE_SELECT
   window.addEventListener("resize", () => chart.resize());
 
   render();
-  setFeedback(feedback, "知识图谱已就绪，可以直接新增实体和关系。");
+  persistKnowledgeGraphState(state);
+  setFeedback(
+    feedback,
+    persistedState
+      ? "已从当前浏览器恢复知识图谱数据。"
+      : "知识图谱已就绪，可以直接新增实体和关系。",
+    persistedState ? "success" : "",
+  );
 
   return { chart, state };
 }

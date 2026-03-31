@@ -24,6 +24,15 @@
             </p>
           </div>
           <div class="kg-stage__actions">
+            <button class="kg-btn kg-btn--secondary" type="button" data-kg-export>
+              导出 JSON
+            </button>
+            <button class="kg-btn kg-btn--ghost" type="button" data-kg-import-trigger>
+              导入 JSON
+            </button>
+            <button class="kg-btn kg-btn--ghost" type="button" data-kg-restore-defaults>
+              恢复默认
+            </button>
             <button class="kg-btn kg-btn--ghost" type="button" data-kg-clear-selection>
               取消选中
             </button>
@@ -32,6 +41,12 @@
             </button>
           </div>
         </header>
+        <input
+          type="file"
+          accept="application/json"
+          hidden
+          data-kg-import-file
+        />
 
         <div class="kg-stage__stats" data-kg-stats>
           <article class="kg-stat">
@@ -129,7 +144,7 @@
         </section>
 
         <p class="kg-feedback" data-kg-feedback>
-          当前页面是零侵入静态页，数据仅保存在浏览器内存里。
+          当前页面是零侵入静态页，数据会保存在当前浏览器本地，也支持导入导出 JSON。
         </p>
       </aside>
     </main>
