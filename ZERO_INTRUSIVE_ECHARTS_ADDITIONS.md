@@ -1,60 +1,128 @@
-# Zero-Intrusive ECharts Additions
+# Zero-Intrusive Control UI Additions
 
-This feature was added without modifying any existing OpenClaw source files.
+These additions were implemented without editing existing OpenClaw source files under `src/`, `ui/`, `apps/`, or `extensions/`.
 
-## Added Files
+This file is the inventory for the zero-intrusive layer. When a new zero-intrusive file is added, this file should be updated in the same change.
 
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\openclaw-echarts-renderer.user.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\openclaw-echarts-renderer.cdn.user.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\openclaw-echarts-renderer.template.user.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\build-offline-userscript.mjs`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\README.md`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\VENDOR_NOTES.md`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\openclaw-echarts-renderer.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\build-custom-control-ui.mjs`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\setup-direct-docker-compose-up.mjs`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\setup-direct-docker-compose-up.sh`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\README.md`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\RUNTIME_ARCHITECTURE.md`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\shared.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\styles.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\chat-composer.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\adapter-registry.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\framework\fenced-block-runtime.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\branding\brand-replacer.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\file\ui-text.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\file\styles.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\file\libraries.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\file\parser.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\file\adapter.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\ui-text.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\styles.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\libraries.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\parser.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\prompt.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\detail-modal.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\runtime\echarts\adapter.js`
-- `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\generated\.gitignore`
-- `D:\code\work\OpenClaw\openclaw\docker-compose.override.yml`
-- `D:\code\work\OpenClaw\openclaw\ZERO_INTRUSIVE_ECHARTS_ADDITIONS.md`
+## Tracked Source Files
 
-## Notes
+### Userscript Bundle
 
-- The current recommended implementation is the custom Control UI root generator under `tools/openclaw-control-ui-echarts`.
-- It works without a browser plugin by generating a separate UI directory for `gateway.controlUi.root`.
-- The generated custom Control UI root currently lives at `D:\code\work\OpenClaw\openclaw\tools\openclaw-control-ui-echarts\generated\control-ui`.
-- The Control UI path now extracts `echarts` and `json5` from the tracked offline bundle at `D:\code\work\OpenClaw\openclaw\tools\openclaw-echarts-userscript\openclaw-echarts-renderer.user.js`, then writes them into the generated UI as same-origin static assets.
-- The runtime source is now modularized into a generic fenced-block framework plus adapter registration and an `echarts` adapter so future blocks such as `file` can reuse the same scanning and action pipeline.
-- The runtime now includes a `file` adapter that can turn fenced `file` blocks into compact download/file cards without touching OpenClaw source files.
-- This change is required because OpenClaw serves the Control UI with `script-src 'self'`, so inline vendor injection is blocked by CSP.
-- A one-time helper can also generate a root `docker-compose.override.yml` so later repo-root `docker compose up -d` runs automatically mount the custom UI into `/app/dist/control-ui`.
-- The generated root `docker-compose.override.yml` also mounts `docs/reference/templates` into `/app/docs/reference/templates` to avoid workspace-template bootstrap failures in images missing those docs assets.
-- The generated root `docker-compose.override.yml` now also mounts the agent workspace into `/app/dist/control-ui/workspace-downloads` so zero-intrusive `file` cards can trigger same-origin browser downloads.
-- The runtime now installs its shared styles as soon as the Control UI boots, so focus mode and native chat composer styling no longer depend on an `echarts` or `file` block appearing first.
-- The chat page runtime now remaps chat-local accent and danger tokens to a muted business-blue palette and rebuilds the native composer layout into a clearer editor-plus-toolbar panel without editing OpenClaw source files.
-- The chat page background is now driven by a zero-intrusive injected SVG ambient layer that renders animated ribbons, nodes, and trace lines locally without requiring a CDN or a runtime dependency such as three.js.
-- The chat page runtime now also clusters consecutive tool-call and tool-output bubbles from the same turn into a visually continuous tool sequence without merging across separate user turns.
-- The earlier userscript implementation is still present as an alternative zero-intrusion path.
-- `openclaw-echarts-renderer.user.js` is now the offline bundled version.
-- The Control UI path is now self-contained and no longer requires a vendor cache or CDN access on the target host.
-- Existing files under `src/`, `ui/`, `apps/`, and `extensions/` were not edited.
+- `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`
+- `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.cdn.user.js`
+- `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.template.user.js`
+- `tools/openclaw-echarts-userscript/build-offline-userscript.mjs`
+- `tools/openclaw-echarts-userscript/README.md`
+- `tools/openclaw-echarts-userscript/VENDOR_NOTES.md`
+
+### Control UI Overlay Core
+
+- `tools/openclaw-control-ui-echarts/openclaw-echarts-renderer.js`
+- `tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs`
+- `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs`
+- `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh`
+- `tools/openclaw-control-ui-echarts/README.md`
+- `tools/openclaw-control-ui-echarts/RUNTIME_ARCHITECTURE.md`
+- `tools/openclaw-control-ui-echarts/generated/.gitignore`
+
+### Runtime: Background
+
+- `tools/openclaw-control-ui-echarts/runtime/background/chat-ambient.js`
+
+### Runtime: Branding
+
+- `tools/openclaw-control-ui-echarts/runtime/branding/auto-token.js`
+- `tools/openclaw-control-ui-echarts/runtime/branding/brand-replacer.js`
+- `tools/openclaw-control-ui-echarts/runtime/branding/favicon.js`
+
+### Runtime: ECharts
+
+- `tools/openclaw-control-ui-echarts/runtime/echarts/adapter.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts/detail-modal.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts/libraries.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts/parser.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts/prompt.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts/styles.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts/ui-text.js`
+
+### Runtime: File Cards
+
+- `tools/openclaw-control-ui-echarts/runtime/file/adapter.js`
+- `tools/openclaw-control-ui-echarts/runtime/file/libraries.js`
+- `tools/openclaw-control-ui-echarts/runtime/file/parser.js`
+- `tools/openclaw-control-ui-echarts/runtime/file/styles.js`
+- `tools/openclaw-control-ui-echarts/runtime/file/ui-text.js`
+
+### Runtime: Framework
+
+- `tools/openclaw-control-ui-echarts/runtime/framework/adapter-registry.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/chat-composer.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/fenced-block-runtime.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/shared.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/styles.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/tool-run-cluster.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/voice-input.js`
+
+### Runtime: Knowledge Graph
+
+- `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/entry.js`
+- `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.css`
+- `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.js`
+
+### Static Pages
+
+- `tools/openclaw-control-ui-echarts/static/knowledge-graph.html`
+
+### Tests
+
+- `test/tools/openclaw-control-ui-echarts/adapter-registry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/auto-token-bootstrap.test.ts`
+- `test/tools/openclaw-control-ui-echarts/brand-replacer.test.ts`
+- `test/tools/openclaw-control-ui-echarts/chat-ambient.test.ts`
+- `test/tools/openclaw-control-ui-echarts/echarts-parser.test.ts`
+- `test/tools/openclaw-control-ui-echarts/echarts-styles.test.ts`
+- `test/tools/openclaw-control-ui-echarts/fenced-block-runtime.test.ts`
+- `test/tools/openclaw-control-ui-echarts/file-adapter.test.ts`
+- `test/tools/openclaw-control-ui-echarts/file-parser.test.ts`
+- `test/tools/openclaw-control-ui-echarts/framework-styles.test.ts`
+- `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tool-run-cluster.test.ts`
+- `test/tools/openclaw-control-ui-echarts/voice-input.test.ts`
+
+## Generated Or Runtime-Only Artifacts
+
+These are part of the zero-intrusive deployment flow, but they are generated at runtime and are not tracked in Git:
+
+- `tools/openclaw-control-ui-echarts/generated/control-ui/`
+- `docker-compose.override.yml`
+
+## Current Capabilities
+
+- Fenced `echarts` blocks render as inline chart cards with a detail modal.
+- Fenced `file` blocks render as compact download cards.
+- Workspace file paths can download through same-origin `workspace-downloads` mounts.
+- Shared runtime styles load at boot instead of waiting for a fenced block to appear.
+- Chat page visuals are customized through the injected framework styles layer.
+- The chat background uses an injected animated ambient layer.
+- Tool-call and tool-output sequences from the same turn are clustered and collapsible.
+- Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
+- Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap.
+- The knowledge graph page is provided as a separate static page with a Control UI entry link.
+
+## Important Notes
+
+- The recommended deployment path is the custom Control UI root generator under `tools/openclaw-control-ui-echarts`.
+- The generated UI remains CSP-compatible by loading same-origin assets only.
+- The shell setup path can rebuild from a Docker image even when host `dist/control-ui` is missing.
+- The root setup flow can optionally mount extra host paths with `OPENCLAW_EXTRA_MOUNTS`.
+- The current branding layer should only target fixed brand slots; it should not rewrite arbitrary chat content.
+- Existing files under `src/`, `ui/`, `apps/`, and `extensions/` were not edited for these additions.
+
+## Maintenance Rule
+
+Whenever a new zero-intrusive file is added under any of these areas, update this document in the same change:
+
+- `tools/openclaw-control-ui-echarts/**`
+- `tools/openclaw-echarts-userscript/**`
+- `test/tools/openclaw-control-ui-echarts/**`
