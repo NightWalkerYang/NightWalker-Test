@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
+import { renderTenantAuthLayout } from "./auth-layout.js";
 import {
   PLATFORM_LOGIN_ROUTE,
   clearTenantSession,
@@ -24,6 +25,26 @@ export async function bootTenantLoginPage() {
   if (!(root instanceof HTMLElement)) {
     return null;
   }
+
+  renderTenantAuthLayout(root, {
+    mode: "tenant",
+    eyebrow: "Tenant Workspace",
+    title: "租户登录",
+    subtitle: "租户管理员与租户成员从这里进入系统，进入后再按角色进入租户管理台或 Agent 选择页。",
+    switchHref: PLATFORM_LOGIN_ROUTE,
+    switchLabel: "平台管理员入口",
+    switchAttr: 'data-platform-login-link',
+    highlights: [
+      "租户管理员可创建成员，并给成员分配已下发到本租户的 Agent。",
+      "租户成员登录后先进入 Agent 选择页，再进入对应聊天页。",
+      "平台管理员不从该入口登录。",
+    ],
+    loginEyebrow: "Tenant Login",
+    loginTitle: "账号密码登录",
+    loginSubtitle: "仅租户管理员和租户成员可使用该入口。",
+    loginSubmitLabel: "进入租户工作台",
+    setup: null,
+  });
 
   const apiClient = createTenantApiClient();
   const session = readTenantSession();

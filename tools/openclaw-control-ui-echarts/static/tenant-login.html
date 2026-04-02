@@ -10,56 +10,6 @@
     <script type="module" src="./assets/runtime/tenant/login-page.js"></script>
   </head>
   <body>
-    <main class="tenant-auth-page" data-oc-tenant-login-page>
-      <section class="tenant-auth-shell tenant-auth-shell--tenant">
-        <aside class="tenant-auth-hero">
-          <p class="tenant-auth-hero__eyebrow">Tenant Workspace</p>
-          <h1 class="tenant-auth-hero__title">租户管理员与租户成员入口</h1>
-          <p class="tenant-auth-hero__desc">
-            这里用于租户管理员与成员日常登录。平台管理员初始化、租户创建和平台分配，请使用独立的平台管理入口。
-          </p>
-          <ul class="tenant-auth-points">
-            <li>租户管理员可创建成员，并把平台已下发的 Agent 分配给成员。</li>
-            <li>租户成员登录后直接进入 Agent 选择页。</li>
-            <li>如果你是平台管理员，请切换到平台管理入口。</li>
-          </ul>
-          <a class="tenant-auth-link" href="./platform-login.html" data-platform-login-link>转到平台管理入口</a>
-        </aside>
-
-        <section class="tenant-auth-card">
-          <article class="tenant-auth-card__block">
-            <p class="tenant-eyebrow">API</p>
-            <form class="tenant-form tenant-form--inline" data-tenant-api-base-form>
-              <label class="tenant-field" style="grid-column: 1/-1;">
-                <span>租户平台 API 基地址</span>
-                <input name="apiBase" type="text" placeholder="/tenant-platform-api/v1" />
-              </label>
-              <button class="tenant-btn tenant-btn--ghost" type="submit">保存 API 地址</button>
-            </form>
-          </article>
-
-          <article class="tenant-auth-card__block">
-            <p class="tenant-eyebrow">Tenant Login</p>
-            <h2 class="tenant-title tenant-title--compact">账号密码登录</h2>
-            <p class="tenant-subtitle">仅租户管理员和租户成员可从该入口进入系统。</p>
-            <form class="tenant-form" data-tenant-login-form>
-              <label class="tenant-field">
-                <span>账号</span>
-                <input name="username" type="text" required />
-              </label>
-              <label class="tenant-field">
-                <span>密码</span>
-                <input name="password" type="password" required />
-              </label>
-              <div class="tenant-actions">
-                <button class="tenant-btn tenant-btn--primary" type="submit">进入租户工作台</button>
-              </div>
-            </form>
-          </article>
-
-          <p class="tenant-feedback" data-tenant-feedback>正在检查租户平台初始化状态...</p>
-        </section>
-      </section>
-    </main>
+    <main class="tenant-auth-page" data-oc-tenant-login-page></main>
   </body>
 </html>

@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
+import { renderTenantAuthLayout } from "./auth-layout.js";
 import {
   TENANT_LOGIN_ROUTE,
   clearTenantSession,
@@ -29,6 +30,33 @@ export async function bootPlatformLoginPage() {
   if (!(root instanceof HTMLElement)) {
     return null;
   }
+
+  renderTenantAuthLayout(root, {
+    mode: "platform",
+    eyebrow: "Platform Console",
+    title: "平台管理员登录",
+    subtitle: "平台管理员从这里完成初始化、租户创建、租户管理员创建、Agent 下发与平台级运营管理。",
+    switchHref: TENANT_LOGIN_ROUTE,
+    switchLabel: "租户登录入口",
+    switchAttr: 'data-tenant-login-link',
+    highlights: [
+      "首次进入时，在这里初始化平台管理员账号。",
+      "一个租户只允许一个租户管理员账号。",
+      "平台管理员负责把已有 OpenClaw Agent 下发到租户。",
+    ],
+    loginEyebrow: "Platform Login",
+    loginTitle: "平台管理员登录",
+    loginSubtitle: "只有平台管理员可以从这个入口进入系统。",
+    loginSubmitLabel: "进入平台管理台",
+    setup: {
+      eyebrow: "Bootstrap",
+      title: "初始化平台管理员",
+      subtitle: "当前系统还没有平台管理员，请先完成首次初始化。",
+      usernameLabel: "平台管理员账号",
+      passwordLabel: "平台管理员密码",
+      submitLabel: "完成初始化",
+    },
+  });
 
   const apiClient = createTenantApiClient();
   const session = readTenantSession();

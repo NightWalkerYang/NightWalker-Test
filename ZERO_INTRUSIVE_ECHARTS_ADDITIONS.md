@@ -80,6 +80,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/auth-layout.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
@@ -124,6 +125,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/framework-styles.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tool-run-cluster.test.ts`
