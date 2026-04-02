@@ -7,6 +7,11 @@ import {
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
+import {
+  bootTenantRouteSync,
+  navigateTenantRoute,
+  onTenantRouteChange,
+} from "./route-sync.js";
 
 const ROOT_ATTR = "data-oc-platform-surface-root";
 const STYLE_ATTR = "data-oc-platform-surface-style";
@@ -15,6 +20,21 @@ const SECTION_ATTR = "data-oc-platform-section";
 
 function isPlatformManagementView(view) {
   return view === PLATFORM_TENANTS_VIEW || view === PLATFORM_AGENT_ASSIGNMENT_VIEW;
+}
+
+function isRootControlPath(pathname = window.location.pathname) {
+  const normalized = String(pathname || "/").trim() || "/";
+  return normalized === "/" || normalized.endsWith("/index.html");
+}
+
+function isPlatformManagementRoute() {
+  return isRootControlPath(window.location.pathname) && isPlatformManagementView(readTenantView());
+}
+
+function currentSectionHref(section) {
+  return section === "agent-allocation"
+    ? PLATFORM_AGENT_ASSIGNMENT_ROUTE
+    : PLATFORM_TENANT_MANAGEMENT_ROUTE;
 }
 
 function sectionForView(view) {
@@ -54,6 +74,43 @@ function ensureRoot(content) {
   root.className = "oc-platform-surface-root";
   content.prepend(root);
   return root;
+}
+
+function updateSectionLinks(root, section) {
+  const sectionLinks = root.querySelectorAll("[href]");
+  for (const link of sectionLinks) {
+    if (!(link instanceof HTMLAnchorElement)) {
+      continue;
+    }
+    const href = link.getAttribute("href") || "";
+    if (href === currentSectionHref("tenants")) {
+      link.classList.toggle("active", section === "tenants");
+    }
+    if (href === currentSectionHref("agent-allocation")) {
+      link.classList.toggle("active", section === "agent-allocation");
+    }
+  }
+}
+
+function ensureRootHandlers(root) {
+  if (!(root instanceof HTMLElement) || root.dataset.ocPlatformRootHandlers === "true") {
+    return;
+  }
+  root.dataset.ocPlatformRootHandlers = "true";
+  root.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    const link = target.closest(
+      'a[href^="./?ocTenantView="], a[href^="/?ocTenantView="], a[href*="?ocTenantView="]',
+    );
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    event.preventDefault();
+    navigateTenantRoute(link.href);
+  });
 }
 
 function renderShell(root, section) {
@@ -194,8 +251,7 @@ function renderShell(root, section) {
 }
 
 async function mountCurrentSurface(content) {
-  const view = readTenantView();
-  if (!isPlatformManagementView(view)) {
+  if (!isPlatformManagementRoute()) {
     content.removeAttribute(ACTIVE_ATTR);
     content.querySelector(`[${ROOT_ATTR}]`)?.remove();
     document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
@@ -210,10 +266,13 @@ async function mountCurrentSurface(content) {
   ensureStyle();
   content.setAttribute(ACTIVE_ATTR, "true");
   const root = ensureRoot(content);
+  const view = readTenantView();
   const section = sectionForView(view);
   if (root.getAttribute(SECTION_ATTR) !== section) {
     renderShell(root, section);
   }
+  ensureRootHandlers(root);
+  updateSectionLinks(root, section);
   await mountPlatformConsolePage(root, {
     embedded: true,
     section,
@@ -222,6 +281,8 @@ async function mountCurrentSurface(content) {
 }
 
 export async function bootPlatformSurface() {
+  bootTenantRouteSync();
+
   const scan = async (scope = document) => {
     const content =
       scope instanceof Element && scope.matches(".content")
@@ -238,6 +299,9 @@ export async function bootPlatformSurface() {
     return initial;
   }
   window.__openclawPlatformSurfaceBooted = true;
+  onTenantRouteChange(() => {
+    void scan(document);
+  });
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {

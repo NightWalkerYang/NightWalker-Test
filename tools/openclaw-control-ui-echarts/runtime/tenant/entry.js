@@ -8,6 +8,11 @@ import {
   readTenantSession,
 } from "./tenant-context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
+import {
+  bootTenantRouteSync,
+  navigateTenantRoute,
+  onTenantRouteChange,
+} from "./route-sync.js";
 
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
@@ -59,6 +64,39 @@ function createNavItem({ className, href, title, text, icon }) {
   return link;
 }
 
+function updateManagementSectionState(section) {
+  if (!(section instanceof HTMLElement)) {
+    return;
+  }
+  const activeView = readTenantView();
+  for (const item of section.querySelectorAll(".nav-item")) {
+    const expectedView = item.getAttribute("data-oc-platform-view")?.trim() || "";
+    item.classList.toggle("nav-item--active", expectedView === activeView);
+  }
+}
+
+function ensureManagementSectionHandlers(section) {
+  if (!(section instanceof HTMLElement) || section.dataset.ocPlatformHandlers === "true") {
+    return;
+  }
+  section.dataset.ocPlatformHandlers = "true";
+  section.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    const link = target.closest(".nav-item[href]");
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    if (!link.closest(`.${MANAGEMENT_SECTION_CLASS}`)) {
+      return;
+    }
+    event.preventDefault();
+    navigateTenantRoute(link.href);
+  });
+}
+
 function createManagementSection() {
   const section = document.createElement("section");
   section.className = `nav-section ${MANAGEMENT_SECTION_CLASS}`;
@@ -93,9 +131,8 @@ function createManagementSection() {
       text: link.text,
       icon: link.icon,
     });
-    if (activeView === link.activeView) {
-      item.classList.add("nav-item--active");
-    }
+    item.setAttribute("data-oc-platform-view", link.activeView);
+    item.classList.toggle("nav-item--active", activeView === link.activeView);
     items.append(item);
   }
 
@@ -109,6 +146,7 @@ function createManagementSection() {
   label.setAttribute("aria-expanded", "true");
 
   section.append(label, items);
+  ensureManagementSectionHandlers(section);
   return section;
 }
 
@@ -117,6 +155,9 @@ function ensureManagementSection(container) {
     return;
   }
   if (container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`)) {
+    updateManagementSectionState(
+      container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`),
+    );
     return;
   }
 
@@ -152,6 +193,7 @@ export function bootTenantEntry() {
     return;
   }
   window.__openclawTenantEntryBooted = true;
+  bootTenantRouteSync();
 
   const scan = (root = document) => {
     const session = readTenantSession();
@@ -174,6 +216,9 @@ export function bootTenantEntry() {
   };
 
   scan(document);
+  onTenantRouteChange(() => {
+    scan(document);
+  });
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {

@@ -101,4 +101,55 @@ describe("platform surface", () => {
     expect(document.querySelector(".page-title")?.textContent).toContain("租户管理");
     expect(document.querySelector("[data-platform-tenant-list]")?.textContent).toContain("租户 Alpha");
   });
+
+  it("unmounts when native route leaves the management view", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=platform-tenants");
+    document.body.innerHTML = `<div class="content"><div class="native-placeholder">native content</div></div>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/platform/tenants")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/platform/catalog-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/platform/tenant-members") || url.includes("/platform/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootPlatformSurface();
+    expect(document.querySelector("[data-oc-platform-surface-root]")).not.toBeNull();
+
+    window.history.pushState({}, "", "/chat");
+
+    expect(document.querySelector("[data-oc-platform-surface-root]")).toBeNull();
+    expect(document.querySelector(".content")?.getAttribute("data-oc-platform-surface-active")).toBeNull();
+  });
 });

@@ -9,7 +9,9 @@ import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/r
 afterEach(() => {
   document.body.innerHTML = "";
   window.localStorage.clear();
+  window.history.replaceState({}, "", "/");
   delete window.__openclawTenantEntryBooted;
+  delete window.__openclawTenantRouteSyncBooted;
 });
 
 describe("zero-intrusive tenant entry", () => {
@@ -74,5 +76,33 @@ describe("zero-intrusive tenant entry", () => {
 
     expect(document.querySelector(".oc-platform-management-section")).toBeNull();
     expect(document.querySelector(".oc-tenant-user-link")).toBeNull();
+  });
+
+  it("switches management views without forcing a full page reload", () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+      },
+    });
+    document.body.innerHTML = `
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+    `;
+
+    bootTenantEntry();
+
+    const agentLink = document.querySelector(".oc-platform-agent-link");
+    expect(agentLink).not.toBeNull();
+    agentLink?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(window.location.search).toContain("ocTenantView=platform-agent-assignment");
+    expect(agentLink?.classList.contains("nav-item--active")).toBe(true);
   });
 });

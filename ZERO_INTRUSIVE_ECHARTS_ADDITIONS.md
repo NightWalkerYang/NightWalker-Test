@@ -103,6 +103,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/agent-selector-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/chat-shell.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/chat-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/wallet-page.js`
 
 ### Sidecar: Tenant Platform
@@ -175,6 +176,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
+- Tenant platform routes now follow native history changes so management shortcuts switch without full-page reload and unmount correctly when leaving the management view.
 - The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, and trims the sidebar down to the native chat section only.
 - Platform console, tenant admin, Agent selector, chat shell, and wallet pages currently use separate static pages.
 - Legacy standalone tenant/platform login pages remain only as compatibility wrappers while the login flow converges on the native single entry.
