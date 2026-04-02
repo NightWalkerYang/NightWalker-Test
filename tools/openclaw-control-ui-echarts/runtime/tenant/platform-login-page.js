@@ -21,8 +21,22 @@ function setFeedback(root, text, isError = false) {
 }
 
 function showSetupMode(root, showSetup) {
-  root.querySelector("[data-tenant-setup-form]")?.toggleAttribute("hidden", !showSetup);
-  root.querySelector("[data-tenant-login-form]")?.toggleAttribute("hidden", showSetup);
+  const setupForm = root.querySelector("[data-tenant-setup-form]");
+  const loginForm = root.querySelector("[data-tenant-login-form]");
+  if (setupForm instanceof HTMLElement) {
+    if (showSetup) {
+      setupForm.removeAttribute("hidden");
+    } else {
+      setupForm.setAttribute("hidden", "");
+    }
+  }
+  if (loginForm instanceof HTMLElement) {
+    if (showSetup) {
+      loginForm.setAttribute("hidden", "");
+    } else {
+      loginForm.removeAttribute("hidden");
+    }
+  }
 }
 
 export async function mountPlatformLoginPage(root) {

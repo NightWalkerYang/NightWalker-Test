@@ -22,6 +22,10 @@ body[data-oc-tenant-auth-active="true"] openclaw-app {
   width: min(460px, 100%);
 }
 
+.oc-tenant-auth-root [hidden] {
+  display: none !important;
+}
+
 .oc-tenant-login-mark {
   width: 52px;
   height: 52px;
