@@ -42,12 +42,12 @@ describe("zero-intrusive tenant entry", () => {
     const items = managementSection?.querySelectorAll(".nav-item") ?? [];
     expect(items).toHaveLength(2);
     expect(items[0]?.textContent).toContain("租户管理");
-    expect(items[0]?.getAttribute("href")).toContain("platform-tenant-console.html#tenants");
+    expect(items[0]?.getAttribute("href")).toContain("ocTenantView=platform-tenants");
     expect(items[1]?.textContent).toContain("Agent 分配");
-    expect(items[1]?.getAttribute("href")).toContain("platform-tenant-console.html#agent-allocation");
+    expect(items[1]?.getAttribute("href")).toContain("ocTenantView=platform-agent-assignment");
 
-    const settingsGroup = document.querySelector('[data-native-group="settings"]');
-    expect(managementSection?.nextElementSibling).toBe(settingsGroup);
+    const chatGroup = document.querySelector('[data-native-group="chat"]');
+    expect(managementSection?.nextElementSibling).toBe(chatGroup);
   });
 
   it("keeps a tenant login shortcut in the sidebar utility area", () => {

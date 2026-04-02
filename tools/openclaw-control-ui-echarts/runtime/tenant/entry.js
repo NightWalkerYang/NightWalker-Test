@@ -1,7 +1,10 @@
 import {
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
+  PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
+  PLATFORM_TENANT_MANAGEMENT_VIEW,
   TENANT_LOGIN_ROUTE,
+  readTenantView,
   readTenantSession,
 } from "./tenant-context.js";
 
@@ -69,6 +72,7 @@ function createManagementSection() {
       title: "租户管理",
       text: "租户管理",
       icon: ICONS.tenants,
+      activeView: PLATFORM_TENANT_MANAGEMENT_VIEW,
     },
     {
       className: "oc-platform-agent-link",
@@ -76,18 +80,22 @@ function createManagementSection() {
       title: "Agent 分配",
       text: "Agent 分配",
       icon: ICONS.agentAllocation,
+      activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
     },
   ];
+  const activeView = readTenantView();
   for (const link of links) {
-    items.append(
-      createNavItem({
-        className: link.className,
-        href: new URL(link.href, document.baseURI).href,
-        title: link.title,
-        text: link.text,
-        icon: link.icon,
-      }),
-    );
+    const item = createNavItem({
+      className: link.className,
+      href: new URL(link.href, document.baseURI).href,
+      title: link.title,
+      text: link.text,
+      icon: link.icon,
+    });
+    if (activeView === link.activeView) {
+      item.classList.add("nav-item--active");
+    }
+    items.append(item);
   }
 
   label.addEventListener("click", () => {
@@ -113,7 +121,7 @@ function ensureManagementSection(container) {
 
   const section = createManagementSection();
   const siblings = [...container.querySelectorAll(":scope > .nav-section")];
-  const insertBefore = siblings.at(-1) ?? null;
+  const insertBefore = siblings[0] ?? null;
   container.insertBefore(section, insertBefore);
 }
 

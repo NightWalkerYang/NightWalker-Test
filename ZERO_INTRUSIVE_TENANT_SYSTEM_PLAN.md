@@ -63,6 +63,8 @@
 
 - 平台管理员登录视图：`./?ocTenantView=platform-login`
 - 租户登录视图：`./?ocTenantView=tenant-login`
+- 平台管理员工作视图：`./?ocTenantView=platform-tenants`
+- 平台管理员工作视图：`./?ocTenantView=platform-agent-assignment`
 
 当前登录页设计要求：
 
@@ -86,6 +88,7 @@
 - 未登录不可进入原生控制台
 - 未登录时直接跳转到平台管理员登录视图
 - 登录后在原生侧边栏中新增与“聊天 / 控制 / 代理 / 设置”平级的“管理”分组
+- “管理”分组置顶显示
 - “管理”分组下第一阶段至少包含：
   - 租户管理
   - Agent 分配
@@ -112,6 +115,7 @@
 
 - 以当前 OpenClaw 原生控制台为主入口
 - 通过零侵入方式向原生侧边栏注入“管理”分组和管理子菜单
+- 平台管理内容直接渲染在原生控制台内容区，不再跳转到旧的独立平台管理页
 - 页面风格参考主流后台管理系统，采用侧边导航 + 顶部状态栏 + 指标卡片 + 表格 + 表单区的结构
 - 平台管理员只做平台级管理，不进入租户代操作
 
@@ -902,6 +906,10 @@
   - 在原生控制台根入口执行平台管理员会话守卫
 - `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
   - 在原生侧边栏中注入“管理”分组和租户入口快捷项
+- `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.css`
+  - 原生内容区内的平台管理页布局样式
+- `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.js`
+  - 在原生控制台内容区挂载平台管理视图
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
   - 平台管理员登录页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
@@ -1197,6 +1205,8 @@
    - 原生单入口登录视图：`./?ocTenantView=tenant-login`
    - 原生根控制台平台管理员守卫：`./`
    - 原生侧边栏“管理”分组
+   - 原生单入口平台管理视图：`./?ocTenantView=platform-tenants`
+   - 原生单入口平台管理视图：`./?ocTenantView=platform-agent-assignment`
    - `tenant-agent-selector.html`
    - `tenant-chat.html`
    - `tenant-admin.html`
@@ -1210,6 +1220,8 @@
    - `runtime/tenant/auth-surface.js`
    - `runtime/tenant/platform-access-guard.js`
    - `runtime/tenant/entry.js`
+   - `runtime/tenant/platform-surface.css`
+   - `runtime/tenant/platform-surface.js`
    - `runtime/tenant/platform-login-page.js`
    - `runtime/tenant/login-page.js`
    - `runtime/tenant/agent-selector-page.js`

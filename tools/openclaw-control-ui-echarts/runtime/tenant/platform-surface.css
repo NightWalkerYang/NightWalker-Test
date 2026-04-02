@@ -1,0 +1,78 @@
+.content[data-oc-platform-surface-active="true"] > :not([data-oc-platform-surface-root]) {
+  display: none !important;
+}
+
+.oc-platform-surface-root {
+  display: grid;
+  gap: 20px;
+}
+
+.oc-platform-surface-root .content-header {
+  padding: 0;
+}
+
+.oc-platform-surface-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.oc-platform-surface-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.oc-platform-surface-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.95fr);
+}
+
+.oc-platform-surface-grid--detail {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.oc-platform-surface-stack {
+  display: grid;
+  gap: 20px;
+}
+
+.oc-platform-surface-form {
+  display: grid;
+  gap: 12px;
+}
+
+.oc-platform-surface-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.oc-platform-surface-list {
+  display: grid;
+  gap: 8px;
+}
+
+.oc-platform-surface-heading {
+  margin: 0;
+}
+
+.oc-platform-surface-muted {
+  color: var(--muted);
+}
+
+.oc-platform-surface-feedback {
+  margin-top: 0;
+}
+
+@media (max-width: 1200px) {
+  .oc-platform-surface-grid,
+  .oc-platform-surface-grid--detail {
+    grid-template-columns: 1fr;
+  }
+}

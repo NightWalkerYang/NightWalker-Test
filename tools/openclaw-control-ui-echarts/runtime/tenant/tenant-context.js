@@ -3,11 +3,12 @@ const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
 const TENANT_VIEW_QUERY_KEY = "ocTenantView";
 export const PLATFORM_LOGIN_VIEW = "platform-login";
 export const TENANT_LOGIN_VIEW = "tenant-login";
-export const PLATFORM_HOME_ROUTE = "./";
+export const PLATFORM_TENANTS_VIEW = "platform-tenants";
+export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const PLATFORM_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_LOGIN_VIEW}`;
 export const TENANT_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_LOGIN_VIEW}`;
-export const PLATFORM_TENANT_MANAGEMENT_ROUTE = "./platform-tenant-console.html#tenants";
-export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = "./platform-tenant-console.html#agent-allocation";
+export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_TENANTS_VIEW}`;
+export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
 
 function safeStorage() {
   try {
@@ -73,7 +74,7 @@ export function readTenantView(locationHref = window.location.href) {
 
 export function routeForRole(role) {
   if (role === "platform_admin") {
-    return PLATFORM_HOME_ROUTE;
+    return PLATFORM_TENANT_MANAGEMENT_ROUTE;
   }
   if (role === "tenant_admin") {
     return "./tenant-admin.html";

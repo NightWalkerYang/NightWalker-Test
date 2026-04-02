@@ -1,5 +1,10 @@
 import { createTenantApiClient } from "./api-client.js";
-import { PLATFORM_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
+import {
+  PLATFORM_AGENT_ASSIGNMENT_VIEW,
+  PLATFORM_LOGIN_ROUTE,
+  PLATFORM_TENANT_MANAGEMENT_VIEW,
+  requireTenantSession,
+} from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-platform-tenant-console-page]";
 
@@ -10,13 +15,28 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
+function isEmbedded(root) {
+  return root?.dataset?.ocPlatformEmbedded === "true";
+}
+
+function currentSectionHref(section) {
+  return section === "agent-allocation"
+    ? `./?ocTenantView=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`
+    : `./?ocTenantView=${PLATFORM_TENANT_MANAGEMENT_VIEW}`;
+}
+
 function setFeedback(root, text, isError = false) {
   const feedback = root.querySelector("[data-tenant-feedback]");
   if (!(feedback instanceof HTMLElement)) {
     return;
   }
+  feedback.hidden = !text;
   feedback.textContent = text;
-  feedback.classList.toggle("tenant-feedback--danger", isError);
+  if (isEmbedded(root)) {
+    feedback.className = `callout ${isError ? "danger" : "info"} oc-platform-surface-feedback`;
+  } else {
+    feedback.classList.toggle("tenant-feedback--danger", isError);
+  }
 }
 
 function formatNumber(value) {
@@ -36,20 +56,19 @@ function renderMetrics(root, tenants) {
   const totalWallet = tenants.reduce((sum, tenant) => sum + Number(tenant.walletBalance || 0), 0);
   const totalAgents = tenants.reduce((sum, tenant) => sum + Number(tenant.agentCount || 0), 0);
   const metricItems = [
-    { label: "租户总数", value: formatNumber(totalTenants), hint: "平台正在托管的租户数量" },
-    { label: "公有云租户", value: formatNumber(cloudTenants), hint: "走在线充值和积分扣费" },
-    { label: "本地部署", value: formatNumber(localTenants), hint: "走 License 与只读到期控制" },
-    { label: "成员总数", value: formatNumber(totalMembers), hint: "当前启用成员账号数" },
-    { label: "钱包总积分", value: formatNumber(totalWallet), hint: "所有租户钱包余额汇总" },
-    { label: "已分配 Agent", value: formatNumber(totalAgents), hint: "平台下发到租户侧的 Agent 数" },
+    { label: "租户总数", value: formatNumber(totalTenants) },
+    { label: "公有云租户", value: formatNumber(cloudTenants) },
+    { label: "本地部署", value: formatNumber(localTenants) },
+    { label: "成员总数", value: formatNumber(totalMembers) },
+    { label: "钱包总积分", value: formatNumber(totalWallet) },
+    { label: "已分配 Agent", value: formatNumber(totalAgents) },
   ];
   container.innerHTML = metricItems
     .map(
       (metric) => `
-        <article class="tenant-metric-card">
-          <span class="tenant-metric-card__label">${escapeHtml(metric.label)}</span>
-          <strong class="tenant-metric-card__value">${escapeHtml(metric.value)}</strong>
-          <span class="tenant-metric-card__hint">${escapeHtml(metric.hint)}</span>
+        <article class="stat stat-card">
+          <span class="stat-label">${escapeHtml(metric.label)}</span>
+          <strong class="stat-value">${escapeHtml(metric.value)}</strong>
         </article>
       `,
     )
@@ -62,36 +81,29 @@ function renderTenantRows(root, tenants, selectedTenantId) {
     return;
   }
   if (!tenants.length) {
-    container.innerHTML = `<div class="tenant-empty">当前还没有租户，请先创建第一家租户。</div>`;
+    container.innerHTML = `<div class="callout info">当前还没有租户，请先创建第一家租户。</div>`;
     return;
   }
   container.innerHTML = `
-    <div class="tenant-table">
-      <div class="tenant-table__head">
-        <span>租户</span>
-        <span>部署</span>
-        <span>成员</span>
-        <span>钱包</span>
-        <span>Agent</span>
-        <span>到期</span>
-      </div>
+    <div class="list">
       ${tenants
         .map(
           (tenant) => `
             <button
-              class="tenant-table__row${tenant.id === selectedTenantId ? " tenant-table__row--selected" : ""}"
+              class="list-item list-item-clickable${tenant.id === selectedTenantId ? " list-item-selected" : ""}"
               type="button"
               data-platform-tenant-id="${escapeHtml(tenant.id)}"
             >
-              <span>
-                <strong>${escapeHtml(tenant.name)}</strong>
-                <small>${escapeHtml(tenant.code)}</small>
-              </span>
-              <span>${escapeHtml(tenant.deploymentMode === "local" ? "本地部署" : "公有云")}</span>
-              <span>${formatNumber(tenant.memberCount)}</span>
-              <span>${formatNumber(tenant.walletBalance)} 积分</span>
-              <span>${formatNumber(tenant.agentCount)}</span>
-              <span>${escapeHtml(tenant.licenseExpiresAt || "-")}</span>
+              <div class="list-main">
+                <div class="list-title">${escapeHtml(tenant.name)}</div>
+                <div class="list-sub">${escapeHtml(tenant.code)} · ${escapeHtml(tenant.deploymentMode === "local" ? "本地部署" : "公有云")}</div>
+                <div class="list-sub">到期：${escapeHtml(tenant.licenseExpiresAt || "-")}</div>
+              </div>
+              <div class="list-meta">
+                <div>成员 ${formatNumber(tenant.memberCount)}</div>
+                <div>钱包 ${formatNumber(tenant.walletBalance)} 积分</div>
+                <div>Agent ${formatNumber(tenant.agentCount)}</div>
+              </div>
             </button>
           `,
         )
@@ -106,23 +118,23 @@ function renderTenantSummary(root, tenant) {
     return;
   }
   if (!tenant) {
-    container.innerHTML = `<div class="tenant-empty">请选择左侧租户，查看详情并分配 Agent。</div>`;
+    container.innerHTML = `<div class="callout info">请选择左侧租户，查看详情并分配 Agent。</div>`;
     return;
   }
   container.innerHTML = `
-    <div class="tenant-item">
-      <div class="tenant-item__row">
-        <div class="tenant-item__title">${escapeHtml(tenant.name)}</div>
-        <span class="tenant-chip">${escapeHtml(tenant.code)}</span>
-        <span class="tenant-chip">${escapeHtml(tenant.status)}</span>
-        <span class="tenant-chip">${escapeHtml(tenant.deploymentMode === "local" ? "本地部署" : "公有云")}</span>
-      </div>
-      <div class="tenant-kv" style="margin-top: 16px;">
-        <div><span>人数上限</span><strong>${formatNumber(tenant.memberLimit)}</strong></div>
-        <div><span>当前成员</span><strong>${formatNumber(tenant.memberCount)}</strong></div>
-        <div><span>钱包余额</span><strong>${formatNumber(tenant.walletBalance)} 积分</strong></div>
-        <div><span>已分配 Agent</span><strong>${formatNumber(tenant.agentCount)}</strong></div>
-      </div>
+    <div class="list">
+      <article class="list-item">
+        <div class="list-main">
+          <div class="list-title">${escapeHtml(tenant.name)}</div>
+          <div class="list-sub">${escapeHtml(tenant.code)} · ${escapeHtml(tenant.status)} · ${escapeHtml(tenant.deploymentMode === "local" ? "本地部署" : "公有云")}</div>
+        </div>
+        <div class="list-meta">
+          <div>人数上限 ${formatNumber(tenant.memberLimit)}</div>
+          <div>当前成员 ${formatNumber(tenant.memberCount)}</div>
+          <div>钱包余额 ${formatNumber(tenant.walletBalance)} 积分</div>
+          <div>已分配 Agent ${formatNumber(tenant.agentCount)}</div>
+        </div>
+      </article>
     </div>
   `;
 }
@@ -133,20 +145,26 @@ function renderTenantMembers(root, members) {
     return;
   }
   container.innerHTML = members.length
-    ? members
-        .map(
-          (member) => `
-            <article class="tenant-item tenant-item--compact">
-              <div class="tenant-item__row">
-                <div class="tenant-item__title">${escapeHtml(member.username)}</div>
-                <span class="tenant-chip">${escapeHtml(member.status)}</span>
-                <span>已分配 ${formatNumber(member.assignedAgentCount)} 个 Agent</span>
-              </div>
-            </article>
-          `,
-        )
-        .join("")
-    : `<div class="tenant-empty">当前租户还没有成员。</div>`;
+    ? `
+      <div class="list">
+        ${members
+          .map(
+            (member) => `
+              <article class="list-item">
+                <div class="list-main">
+                  <div class="list-title">${escapeHtml(member.username)}</div>
+                  <div class="list-sub">成员状态：${escapeHtml(member.status)}</div>
+                </div>
+                <div class="list-meta">
+                  <div>已分配 ${formatNumber(member.assignedAgentCount)} 个 Agent</div>
+                </div>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    `
+    : `<div class="callout info">当前租户还没有成员。</div>`;
 }
 
 function renderTenantAgents(root, agents) {
@@ -155,22 +173,28 @@ function renderTenantAgents(root, agents) {
     return;
   }
   container.innerHTML = agents.length
-    ? agents
-        .map(
-          (agent) => `
-            <article class="tenant-item tenant-item--compact">
-              <div class="tenant-item__row">
-                <div class="tenant-item__title">${escapeHtml(agent.agentName)}</div>
-                <span class="tenant-chip">${escapeHtml(agent.status)}</span>
-                <span>${formatNumber(agent.balancePoints)} 积分</span>
-                <span>倍率 ${escapeHtml(agent.rateMultiplier ?? 1)}</span>
-              </div>
-              <div class="tenant-subtitle">${escapeHtml(agent.description || "暂未填写租户侧描述。")}</div>
-            </article>
-          `,
-        )
-        .join("")
-    : `<div class="tenant-empty">当前租户还没有被平台分配 Agent。</div>`;
+    ? `
+      <div class="list">
+        ${agents
+          .map(
+            (agent) => `
+              <article class="list-item">
+                <div class="list-main">
+                  <div class="list-title">${escapeHtml(agent.agentName)}</div>
+                  <div class="list-sub">${escapeHtml(agent.description || "暂未填写租户侧描述。")}</div>
+                </div>
+                <div class="list-meta">
+                  <div>状态 ${escapeHtml(agent.status)}</div>
+                  <div>${formatNumber(agent.balancePoints)} 积分</div>
+                  <div>倍率 ${escapeHtml(agent.rateMultiplier ?? 1)}</div>
+                </div>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    `
+    : `<div class="callout info">当前租户还没有被平台分配 Agent。</div>`;
 }
 
 function fillTenantSelect(root, tenants, selectedTenantId) {
@@ -203,16 +227,17 @@ function fillCatalogSelect(root, agents) {
       .join("");
 }
 
-export async function bootPlatformTenantConsolePage() {
-  const root = document.querySelector(PAGE_SELECTOR);
+export async function mountPlatformConsolePage(root, options = {}) {
   if (!(root instanceof HTMLElement)) {
     return null;
   }
+
   const session = requireTenantSession(["platform_admin"], { loginHref: PLATFORM_LOGIN_ROUTE });
   if (!session) {
     return null;
   }
 
+  const section = options.section || "tenants";
   const apiClient = createTenantApiClient();
   const state = {
     tenants: [],
@@ -222,6 +247,20 @@ export async function bootPlatformTenantConsolePage() {
   root.querySelector("[data-platform-username]")?.replaceChildren(
     document.createTextNode(session.session.username),
   );
+
+  const sectionLinks = root.querySelectorAll("[href]");
+  for (const link of sectionLinks) {
+    if (!(link instanceof HTMLAnchorElement)) {
+      continue;
+    }
+    const href = link.getAttribute("href") || "";
+    if (href === currentSectionHref("tenants")) {
+      link.classList.toggle("active", section === "tenants");
+    }
+    if (href === currentSectionHref("agent-allocation")) {
+      link.classList.toggle("active", section === "agent-allocation");
+    }
+  }
 
   async function refreshSelectedTenant() {
     const tenant = state.tenants.find((item) => item.id === state.selectedTenantId) ?? null;
@@ -321,6 +360,14 @@ export async function bootPlatformTenantConsolePage() {
   }
 
   return { root };
+}
+
+export async function bootPlatformTenantConsolePage() {
+  const root = document.querySelector(PAGE_SELECTOR);
+  if (!(root instanceof HTMLElement)) {
+    return null;
+  }
+  return mountPlatformConsolePage(root, { embedded: false, section: "tenants" });
 }
 
 if (document.readyState === "loading") {
