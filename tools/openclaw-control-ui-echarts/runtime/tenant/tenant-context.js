@@ -4,6 +4,9 @@ const TENANT_VIEW_QUERY_KEY = "ocTenantView";
 export const PLATFORM_LOGIN_VIEW = "platform-login";
 export const TENANT_LOGIN_VIEW = "tenant-login";
 export const PLATFORM_TENANTS_VIEW = "platform-tenants";
+// Keep the older name as an alias so newer/older tenant runtime modules can coexist
+// without breaking the whole zero-intrusive module graph during incremental upgrades.
+export const PLATFORM_TENANT_MANAGEMENT_VIEW = PLATFORM_TENANTS_VIEW;
 export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const PLATFORM_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_LOGIN_VIEW}`;
 export const TENANT_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_LOGIN_VIEW}`;
