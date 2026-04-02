@@ -7,6 +7,7 @@ import {
   readTenantView,
   readTenantSession,
 } from "./tenant-context.js";
+import { isLufengPublicPath } from "../lufeng/context.js";
 
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
@@ -145,6 +146,9 @@ function ensureTenantUtilityLink(container) {
 
 export function bootTenantEntry() {
   if (window.__openclawTenantEntryBooted) {
+    return;
+  }
+  if (isLufengPublicPath()) {
     return;
   }
   window.__openclawTenantEntryBooted = true;

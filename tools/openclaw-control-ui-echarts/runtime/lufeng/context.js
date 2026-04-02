@@ -2,7 +2,7 @@ export const LUFENG_ROUTE = "/lufeng";
 export const LUFENG_CHAT_ROUTE = `${LUFENG_ROUTE}/chat`;
 export const LUFENG_AGENT_ID = "subotech-finance";
 export const LUFENG_AGENT_NAME = "苏博泰克财务分析助手";
-export const LUFENG_SESSION_KEY = `agent:${LUFENG_AGENT_ID}:main`;
+export const LUFENG_SESSION_KEY = `agent:${LUFENG_AGENT_ID}:lufeng`;
 
 function normalizePath(value) {
   const raw = String(value ?? "").trim() || "/";

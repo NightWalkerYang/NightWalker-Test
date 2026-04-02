@@ -17,9 +17,26 @@ afterEach(() => {
 });
 
 describe("lufeng public chat surface", () => {
-  it("locks the native app to chat and the finance session", () => {
+  it("locks the native app to chat, keeps an isolated finance session, and trims the sidebar", () => {
     window.history.replaceState({}, "", "/lufeng");
     vi.stubGlobal("setInterval", vi.fn(() => 1));
+
+    document.body.innerHTML = `
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-group="chat">
+          <button class="nav-section__label" aria-expanded="false"></button>
+          <div class="nav-section__items">
+            <a class="nav-item" href="/lufeng/chat">聊天</a>
+          </div>
+        </section>
+        <section class="nav-section" data-group="control">
+          <div class="nav-section__items">
+            <a class="nav-item" href="/lufeng/overview">总览</a>
+          </div>
+        </section>
+      </nav>
+      <div class="sidebar-shell__footer"></div>
+    `;
 
     const app = document.createElement("openclaw-app");
     app.tab = "overview";
@@ -46,12 +63,21 @@ describe("lufeng public chat surface", () => {
     expect(document.documentElement.getAttribute("data-oc-lufeng-route")).toBe("true");
     expect(document.body.getAttribute("data-oc-lufeng-route")).toBe("true");
     expect(document.head.querySelector('[data-oc-lufeng-style="true"]')).not.toBeNull();
+    expect(document.querySelector('[data-group="chat"]')?.getAttribute("data-oc-lufeng-nav")).toBe(
+      "chat",
+    );
+    expect(
+      document.querySelector('[data-group="control"]')?.getAttribute("data-oc-lufeng-nav"),
+    ).toBe("hidden");
+    expect(document.querySelector(".sidebar-shell__footer")?.getAttribute("data-oc-lufeng-footer")).toBe(
+      "hidden",
+    );
     expect(app.tab).toBe("chat");
-    expect(app.sessionKey).toBe("agent:subotech-finance:main");
+    expect(app.sessionKey).toBe("agent:subotech-finance:lufeng");
     expect(applySettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionKey: "agent:subotech-finance:main",
-        lastActiveSessionKey: "agent:subotech-finance:main",
+        sessionKey: "agent:subotech-finance:lufeng",
+        lastActiveSessionKey: "agent:subotech-finance:lufeng",
       }),
     );
     expect(loadAssistantIdentity).toHaveBeenCalledTimes(1);

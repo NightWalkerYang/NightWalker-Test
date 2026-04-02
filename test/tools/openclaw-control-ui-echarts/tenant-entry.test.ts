@@ -60,4 +60,19 @@ describe("zero-intrusive tenant entry", () => {
     expect(tenantLinks[0]?.textContent).toContain("租户登录");
     expect(tenantLinks[0]?.getAttribute("href")).toContain("ocTenantView=tenant-login");
   });
+
+  it("skips tenant sidebar injection on the public lufeng route", () => {
+    window.history.replaceState({}, "", "/lufeng");
+    document.body.innerHTML = `
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group"></div>
+    `;
+
+    bootTenantEntry();
+
+    expect(document.querySelector(".oc-platform-management-section")).toBeNull();
+    expect(document.querySelector(".oc-tenant-user-link")).toBeNull();
+  });
 });

@@ -1,6 +1,8 @@
 import { LUFENG_ROUTE, LUFENG_SESSION_KEY, isLufengPublicPath, normalizeLufengRouteUrl } from "./context.js";
 
 const STYLE_ATTR = "data-oc-lufeng-style";
+const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
+const SIDEBAR_FOOTER_SELECTOR = ".sidebar-shell__footer";
 
 function ensureStyle() {
   let link = document.head.querySelector(`[${STYLE_ATTR}]`);
@@ -22,6 +24,71 @@ function normalizeLufengLocation() {
     normalized.search !== window.location.search
   ) {
     window.history.replaceState({}, "", normalized.toString());
+  }
+}
+
+function isChatSidebarItem(item) {
+  if (!(item instanceof HTMLAnchorElement || item instanceof HTMLElement)) {
+    return false;
+  }
+
+  const href = item.getAttribute("href");
+  if (href) {
+    try {
+      const resolved = new URL(href, document.baseURI);
+      if (resolved.pathname.endsWith("/chat") || resolved.pathname === LUFENG_ROUTE) {
+        return true;
+      }
+    } catch {
+      // Fall through to text matching.
+    }
+  }
+
+  return (item.textContent || "").includes("聊天");
+}
+
+function syncSidebar(navRoot) {
+  if (!(navRoot instanceof HTMLElement)) {
+    return;
+  }
+
+  const sections = [...navRoot.querySelectorAll(":scope > .nav-section")];
+  if (sections.length === 0) {
+    return;
+  }
+
+  const chatSection =
+    sections.find((section) =>
+      [...section.querySelectorAll(".nav-item")].some((item) => isChatSidebarItem(item)),
+    ) ?? sections[0];
+
+  for (const section of sections) {
+    section.setAttribute(
+      "data-oc-lufeng-nav",
+      section === chatSection ? "chat" : "hidden",
+    );
+  }
+
+  chatSection.classList.remove("nav-section--collapsed");
+  const label = chatSection.querySelector(".nav-section__label");
+  if (label instanceof HTMLElement) {
+    label.setAttribute("aria-expanded", "true");
+  }
+}
+
+function clearSidebarSync(navRoot) {
+  if (!(navRoot instanceof HTMLElement)) {
+    return;
+  }
+
+  for (const section of navRoot.querySelectorAll(":scope > .nav-section")) {
+    section.removeAttribute("data-oc-lufeng-nav");
+  }
+}
+
+function clearFooterSync(footer) {
+  if (footer instanceof HTMLElement) {
+    footer.removeAttribute("data-oc-lufeng-footer");
   }
 }
 
@@ -70,6 +137,8 @@ function syncLufengSurface() {
   if (!isLufengPublicPath()) {
     document.documentElement.removeAttribute("data-oc-lufeng-route");
     document.body?.removeAttribute("data-oc-lufeng-route");
+    document.querySelectorAll(SIDEBAR_NAV_SELECTOR).forEach(clearSidebarSync);
+    document.querySelectorAll(SIDEBAR_FOOTER_SELECTOR).forEach(clearFooterSync);
     document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
     return;
   }
@@ -78,6 +147,12 @@ function syncLufengSurface() {
   document.documentElement.setAttribute("data-oc-lufeng-route", "true");
   document.body?.setAttribute("data-oc-lufeng-route", "true");
   normalizeLufengLocation();
+  document.querySelectorAll(SIDEBAR_NAV_SELECTOR).forEach(syncSidebar);
+  document.querySelectorAll(SIDEBAR_FOOTER_SELECTOR).forEach((footer) => {
+    if (footer instanceof HTMLElement) {
+      footer.setAttribute("data-oc-lufeng-footer", "hidden");
+    }
+  });
   pinPublicChatSession(document.querySelector("openclaw-app"));
 }
 

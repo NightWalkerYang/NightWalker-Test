@@ -36,9 +36,9 @@ describe("lufeng public bootstrap", () => {
     expect(window.location.pathname).toBe("/lufeng");
     expect(window.location.search).toBe("");
     expect(settings.gatewayUrl).toBe(`ws://${window.location.host}`);
-    expect(settings.sessionKey).toBe("agent:subotech-finance:main");
+    expect(settings.sessionKey).toBe("agent:subotech-finance:lufeng");
     expect(settings.sessionsByGateway?.[`ws://${window.location.host}`]?.sessionKey).toBe(
-      "agent:subotech-finance:main",
+      "agent:subotech-finance:lufeng",
     );
     expect(window.sessionStorage.getItem(tokenKey)).toBe("shared-token");
   });
