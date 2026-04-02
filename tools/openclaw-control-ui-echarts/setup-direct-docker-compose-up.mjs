@@ -94,6 +94,18 @@ function buildOverrideContent(extraMounts) {
     "      ]",
     "    ports:",
     "      - \"${OPENCLAW_TENANT_PLATFORM_PORT:-18801}:18801\"",
+    "    healthcheck:",
+    "      test:",
+    "        [",
+    "          \"CMD\",",
+    "          \"node\",",
+    "          \"-e\",",
+    "          \"fetch('http://127.0.0.1:18801/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+    "        ]",
+    "      interval: 15s",
+    "      timeout: 5s",
+    "      retries: 5",
+    "      start_period: 10s",
     "    restart: unless-stopped",
   );
 
