@@ -97,6 +97,10 @@ function normalizePath(basePath, pathname) {
   return pathname.slice(basePath.length) || "/";
 }
 
+function readTenantId(value) {
+  return String(value || "").trim();
+}
+
 export function createTenantPlatformRouter(deps) {
   return async function handleTenantPlatformRequest(request, response) {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
@@ -246,6 +250,79 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/platform/catalog-agents") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, { ok: true, data: configAgents });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/platform/tenant-members") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      const tenantId = readTenantId(url.searchParams.get("tenantId"));
+      if (!tenantId) {
+        sendJson(request, response, 400, { ok: false, error: "tenant_id_required" });
+        return;
+      }
+      sendJson(request, response, 200, { ok: true, data: listTenantMembers(deps.db, tenantId) });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/platform/tenant-agents") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      const tenantId = readTenantId(url.searchParams.get("tenantId"));
+      if (!tenantId) {
+        sendJson(request, response, 400, { ok: false, error: "tenant_id_required" });
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantAgents(deps.db, tenantId, configAgents),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/tenant-agents") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenantId = readTenantId(body.tenantId);
+        if (!tenantId) {
+          sendJson(request, response, 400, { ok: false, error: "tenant_id_required" });
+          return;
+        }
+        const tenantAgentId = upsertTenantAgent(deps.db, {
+          tenantId,
+          agentId: String(body.agentId || "").trim(),
+          description: String(body.description || "").trim(),
+          rateMultiplier: Number.parseFloat(String(body.rateMultiplier || "1")) || 1,
+          balancePoints: Number.parseFloat(String(body.balancePoints || "0")) || 0,
+          status: "active",
+        });
+        const agent = listTenantAgents(deps.db, tenantId, configAgents).find(
+          (item) => item.id === tenantAgentId,
+        );
+        sendJson(request, response, 200, { ok: true, data: agent ?? null });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     if (request.method === "GET" && relativePath === "/tenant/admin/members") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
@@ -277,15 +354,6 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
-    if (request.method === "GET" && relativePath === "/tenant/admin/catalog-agents") {
-      const session = requireSession(request, response, deps);
-      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
-        return;
-      }
-      sendJson(request, response, 200, { ok: true, data: configAgents });
-      return;
-    }
-
     if (request.method === "GET" && relativePath === "/tenant/admin/tenant-agents") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
@@ -295,34 +363,6 @@ export function createTenantPlatformRouter(deps) {
         ok: true,
         data: listTenantAgents(deps.db, session.tenantId, configAgents),
       });
-      return;
-    }
-
-    if (request.method === "POST" && relativePath === "/tenant/admin/tenant-agents") {
-      const session = requireSession(request, response, deps);
-      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
-        return;
-      }
-      try {
-        const body = await readJsonBody(request);
-        const tenantAgentId = upsertTenantAgent(deps.db, {
-          tenantId: session.tenantId,
-          agentId: String(body.agentId || "").trim(),
-          description: String(body.description || "").trim(),
-          rateMultiplier: Number.parseFloat(String(body.rateMultiplier || "1")) || 1,
-          balancePoints: Number.parseFloat(String(body.balancePoints || "0")) || 0,
-          status: "active",
-        });
-        const agent = listTenantAgents(deps.db, session.tenantId, configAgents).find(
-          (item) => item.id === tenantAgentId,
-        );
-        sendJson(request, response, 200, { ok: true, data: agent ?? null });
-      } catch (error) {
-        sendJson(request, response, 400, {
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
       return;
     }
 

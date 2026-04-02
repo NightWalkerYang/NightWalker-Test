@@ -1,6 +1,6 @@
 import { createTenantApiClient } from "./api-client.js";
 import {
-  PLATFORM_LOGIN_ROUTE,
+  TENANT_LOGIN_ROUTE,
   clearTenantSession,
   readTenantApiBaseOverride,
   redirectToRoleHome,
@@ -8,7 +8,7 @@ import {
   writeTenantApiBaseOverride,
 } from "./tenant-context.js";
 
-const PAGE_SELECTOR = "[data-oc-tenant-login-page]";
+const PAGE_SELECTOR = "[data-oc-platform-login-page]";
 
 function setFeedback(root, text, isError = false) {
   const feedback = root.querySelector("[data-tenant-feedback]");
@@ -19,7 +19,12 @@ function setFeedback(root, text, isError = false) {
   feedback.classList.toggle("tenant-feedback--danger", isError);
 }
 
-export async function bootTenantLoginPage() {
+function toggleSetup(root, initialized) {
+  root.querySelector("[data-tenant-setup-card]")?.toggleAttribute("hidden", initialized);
+  root.querySelector("[data-tenant-login-card]")?.toggleAttribute("hidden", !initialized);
+}
+
+export async function bootPlatformLoginPage() {
   const root = document.querySelector(PAGE_SELECTOR);
   if (!(root instanceof HTMLElement)) {
     return null;
@@ -27,7 +32,7 @@ export async function bootTenantLoginPage() {
 
   const apiClient = createTenantApiClient();
   const session = readTenantSession();
-  if (session?.session?.role) {
+  if (session?.session?.role === "platform_admin") {
     redirectToRoleHome(session.session);
     return null;
   }
@@ -39,12 +44,13 @@ export async function bootTenantLoginPage() {
 
   try {
     const bootstrap = await apiClient.bootstrap();
-    if (!bootstrap.initialized) {
-      setFeedback(root, "平台管理员尚未初始化，请先从平台管理入口完成初始化。", true);
-    } else {
-      setFeedback(root, "请输入租户管理员或租户成员账号密码。");
-    }
+    toggleSetup(root, bootstrap.initialized);
+    setFeedback(
+      root,
+      bootstrap.initialized ? "请输入平台管理员账号密码登录。" : "当前还没有平台管理员，请先完成初始化。",
+    );
   } catch (error) {
+    toggleSetup(root, false);
     setFeedback(root, `租户平台 API 暂不可用：${error instanceof Error ? error.message : String(error)}`, true);
   }
 
@@ -53,6 +59,22 @@ export async function bootTenantLoginPage() {
     if (apiBaseInput instanceof HTMLInputElement) {
       writeTenantApiBaseOverride(apiBaseInput.value);
       window.location.reload();
+    }
+  });
+
+  root.querySelector("[data-tenant-setup-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    try {
+      const payload = Object.fromEntries(new FormData(form).entries());
+      const result = await apiClient.setupPlatformAdmin(payload);
+      apiClient.persistSession(result);
+      redirectToRoleHome(result.session);
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }
   });
 
@@ -65,9 +87,9 @@ export async function bootTenantLoginPage() {
     try {
       const payload = Object.fromEntries(new FormData(form).entries());
       const result = await apiClient.login(payload);
-      if (result?.session?.role === "platform_admin") {
+      if (result?.session?.role !== "platform_admin") {
         clearTenantSession();
-        setFeedback(root, "平台管理员请使用平台管理入口登录。", true);
+        setFeedback(root, "当前入口仅允许平台管理员登录。", true);
         return;
       }
       apiClient.persistSession(result);
@@ -77,9 +99,9 @@ export async function bootTenantLoginPage() {
     }
   });
 
-  root.querySelector("[data-platform-login-link]")?.addEventListener("click", (event) => {
+  root.querySelector("[data-tenant-login-link]")?.addEventListener("click", (event) => {
     event.preventDefault();
-    window.location.href = PLATFORM_LOGIN_ROUTE;
+    window.location.href = TENANT_LOGIN_ROUTE;
   });
 
   return { root };
@@ -87,8 +109,8 @@ export async function bootTenantLoginPage() {
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
-    void bootTenantLoginPage();
+    void bootPlatformLoginPage();
   });
 } else {
-  void bootTenantLoginPage();
+  void bootPlatformLoginPage();
 }

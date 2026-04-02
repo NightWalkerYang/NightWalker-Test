@@ -11,16 +11,21 @@ afterEach(() => {
 });
 
 describe("zero-intrusive tenant entry", () => {
-  it("injects a single tenant platform link into the sidebar utility group", () => {
+  it("injects separate platform and tenant links into the sidebar utility group", () => {
     document.body.innerHTML = `<div class="sidebar-utility-group"></div>`;
 
     bootTenantEntry();
     bootTenantEntry();
 
-    const links = document.querySelectorAll(".oc-tenant-platform-link");
-    expect(links).toHaveLength(1);
-    expect(links[0]?.textContent).toContain("租户平台");
-    expect(links[0]?.getAttribute("href")).toContain("tenant-login.html");
+    const platformLinks = document.querySelectorAll(".oc-platform-admin-link");
+    const tenantLinks = document.querySelectorAll(".oc-tenant-user-link");
+
+    expect(platformLinks).toHaveLength(1);
+    expect(platformLinks[0]?.textContent).toContain("平台管理");
+    expect(platformLinks[0]?.getAttribute("href")).toContain("platform-login.html");
+
+    expect(tenantLinks).toHaveLength(1);
+    expect(tenantLinks[0]?.textContent).toContain("租户登录");
+    expect(tenantLinks[0]?.getAttribute("href")).toContain("tenant-login.html");
   });
 });
-

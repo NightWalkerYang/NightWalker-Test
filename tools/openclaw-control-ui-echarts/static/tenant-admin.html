@@ -17,7 +17,11 @@
             <div>
               <p class="tenant-eyebrow">Tenant Admin</p>
               <h1 class="tenant-title">租户管理员工作台</h1>
-              <p class="tenant-subtitle">新增成员、分配租户 Agent，并把 Agent 分配给指定成员。</p>
+              <p class="tenant-subtitle">
+                当前管理员：<strong data-tenant-admin-name>tenant-admin</strong>，
+                当前租户：<strong data-tenant-admin-tenant>租户</strong>。
+              </p>
+              <p class="tenant-subtitle">平台管理员负责把 Agent 下发到租户；租户管理员只负责成员维护与成员分配。</p>
             </div>
             <button class="tenant-btn tenant-btn--ghost" type="button" data-tenant-admin-logout>退出登录</button>
           </div>
@@ -25,7 +29,12 @@
 
         <section class="tenant-grid">
           <article class="tenant-panel">
-            <h2>新增成员</h2>
+            <div class="tenant-panel__head">
+              <div>
+                <h2>新增成员</h2>
+                <p class="tenant-subtitle">账号密码由租户管理员手工设置，创建后直接启用。</p>
+              </div>
+            </div>
             <form class="tenant-form" data-tenant-member-form>
               <label class="tenant-field">
                 <span>成员账号</span>
@@ -40,32 +49,12 @@
           </article>
 
           <article class="tenant-panel">
-            <h2>分配租户 Agent</h2>
-            <form class="tenant-form" data-tenant-agent-form>
-              <label class="tenant-field">
-                <span>OpenClaw Agent</span>
-                <select name="agentId"></select>
-              </label>
-              <label class="tenant-field">
-                <span>简短描述</span>
-                <input name="description" type="text" placeholder="该 Agent 的租户化描述" />
-              </label>
-              <label class="tenant-field">
-                <span>计费倍率</span>
-                <input name="rateMultiplier" type="number" step="0.01" value="1" />
-              </label>
-              <label class="tenant-field">
-                <span>初始积分</span>
-                <input name="balancePoints" type="number" step="0.01" value="0" />
-              </label>
-              <button class="tenant-btn tenant-btn--primary" type="submit">保存 Agent</button>
-            </form>
-          </article>
-        </section>
-
-        <section class="tenant-grid">
-          <article class="tenant-panel">
-            <h2>给成员分配 Agent</h2>
+            <div class="tenant-panel__head">
+              <div>
+                <h2>成员分配 Agent</h2>
+                <p class="tenant-subtitle">只能从平台已下发给当前租户的 Agent 中进行分配。</p>
+              </div>
+            </div>
             <form class="tenant-form" data-tenant-assignment-form>
               <label class="tenant-field">
                 <span>成员</span>
@@ -86,7 +75,7 @@
             <div class="tenant-list" data-tenant-members></div>
           </article>
           <article class="tenant-panel">
-            <h2>租户 Agent 列表</h2>
+            <h2>租户已分配 Agent</h2>
             <div class="tenant-list" data-tenant-agent-list></div>
           </article>
         </section>
@@ -96,4 +85,3 @@
     </main>
   </body>
 </html>
-

@@ -1,5 +1,7 @@
 const SESSION_STORAGE_KEY = "openclaw:tenant-platform:session:v1";
 const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
+export const PLATFORM_LOGIN_ROUTE = "./platform-login.html";
+export const TENANT_LOGIN_ROUTE = "./tenant-login.html";
 
 function safeStorage() {
   try {
@@ -72,10 +74,11 @@ export function redirectToRoleHome(session) {
   window.location.href = routeForRole(session?.role);
 }
 
-export function requireTenantSession(allowedRoles) {
+export function requireTenantSession(allowedRoles, options = {}) {
   const session = readTenantSession();
+  const loginHref = options.loginHref || TENANT_LOGIN_ROUTE;
   if (!session?.token || !session?.session?.role) {
-    window.location.href = "./tenant-login.html";
+    window.location.href = loginHref;
     return null;
   }
   if (Array.isArray(allowedRoles) && !allowedRoles.includes(session.session.role)) {
@@ -84,4 +87,3 @@ export function requireTenantSession(allowedRoles) {
   }
   return session;
 }
-

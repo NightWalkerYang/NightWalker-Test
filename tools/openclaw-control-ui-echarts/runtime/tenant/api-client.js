@@ -5,6 +5,18 @@ import {
   writeTenantSession,
 } from "./tenant-context.js";
 
+function withQuery(path, params = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    const normalized = String(value ?? "").trim();
+    if (normalized) {
+      query.set(key, normalized);
+    }
+  }
+  const suffix = query.toString();
+  return suffix ? `${path}?${suffix}` : path;
+}
+
 async function requestJson(path, options = {}) {
   const baseUrl = resolveTenantApiBaseUrl().replace(/\/$/, "");
   const session = readTenantSession();
@@ -60,20 +72,26 @@ export function createTenantApiClient() {
     createTenant(body) {
       return requestJson("/platform/tenants", { method: "POST", body });
     },
+    listPlatformCatalogAgents() {
+      return requestJson("/platform/catalog-agents");
+    },
+    listPlatformTenantMembers(tenantId) {
+      return requestJson(withQuery("/platform/tenant-members", { tenantId }));
+    },
+    listPlatformTenantAgents(tenantId) {
+      return requestJson(withQuery("/platform/tenant-agents", { tenantId }));
+    },
+    upsertPlatformTenantAgent(body) {
+      return requestJson("/platform/tenant-agents", { method: "POST", body });
+    },
     listTenantMembers() {
       return requestJson("/tenant/admin/members");
     },
     createTenantMember(body) {
       return requestJson("/tenant/admin/members", { method: "POST", body });
     },
-    listCatalogAgents() {
-      return requestJson("/tenant/admin/catalog-agents");
-    },
     listTenantAgents() {
       return requestJson("/tenant/admin/tenant-agents");
-    },
-    upsertTenantAgent(body) {
-      return requestJson("/tenant/admin/tenant-agents", { method: "POST", body });
     },
     assignTenantAgent(body) {
       return requestJson("/tenant/admin/assign-agent", { method: "POST", body });
@@ -86,4 +104,3 @@ export function createTenantApiClient() {
     },
   };
 }
-

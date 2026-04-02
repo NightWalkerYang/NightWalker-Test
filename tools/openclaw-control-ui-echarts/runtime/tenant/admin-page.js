@@ -1,5 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
-import { requireTenantSession } from "./tenant-context.js";
+import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-tenant-admin-page]";
 
@@ -21,31 +21,40 @@ function setFeedback(root, text, isError = false) {
 
 function renderMembers(root, members) {
   const container = root.querySelector("[data-tenant-members]");
-  if (!(container instanceof HTMLElement)) {
-    return;
+  const memberSelect = root.querySelector('[name="userId"]');
+  if (container instanceof HTMLElement) {
+    container.innerHTML = members.length
+      ? members
+          .map(
+            (member) => `
+              <article class="tenant-item">
+                <div class="tenant-item__row">
+                  <div class="tenant-item__title">${escapeHtml(member.username)}</div>
+                  <span class="tenant-chip">${escapeHtml(member.status)}</span>
+                  <span>已分配 ${member.assignedAgentCount} 个 Agent</span>
+                </div>
+              </article>
+            `,
+          )
+          .join("")
+      : `<div class="tenant-empty">当前还没有成员，请先新增成员账号。</div>`;
   }
-  if (!members.length) {
-    container.innerHTML = `<div class="tenant-empty">当前还没有成员，请先新增成员账号。</div>`;
-    return;
+
+  if (memberSelect instanceof HTMLSelectElement) {
+    memberSelect.innerHTML =
+      `<option value="">请选择成员</option>` +
+      members
+        .map(
+          (member) =>
+            `<option value="${escapeHtml(member.id)}">${escapeHtml(member.username)}</option>`,
+        )
+        .join("");
   }
-  container.innerHTML = members
-    .map(
-      (member) => `
-        <article class="tenant-item">
-          <div class="tenant-item__row">
-            <div class="tenant-item__title">${escapeHtml(member.username)}</div>
-            <span class="tenant-chip">${escapeHtml(member.status)}</span>
-            <span>已分配 ${member.assignedAgentCount} 个 Agent</span>
-          </div>
-        </article>
-      `,
-    )
-    .join("");
 }
 
 function renderTenantAgents(root, agents) {
   const container = root.querySelector("[data-tenant-agent-list]");
-  const select = root.querySelector('[name="tenantAgentId"]');
+  const agentSelect = root.querySelector('[name="tenantAgentId"]');
   if (container instanceof HTMLElement) {
     container.innerHTML = agents.length
       ? agents
@@ -58,17 +67,17 @@ function renderTenantAgents(root, agents) {
                   <span>${agent.balancePoints ?? 0} 积分</span>
                   <span>倍率 ${agent.rateMultiplier ?? 1}</span>
                 </div>
-                <div class="tenant-subtitle">${escapeHtml(agent.description || "暂无描述")}</div>
+                <div class="tenant-subtitle">${escapeHtml(agent.description || "平台管理员尚未维护该 Agent 描述。")}</div>
               </article>
             `,
           )
           .join("")
-      : `<div class="tenant-empty">当前还没有为本租户分配 Agent。</div>`;
+      : `<div class="tenant-empty">平台管理员还没有给本租户分配 Agent。</div>`;
   }
 
-  if (select instanceof HTMLSelectElement) {
-    select.innerHTML =
-      `<option value="">请选择已分配到租户的 Agent</option>` +
+  if (agentSelect instanceof HTMLSelectElement) {
+    agentSelect.innerHTML =
+      `<option value="">请选择租户可用 Agent</option>` +
       agents
         .map(
           (agent) =>
@@ -78,51 +87,30 @@ function renderTenantAgents(root, agents) {
   }
 }
 
-function renderCatalog(root, agents) {
-  const select = root.querySelector('[name="agentId"]');
-  if (!(select instanceof HTMLSelectElement)) {
-    return;
-  }
-  select.innerHTML =
-    `<option value="">请选择 OpenClaw Agent</option>` +
-    agents
-      .map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)}</option>`)
-      .join("");
-}
-
-function renderMemberSelect(root, members) {
-  const select = root.querySelector('[name="userId"]');
-  if (!(select instanceof HTMLSelectElement)) {
-    return;
-  }
-  select.innerHTML =
-    `<option value="">请选择成员</option>` +
-    members
-      .map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.username)}</option>`)
-      .join("");
-}
-
 export async function bootTenantAdminPage() {
   const root = document.querySelector(PAGE_SELECTOR);
   if (!(root instanceof HTMLElement)) {
     return null;
   }
-  const session = requireTenantSession(["tenant_admin"]);
+  const session = requireTenantSession(["tenant_admin"], { loginHref: TENANT_LOGIN_ROUTE });
   if (!session) {
     return null;
   }
 
   const apiClient = createTenantApiClient();
+  root.querySelector("[data-tenant-admin-name]")?.replaceChildren(
+    document.createTextNode(session.session.username),
+  );
+  root.querySelector("[data-tenant-admin-tenant]")?.replaceChildren(
+    document.createTextNode(session.session.tenantName || "当前租户"),
+  );
 
   async function refresh() {
-    const [members, catalogAgents, tenantAgents] = await Promise.all([
+    const [members, tenantAgents] = await Promise.all([
       apiClient.listTenantMembers(),
-      apiClient.listCatalogAgents(),
       apiClient.listTenantAgents(),
     ]);
     renderMembers(root, members);
-    renderMemberSelect(root, members);
-    renderCatalog(root, catalogAgents);
     renderTenantAgents(root, tenantAgents);
   }
 
@@ -138,23 +126,6 @@ export async function bootTenantAdminPage() {
       form.reset();
       await refresh();
       setFeedback(root, "成员已创建。");
-    } catch (error) {
-      setFeedback(root, error instanceof Error ? error.message : String(error), true);
-    }
-  });
-
-  root.querySelector("[data-tenant-agent-form]")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    if (!(form instanceof HTMLFormElement)) {
-      return;
-    }
-    try {
-      const payload = Object.fromEntries(new FormData(form).entries());
-      await apiClient.upsertTenantAgent(payload);
-      form.reset();
-      await refresh();
-      setFeedback(root, "租户 Agent 已更新。");
     } catch (error) {
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }
@@ -179,12 +150,12 @@ export async function bootTenantAdminPage() {
 
   root.querySelector("[data-tenant-admin-logout]")?.addEventListener("click", async () => {
     await apiClient.logout();
-    window.location.href = "./tenant-login.html";
+    window.location.href = TENANT_LOGIN_ROUTE;
   });
 
   try {
     await refresh();
-    setFeedback(root, "租户管理数据已加载。");
+    setFeedback(root, "租户成员与 Agent 分配数据已加载。");
   } catch (error) {
     setFeedback(root, error instanceof Error ? error.message : String(error), true);
   }

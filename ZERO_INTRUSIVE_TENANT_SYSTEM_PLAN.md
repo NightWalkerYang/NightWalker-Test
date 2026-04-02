@@ -59,17 +59,20 @@
 
 ### 1. 登录页
 
-用户进入系统后，先看到统一登录页，而不是原生网关连接页。
+用户进入系统后，不再使用原生网关连接页，而是进入两套零侵入登录入口：
+
+- 平台管理员入口
+- 租户登录入口
 
 第一阶段登录方式先采用：
 
 - 账号密码登录
 
-登录成功后按角色进入不同页面：
+登录成功后按入口和角色进入不同页面：
 
-- 平台管理员 -> 平台租户管理页
-- 租户管理员 -> 租户管理工作台
-- 租户成员 -> 成员使用工作台
+- 平台管理员入口 -> 平台租户管理页
+- 租户登录入口 + 租户管理员账号 -> 租户管理工作台
+- 租户登录入口 + 租户成员账号 -> 成员使用工作台
 
 平台管理员账号规则：
 
@@ -92,6 +95,7 @@
 当前页面定位：
 
 - 放在当前 OpenClaw 页面里，作为零侵入扩展页
+- 页面风格参考主流后台管理系统，采用侧边导航 + 顶部状态栏 + 指标卡片 + 表格 + 表单区的结构
 - 平台管理员只做平台级管理，不进入租户代操作
 
 ### 3. 租户管理员页
@@ -101,7 +105,7 @@
 - 查看本租户基础信息
 - 查看当前成员数和成员上限
 - 在人数上限内添加成员
-- 给成员分配 Agent
+- 给成员分配平台已下发到本租户的 Agent
 - 查看租户钱包余额
 - 从租户钱包划转积分到某个 Agent
 - 查看每个 Agent 的预算、消耗和计费倍率
@@ -311,7 +315,7 @@
 系统里需要有两层分配关系：
 
 - 平台管理员把已有 Agent 分配给租户
-- 租户管理员再把租户可用 Agent 分配给具体成员
+- 租户管理员再把该租户已拥有的 Agent 分配给具体成员
 
 成员只能看到自己被分配到的 Agent。
 成员可以同时被分配多个 Agent。
@@ -409,7 +413,8 @@
 
 第一阶段目标：
 
-- 有统一登录页
+- 有平台管理员登录页
+- 有租户登录页
 - 有平台管理员页
 - 有租户管理员页
 - 有租户成员 Agent 选择页
@@ -471,14 +476,16 @@
 
 ### 步骤 1
 
-先做统一身份入口。
+先做双入口身份页。
 
 目标：
 
-- 统一登录页
-- 登录后识别角色
-- 登录后先进入 Agent 选择页
-- 再从 Agent 选择页进入具体聊天或业务页面
+- 平台管理员有独立登录入口
+- 租户管理员和租户成员共用租户登录入口
+- 平台入口只允许平台管理员登录
+- 租户入口禁止平台管理员登录
+- 租户成员登录后先进入 Agent 选择页
+- 再从 Agent 选择页进入具体聊天页面
 - 平台管理员负责创建租户管理员账号
 - 租户管理员负责创建本租户成员账号
 
@@ -505,9 +512,10 @@
 
 - 创建租户
 - 创建租户管理员
-- 分配 Agent
+- 给租户下发已有 Agent
 - 设置人数上限
 - 设置计费倍率
+- 页面结构接近主流管理后台
 
 ### 步骤 4
 
@@ -516,7 +524,7 @@
 目标：
 
 - 添加成员
-- 给成员分配 Agent
+- 给成员分配租户已拥有的 Agent
 - 查看钱包
 - 给 Agent 划转预算
 
@@ -869,8 +877,10 @@
   - 当前用户、当前租户、当前角色上下文
 - `tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js`
   - 前端统一 API 调用层
+- `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
+  - 平台管理员登录页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
-  - 登录页逻辑
+  - 租户登录页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/agent-selector-page.js`
   - 登录后的 Agent 选择页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/chat-shell.js`
@@ -886,8 +896,10 @@
 
 ### 3. 静态页面
 
+- `tools/openclaw-control-ui-echarts/static/platform-login.html`
+  - 平台管理员登录页
 - `tools/openclaw-control-ui-echarts/static/tenant-login.html`
-  - 登录页
+  - 租户登录页
 - `tools/openclaw-control-ui-echarts/static/tenant-agent-selector.html`
   - Agent 选择页
 - `tools/openclaw-control-ui-echarts/static/tenant-chat.html`
@@ -1156,6 +1168,7 @@
    - 支持重新部署并导入新的授权文件
 
 11. 第一阶段必须新增的零侵入页面
+   - `platform-login.html`
    - `tenant-login.html`
    - `tenant-agent-selector.html`
    - `tenant-chat.html`
@@ -1166,6 +1179,7 @@
 12. 第一阶段必须新增的零侵入运行时文件
    - `runtime/tenant/tenant-context.js`
    - `runtime/tenant/api-client.js`
+   - `runtime/tenant/platform-login-page.js`
    - `runtime/tenant/login-page.js`
    - `runtime/tenant/agent-selector-page.js`
    - `runtime/tenant/chat-shell.js`
