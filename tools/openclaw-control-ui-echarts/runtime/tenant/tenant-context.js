@@ -75,6 +75,12 @@ export function readTenantView(locationHref = window.location.href) {
   return url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "";
 }
 
+export function clearTenantViewFromHref(href) {
+  const url = new URL(href, document.baseURI);
+  url.searchParams.delete(TENANT_VIEW_QUERY_KEY);
+  return url.href;
+}
+
 export function routeForRole(role) {
   if (role === "platform_admin") {
     return PLATFORM_TENANT_MANAGEMENT_ROUTE;

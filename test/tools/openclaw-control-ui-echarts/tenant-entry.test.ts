@@ -105,4 +105,36 @@ describe("zero-intrusive tenant entry", () => {
     expect(window.location.search).toContain("ocTenantView=platform-agent-assignment");
     expect(agentLink?.classList.contains("nav-item--active")).toBe(true);
   });
+
+  it("clears the management query when returning to a native sidebar route", () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=platform-tenants");
+    document.body.innerHTML = `
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat">
+          <div class="nav-section__items">
+            <a class="nav-item" href="/chat"><span class="nav-item__text">聊天</span></a>
+          </div>
+        </section>
+      </nav>
+    `;
+
+    bootTenantEntry();
+
+    const chatLink = document.querySelector('a[href="/chat"]');
+    chatLink?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(window.location.pathname).toBe("/chat");
+    expect(window.location.search).not.toContain("ocTenantView");
+  });
 });

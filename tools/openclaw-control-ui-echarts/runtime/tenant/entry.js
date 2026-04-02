@@ -4,6 +4,7 @@ import {
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
   TENANT_LOGIN_ROUTE,
+  clearTenantViewFromHref,
   readTenantView,
   readTenantSession,
 } from "./tenant-context.js";
@@ -95,6 +96,47 @@ function ensureManagementSectionHandlers(section) {
     event.preventDefault();
     navigateTenantRoute(link.href);
   });
+}
+
+function isManagementViewActive() {
+  const activeView = readTenantView();
+  return (
+    activeView === PLATFORM_TENANT_MANAGEMENT_VIEW ||
+    activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW
+  );
+}
+
+function ensureSidebarRouteHandlers(container) {
+  if (!(container instanceof HTMLElement) || container.dataset.ocTenantSidebarHandlers === "true") {
+    return;
+  }
+  container.dataset.ocTenantSidebarHandlers = "true";
+  container.addEventListener(
+    "click",
+    (event) => {
+      if (!isManagementViewActive()) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const link = target.closest(".nav-item[href]");
+      if (!(link instanceof HTMLAnchorElement)) {
+        return;
+      }
+      if (link.closest(`.${MANAGEMENT_SECTION_CLASS}`)) {
+        return;
+      }
+      const destination = new URL(link.href, document.baseURI);
+      if (destination.origin !== window.location.origin || !destination.pathname.startsWith("/")) {
+        return;
+      }
+      event.preventDefault();
+      navigateTenantRoute(clearTenantViewFromHref(destination.href));
+    },
+    true,
+  );
 }
 
 function createManagementSection() {
@@ -200,9 +242,11 @@ export function bootTenantEntry() {
     const scope = root instanceof Element || root instanceof Document ? root : document;
     if (session?.session?.role === "platform_admin") {
       if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
+        ensureSidebarRouteHandlers(scope);
         ensureManagementSection(scope);
       }
       for (const container of scope.querySelectorAll(SIDEBAR_NAV_SELECTOR)) {
+        ensureSidebarRouteHandlers(container);
         ensureManagementSection(container);
       }
     }
