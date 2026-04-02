@@ -18,3 +18,11 @@ html[data-oc-lufeng-route="true"] select[data-oc-lufeng-model="locked"] {
   cursor: default;
   opacity: 1;
 }
+
+html[data-oc-lufeng-route="true"] .chat-group.assistant .chat-avatar {
+  display: none !important;
+}
+
+html[data-oc-lufeng-route="true"] .chat-group.assistant {
+  gap: 0 !important;
+}
