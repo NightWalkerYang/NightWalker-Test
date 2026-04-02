@@ -1,5 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
-import { requireTenantSession } from "./tenant-context.js";
+import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-tenant-agent-selector-page]";
 
@@ -91,7 +91,7 @@ export async function bootTenantAgentSelectorPage() {
 
   root.querySelector("[data-tenant-member-logout]")?.addEventListener("click", async () => {
     await apiClient.logout();
-    window.location.href = "./tenant-login.html";
+    window.location.href = TENANT_LOGIN_ROUTE;
   });
   return { root };
 }

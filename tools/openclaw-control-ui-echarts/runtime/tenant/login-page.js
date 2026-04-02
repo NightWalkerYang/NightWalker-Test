@@ -3,10 +3,8 @@ import { renderTenantAuthLayout } from "./auth-layout.js";
 import {
   PLATFORM_LOGIN_ROUTE,
   clearTenantSession,
-  readTenantApiBaseOverride,
   redirectToRoleHome,
   readTenantSession,
-  writeTenantApiBaseOverride,
 } from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-tenant-login-page]";
@@ -16,33 +14,22 @@ function setFeedback(root, text, isError = false) {
   if (!(feedback instanceof HTMLElement)) {
     return;
   }
+  feedback.hidden = !text;
   feedback.textContent = text;
-  feedback.classList.toggle("tenant-feedback--danger", isError);
+  feedback.classList.remove("danger", "info");
+  feedback.classList.add(isError ? "danger" : "info");
 }
 
-export async function bootTenantLoginPage() {
-  const root = document.querySelector(PAGE_SELECTOR);
-  if (!(root instanceof HTMLElement)) {
-    return null;
-  }
-
+export async function mountTenantLoginPage(root) {
   renderTenantAuthLayout(root, {
-    mode: "tenant",
-    eyebrow: "Tenant Workspace",
     title: "租户登录",
-    subtitle: "租户管理员与租户成员从这里进入系统，进入后再按角色进入租户管理台或 Agent 选择页。",
+    subtitle: "租户管理员和租户成员从这里登录，成功后进入各自的使用入口。",
     switchHref: PLATFORM_LOGIN_ROUTE,
     switchLabel: "平台管理员入口",
     switchAttr: 'data-platform-login-link',
-    highlights: [
-      "租户管理员可创建成员，并给成员分配已下发到本租户的 Agent。",
-      "租户成员登录后先进入 Agent 选择页，再进入对应聊天页。",
-      "平台管理员不从该入口登录。",
-    ],
-    loginEyebrow: "Tenant Login",
     loginTitle: "账号密码登录",
-    loginSubtitle: "仅租户管理员和租户成员可使用该入口。",
-    loginSubmitLabel: "进入租户工作台",
+    loginSubtitle: "仅限租户管理员和租户成员使用。",
+    loginSubmitLabel: "登录",
     setup: null,
   });
 
@@ -53,29 +40,18 @@ export async function bootTenantLoginPage() {
     return null;
   }
 
-  const apiBaseInput = root.querySelector('[name="apiBase"]');
-  if (apiBaseInput instanceof HTMLInputElement) {
-    apiBaseInput.value = readTenantApiBaseOverride();
-  }
+  root.querySelector("[data-tenant-login-form]")?.removeAttribute("hidden");
 
   try {
     const bootstrap = await apiClient.bootstrap();
     if (!bootstrap.initialized) {
-      setFeedback(root, "平台管理员尚未初始化，请先从平台管理入口完成初始化。", true);
+      setFeedback(root, "平台管理员尚未初始化，请先从平台管理员入口完成初始化。", true);
     } else {
-      setFeedback(root, "请输入租户管理员或租户成员账号密码。");
+      setFeedback(root, "请输入账号密码登录。");
     }
   } catch (error) {
     setFeedback(root, `租户平台 API 暂不可用：${error instanceof Error ? error.message : String(error)}`, true);
   }
-
-  root.querySelector("[data-tenant-api-base-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (apiBaseInput instanceof HTMLInputElement) {
-      writeTenantApiBaseOverride(apiBaseInput.value);
-      window.location.reload();
-    }
-  });
 
   root.querySelector("[data-tenant-login-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -88,7 +64,7 @@ export async function bootTenantLoginPage() {
       const result = await apiClient.login(payload);
       if (result?.session?.role === "platform_admin") {
         clearTenantSession();
-        setFeedback(root, "平台管理员请使用平台管理入口登录。", true);
+        setFeedback(root, "平台管理员请使用平台管理员入口登录。", true);
         return;
       }
       apiClient.persistSession(result);
@@ -104,6 +80,14 @@ export async function bootTenantLoginPage() {
   });
 
   return { root };
+}
+
+export async function bootTenantLoginPage() {
+  const root = document.querySelector(PAGE_SELECTOR);
+  if (!(root instanceof HTMLElement)) {
+    return null;
+  }
+  return mountTenantLoginPage(root);
 }
 
 if (document.readyState === "loading") {

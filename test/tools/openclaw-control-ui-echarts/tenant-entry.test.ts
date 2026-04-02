@@ -22,10 +22,10 @@ describe("zero-intrusive tenant entry", () => {
 
     expect(platformLinks).toHaveLength(1);
     expect(platformLinks[0]?.textContent).toContain("平台管理");
-    expect(platformLinks[0]?.getAttribute("href")).toContain("platform-login.html");
+    expect(platformLinks[0]?.getAttribute("href")).toContain("ocTenantView=platform-login");
 
     expect(tenantLinks).toHaveLength(1);
     expect(tenantLinks[0]?.textContent).toContain("租户登录");
-    expect(tenantLinks[0]?.getAttribute("href")).toContain("tenant-login.html");
+    expect(tenantLinks[0]?.getAttribute("href")).toContain("ocTenantView=tenant-login");
   });
 });

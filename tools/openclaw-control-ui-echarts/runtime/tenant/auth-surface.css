@@ -1,0 +1,66 @@
+body[data-oc-tenant-auth-active="true"] {
+  overflow: hidden;
+}
+
+body[data-oc-tenant-auth-active="true"] openclaw-app {
+  display: none !important;
+}
+
+.oc-tenant-auth-root {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.oc-tenant-login-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.oc-tenant-login-card {
+  width: min(460px, 100%);
+}
+
+.oc-tenant-login-mark {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+
+.oc-tenant-login-section {
+  display: grid;
+  gap: 4px;
+}
+
+.oc-tenant-login-section__title {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.oc-tenant-login-section__sub {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.oc-tenant-login-feedback {
+  margin-top: 14px;
+}
+
+.oc-tenant-login-footer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}

@@ -80,6 +80,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.css`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-layout.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
@@ -126,6 +128,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tool-run-cluster.test.ts`
@@ -151,8 +154,9 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
-- Platform admin login and tenant login use separate static entry pages.
-- Tenant login, platform console, tenant admin, Agent selector, chat shell, and wallet pages are injected as separate static pages.
+- Platform admin login and tenant login now prefer the native Control UI single-entry route with `?ocTenantView=...`.
+- Platform console, tenant admin, Agent selector, chat shell, and wallet pages currently use separate static pages.
+- Legacy standalone tenant/platform login pages remain only as compatibility wrappers while the login flow converges on the native single entry.
 
 ## Important Notes
 

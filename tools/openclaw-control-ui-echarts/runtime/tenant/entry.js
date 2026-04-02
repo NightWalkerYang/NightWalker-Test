@@ -1,3 +1,5 @@
+import { PLATFORM_LOGIN_ROUTE, TENANT_LOGIN_ROUTE } from "./tenant-context.js";
+
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 
 const ICONS = {
@@ -52,14 +54,14 @@ export function bootTenantEntry() {
   const links = [
     {
       className: "oc-platform-admin-link",
-      href: "./platform-login.html",
+      href: PLATFORM_LOGIN_ROUTE,
       title: "平台管理入口",
       text: "平台管理",
       icon: ICONS.platform,
     },
     {
       className: "oc-tenant-user-link",
-      href: "./tenant-login.html",
+      href: TENANT_LOGIN_ROUTE,
       title: "租户登录入口",
       text: "租户登录",
       icon: ICONS.tenant,

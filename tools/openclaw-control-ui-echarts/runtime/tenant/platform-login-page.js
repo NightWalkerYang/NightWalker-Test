@@ -3,10 +3,8 @@ import { renderTenantAuthLayout } from "./auth-layout.js";
 import {
   TENANT_LOGIN_ROUTE,
   clearTenantSession,
-  readTenantApiBaseOverride,
   redirectToRoleHome,
   readTenantSession,
-  writeTenantApiBaseOverride,
 } from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-platform-login-page]";
@@ -16,40 +14,28 @@ function setFeedback(root, text, isError = false) {
   if (!(feedback instanceof HTMLElement)) {
     return;
   }
+  feedback.hidden = !text;
   feedback.textContent = text;
-  feedback.classList.toggle("tenant-feedback--danger", isError);
+  feedback.classList.remove("danger", "info");
+  feedback.classList.add(isError ? "danger" : "info");
 }
 
-function toggleSetup(root, initialized) {
-  root.querySelector("[data-tenant-setup-card]")?.toggleAttribute("hidden", initialized);
-  root.querySelector("[data-tenant-login-card]")?.toggleAttribute("hidden", !initialized);
+function showSetupMode(root, showSetup) {
+  root.querySelector("[data-tenant-setup-form]")?.toggleAttribute("hidden", !showSetup);
+  root.querySelector("[data-tenant-login-form]")?.toggleAttribute("hidden", showSetup);
 }
 
-export async function bootPlatformLoginPage() {
-  const root = document.querySelector(PAGE_SELECTOR);
-  if (!(root instanceof HTMLElement)) {
-    return null;
-  }
-
+export async function mountPlatformLoginPage(root) {
   renderTenantAuthLayout(root, {
-    mode: "platform",
-    eyebrow: "Platform Console",
     title: "平台管理员登录",
-    subtitle: "平台管理员从这里完成初始化、租户创建、租户管理员创建、Agent 下发与平台级运营管理。",
+    subtitle: "平台管理员从这里进入平台控制台，完成租户创建、Agent 下发和平台级运营管理。",
     switchHref: TENANT_LOGIN_ROUTE,
     switchLabel: "租户登录入口",
     switchAttr: 'data-tenant-login-link',
-    highlights: [
-      "首次进入时，在这里初始化平台管理员账号。",
-      "一个租户只允许一个租户管理员账号。",
-      "平台管理员负责把已有 OpenClaw Agent 下发到租户。",
-    ],
-    loginEyebrow: "Platform Login",
-    loginTitle: "平台管理员登录",
-    loginSubtitle: "只有平台管理员可以从这个入口进入系统。",
-    loginSubmitLabel: "进入平台管理台",
+    loginTitle: "账号密码登录",
+    loginSubtitle: "仅限平台管理员使用。",
+    loginSubmitLabel: "登录",
     setup: {
-      eyebrow: "Bootstrap",
       title: "初始化平台管理员",
       subtitle: "当前系统还没有平台管理员，请先完成首次初始化。",
       usernameLabel: "平台管理员账号",
@@ -65,30 +51,15 @@ export async function bootPlatformLoginPage() {
     return null;
   }
 
-  const apiBaseInput = root.querySelector('[name="apiBase"]');
-  if (apiBaseInput instanceof HTMLInputElement) {
-    apiBaseInput.value = readTenantApiBaseOverride();
-  }
-
   try {
     const bootstrap = await apiClient.bootstrap();
-    toggleSetup(root, bootstrap.initialized);
-    setFeedback(
-      root,
-      bootstrap.initialized ? "请输入平台管理员账号密码登录。" : "当前还没有平台管理员，请先完成初始化。",
-    );
+    const initialized = Boolean(bootstrap.initialized);
+    showSetupMode(root, !initialized);
+    setFeedback(root, initialized ? "请输入平台管理员账号密码登录。" : "当前还没有平台管理员，请先完成初始化。");
   } catch (error) {
-    toggleSetup(root, false);
+    showSetupMode(root, true);
     setFeedback(root, `租户平台 API 暂不可用：${error instanceof Error ? error.message : String(error)}`, true);
   }
-
-  root.querySelector("[data-tenant-api-base-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (apiBaseInput instanceof HTMLInputElement) {
-      writeTenantApiBaseOverride(apiBaseInput.value);
-      window.location.reload();
-    }
-  });
 
   root.querySelector("[data-tenant-setup-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -133,6 +104,14 @@ export async function bootPlatformLoginPage() {
   });
 
   return { root };
+}
+
+export async function bootPlatformLoginPage() {
+  const root = document.querySelector(PAGE_SELECTOR);
+  if (!(root instanceof HTMLElement)) {
+    return null;
+  }
+  return mountPlatformLoginPage(root);
 }
 
 if (document.readyState === "loading") {

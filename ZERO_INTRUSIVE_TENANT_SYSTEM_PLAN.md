@@ -59,10 +59,17 @@
 
 ### 1. 登录页
 
-用户进入系统后，不再使用原生网关连接页，而是进入两套零侵入登录入口：
+用户进入系统后，不再使用原生网关连接页，而是通过 Control UI 原生单入口承接两套零侵入登录视图：
 
-- 平台管理员入口
-- 租户登录入口
+- 平台管理员登录视图：`./?ocTenantView=platform-login`
+- 租户登录视图：`./?ocTenantView=tenant-login`
+
+当前登录页设计要求：
+
+- 不再把独立静态 HTML 登录页作为长期主入口
+- 登录页优先复用 OpenClaw 原生 `login-gate`、`field`、`btn`、`callout` 和主题变量
+- 登录页只保留一个核心卡片
+- 卡片顶部只保留品牌标识和登录标题
 
 第一阶段登录方式先采用：
 
@@ -877,6 +884,10 @@
   - 当前用户、当前租户、当前角色上下文
 - `tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js`
   - 前端统一 API 调用层
+- `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.css`
+  - 原生单入口登录视图的最小样式覆盖
+- `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js`
+  - 在原生 `index.html` 上接管平台/租户登录视图
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
   - 平台管理员登录页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
@@ -897,9 +908,9 @@
 ### 3. 静态页面
 
 - `tools/openclaw-control-ui-echarts/static/platform-login.html`
-  - 平台管理员登录页
+  - 兼容期保留，不作为长期主入口
 - `tools/openclaw-control-ui-echarts/static/tenant-login.html`
-  - 租户登录页
+  - 兼容期保留，不作为长期主入口
 - `tools/openclaw-control-ui-echarts/static/tenant-agent-selector.html`
   - Agent 选择页
 - `tools/openclaw-control-ui-echarts/static/tenant-chat.html`
@@ -1167,9 +1178,9 @@
    - 支持续期码
    - 支持重新部署并导入新的授权文件
 
-11. 第一阶段必须新增的零侵入页面
-   - `platform-login.html`
-   - `tenant-login.html`
+11. 第一阶段必须新增的零侵入页面与入口
+   - 原生单入口登录视图：`./?ocTenantView=platform-login`
+   - 原生单入口登录视图：`./?ocTenantView=tenant-login`
    - `tenant-agent-selector.html`
    - `tenant-chat.html`
    - `tenant-admin.html`
@@ -1179,6 +1190,8 @@
 12. 第一阶段必须新增的零侵入运行时文件
    - `runtime/tenant/tenant-context.js`
    - `runtime/tenant/api-client.js`
+   - `runtime/tenant/auth-surface.css`
+   - `runtime/tenant/auth-surface.js`
    - `runtime/tenant/platform-login-page.js`
    - `runtime/tenant/login-page.js`
    - `runtime/tenant/agent-selector-page.js`
