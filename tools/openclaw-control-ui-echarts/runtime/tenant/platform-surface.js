@@ -24,7 +24,7 @@ function isPlatformManagementView(view) {
 
 function isRootControlPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
-  return normalized === "/" || normalized.endsWith("/index.html");
+  return normalized === "/" || normalized === "/chat" || normalized.endsWith("/index.html");
 }
 
 function isPlatformManagementRoute() {
