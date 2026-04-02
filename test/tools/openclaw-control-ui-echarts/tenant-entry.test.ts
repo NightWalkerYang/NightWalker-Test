@@ -4,26 +4,58 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { bootTenantEntry } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
+import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 
 afterEach(() => {
   document.body.innerHTML = "";
+  window.localStorage.clear();
   delete window.__openclawTenantEntryBooted;
 });
 
 describe("zero-intrusive tenant entry", () => {
-  it("injects separate platform and tenant links into the sidebar utility group", () => {
+  it("injects a native-style management section for platform admins", () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+      },
+    });
+    document.body.innerHTML = `
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+        <section class="nav-section" data-native-group="agent"></section>
+        <section class="nav-section" data-native-group="settings"></section>
+      </nav>
+      <div class="sidebar-utility-group"></div>
+    `;
+
+    bootTenantEntry();
+    bootTenantEntry();
+
+    const managementSection = document.querySelector(".oc-platform-management-section");
+    expect(managementSection).not.toBeNull();
+    expect(managementSection?.querySelector(".nav-section__label-text")?.textContent).toContain(
+      "管理",
+    );
+
+    const items = managementSection?.querySelectorAll(".nav-item") ?? [];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toContain("租户管理");
+    expect(items[0]?.getAttribute("href")).toContain("platform-tenant-console.html#tenants");
+    expect(items[1]?.textContent).toContain("Agent 分配");
+    expect(items[1]?.getAttribute("href")).toContain("platform-tenant-console.html#agent-allocation");
+
+    const settingsGroup = document.querySelector('[data-native-group="settings"]');
+    expect(managementSection?.nextElementSibling).toBe(settingsGroup);
+  });
+
+  it("keeps a tenant login shortcut in the sidebar utility area", () => {
     document.body.innerHTML = `<div class="sidebar-utility-group"></div>`;
 
     bootTenantEntry();
-    bootTenantEntry();
 
-    const platformLinks = document.querySelectorAll(".oc-platform-admin-link");
     const tenantLinks = document.querySelectorAll(".oc-tenant-user-link");
-
-    expect(platformLinks).toHaveLength(1);
-    expect(platformLinks[0]?.textContent).toContain("平台管理");
-    expect(platformLinks[0]?.getAttribute("href")).toContain("ocTenantView=platform-login");
-
     expect(tenantLinks).toHaveLength(1);
     expect(tenantLinks[0]?.textContent).toContain("租户登录");
     expect(tenantLinks[0]?.getAttribute("href")).toContain("ocTenantView=tenant-login");

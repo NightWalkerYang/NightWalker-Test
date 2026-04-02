@@ -5,6 +5,7 @@ import { bootToolRunCluster } from "./runtime/framework/tool-run-cluster.js";
 import { bootVoiceInputBridge } from "./runtime/framework/voice-input.js";
 import { bootKnowledgeGraphEntry } from "./runtime/knowledge-graph/entry.js";
 import { bootTenantAuthSurface } from "./runtime/tenant/auth-surface.js";
+import { bootPlatformAccessGuard } from "./runtime/tenant/platform-access-guard.js";
 import { bootTenantEntry } from "./runtime/tenant/entry.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
 import { createFileAdapter } from "./runtime/file/adapter.js";
@@ -30,6 +31,7 @@ function boot() {
   bootVoiceInputBridge();
   bootKnowledgeGraphEntry();
   bootTenantAuthSurface();
+  bootPlatformAccessGuard();
   bootTenantEntry();
   runtime.boot();
 }

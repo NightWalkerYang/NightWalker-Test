@@ -1,0 +1,45 @@
+import {
+  PLATFORM_LOGIN_ROUTE,
+  PLATFORM_LOGIN_VIEW,
+  TENANT_LOGIN_VIEW,
+  readTenantSession,
+  readTenantView,
+} from "./tenant-context.js";
+
+export function isNativeControlUiPath(pathname = window.location.pathname) {
+  const normalized = String(pathname || "/").trim() || "/";
+  if (normalized === "/" || normalized.endsWith("/index.html")) {
+    return true;
+  }
+  return !/\.html$/i.test(normalized);
+}
+
+export function resolvePlatformAccessDecision({
+  pathname = window.location.pathname,
+  href = window.location.href,
+  session = readTenantSession(),
+} = {}) {
+  const view = readTenantView(href);
+  if (view === PLATFORM_LOGIN_VIEW || view === TENANT_LOGIN_VIEW) {
+    return "skip";
+  }
+  if (!isNativeControlUiPath(pathname)) {
+    return "skip";
+  }
+  if (session?.token && session?.session?.role === "platform_admin") {
+    return "allow";
+  }
+  return "redirect";
+}
+
+export function bootPlatformAccessGuard() {
+  if (window.__openclawPlatformAccessGuardBooted) {
+    return;
+  }
+  window.__openclawPlatformAccessGuardBooted = true;
+
+  const decision = resolvePlatformAccessDecision();
+  if (decision === "redirect") {
+    window.location.href = PLATFORM_LOGIN_ROUTE;
+  }
+}

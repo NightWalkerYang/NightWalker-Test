@@ -77,9 +77,18 @@
 
 登录成功后按入口和角色进入不同页面：
 
-- 平台管理员入口 -> 平台租户管理页
+- 平台管理员入口 -> 原生 Control UI 根入口
 - 租户登录入口 + 租户管理员账号 -> 租户管理工作台
 - 租户登录入口 + 租户成员账号 -> 成员使用工作台
+
+平台管理员进入原生根入口后：
+
+- 未登录不可进入原生控制台
+- 未登录时直接跳转到平台管理员登录视图
+- 登录后在原生侧边栏中新增与“聊天 / 控制 / 代理 / 设置”平级的“管理”分组
+- “管理”分组下第一阶段至少包含：
+  - 租户管理
+  - Agent 分配
 
 平台管理员账号规则：
 
@@ -101,7 +110,8 @@
 
 当前页面定位：
 
-- 放在当前 OpenClaw 页面里，作为零侵入扩展页
+- 以当前 OpenClaw 原生控制台为主入口
+- 通过零侵入方式向原生侧边栏注入“管理”分组和管理子菜单
 - 页面风格参考主流后台管理系统，采用侧边导航 + 顶部状态栏 + 指标卡片 + 表格 + 表单区的结构
 - 平台管理员只做平台级管理，不进入租户代操作
 
@@ -888,6 +898,10 @@
   - 原生单入口登录视图的最小样式覆盖
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js`
   - 在原生 `index.html` 上接管平台/租户登录视图
+- `tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js`
+  - 在原生控制台根入口执行平台管理员会话守卫
+- `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
+  - 在原生侧边栏中注入“管理”分组和租户入口快捷项
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
   - 平台管理员登录页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
@@ -1181,6 +1195,8 @@
 11. 第一阶段必须新增的零侵入页面与入口
    - 原生单入口登录视图：`./?ocTenantView=platform-login`
    - 原生单入口登录视图：`./?ocTenantView=tenant-login`
+   - 原生根控制台平台管理员守卫：`./`
+   - 原生侧边栏“管理”分组
    - `tenant-agent-selector.html`
    - `tenant-chat.html`
    - `tenant-admin.html`
@@ -1192,6 +1208,8 @@
    - `runtime/tenant/api-client.js`
    - `runtime/tenant/auth-surface.css`
    - `runtime/tenant/auth-surface.js`
+   - `runtime/tenant/platform-access-guard.js`
+   - `runtime/tenant/entry.js`
    - `runtime/tenant/platform-login-page.js`
    - `runtime/tenant/login-page.js`
    - `runtime/tenant/agent-selector-page.js`
