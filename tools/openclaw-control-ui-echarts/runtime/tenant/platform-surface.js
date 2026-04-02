@@ -132,7 +132,7 @@ function renderShell(root, section) {
       <div class="oc-platform-surface-topbar">
         <div>
           <div class="card-title">平台管理台</div>
-          <div class="card-sub">平台管理员统一管理租户、成员上限和 Agent 下发。</div>
+          <div class="card-sub">平台管理员统一管理租户、成员上限与 Agent 资源编排。</div>
         </div>
         <div class="oc-platform-surface-meta">
           <span class="pill"><span>当前角色</span><span class="mono">platform_admin</span></span>
@@ -144,107 +144,7 @@ function renderShell(root, section) {
 
     <section class="stat-grid" data-platform-metrics></section>
 
-    <section class="oc-platform-surface-grid">
-      <article class="card">
-        <div class="card-title">租户目录</div>
-        <div class="card-sub">点击某个租户，右侧会切换到该租户的成员与 Agent 详情。</div>
-        <div style="margin-top: 16px" data-platform-tenant-list></div>
-      </article>
-
-      <div class="oc-platform-surface-stack">
-        <article class="card">
-          <div class="card-title">创建租户</div>
-          <div class="card-sub">创建租户时同时创建唯一的租户管理员账号。</div>
-          <form class="oc-platform-surface-form" data-platform-tenant-form style="margin-top: 16px">
-            <label class="field">
-              <span>租户编码</span>
-              <input name="code" type="text" required />
-            </label>
-            <label class="field">
-              <span>租户名称</span>
-              <input name="name" type="text" required />
-            </label>
-            <label class="field">
-              <span>管理员账号</span>
-              <input name="adminUsername" type="text" required />
-            </label>
-            <label class="field">
-              <span>管理员密码</span>
-              <input name="adminPassword" type="password" required />
-            </label>
-            <label class="field">
-              <span>人数上限</span>
-              <input name="memberLimit" type="number" min="1" value="5" required />
-            </label>
-            <label class="field">
-              <span>部署模式</span>
-              <select name="deploymentMode">
-                <option value="cloud">公有云</option>
-                <option value="local">本地部署</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>到期日期（可选）</span>
-              <input name="licenseExpiresAt" type="datetime-local" />
-            </label>
-            <label class="field">
-              <span>续期码（可选）</span>
-              <input name="renewalCode" type="text" />
-            </label>
-            <div class="oc-platform-surface-actions">
-              <button class="btn primary" type="submit">创建租户</button>
-            </div>
-          </form>
-        </article>
-
-        <article class="card">
-          <div class="card-title">Agent 分配</div>
-          <div class="card-sub">平台管理员负责把已有 OpenClaw Agent 下发到目标租户。</div>
-          <form class="oc-platform-surface-form" data-platform-agent-form style="margin-top: 16px">
-            <label class="field">
-              <span>目标租户</span>
-              <select name="tenantId"></select>
-            </label>
-            <label class="field">
-              <span>OpenClaw Agent</span>
-              <select name="agentId"></select>
-            </label>
-            <label class="field">
-              <span>租户侧简短描述</span>
-              <input name="description" type="text" placeholder="显示在成员 Agent 卡片上的描述" />
-            </label>
-            <label class="field">
-              <span>计费倍率</span>
-              <input name="rateMultiplier" type="number" step="0.01" value="1" />
-            </label>
-            <label class="field">
-              <span>初始积分</span>
-              <input name="balancePoints" type="number" step="0.01" value="0" />
-            </label>
-            <div class="oc-platform-surface-actions">
-              <button class="btn primary" type="submit">下发到租户</button>
-            </div>
-          </form>
-        </article>
-      </div>
-    </section>
-
-    <section class="oc-platform-surface-grid oc-platform-surface-grid--detail">
-      <article class="card">
-        <div class="card-title">当前租户详情</div>
-        <div class="card-sub">显示当前选中租户的成员、人数和钱包信息。</div>
-        <div style="margin-top: 16px" data-platform-selected-tenant></div>
-        <div style="margin-top: 20px" class="card-title">租户成员</div>
-        <div class="card-sub">平台管理员只看成员概况，不进入租户代操作。</div>
-        <div class="oc-platform-surface-list" style="margin-top: 16px" data-platform-tenant-members></div>
-      </article>
-
-      <article class="card">
-        <div class="card-title">已下发 Agent</div>
-        <div class="card-sub">这里显示平台已经下发到当前租户的 Agent、预算和倍率。</div>
-        <div class="oc-platform-surface-list" style="margin-top: 16px" data-platform-tenant-agents></div>
-      </article>
-    </section>
+    <div data-platform-section-body></div>
 
     <div class="callout info oc-platform-surface-feedback" data-tenant-feedback>平台租户页已就绪。</div>
   `;
@@ -307,7 +207,17 @@ export async function bootPlatformSurface() {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node instanceof Element) {
-          void scan(node);
+          if (node.closest?.(`[${ROOT_ATTR}]`)) {
+            continue;
+          }
+          if (node.matches(".content")) {
+            void scan(node);
+            continue;
+          }
+          const nestedContent = node.querySelector?.(".content");
+          if (nestedContent instanceof Element) {
+            void scan(nestedContent);
+          }
         }
       }
     }

@@ -7,6 +7,7 @@ import {
 } from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-platform-tenant-console-page]";
+const BODY_SECTION_ATTR = "data-oc-platform-body-section";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -139,6 +140,147 @@ function renderTenantSummary(root, tenant) {
   `;
 }
 
+function renderSectionBody(root, section) {
+  const container = root.querySelector("[data-platform-section-body]");
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+
+  if (section === "agent-allocation") {
+    container.innerHTML = `
+      <section class="oc-platform-surface-grid">
+        <article class="card">
+          <div class="card-title">租户目录</div>
+          <div class="card-sub">选择目标租户后，在右侧下发 Agent 并查看该租户当前的 Agent 配置。</div>
+          <div style="margin-top: 16px" data-platform-tenant-list></div>
+        </article>
+
+        <div class="oc-platform-surface-stack">
+          <article class="card">
+            <div class="card-title">下发 Agent</div>
+            <div class="card-sub">平台管理员负责把已有 OpenClaw Agent 下发到目标租户，并配置倍率、积分和简短描述。</div>
+            <form class="oc-platform-surface-form" data-platform-agent-form style="margin-top: 16px">
+              <label class="field">
+                <span>目标租户</span>
+                <select name="tenantId"></select>
+              </label>
+              <label class="field">
+                <span>OpenClaw Agent</span>
+                <select name="agentId"></select>
+              </label>
+              <label class="field">
+                <span>租户侧简短描述</span>
+                <input name="description" type="text" placeholder="显示在成员 Agent 卡片上的描述" />
+              </label>
+              <label class="field">
+                <span>计费倍率</span>
+                <input name="rateMultiplier" type="number" step="0.01" value="1" />
+              </label>
+              <label class="field">
+                <span>初始积分</span>
+                <input name="balancePoints" type="number" step="0.01" value="0" />
+              </label>
+              <div class="oc-platform-surface-actions">
+                <button class="btn primary" type="submit">下发到租户</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="card">
+            <div class="card-title">当前租户概览</div>
+            <div class="card-sub">方便平台管理员在分配 Agent 时查看目标租户人数、钱包和当前已分配情况。</div>
+            <div style="margin-top: 16px" data-platform-selected-tenant></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="oc-platform-surface-grid oc-platform-surface-grid--detail">
+        <article class="card">
+          <div class="card-title">已下发 Agent</div>
+          <div class="card-sub">这里显示平台已经下发到当前租户的 Agent、预算和倍率。</div>
+          <div class="oc-platform-surface-list" style="margin-top: 16px" data-platform-tenant-agents></div>
+        </article>
+
+        <article class="card">
+          <div class="card-title">租户成员概览</div>
+          <div class="card-sub">仅显示成员数量和分配概况，平台管理员不进入租户代操作。</div>
+          <div class="oc-platform-surface-list" style="margin-top: 16px" data-platform-tenant-members></div>
+        </article>
+      </section>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <section class="oc-platform-surface-grid">
+      <article class="card">
+        <div class="card-title">租户目录</div>
+        <div class="card-sub">点击某个租户，右侧查看该租户的基础信息和成员概况。</div>
+        <div style="margin-top: 16px" data-platform-tenant-list></div>
+      </article>
+
+      <article class="card">
+        <div class="card-title">创建租户</div>
+        <div class="card-sub">创建租户时同时创建唯一的租户管理员账号。</div>
+        <form class="oc-platform-surface-form" data-platform-tenant-form style="margin-top: 16px">
+          <label class="field">
+            <span>租户编码</span>
+            <input name="code" type="text" required />
+          </label>
+          <label class="field">
+            <span>租户名称</span>
+            <input name="name" type="text" required />
+          </label>
+          <label class="field">
+            <span>管理员账号</span>
+            <input name="adminUsername" type="text" required />
+          </label>
+          <label class="field">
+            <span>管理员密码</span>
+            <input name="adminPassword" type="password" required />
+          </label>
+          <label class="field">
+            <span>人数上限</span>
+            <input name="memberLimit" type="number" min="1" value="5" required />
+          </label>
+          <label class="field">
+            <span>部署模式</span>
+            <select name="deploymentMode">
+              <option value="cloud">公有云</option>
+              <option value="local">本地部署</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>到期日期（可选）</span>
+            <input name="licenseExpiresAt" type="datetime-local" />
+          </label>
+          <label class="field">
+            <span>续期码（可选）</span>
+            <input name="renewalCode" type="text" />
+          </label>
+          <div class="oc-platform-surface-actions">
+            <button class="btn primary" type="submit">创建租户</button>
+          </div>
+        </form>
+      </article>
+    </section>
+
+    <section class="oc-platform-surface-grid oc-platform-surface-grid--detail">
+      <article class="card">
+        <div class="card-title">当前租户详情</div>
+        <div class="card-sub">显示当前选中租户的成员、人数和钱包信息。</div>
+        <div style="margin-top: 16px" data-platform-selected-tenant></div>
+      </article>
+
+      <article class="card">
+        <div class="card-title">租户成员</div>
+        <div class="card-sub">平台管理员只看成员概况，不进入租户代操作。</div>
+        <div class="oc-platform-surface-list" style="margin-top: 16px" data-platform-tenant-members></div>
+      </article>
+    </section>
+  `;
+}
+
 function renderTenantMembers(root, members) {
   const container = root.querySelector("[data-platform-tenant-members]");
   if (!(container instanceof HTMLElement)) {
@@ -248,6 +390,11 @@ export async function mountPlatformConsolePage(root, options = {}) {
     document.createTextNode(session.session.username),
   );
 
+  if (root.getAttribute(BODY_SECTION_ATTR) !== section) {
+    renderSectionBody(root, section);
+    root.setAttribute(BODY_SECTION_ATTR, section);
+  }
+
   const sectionLinks = root.querySelectorAll("[href]");
   for (const link of sectionLinks) {
     if (!(link instanceof HTMLAnchorElement)) {
@@ -267,15 +414,20 @@ export async function mountPlatformConsolePage(root, options = {}) {
     renderTenantSummary(root, tenant);
     if (!tenant) {
       renderTenantMembers(root, []);
-      renderTenantAgents(root, []);
+      if (section === "agent-allocation") {
+        renderTenantAgents(root, []);
+      }
       return;
     }
-    const [members, agents] = await Promise.all([
-      apiClient.listPlatformTenantMembers(tenant.id),
-      apiClient.listPlatformTenantAgents(tenant.id),
-    ]);
+    const requests = [apiClient.listPlatformTenantMembers(tenant.id)];
+    if (section === "agent-allocation") {
+      requests.push(apiClient.listPlatformTenantAgents(tenant.id));
+    }
+    const [members, agents] = await Promise.all(requests);
     renderTenantMembers(root, members);
-    renderTenantAgents(root, agents);
+    if (section === "agent-allocation") {
+      renderTenantAgents(root, agents);
+    }
   }
 
   async function refresh() {
