@@ -1,0 +1,67 @@
+html[data-oc-lufeng-route="true"] .topbar,
+html[data-oc-lufeng-route="true"] .shell-nav,
+html[data-oc-lufeng-route="true"] .content-header,
+html[data-oc-lufeng-route="true"] .chat-controls,
+html[data-oc-lufeng-route="true"] .chat-mobile-controls-wrapper,
+html[data-oc-lufeng-route="true"] .command-palette-overlay,
+html[data-oc-lufeng-route="true"] .command-palette,
+html[data-oc-lufeng-route="true"] .sidebar-shell__footer,
+html[data-oc-lufeng-route="true"] .chat-controls__session-row {
+  display: none !important;
+}
+
+html[data-oc-lufeng-route="true"] .shell {
+  display: block;
+  min-height: 100vh;
+  padding-top: 0;
+}
+
+html[data-oc-lufeng-route="true"] .content {
+  padding: 0;
+}
+
+html[data-oc-lufeng-route="true"] .content-main {
+  max-width: none;
+  min-height: 100vh;
+  padding: 0;
+}
+
+html[data-oc-lufeng-route="true"] .agent-chat,
+html[data-oc-lufeng-route="true"] .agent-chat__shell,
+html[data-oc-lufeng-route="true"] .agent-chat__thread {
+  max-width: none;
+  min-height: 100vh;
+}
+
+html[data-oc-lufeng-route="true"] .agent-chat__shell {
+  padding-top: 0;
+}
+
+html[data-oc-lufeng-route="true"] .agent-chat__thread {
+  padding-top: 24px;
+}
+
+html[data-oc-lufeng-route="true"] .agent-chat__input {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 16px 24px 24px;
+  background:
+    linear-gradient(180deg, rgba(8, 12, 20, 0) 0%, rgba(8, 12, 20, 0.06) 28%, rgba(8, 12, 20, 0.14) 100%);
+  backdrop-filter: blur(18px);
+}
+
+html[data-theme-mode="light"][data-oc-lufeng-route="true"] .agent-chat__input {
+  background:
+    linear-gradient(180deg, rgba(245, 249, 255, 0) 0%, rgba(245, 249, 255, 0.72) 28%, rgba(245, 249, 255, 0.94) 100%);
+}
+
+html[data-oc-lufeng-route="true"] .chat-main {
+  gap: 0;
+}
+
+html[data-oc-lufeng-route="true"] .agent-chat__composer-shell {
+  max-width: min(1280px, calc(100vw - 48px));
+  margin: 0 auto;
+}

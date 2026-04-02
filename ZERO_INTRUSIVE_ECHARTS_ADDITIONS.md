@@ -75,6 +75,13 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.js`
 
+### Runtime: Lufeng Public Route
+
+- `tools/openclaw-control-ui-echarts/runtime/lufeng/bootstrap.js`
+- `tools/openclaw-control-ui-echarts/runtime/lufeng/context.js`
+- `tools/openclaw-control-ui-echarts/runtime/lufeng/surface.css`
+- `tools/openclaw-control-ui-echarts/runtime/lufeng/surface.js`
+
 ### Runtime: Tenant
 
 - `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
@@ -130,6 +137,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/framework-styles.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/lufeng-bootstrap.test.ts`
+- `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
@@ -163,6 +172,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
+- The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native chat surface, skips login, auto-targets the dedicated finance agent session, and keeps that route pinned to a chat-only layout.
 - Platform console, tenant admin, Agent selector, chat shell, and wallet pages currently use separate static pages.
 - Legacy standalone tenant/platform login pages remain only as compatibility wrappers while the login flow converges on the native single entry.
 

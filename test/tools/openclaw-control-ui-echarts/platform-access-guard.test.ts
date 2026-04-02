@@ -52,5 +52,13 @@ describe("platform access guard", () => {
         session: null,
       }),
     ).toBe("skip");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/lufeng",
+        href: "https://www.hailstone.cn:18789/lufeng",
+        session: null,
+      }),
+    ).toBe("skip");
   });
 });

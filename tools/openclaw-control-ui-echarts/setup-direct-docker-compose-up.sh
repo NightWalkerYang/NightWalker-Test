@@ -73,6 +73,188 @@ resolve_auto_gateway_token() {
   trim_whitespace "$token"
 }
 
+inject_lufeng_public_bootstrap() {
+  local index_path="$1"
+  local token="$2"
+  local python_bin
+
+  python_bin="$(resolve_python)"
+
+  "$python_bin" - "$index_path" "$token" <<'PY'
+import json
+import pathlib
+import sys
+
+index_path = pathlib.Path(sys.argv[1])
+token = (sys.argv[2] or "").strip()
+
+html = index_path.read_text(encoding="utf-8")
+if "data-openclaw-lufeng-bootstrap" in html:
+    raise SystemExit(0)
+
+agent_id = "subotech-finance"
+session_key = f"agent:{agent_id}:main"
+route = "/lufeng"
+route_chat = "/lufeng/chat"
+
+token_literal = (
+    json.dumps(token)
+    .replace("<", "\\u003c")
+    .replace(">", "\\u003e")
+    .replace("&", "\\u0026")
+    .replace("\u2028", "\\u2028")
+    .replace("\u2029", "\\u2029")
+)
+
+script = f"""    <script data-openclaw-lufeng-bootstrap>
+      ((rawToken) => {{
+        const ROUTE = {json.dumps(route)};
+        const CHAT_ROUTE = {json.dumps(route_chat)};
+        const SESSION_KEY = {json.dumps(session_key)};
+        const normalizePath = (value) => {{
+          const raw = String(value ?? "").trim() || "/";
+          const prefixed = raw.startsWith("/") ? raw : `/${{raw}}`;
+          if (prefixed.length > 1 && prefixed.endsWith("/")) {{
+            return prefixed.slice(0, -1);
+          }}
+          return prefixed;
+        }};
+        const isLufengPath = (pathname) => {{
+          const normalized = normalizePath(pathname);
+          return normalized === ROUTE || normalized === CHAT_ROUTE;
+        }};
+        if (
+          typeof window === "undefined" ||
+          typeof document === "undefined" ||
+          typeof location === "undefined" ||
+          !isLufengPath(location.pathname)
+        ) {{
+          return;
+        }}
+        const normalizeGatewayScope = (gatewayUrl) => {{
+          const trimmed = String(gatewayUrl ?? "").trim();
+          if (!trimmed) {{
+            return "default";
+          }}
+          try {{
+            const parsed = new URL(
+              trimmed,
+              `${{window.location.protocol}}//${{window.location.host}}/`,
+            );
+            const pathname =
+              parsed.pathname === "/"
+                ? ""
+                : parsed.pathname.replace(/\\/+$/, "") || parsed.pathname;
+            return `${{parsed.protocol}}//${{parsed.host}}${{pathname}}`;
+          }} catch {{
+            return trimmed;
+          }}
+        }};
+        const buildSettingsStorageKey = (gatewayUrl) =>
+          `openclaw.control.settings.v1:${{normalizeGatewayScope(gatewayUrl)}}`;
+        const buildTokenStorageKey = (gatewayUrl) =>
+          `openclaw.control.token.v1:${{normalizeGatewayScope(gatewayUrl)}}`;
+        const normalizeLufengRouteUrl = (urlLike, baseHref = window.location.href) => {{
+          const url = new URL(urlLike, baseHref);
+          if (!isLufengPath(url.pathname)) {{
+            return url;
+          }}
+          const normalized = normalizePath(url.pathname);
+          if (normalized === CHAT_ROUTE) {{
+            url.pathname = ROUTE;
+          }}
+          if (normalizePath(url.pathname) === ROUTE) {{
+            url.searchParams.delete("session");
+          }}
+          return url;
+        }};
+
+        const gatewayOrigin = `${{location.protocol === "https:" ? "wss:" : "ws:"}}//${{location.host}}`;
+        const lufengScopeUrl = `${{gatewayOrigin}}${{ROUTE}}`;
+        const rootGatewayScope = normalizeGatewayScope(gatewayOrigin);
+
+        window.__OPENCLAW_CONTROL_UI_BASE_PATH__ = ROUTE;
+        window.__OPENCLAW_LUFENG_MODE__ = true;
+        document.documentElement.setAttribute("data-oc-lufeng-route", "true");
+
+        try {{
+          const storage = window.localStorage;
+          if (storage) {{
+            const key = buildSettingsStorageKey(lufengScopeUrl);
+            const existingRaw = storage.getItem(key);
+            const existing =
+              existingRaw && existingRaw.trim()
+                ? JSON.parse(existingRaw)
+                : {{}};
+            const next = {{
+              ...existing,
+              gatewayUrl: gatewayOrigin,
+              sessionKey: SESSION_KEY,
+              lastActiveSessionKey: SESSION_KEY,
+              sessionsByGateway: {{
+                ...(existing.sessionsByGateway && typeof existing.sessionsByGateway === "object"
+                  ? existing.sessionsByGateway
+                  : {{}}),
+                [rootGatewayScope]: {{
+                  sessionKey: SESSION_KEY,
+                  lastActiveSessionKey: SESSION_KEY,
+                }},
+              }},
+            }};
+            storage.setItem(key, JSON.stringify(next));
+          }}
+        }} catch {{
+          // best-effort only
+        }}
+
+        try {{
+          const normalizedToken = String(rawToken ?? "").trim();
+          if (normalizedToken && window.sessionStorage) {{
+            window.sessionStorage.setItem(
+              buildTokenStorageKey(gatewayOrigin),
+              normalizedToken,
+            );
+          }}
+        }} catch {{
+          // best-effort only
+        }}
+
+        if (!window.__OPENCLAW_LUFENG_HISTORY_PATCHED__) {{
+          const originalReplaceState = window.history.replaceState.bind(window.history);
+          const originalPushState = window.history.pushState.bind(window.history);
+          const wrap =
+            (original) =>
+            (state, unused, url) => {{
+              if (url == null) {{
+                return original(state, unused, url);
+              }}
+              const normalized = normalizeLufengRouteUrl(url, window.location.href);
+              return original(state, unused, normalized.toString());
+            }};
+          window.history.replaceState = wrap(originalReplaceState);
+          window.history.pushState = wrap(originalPushState);
+          window.__OPENCLAW_LUFENG_HISTORY_PATCHED__ = true;
+        }}
+
+        const normalizedCurrent = normalizeLufengRouteUrl(window.location.href, window.location.href);
+        if (
+          normalizedCurrent.pathname !== window.location.pathname ||
+          normalizedCurrent.search !== window.location.search
+        ) {{
+          window.history.replaceState({{}}, "", normalizedCurrent.toString());
+        }}
+      }})({token_literal});
+    </script>
+"""
+
+if "</head>" not in html:
+    raise SystemExit(f"index.html is missing </head>: {index_path}")
+
+html = html.replace("  </head>", f"{script}\n  </head>", 1)
+index_path.write_text(html, encoding="utf-8")
+PY
+}
+
 validate_extra_mount_spec() {
   local mount="$1"
 
@@ -533,6 +715,7 @@ main() {
   [[ -f "$OUTPUT_DIR/index.html" ]] || fail "Generated Control UI root is missing index.html"
   local auto_gateway_token
   auto_gateway_token="$(resolve_auto_gateway_token)"
+  inject_lufeng_public_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
   inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
   inject_runtime_script "$OUTPUT_DIR/index.html"
   replace_brand_favicons "$OUTPUT_DIR/index.html"

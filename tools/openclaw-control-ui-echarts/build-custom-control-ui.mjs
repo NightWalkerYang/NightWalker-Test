@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
 import { injectAutoGatewayTokenBootstrap } from "./runtime/branding/auto-token.js";
+import { injectLufengPublicBootstrap } from "./runtime/lufeng/bootstrap.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -195,7 +196,10 @@ function main() {
     outputIndexPath,
     injectRuntimeScript(
       replaceBrandFavicons(
-        injectAutoGatewayTokenBootstrap(outputIndex, autoGatewayToken),
+        injectAutoGatewayTokenBootstrap(
+          injectLufengPublicBootstrap(outputIndex, autoGatewayToken),
+          autoGatewayToken,
+        ),
       ),
     ),
     "utf8",

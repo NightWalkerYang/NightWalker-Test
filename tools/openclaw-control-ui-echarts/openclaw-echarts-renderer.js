@@ -8,6 +8,7 @@ import { bootTenantAuthSurface } from "./runtime/tenant/auth-surface.js";
 import { bootPlatformAccessGuard } from "./runtime/tenant/platform-access-guard.js";
 import { bootPlatformSurface } from "./runtime/tenant/platform-surface.js";
 import { bootTenantEntry } from "./runtime/tenant/entry.js";
+import { bootLufengSurface } from "./runtime/lufeng/surface.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
 import { createFileAdapter } from "./runtime/file/adapter.js";
 
@@ -35,6 +36,7 @@ function boot() {
   bootPlatformAccessGuard();
   bootPlatformSurface();
   bootTenantEntry();
+  bootLufengSurface();
   runtime.boot();
 }
 

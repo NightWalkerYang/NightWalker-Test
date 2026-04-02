@@ -5,6 +5,7 @@ import {
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
+import { isLufengPublicPath } from "../lufeng/context.js";
 
 export function isNativeControlUiPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
@@ -21,6 +22,9 @@ export function resolvePlatformAccessDecision({
 } = {}) {
   const view = readTenantView(href);
   if (view === PLATFORM_LOGIN_VIEW || view === TENANT_LOGIN_VIEW) {
+    return "skip";
+  }
+  if (isLufengPublicPath(pathname)) {
     return "skip";
   }
   if (!isNativeControlUiPath(pathname)) {
