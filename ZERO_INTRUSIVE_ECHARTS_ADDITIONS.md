@@ -6,6 +6,12 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 ## Tracked Source Files
 
+### Root-Level Planning Docs
+
+- `ZERO_INTRUSIVE_ECHARTS_ADDITIONS.md`
+- `ZERO_INTRUSIVE_TENANT_SYSTEM_PLAN.md`
+- `ZERO_INTRUSIVE_KNOWLEDGE_GRAPH_TENANT_PLAN.md`
+
 ### Userscript Bundle
 
 - `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`
@@ -69,9 +75,38 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.js`
 
+### Runtime: Tenant
+
+- `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/platform-console-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/admin-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/agent-selector-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/chat-shell.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/chat-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/wallet-page.js`
+
+### Sidecar: Tenant Platform
+
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
+
 ### Static Pages
 
 - `tools/openclaw-control-ui-echarts/static/knowledge-graph.html`
+- `tools/openclaw-control-ui-echarts/static/tenant-login.html`
+- `tools/openclaw-control-ui-echarts/static/platform-tenant-console.html`
+- `tools/openclaw-control-ui-echarts/static/tenant-admin.html`
+- `tools/openclaw-control-ui-echarts/static/tenant-agent-selector.html`
+- `tools/openclaw-control-ui-echarts/static/tenant-chat.html`
+- `tools/openclaw-control-ui-echarts/static/tenant-wallet.html`
 
 ### Tests
 
@@ -87,6 +122,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/framework-styles.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tool-run-cluster.test.ts`
 - `test/tools/openclaw-control-ui-echarts/voice-input.test.ts`
 
@@ -109,6 +146,8 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
+- A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
+- Tenant login, platform console, tenant admin, Agent selector, chat shell, and wallet pages are injected as separate static pages.
 
 ## Important Notes
 

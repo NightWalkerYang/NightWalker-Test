@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="oc-tenant-api-base" content="/tenant-platform-api/v1" />
+    <title>苏博泰克 平台租户管理</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./assets/runtime/tenant/page.css" />
+    <script type="module" src="./assets/runtime/tenant/platform-console-page.js"></script>
+  </head>
+  <body>
+    <main class="tenant-page" data-oc-platform-tenant-console-page>
+      <section class="tenant-shell">
+        <article class="tenant-card">
+          <div class="tenant-item__row" style="justify-content:space-between;">
+            <div>
+              <p class="tenant-eyebrow">Platform Console</p>
+              <h1 class="tenant-title">平台租户管理</h1>
+              <p class="tenant-subtitle">创建租户、创建租户管理员，并配置人数上限与部署模式。</p>
+            </div>
+            <button class="tenant-btn tenant-btn--ghost" type="button" data-platform-logout>退出登录</button>
+          </div>
+        </article>
+
+        <article class="tenant-panel">
+          <div class="tenant-panel__head">
+            <h2>创建租户</h2>
+          </div>
+          <form class="tenant-form tenant-form--inline" data-platform-tenant-form>
+            <label class="tenant-field">
+              <span>租户编码</span>
+              <input name="code" type="text" required />
+            </label>
+            <label class="tenant-field">
+              <span>租户名称</span>
+              <input name="name" type="text" required />
+            </label>
+            <label class="tenant-field">
+              <span>管理员账号</span>
+              <input name="adminUsername" type="text" required />
+            </label>
+            <label class="tenant-field">
+              <span>管理员密码</span>
+              <input name="adminPassword" type="password" required />
+            </label>
+            <label class="tenant-field">
+              <span>人数上限</span>
+              <input name="memberLimit" type="number" min="1" value="5" required />
+            </label>
+            <label class="tenant-field">
+              <span>部署模式</span>
+              <select name="deploymentMode">
+                <option value="cloud">公有云</option>
+                <option value="local">本地部署</option>
+              </select>
+            </label>
+            <label class="tenant-field">
+              <span>到期日期（可选）</span>
+              <input name="licenseExpiresAt" type="datetime-local" />
+            </label>
+            <label class="tenant-field">
+              <span>续期码（可选）</span>
+              <input name="renewalCode" type="text" />
+            </label>
+            <button class="tenant-btn tenant-btn--primary" type="submit">创建租户</button>
+          </form>
+        </article>
+
+        <article class="tenant-panel">
+          <h2>当前租户</h2>
+          <div class="tenant-list" data-tenant-list></div>
+        </article>
+
+        <p class="tenant-feedback" data-tenant-feedback>平台租户页已就绪。</p>
+      </section>
+    </main>
+  </body>
+</html>
+

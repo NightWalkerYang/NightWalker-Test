@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="oc-tenant-api-base" content="/tenant-platform-api/v1" />
+    <title>苏博泰克 Agent 选择</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./assets/runtime/tenant/page.css" />
+    <script type="module" src="./assets/runtime/tenant/agent-selector-page.js"></script>
+  </head>
+  <body>
+    <main class="tenant-page" data-oc-tenant-agent-selector-page>
+      <section class="tenant-shell">
+        <article class="tenant-card">
+          <div class="tenant-item__row" style="justify-content:space-between;">
+            <div>
+              <p class="tenant-eyebrow">Tenant Member</p>
+              <h1 class="tenant-title">Agent 选择页</h1>
+              <p class="tenant-subtitle">
+                当前登录成员：<strong data-tenant-member-name>成员</strong>。请选择一个已分配的 Agent 继续使用。
+              </p>
+            </div>
+            <button class="tenant-btn tenant-btn--ghost" type="button" data-tenant-member-logout>退出登录</button>
+          </div>
+        </article>
+
+        <section class="tenant-agents" data-tenant-agents></section>
+
+        <p class="tenant-feedback" data-tenant-feedback>正在加载可用 Agent ...</p>
+      </section>
+    </main>
+  </body>
+</html>
+

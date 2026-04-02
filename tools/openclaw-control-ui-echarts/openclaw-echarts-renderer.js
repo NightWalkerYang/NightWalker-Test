@@ -4,6 +4,7 @@ import { bootChatAmbientBackground } from "./runtime/background/chat-ambient.js"
 import { bootToolRunCluster } from "./runtime/framework/tool-run-cluster.js";
 import { bootVoiceInputBridge } from "./runtime/framework/voice-input.js";
 import { bootKnowledgeGraphEntry } from "./runtime/knowledge-graph/entry.js";
+import { bootTenantEntry } from "./runtime/tenant/entry.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
 import { createFileAdapter } from "./runtime/file/adapter.js";
 
@@ -27,6 +28,7 @@ function boot() {
   bootToolRunCluster();
   bootVoiceInputBridge();
   bootKnowledgeGraphEntry();
+  bootTenantEntry();
   runtime.boot();
 }
 

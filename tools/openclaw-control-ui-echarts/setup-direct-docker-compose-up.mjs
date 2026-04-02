@@ -74,6 +74,29 @@ function buildOverrideContent(extraMounts) {
     lines.push(`      - ${mount}`);
   }
 
+  lines.push(
+    "  openclaw-tenant-platform:",
+    "    image: ${OPENCLAW_IMAGE:-openclaw:local}",
+    "    environment:",
+    "      HOME: /home/node",
+    "      OPENCLAW_CONFIG_DIR: /home/node/.openclaw",
+    "      OPENCLAW_TENANT_PLATFORM_BIND: 0.0.0.0",
+    "      OPENCLAW_TENANT_PLATFORM_PORT: 18801",
+    "      OPENCLAW_TENANT_PLATFORM_API_BASE: /tenant-platform-api/v1",
+    "      TZ: ${OPENCLAW_TZ:-UTC}",
+    "    volumes:",
+    "      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw",
+    "      - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro",
+    "    command:",
+    "      [",
+    "        \"node\",",
+    "        \"tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs\"",
+    "      ]",
+    "    ports:",
+    "      - \"${OPENCLAW_TENANT_PLATFORM_PORT:-18801}:18801\"",
+    "    restart: unless-stopped",
+  );
+
   if (extraMounts.length > 0) {
     lines.push("  openclaw-cli:");
     lines.push("    volumes:");

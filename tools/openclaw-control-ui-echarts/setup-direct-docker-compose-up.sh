@@ -196,6 +196,29 @@ EOF
     printf '      - %s\n' "$mount" >>"$OVERRIDE_PATH"
   done
 
+  cat >>"$OVERRIDE_PATH" <<'EOF'
+  openclaw-tenant-platform:
+    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    environment:
+      HOME: /home/node
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_TENANT_PLATFORM_BIND: 0.0.0.0
+      OPENCLAW_TENANT_PLATFORM_PORT: 18801
+      OPENCLAW_TENANT_PLATFORM_API_BASE: /tenant-platform-api/v1
+      TZ: ${OPENCLAW_TZ:-UTC}
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro
+    command:
+      [
+        "node",
+        "tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs"
+      ]
+    ports:
+      - "${OPENCLAW_TENANT_PLATFORM_PORT:-18801}:18801"
+    restart: unless-stopped
+EOF
+
   if [[ "$#" -gt 0 ]]; then
     cat >>"$OVERRIDE_PATH" <<'EOF'
   openclaw-cli:

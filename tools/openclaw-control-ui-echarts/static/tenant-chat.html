@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="oc-tenant-api-base" content="/tenant-platform-api/v1" />
+    <title>苏博泰克 租户聊天页</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./assets/runtime/tenant/page.css" />
+    <script type="module" src="./assets/runtime/tenant/chat-page.js"></script>
+  </head>
+  <body>
+    <main class="tenant-page" data-oc-tenant-chat-page>
+      <section class="tenant-shell" style="max-width:960px;">
+        <article class="tenant-card">
+          <p class="tenant-eyebrow">Tenant Chat</p>
+          <h1 class="tenant-title" data-tenant-chat-title>租户聊天页</h1>
+          <p class="tenant-subtitle" data-tenant-chat-info>正在读取当前 Agent 上下文...</p>
+        </article>
+
+        <article class="tenant-panel">
+          <h2>当前阶段说明</h2>
+          <p class="tenant-subtitle">
+            这一版先把租户登录、Agent 选择和上下文映射骨架打通。后续会把成员聊天页继续收敛到
+            OpenClaw 原生聊天能力上，同时由租户平台控制可见会话和积分拦截。
+          </p>
+          <div class="tenant-actions" style="margin-top:14px;">
+            <a class="tenant-btn tenant-btn--ghost" href="./tenant-agent-selector.html">返回 Agent 选择页</a>
+            <a class="tenant-btn tenant-btn--primary" href="./">打开原生聊天控制台</a>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
+
