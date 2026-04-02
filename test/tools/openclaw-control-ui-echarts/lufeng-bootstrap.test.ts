@@ -50,7 +50,8 @@ describe("lufeng public bootstrap", () => {
     const secondPass = injectLufengPublicBootstrap(firstPass, "token-123");
 
     expect(firstPass).toContain("data-openclaw-lufeng-bootstrap");
-    expect(firstPass).toContain("OPENCLAW_LUFENG_MODE");
+    expect(firstPass).toContain("./assets/runtime/lufeng/preboot.js");
+    expect(firstPass).toContain('data-gateway-token="token-123"');
     expect(secondPass.match(/data-openclaw-lufeng-bootstrap/g)).toHaveLength(1);
   });
 });

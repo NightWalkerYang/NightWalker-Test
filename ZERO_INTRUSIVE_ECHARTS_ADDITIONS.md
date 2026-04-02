@@ -38,6 +38,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Runtime: Branding
 
 - `tools/openclaw-control-ui-echarts/runtime/branding/auto-token.js`
+- `tools/openclaw-control-ui-echarts/runtime/branding/auto-token-preboot.js`
 - `tools/openclaw-control-ui-echarts/runtime/branding/brand-replacer.js`
 - `tools/openclaw-control-ui-echarts/runtime/branding/favicon.js`
 
@@ -79,6 +80,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `tools/openclaw-control-ui-echarts/runtime/lufeng/bootstrap.js`
 - `tools/openclaw-control-ui-echarts/runtime/lufeng/context.js`
+- `tools/openclaw-control-ui-echarts/runtime/lufeng/preboot.js`
 - `tools/openclaw-control-ui-echarts/runtime/lufeng/surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/lufeng/surface.js`
 
@@ -166,6 +168,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap.
+- CSP-sensitive preboot behavior now uses same-origin external scripts instead of inline bootstrap blocks.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
 - Platform admin login and tenant login now prefer the native Control UI single-entry route with `?ocTenantView=...`.

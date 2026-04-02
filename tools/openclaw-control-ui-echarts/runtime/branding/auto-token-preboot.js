@@ -1,8 +1,13 @@
-export function applyAutoGatewayTokenBootstrap(rawToken) {
+(() => {
+  const currentScript =
+    typeof document !== "undefined" ? document.currentScript : null;
+  const rawToken = currentScript?.dataset?.gatewayToken ?? "";
   const token = String(rawToken ?? "").trim();
+
   if (!token || typeof window === "undefined" || typeof location === "undefined") {
     return;
   }
+
   const controlUiTabPaths = new Set([
     "/agents",
     "/overview",
@@ -23,6 +28,7 @@ export function applyAutoGatewayTokenBootstrap(rawToken) {
     "/debug",
     "/logs",
   ]);
+
   const normalizeBasePath = (basePath) => {
     if (!basePath) {
       return "";
@@ -42,6 +48,7 @@ export function applyAutoGatewayTokenBootstrap(rawToken) {
     }
     return base;
   };
+
   const normalizePath = (path) => {
     if (!path) {
       return "/";
@@ -55,6 +62,7 @@ export function applyAutoGatewayTokenBootstrap(rawToken) {
     }
     return normalized;
   };
+
   const inferBasePathFromPathname = (pathname) => {
     let normalized = normalizePath(pathname);
     if (normalized.endsWith("/index.html")) {
@@ -76,6 +84,7 @@ export function applyAutoGatewayTokenBootstrap(rawToken) {
     }
     return `/${segments.join("/")}`;
   };
+
   const normalizeGatewayTokenScope = (gatewayUrl) => {
     const trimmed = String(gatewayUrl || "").trim();
     if (!trimmed) {
@@ -91,6 +100,7 @@ export function applyAutoGatewayTokenBootstrap(rawToken) {
       return trimmed;
     }
   };
+
   try {
     const storage = window.sessionStorage;
     if (!storage) {
@@ -111,44 +121,4 @@ export function applyAutoGatewayTokenBootstrap(rawToken) {
     // Best-effort only. The app can still fall back to manual login if storage
     // is unavailable in this browser context.
   }
-}
-
-function escapeHtmlAttribute(value) {
-  return String(value ?? "").replace(/[&"<>\u2028\u2029]/g, (char) => {
-    switch (char) {
-      case "&":
-        return "&amp;";
-      case "\"":
-        return "&quot;";
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case "\u2028":
-        return "&#8232;";
-      case "\u2029":
-        return "&#8233;";
-      default:
-        return char;
-    }
-  });
-}
-
-export function buildAutoGatewayTokenBootstrapTag(rawToken) {
-  const token = String(rawToken ?? "").trim();
-  if (!token) {
-    return "";
-  }
-  return `    <script src="./assets/runtime/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="${escapeHtmlAttribute(token)}"></script>`;
-}
-
-export function injectAutoGatewayTokenBootstrap(indexHtml, rawToken) {
-  const scriptTag = buildAutoGatewayTokenBootstrapTag(rawToken);
-  if (!scriptTag || indexHtml.includes("data-openclaw-auto-token-bootstrap")) {
-    return indexHtml;
-  }
-  if (!indexHtml.includes("</head>")) {
-    throw new Error("index.html is missing </head>; cannot inject the auto token bootstrap.");
-  }
-  return indexHtml.replace("  </head>", `${scriptTag}\n  </head>`);
-}
+})();

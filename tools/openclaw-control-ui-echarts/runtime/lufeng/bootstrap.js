@@ -94,19 +94,21 @@ export function applyLufengPublicBootstrap(rawToken) {
   }
 }
 
-function serializeInlineScriptValue(value) {
-  return JSON.stringify(String(value ?? "")).replace(/[<>&\u2028\u2029]/g, (char) => {
+function escapeHtmlAttribute(value) {
+  return String(value ?? "").replace(/[&"<>\u2028\u2029]/g, (char) => {
     switch (char) {
-      case "<":
-        return "\\u003c";
-      case ">":
-        return "\\u003e";
       case "&":
-        return "\\u0026";
+        return "&amp;";
+      case "\"":
+        return "&quot;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
       case "\u2028":
-        return "\\u2028";
+        return "&#8232;";
       case "\u2029":
-        return "\\u2029";
+        return "&#8233;";
       default:
         return char;
     }
@@ -114,11 +116,7 @@ function serializeInlineScriptValue(value) {
 }
 
 export function buildLufengPublicBootstrapTag(rawToken) {
-  return [
-    '    <script data-openclaw-lufeng-bootstrap>',
-    `      (${applyLufengPublicBootstrap.toString()})(${serializeInlineScriptValue(rawToken)});`,
-    "    </script>",
-  ].join("\n");
+  return `    <script src="./assets/runtime/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="${escapeHtmlAttribute(rawToken)}"></script>`;
 }
 
 export function injectLufengPublicBootstrap(indexHtml, rawToken) {

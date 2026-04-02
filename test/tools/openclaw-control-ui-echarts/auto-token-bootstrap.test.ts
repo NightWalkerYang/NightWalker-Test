@@ -45,7 +45,8 @@ describe("zero-intrusive auto token bootstrap", () => {
     const secondPass = injectAutoGatewayTokenBootstrap(firstPass, "token-123");
 
     expect(firstPass).toContain("data-openclaw-auto-token-bootstrap");
-    expect(firstPass).toContain("token-123");
+    expect(firstPass).toContain("./assets/runtime/branding/auto-token-preboot.js");
+    expect(firstPass).toContain('data-gateway-token="token-123"');
     expect(secondPass.match(/data-openclaw-auto-token-bootstrap/g)).toHaveLength(1);
   });
 
@@ -54,7 +55,7 @@ describe("zero-intrusive auto token bootstrap", () => {
 
     const result = injectAutoGatewayTokenBootstrap(source, "</script><img>");
 
-    expect(result).not.toContain("</script><img>");
-    expect(result).toContain("\\u003c/script\\u003e");
+    expect(result).not.toContain('data-gateway-token="</script><img>"');
+    expect(result).toContain("&lt;/script&gt;&lt;img&gt;");
   });
 });

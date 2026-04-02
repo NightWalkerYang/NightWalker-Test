@@ -81,7 +81,6 @@ inject_lufeng_public_bootstrap() {
   python_bin="$(resolve_python)"
 
   "$python_bin" - "$index_path" "$token" <<'PY'
-import json
 import pathlib
 import sys
 
@@ -92,160 +91,16 @@ html = index_path.read_text(encoding="utf-8")
 if "data-openclaw-lufeng-bootstrap" in html:
     raise SystemExit(0)
 
-agent_id = "subotech-finance"
-session_key = f"agent:{agent_id}:main"
-route = "/lufeng"
-route_chat = "/lufeng/chat"
-
-token_literal = (
-    json.dumps(token)
-    .replace("<", "\\u003c")
-    .replace(">", "\\u003e")
-    .replace("&", "\\u0026")
-    .replace("\u2028", "\\u2028")
-    .replace("\u2029", "\\u2029")
+token_attr = (
+    token.replace("&", "&amp;")
+    .replace('"', "&quot;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
 )
-
-script = f"""    <script data-openclaw-lufeng-bootstrap>
-      ((rawToken) => {{
-        const ROUTE = {json.dumps(route)};
-        const CHAT_ROUTE = {json.dumps(route_chat)};
-        const SESSION_KEY = {json.dumps(session_key)};
-        const normalizePath = (value) => {{
-          const raw = String(value ?? "").trim() || "/";
-          const prefixed = raw.startsWith("/") ? raw : `/${{raw}}`;
-          if (prefixed.length > 1 && prefixed.endsWith("/")) {{
-            return prefixed.slice(0, -1);
-          }}
-          return prefixed;
-        }};
-        const isLufengPath = (pathname) => {{
-          const normalized = normalizePath(pathname);
-          return normalized === ROUTE || normalized === CHAT_ROUTE;
-        }};
-        if (
-          typeof window === "undefined" ||
-          typeof document === "undefined" ||
-          typeof location === "undefined" ||
-          !isLufengPath(location.pathname)
-        ) {{
-          return;
-        }}
-        const normalizeGatewayScope = (gatewayUrl) => {{
-          const trimmed = String(gatewayUrl ?? "").trim();
-          if (!trimmed) {{
-            return "default";
-          }}
-          try {{
-            const parsed = new URL(
-              trimmed,
-              `${{window.location.protocol}}//${{window.location.host}}/`,
-            );
-            const pathname =
-              parsed.pathname === "/"
-                ? ""
-                : parsed.pathname.replace(/\\/+$/, "") || parsed.pathname;
-            return `${{parsed.protocol}}//${{parsed.host}}${{pathname}}`;
-          }} catch {{
-            return trimmed;
-          }}
-        }};
-        const buildSettingsStorageKey = (gatewayUrl) =>
-          `openclaw.control.settings.v1:${{normalizeGatewayScope(gatewayUrl)}}`;
-        const buildTokenStorageKey = (gatewayUrl) =>
-          `openclaw.control.token.v1:${{normalizeGatewayScope(gatewayUrl)}}`;
-        const normalizeLufengRouteUrl = (urlLike, baseHref = window.location.href) => {{
-          const url = new URL(urlLike, baseHref);
-          if (!isLufengPath(url.pathname)) {{
-            return url;
-          }}
-          const normalized = normalizePath(url.pathname);
-          if (normalized === CHAT_ROUTE) {{
-            url.pathname = ROUTE;
-          }}
-          if (normalizePath(url.pathname) === ROUTE) {{
-            url.searchParams.delete("session");
-          }}
-          return url;
-        }};
-
-        const gatewayOrigin = `${{location.protocol === "https:" ? "wss:" : "ws:"}}//${{location.host}}`;
-        const lufengScopeUrl = `${{gatewayOrigin}}${{ROUTE}}`;
-        const rootGatewayScope = normalizeGatewayScope(gatewayOrigin);
-
-        window.__OPENCLAW_CONTROL_UI_BASE_PATH__ = ROUTE;
-        window.__OPENCLAW_LUFENG_MODE__ = true;
-        document.documentElement.setAttribute("data-oc-lufeng-route", "true");
-
-        try {{
-          const storage = window.localStorage;
-          if (storage) {{
-            const key = buildSettingsStorageKey(lufengScopeUrl);
-            const existingRaw = storage.getItem(key);
-            const existing =
-              existingRaw && existingRaw.trim()
-                ? JSON.parse(existingRaw)
-                : {{}};
-            const next = {{
-              ...existing,
-              gatewayUrl: gatewayOrigin,
-              sessionKey: SESSION_KEY,
-              lastActiveSessionKey: SESSION_KEY,
-              sessionsByGateway: {{
-                ...(existing.sessionsByGateway && typeof existing.sessionsByGateway === "object"
-                  ? existing.sessionsByGateway
-                  : {{}}),
-                [rootGatewayScope]: {{
-                  sessionKey: SESSION_KEY,
-                  lastActiveSessionKey: SESSION_KEY,
-                }},
-              }},
-            }};
-            storage.setItem(key, JSON.stringify(next));
-          }}
-        }} catch {{
-          // best-effort only
-        }}
-
-        try {{
-          const normalizedToken = String(rawToken ?? "").trim();
-          if (normalizedToken && window.sessionStorage) {{
-            window.sessionStorage.setItem(
-              buildTokenStorageKey(gatewayOrigin),
-              normalizedToken,
-            );
-          }}
-        }} catch {{
-          // best-effort only
-        }}
-
-        if (!window.__OPENCLAW_LUFENG_HISTORY_PATCHED__) {{
-          const originalReplaceState = window.history.replaceState.bind(window.history);
-          const originalPushState = window.history.pushState.bind(window.history);
-          const wrap =
-            (original) =>
-            (state, unused, url) => {{
-              if (url == null) {{
-                return original(state, unused, url);
-              }}
-              const normalized = normalizeLufengRouteUrl(url, window.location.href);
-              return original(state, unused, normalized.toString());
-            }};
-          window.history.replaceState = wrap(originalReplaceState);
-          window.history.pushState = wrap(originalPushState);
-          window.__OPENCLAW_LUFENG_HISTORY_PATCHED__ = true;
-        }}
-
-        const normalizedCurrent = normalizeLufengRouteUrl(window.location.href, window.location.href);
-        if (
-          normalizedCurrent.pathname !== window.location.pathname ||
-          normalizedCurrent.search !== window.location.search
-        ) {{
-          window.history.replaceState({{}}, "", normalizedCurrent.toString());
-        }}
-      }})({token_literal});
-    </script>
-"""
+script = (
+    '    <script src="./assets/runtime/lufeng/preboot.js" '
+    f'data-openclaw-lufeng-bootstrap data-gateway-token="{token_attr}"></script>'
+)
 
 if "</head>" not in html:
     raise SystemExit(f"index.html is missing </head>: {index_path}")
@@ -503,7 +358,6 @@ inject_auto_gateway_token_bootstrap() {
   python_bin="$(resolve_python)"
 
   "$python_bin" - "$index_path" "$token" <<'PY'
-import json
 import pathlib
 import sys
 
@@ -516,113 +370,16 @@ html = index_path.read_text(encoding="utf-8")
 if "data-openclaw-auto-token-bootstrap" in html:
     raise SystemExit(0)
 
-token_literal = (
-    json.dumps(token)
-    .replace("<", "\\u003c")
-    .replace(">", "\\u003e")
-    .replace("&", "\\u0026")
-    .replace("\u2028", "\\u2028")
-    .replace("\u2029", "\\u2029")
+token_attr = (
+    token.replace("&", "&amp;")
+    .replace('"', "&quot;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
 )
-script = f"""    <script data-openclaw-auto-token-bootstrap>
-      ((rawToken) => {{
-        const CONTROL_UI_TAB_PATHS = new Set([
-          "/agents",
-          "/overview",
-          "/channels",
-          "/instances",
-          "/sessions",
-          "/usage",
-          "/cron",
-          "/skills",
-          "/nodes",
-          "/chat",
-          "/config",
-          "/communications",
-          "/appearance",
-          "/automation",
-          "/infrastructure",
-          "/ai-agents",
-          "/debug",
-          "/logs",
-        ]);
-        const normalizeBasePath = (basePath) => {{
-          if (!basePath) return "";
-          let base = String(basePath).trim();
-          if (!base) return "";
-          if (!base.startsWith("/")) base = `/${{base}}`;
-          if (base === "/") return "";
-          if (base.endsWith("/")) base = base.slice(0, -1);
-          return base;
-        }};
-        const normalizePath = (value) => {{
-          if (!value) return "/";
-          let normalized = String(value).trim();
-          if (!normalized.startsWith("/")) normalized = `/${{normalized}}`;
-          if (normalized.length > 1 && normalized.endsWith("/")) {{
-            normalized = normalized.slice(0, -1);
-          }}
-          return normalized;
-        }};
-        const inferBasePathFromPathname = (pathname) => {{
-          let normalized = normalizePath(pathname);
-          if (normalized.endsWith("/index.html")) {{
-            normalized = normalizePath(normalized.slice(0, -"/index.html".length));
-          }}
-          if (normalized === "/") return "";
-          const segments = normalized.split("/").filter(Boolean);
-          if (segments.length === 0) return "";
-          for (let index = 0; index < segments.length; index += 1) {{
-            const candidate = `/${{segments.slice(index).join("/")}}`.toLowerCase();
-            if (CONTROL_UI_TAB_PATHS.has(candidate)) {{
-              const prefix = segments.slice(0, index);
-              return prefix.length > 0 ? `/${{prefix.join("/")}}` : "";
-            }}
-          }}
-          return `/${{segments.join("/")}}`;
-        }};
-        const normalizeGatewayTokenScope = (gatewayUrl) => {{
-          const trimmed = String(gatewayUrl || "").trim();
-          if (!trimmed) return "default";
-          try {{
-            const base =
-              typeof location !== "undefined"
-                ? `${{location.protocol}}//${{location.host}}${{location.pathname || "/"}}`
-                : undefined;
-            const parsed = base ? new URL(trimmed, base) : new URL(trimmed);
-            const pathname =
-              parsed.pathname === "/"
-                ? ""
-                : parsed.pathname.replace(/\\/+$/, "") || parsed.pathname;
-            return `${{parsed.protocol}}//${{parsed.host}}${{pathname}}`;
-          }} catch {{
-            return trimmed;
-          }}
-        }};
-        const token = String(rawToken ?? "").trim();
-        if (!token || typeof window === "undefined" || typeof location === "undefined") {{
-          return;
-        }}
-        try {{
-          const storage = window.sessionStorage;
-          if (!storage) return;
-          const configured =
-            typeof window.__OPENCLAW_CONTROL_UI_BASE_PATH__ === "string" &&
-            window.__OPENCLAW_CONTROL_UI_BASE_PATH__.trim();
-          const basePath = configured
-            ? normalizeBasePath(window.__OPENCLAW_CONTROL_UI_BASE_PATH__)
-            : inferBasePathFromPathname(location.pathname);
-          const proto = location.protocol === "https:" ? "wss" : "ws";
-          const gatewayUrl = `${{proto}}://${{location.host}}${{basePath}}`;
-          const scope = normalizeGatewayTokenScope(gatewayUrl);
-          storage.setItem(`openclaw.control.token.v1:${{scope}}`, token);
-          window.__OPENCLAW_CONTROL_UI_AUTO_TOKEN__ = true;
-        }} catch {{
-          // best-effort only
-        }}
-      }})({token_literal});
-    </script>
-"""
+script = (
+    '    <script src="./assets/runtime/branding/auto-token-preboot.js" '
+    f'data-openclaw-auto-token-bootstrap data-gateway-token="{token_attr}"></script>'
+)
 
 if "</head>" not in html:
     raise SystemExit(f"index.html is missing </head>: {index_path}")
