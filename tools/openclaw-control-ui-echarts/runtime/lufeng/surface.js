@@ -3,6 +3,12 @@ import { LUFENG_ROUTE, LUFENG_SESSION_KEY, isLufengPublicPath, normalizeLufengRo
 const STYLE_ATTR = "data-oc-lufeng-style";
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_FOOTER_SELECTOR = ".sidebar-shell__footer";
+const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
+const CHAT_SESSION_SELECTORS = [
+  ".chat-controls__session:not(.chat-controls__model)",
+  ".chat-mobile-controls-wrapper .chat-controls__session",
+];
+const CHAT_MODEL_SELECT_SELECTOR = 'select[data-chat-model-select="true"]';
 
 function ensureStyle() {
   let link = document.head.querySelector(`[${STYLE_ATTR}]`);
@@ -92,6 +98,69 @@ function clearFooterSync(footer) {
   }
 }
 
+function syncTopbarSearch() {
+  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  if (search instanceof HTMLElement) {
+    search.setAttribute("data-oc-lufeng-search", "hidden");
+  }
+}
+
+function clearTopbarSearch() {
+  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  if (search instanceof HTMLElement) {
+    search.removeAttribute("data-oc-lufeng-search");
+  }
+}
+
+function syncSessionControls() {
+  for (const selector of CHAT_SESSION_SELECTORS) {
+    for (const section of document.querySelectorAll(selector)) {
+      if (section instanceof HTMLElement) {
+        section.setAttribute("data-oc-lufeng-session", "hidden");
+      }
+    }
+  }
+}
+
+function clearSessionControls() {
+  for (const selector of CHAT_SESSION_SELECTORS) {
+    for (const section of document.querySelectorAll(selector)) {
+      if (section instanceof HTMLElement) {
+        section.removeAttribute("data-oc-lufeng-session");
+      }
+    }
+  }
+}
+
+function syncModelControl() {
+  const select = document.querySelector(CHAT_MODEL_SELECT_SELECTOR);
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+  if (!select.hasAttribute("data-oc-lufeng-prev-disabled")) {
+    select.setAttribute("data-oc-lufeng-prev-disabled", String(select.disabled));
+  }
+  select.disabled = true;
+  select.setAttribute("data-oc-lufeng-model", "locked");
+  select.setAttribute("title", "模型已固定");
+}
+
+function clearModelControl() {
+  const select = document.querySelector(CHAT_MODEL_SELECT_SELECTOR);
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+  const previousDisabled = select.getAttribute("data-oc-lufeng-prev-disabled");
+  if (previousDisabled === "true") {
+    select.disabled = true;
+  } else if (previousDisabled === "false") {
+    select.disabled = false;
+  }
+  select.removeAttribute("data-oc-lufeng-prev-disabled");
+  select.removeAttribute("data-oc-lufeng-model");
+  select.removeAttribute("title");
+}
+
 function pinPublicChatSession(app) {
   if (!(app instanceof HTMLElement)) {
     return;
@@ -139,6 +208,9 @@ function syncLufengSurface() {
     document.body?.removeAttribute("data-oc-lufeng-route");
     document.querySelectorAll(SIDEBAR_NAV_SELECTOR).forEach(clearSidebarSync);
     document.querySelectorAll(SIDEBAR_FOOTER_SELECTOR).forEach(clearFooterSync);
+    clearTopbarSearch();
+    clearSessionControls();
+    clearModelControl();
     document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
     return;
   }
@@ -153,6 +225,9 @@ function syncLufengSurface() {
       footer.setAttribute("data-oc-lufeng-footer", "hidden");
     }
   });
+  syncTopbarSearch();
+  syncSessionControls();
+  syncModelControl();
   pinPublicChatSession(document.querySelector("openclaw-app"));
 }
 

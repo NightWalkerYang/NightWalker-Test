@@ -36,6 +36,13 @@ describe("lufeng public chat surface", () => {
         </section>
       </nav>
       <div class="sidebar-shell__footer"></div>
+      <button class="topbar-search"></button>
+      <div class="chat-controls__session-row">
+        <label class="field chat-controls__session"><select><option value="a">会话</option></select></label>
+        <label class="field chat-controls__session chat-controls__model">
+          <select data-chat-model-select="true"><option value="">ark-code-latest · volcengine-plan</option></select>
+        </label>
+      </div>
     `;
 
     const app = document.createElement("openclaw-app");
@@ -72,6 +79,17 @@ describe("lufeng public chat surface", () => {
     expect(document.querySelector(".sidebar-shell__footer")?.getAttribute("data-oc-lufeng-footer")).toBe(
       "hidden",
     );
+    expect(document.querySelector(".topbar-search")?.getAttribute("data-oc-lufeng-search")).toBe(
+      "hidden",
+    );
+    expect(
+      document.querySelector(".chat-controls__session:not(.chat-controls__model)")?.getAttribute(
+        "data-oc-lufeng-session",
+      ),
+    ).toBe("hidden");
+    const modelSelect = document.querySelector('select[data-chat-model-select="true"]');
+    expect(modelSelect?.getAttribute("data-oc-lufeng-model")).toBe("locked");
+    expect(modelSelect?.disabled).toBe(true);
     expect(app.tab).toBe("chat");
     expect(app.sessionKey).toBe("agent:subotech-finance:lufeng");
     expect(applySettings).toHaveBeenCalledWith(

@@ -1,5 +1,7 @@
 html[data-oc-lufeng-route="true"] .sidebar-nav > .nav-section[data-oc-lufeng-nav="hidden"],
-html[data-oc-lufeng-route="true"] .sidebar-shell__footer[data-oc-lufeng-footer="hidden"] {
+html[data-oc-lufeng-route="true"] .sidebar-shell__footer[data-oc-lufeng-footer="hidden"],
+html[data-oc-lufeng-route="true"] .topbar-search[data-oc-lufeng-search="hidden"],
+html[data-oc-lufeng-route="true"] [data-oc-lufeng-session="hidden"] {
   display: none !important;
 }
 
@@ -9,4 +11,10 @@ html[data-oc-lufeng-route="true"] .sidebar-nav > .nav-section[data-oc-lufeng-nav
 
 html[data-oc-lufeng-route="true"] .sidebar-nav > .nav-section[data-oc-lufeng-nav="chat"] .nav-section__items {
   display: block !important;
+}
+
+html[data-oc-lufeng-route="true"] select[data-oc-lufeng-model="locked"] {
+  pointer-events: none;
+  cursor: default;
+  opacity: 1;
 }
