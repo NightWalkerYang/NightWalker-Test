@@ -912,6 +912,10 @@
   - 原生内容区内的平台管理页布局样式
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.js`
   - 在原生控制台内容区挂载平台管理视图
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.css`
+  - 原生内容区内的租户管理员管理页布局样式
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.js`
+  - 在原生控制台内容区挂载租户管理员管理视图
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
   - 平台管理员登录页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
@@ -922,29 +926,17 @@
   - 租户聊天壳层，负责把当前租户会话映射到 OpenClaw 会话
 - `tools/openclaw-control-ui-echarts/runtime/tenant/chat-page.js`
   - 租户成员聊天页逻辑
-- `tools/openclaw-control-ui-echarts/runtime/tenant/admin-page.js`
-  - 租户管理员页逻辑
-- `tools/openclaw-control-ui-echarts/runtime/tenant/wallet-page.js`
-  - 钱包与支付页逻辑
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-page.js`
+  - 租户管理员列表与分配视图逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-console-page.js`
   - 平台管理员页逻辑
 
 ### 3. 静态页面
 
-- `tools/openclaw-control-ui-echarts/static/platform-login.html`
-  - 兼容期保留，不作为长期主入口
-- `tools/openclaw-control-ui-echarts/static/tenant-login.html`
-  - 兼容期保留，不作为长期主入口
 - `tools/openclaw-control-ui-echarts/static/tenant-agent-selector.html`
   - Agent 选择页
 - `tools/openclaw-control-ui-echarts/static/tenant-chat.html`
   - 租户成员聊天页
-- `tools/openclaw-control-ui-echarts/static/tenant-admin.html`
-  - 租户管理员页
-- `tools/openclaw-control-ui-echarts/static/tenant-wallet.html`
-  - 钱包页
-- `tools/openclaw-control-ui-echarts/static/platform-tenant-console.html`
-  - 平台管理员页
 
 ### 4. 未来会修改的零侵入文件
 
@@ -1211,9 +1203,6 @@
    - 原生单入口平台管理视图：`./?ocTenantView=platform-agent-assignment`
    - `tenant-agent-selector.html`
    - `tenant-chat.html`
-   - `tenant-admin.html`
-   - `tenant-wallet.html`
-   - `platform-tenant-console.html`
 
 12. 第一阶段必须新增的零侵入运行时文件
    - `runtime/tenant/tenant-context.js`
@@ -1230,8 +1219,7 @@
    - `runtime/tenant/agent-selector-page.js`
    - `runtime/tenant/chat-shell.js`
    - `runtime/tenant/chat-page.js`
-   - `runtime/tenant/admin-page.js`
-   - `runtime/tenant/wallet-page.js`
+   - `runtime/tenant/tenant-console-page.js`
    - `runtime/tenant/platform-console-page.js`
 
 13. 第一阶段必须新增的 sidecar 文件
@@ -1338,9 +1326,7 @@
    - 服务器侧 `openclaw-tenant-platform` 已并入部署链路
 
 10. 当前暂时保留但不再作为主路线的兼容页面
-   - `platform-tenant-console.html`
-   - `platform-login.html`
-   - `tenant-login.html`
+   - 原生控制台内嵌“租户管理页”
    - 这些兼容页后续可以逐步降级或移除，但当前主入口已经切换到原生单入口视图
 
 ## 十二、当前还需要继续确认的事项

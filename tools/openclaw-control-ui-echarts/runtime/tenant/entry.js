@@ -5,10 +5,15 @@ import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
+  TENANT_AGENT_ASSIGNMENT_ROUTE,
+  TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_LOGIN_VIEW,
   TENANT_LOGIN_ROUTE,
+  TENANT_MEMBER_MANAGEMENT_ROUTE,
+  TENANT_MEMBERS_VIEW,
   clearTenantViewFromHref,
   readPlatformSession,
+  readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
 import { createTenantApiClient } from "./api-client.js";
@@ -58,6 +63,11 @@ const ICONS = {
       <path d="m6 9 6 6 6-6"></path>
     </svg>
   `,
+  members: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 6.1a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Zm8 0a2.3 2.3 0 1 1 0 4.6 2.3 2.3 0 0 1 0-4.6ZM4.5 17.9c0-2.4 2-4.1 4.9-4.1s4.9 1.7 4.9 4.1V19H4.5Zm10.6 1.1v-1.1c0-1.1-.3-2.1-.9-2.9 2.1.1 4 .9 4 2.9V19Z"></path>
+    </svg>
+  `,
 };
 
 function createSectionLabel() {
@@ -81,6 +91,51 @@ function createNavItem({ className, href, title, text, icon }) {
     <span class="nav-item__text">${text}</span>
   `;
   return link;
+}
+
+function getManagementLinksForSession(session) {
+  const role = session?.session?.role || "";
+  if (role === "platform_admin") {
+    return [
+      {
+        className: "oc-tenant-management-link",
+        href: PLATFORM_TENANT_MANAGEMENT_ROUTE,
+        title: "租户管理",
+        text: "租户管理",
+        icon: ICONS.tenants,
+        activeView: PLATFORM_TENANT_MANAGEMENT_VIEW,
+      },
+      {
+        className: "oc-platform-agent-link",
+        href: PLATFORM_AGENT_ASSIGNMENT_ROUTE,
+        title: "Agent 分配",
+        text: "Agent 分配",
+        icon: ICONS.agentAllocation,
+        activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
+      },
+    ];
+  }
+  if (role === "tenant_admin") {
+    return [
+      {
+        className: "oc-tenant-members-link",
+        href: TENANT_MEMBER_MANAGEMENT_ROUTE,
+        title: "成员管理",
+        text: "成员管理",
+        icon: ICONS.members,
+        activeView: TENANT_MEMBERS_VIEW,
+      },
+      {
+        className: "oc-tenant-agent-link",
+        href: TENANT_AGENT_ASSIGNMENT_ROUTE,
+        title: "Agent 分配",
+        text: "Agent 分配",
+        icon: ICONS.agentAllocation,
+        activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
+      },
+    ];
+  }
+  return [];
 }
 
 function updateManagementSectionState(section) {
@@ -125,7 +180,9 @@ function isManagementViewActive() {
   const activeView = readTenantView();
   return (
     activeView === PLATFORM_TENANT_MANAGEMENT_VIEW ||
-    activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW
+    activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
+    activeView === TENANT_MEMBERS_VIEW ||
+    activeView === TENANT_AGENT_ASSIGNMENT_VIEW
   );
 }
 
@@ -162,31 +219,15 @@ function ensureSidebarRouteHandlers(container) {
   );
 }
 
-function createManagementSection() {
+function createManagementSection(session) {
   const section = document.createElement("section");
   section.className = `nav-section ${MANAGEMENT_SECTION_CLASS}`;
+  section.setAttribute("data-oc-management-role", String(session?.session?.role || ""));
 
   const label = createSectionLabel();
   const items = document.createElement("div");
   items.className = "nav-section__items";
-  const links = [
-    {
-      className: "oc-tenant-management-link",
-      href: PLATFORM_TENANT_MANAGEMENT_ROUTE,
-      title: "租户管理",
-      text: "租户管理",
-      icon: ICONS.tenants,
-      activeView: PLATFORM_TENANT_MANAGEMENT_VIEW,
-    },
-    {
-      className: "oc-platform-agent-link",
-      href: PLATFORM_AGENT_ASSIGNMENT_ROUTE,
-      title: "Agent 分配",
-      text: "Agent 分配",
-      icon: ICONS.agentAllocation,
-      activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
-    },
-  ];
+  const links = getManagementLinksForSession(session);
   const activeView = readTenantView();
   for (const link of links) {
     const item = createNavItem({
@@ -219,14 +260,24 @@ function ensureManagementSection(container) {
   if (!(container instanceof HTMLElement)) {
     return;
   }
-  if (container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`)) {
-    updateManagementSectionState(
-      container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`),
-    );
+  const session = readPlatformSession() || readTenantSession();
+  const role = String(session?.session?.role || "");
+  const links = getManagementLinksForSession(session);
+  const existing = container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`);
+  if (!links.length) {
+    existing?.remove();
     return;
   }
+  if (existing instanceof HTMLElement) {
+    if (existing.getAttribute("data-oc-management-role") !== role) {
+      existing.remove();
+    } else {
+      updateManagementSectionState(existing);
+      return;
+    }
+  }
 
-  const section = createManagementSection();
+  const section = createManagementSection(session);
   const siblings = [...container.querySelectorAll(":scope > .nav-section")];
   const insertBefore = siblings[0] ?? null;
   container.insertBefore(section, insertBefore);
@@ -484,16 +535,21 @@ export function bootTenantEntry() {
   ensureTopbarLogoutHandler();
 
   const scan = (root = document) => {
-    const session = readPlatformSession();
+    const platformSession = readPlatformSession();
+    const tenantSession = readTenantSession();
+    const session = platformSession || tenantSession;
     const scope = root instanceof Element || root instanceof Document ? root : document;
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
-    } else if (session?.session?.role === "platform_admin") {
-      syncPlatformTopbarMeta(session);
+    } else if (platformSession?.session?.role === "platform_admin") {
+      syncPlatformTopbarMeta(platformSession);
     } else {
       clearPlatformTopbarMeta();
     }
-    if (!isTenantAuthViewActive() && session?.session?.role === "platform_admin") {
+    if (
+      !isTenantAuthViewActive() &&
+      (session?.session?.role === "platform_admin" || session?.session?.role === "tenant_admin")
+    ) {
       if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
         ensureSidebarRouteHandlers(scope);
         ensureManagementSection(scope);

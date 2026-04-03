@@ -9,10 +9,14 @@ export const PLATFORM_TENANTS_VIEW = "platform-tenants";
 // without breaking the whole zero-intrusive module graph during incremental upgrades.
 export const PLATFORM_TENANT_MANAGEMENT_VIEW = PLATFORM_TENANTS_VIEW;
 export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
+export const TENANT_MEMBERS_VIEW = "tenant-members";
+export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
 export const PLATFORM_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_LOGIN_VIEW}`;
 export const TENANT_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_LOGIN_VIEW}`;
 export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_TENANTS_VIEW}`;
 export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
+export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
+export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
 
 function safeStorage() {
   try {
@@ -59,12 +63,13 @@ export function readSessionForCurrentView(pathname = window.location.pathname) {
   if (view === TENANT_LOGIN_VIEW) {
     return readTenantSession();
   }
+  if (view === TENANT_MEMBERS_VIEW || view === TENANT_AGENT_ASSIGNMENT_VIEW) {
+    return readTenantSession();
+  }
   const normalizedPath = String(pathname || "/").trim() || "/";
   if (
-    normalizedPath.endsWith("/tenant-admin.html") ||
     normalizedPath.endsWith("/tenant-agent-selector.html") ||
-    normalizedPath.endsWith("/tenant-chat.html") ||
-    normalizedPath.endsWith("/tenant-wallet.html")
+    normalizedPath.endsWith("/tenant-chat.html")
   ) {
     return readTenantSession();
   }
@@ -135,7 +140,7 @@ export function routeForRole(role) {
     return PLATFORM_TENANT_MANAGEMENT_ROUTE;
   }
   if (role === "tenant_admin") {
-    return "./tenant-admin.html";
+    return TENANT_MEMBER_MANAGEMENT_ROUTE;
   }
   return "./tenant-agent-selector.html";
 }

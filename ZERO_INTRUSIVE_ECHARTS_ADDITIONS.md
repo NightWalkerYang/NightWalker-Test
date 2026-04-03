@@ -95,17 +95,18 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/topbar-meta.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.css`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-layout.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-console-page.js`
-- `tools/openclaw-control-ui-echarts/runtime/tenant/admin-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/agent-selector-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/chat-shell.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/chat-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js`
-- `tools/openclaw-control-ui-echarts/runtime/tenant/wallet-page.js`
 
 ### Sidecar: Tenant Platform
 
@@ -119,13 +120,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Static Pages
 
 - `tools/openclaw-control-ui-echarts/static/knowledge-graph.html`
-- `tools/openclaw-control-ui-echarts/static/platform-login.html`
-- `tools/openclaw-control-ui-echarts/static/tenant-login.html`
-- `tools/openclaw-control-ui-echarts/static/platform-tenant-console.html`
-- `tools/openclaw-control-ui-echarts/static/tenant-admin.html`
 - `tools/openclaw-control-ui-echarts/static/tenant-agent-selector.html`
 - `tools/openclaw-control-ui-echarts/static/tenant-chat.html`
-- `tools/openclaw-control-ui-echarts/static/tenant-wallet.html`
 
 ### Tests
 
@@ -146,6 +142,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-access-guard.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
@@ -173,15 +170,14 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - CSP-sensitive preboot behavior now uses same-origin external scripts instead of inline bootstrap blocks.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
-- Platform admin login and tenant login now prefer the native Control UI single-entry route with `?ocTenantView=...`.
+- Platform admin login and tenant login now use the native Control UI single-entry route with `?ocTenantView=...`.
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
+- Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
 - Platform-admin identity and logout status now occupy the native topbar search slot globally across the root control UI.
 - Tenant platform routes now follow native history changes so management shortcuts switch without full-page reload and unmount correctly when leaving the management view.
 - The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, and trims the sidebar down to the native chat section only.
-- Platform console, tenant admin, Agent selector, chat shell, and wallet pages currently use separate static pages.
-- Legacy standalone tenant/platform login pages remain only as compatibility wrappers while the login flow converges on the native single entry.
 
 ## Important Notes
 

@@ -7,6 +7,7 @@ import { bootKnowledgeGraphEntry } from "./runtime/knowledge-graph/entry.js";
 import { bootTenantAuthSurface } from "./runtime/tenant/auth-surface.js";
 import { bootPlatformAccessGuard } from "./runtime/tenant/platform-access-guard.js";
 import { bootPlatformSurface } from "./runtime/tenant/platform-surface.js";
+import { bootTenantSurface } from "./runtime/tenant/tenant-surface.js";
 import { bootTenantEntry } from "./runtime/tenant/entry.js";
 import { bootLufengSurface } from "./runtime/lufeng/surface.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
@@ -35,6 +36,7 @@ function boot() {
   bootTenantAuthSurface();
   bootPlatformAccessGuard();
   bootPlatformSurface();
+  bootTenantSurface();
   bootTenantEntry();
   bootLufengSurface();
   runtime.boot();

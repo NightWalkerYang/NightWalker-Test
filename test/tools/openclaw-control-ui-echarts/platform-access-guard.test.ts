@@ -23,7 +23,8 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/",
         href: "https://www.hailstone.cn:18789/",
-        session: null,
+        platformSession: null,
+        tenantSession: null,
       }),
     ).toBe("redirect");
 
@@ -31,9 +32,10 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/chat",
         href: "https://www.hailstone.cn:18789/chat",
-        session: { token: "tenant-token", session: { role: "tenant_admin" } },
+        platformSession: null,
+        tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
       }),
-    ).toBe("redirect");
+    ).toBe("redirect-tenant");
   });
 
   it("allows platform admins and skips explicit tenant login views", () => {
@@ -41,7 +43,8 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/",
         href: "https://www.hailstone.cn:18789/",
-        session: { token: "platform-token", session: { role: "platform_admin" } },
+        platformSession: { token: "platform-token", session: { role: "platform_admin" } },
+        tenantSession: null,
       }),
     ).toBe("allow");
 
@@ -57,8 +60,29 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/lufeng",
         href: "https://www.hailstone.cn:18789/lufeng",
-        session: null,
+        platformSession: null,
+        tenantSession: null,
       }),
     ).toBe("skip");
+  });
+
+  it("allows tenant admins only on tenant management views", () => {
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/",
+        href: "https://www.hailstone.cn:18789/?ocTenantView=tenant-members",
+        platformSession: null,
+        tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
+      }),
+    ).toBe("allow");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/chat",
+        href: "https://www.hailstone.cn:18789/chat?ocTenantView=tenant-agent-assignment",
+        platformSession: null,
+        tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
+      }),
+    ).toBe("allow");
   });
 });

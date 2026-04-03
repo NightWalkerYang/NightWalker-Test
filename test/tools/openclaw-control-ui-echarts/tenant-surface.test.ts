@@ -1,0 +1,155 @@
+/**
+ * @vitest-environment jsdom
+ */
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { bootTenantSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.js";
+import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
+
+afterEach(() => {
+  document.body.innerHTML = "";
+  document.head.innerHTML = "";
+  window.localStorage.clear();
+  window.history.replaceState({}, "", "/");
+  delete window.__openclawTenantSurfaceBooted;
+  delete window.__openclawTenantRouteSyncBooted;
+  vi.unstubAllGlobals();
+});
+
+describe("tenant surface", () => {
+  it("mounts the native members view into the control-ui content area", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 2,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-agent-1",
+                    agentId: "subotech-finance",
+                    agentName: "苏博泰克财务分析助手",
+                    balancePoints: 100,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+
+    const content = document.querySelector(".content");
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(content?.getAttribute("data-oc-tenant-surface-active")).toBe("true");
+    expect(surfaceRoot).not.toBeNull();
+    expect(surfaceRoot?.textContent).toContain("alice");
+    expect(surfaceRoot?.querySelector("[data-tenant-open-create]")?.textContent).toContain("创建成员");
+    expect(surfaceRoot?.querySelector("[data-tenant-open-assign]")).toBeNull();
+  });
+
+  it("mounts the native tenant agent assignment view", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-agent-assignment");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 2,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-agent-1",
+                    agentId: "subotech-finance",
+                    agentName: "苏博泰克财务分析助手",
+                    balancePoints: 100,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.querySelector("[data-tenant-open-assign]")?.textContent).toContain("分配Agent");
+    expect(surfaceRoot?.querySelector("[data-tenant-open-create]")).toBeNull();
+  });
+});
