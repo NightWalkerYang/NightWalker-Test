@@ -13,6 +13,7 @@ import {
   listTenantMembers,
   logAudit,
   readOpenClawAgentCatalog,
+  updateTenantMemberLimit,
   upsertTenantAgent,
 } from "./db.mjs";
 
@@ -239,6 +240,37 @@ export function createTenantPlatformRouter(deps) {
           resourceType: "tenant",
           resourceId: tenant.id,
           payloadJson: { code: tenant.code, name: tenant.name },
+        });
+        sendJson(request, response, 200, { ok: true, data: tenant });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/tenant-member-limit") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenant = updateTenantMemberLimit(deps.db, {
+          tenantId: body.tenantId,
+          memberLimit: body.memberLimit,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "tenant.member_limit.update",
+          resourceType: "tenant",
+          resourceId: tenant?.id || null,
+          payloadJson: {
+            tenantId: body.tenantId,
+            memberLimit: body.memberLimit,
+          },
         });
         sendJson(request, response, 200, { ok: true, data: tenant });
       } catch (error) {

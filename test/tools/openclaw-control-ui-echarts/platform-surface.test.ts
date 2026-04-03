@@ -97,15 +97,17 @@ describe("platform surface", () => {
     await bootPlatformSurface();
 
     const content = document.querySelector(".content");
+    const surfaceRoot = document.querySelector("[data-oc-platform-surface-root]");
+    const tableBody = surfaceRoot?.querySelector("tbody");
     expect(content?.getAttribute("data-oc-platform-surface-active")).toBe("true");
-    expect(document.querySelector("[data-oc-platform-surface-root]")).not.toBeNull();
+    expect(surfaceRoot).not.toBeNull();
     expect(document.querySelector(".content-header")).toBeNull();
-    expect(document.querySelector("[data-platform-metrics]")).toBeNull();
-    expect(document.body.textContent).not.toContain("平台管理台");
-    expect(document.querySelector("[data-platform-tenant-list]")?.textContent).toContain("租户 Alpha");
-    expect(document.querySelector("[data-platform-tenant-form]")).not.toBeNull();
-    expect(document.querySelector("[data-platform-agent-form]")).toBeNull();
-    expect(document.querySelector("[data-platform-tenant-agents]")).toBeNull();
+    expect(document.querySelector("[data-platform-search]")).not.toBeNull();
+    expect(document.querySelector("[data-platform-open-create]")).not.toBeNull();
+    expect(document.querySelector(".data-table")).not.toBeNull();
+    expect(tableBody?.textContent).toContain("租户 Alpha");
+    expect(tableBody?.textContent).toContain("人数调整");
+    expect(tableBody?.textContent).not.toContain("分配Agent");
   });
 
   it("mounts a dedicated agent allocation view without the tenant creation form", async () => {
@@ -188,12 +190,15 @@ describe("platform surface", () => {
 
     await bootPlatformSurface();
 
+    const surfaceRoot = document.querySelector("[data-oc-platform-surface-root]");
+    const tableBody = surfaceRoot?.querySelector("tbody");
     expect(document.querySelector(".content-header")).toBeNull();
-    expect(document.querySelector("[data-platform-metrics]")).toBeNull();
-    expect(document.body.textContent).not.toContain("平台管理台");
-    expect(document.querySelector("[data-platform-agent-form]")).not.toBeNull();
-    expect(document.querySelector("[data-platform-tenant-form]")).toBeNull();
-    expect(document.querySelector("[data-platform-tenant-agents]")).not.toBeNull();
+    expect(document.querySelector("[data-platform-search]")).not.toBeNull();
+    expect(document.querySelector("[data-platform-open-create]")).toBeNull();
+    expect(document.querySelector(".data-table")).not.toBeNull();
+    expect(tableBody?.textContent).toContain("分配Agent");
+    expect(tableBody?.textContent).toContain("倍率调整");
+    expect(tableBody?.textContent).not.toContain("人数调整");
   });
 
   it("unmounts when native route leaves the management view", async () => {

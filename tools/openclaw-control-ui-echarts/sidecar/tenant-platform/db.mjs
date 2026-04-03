@@ -256,6 +256,35 @@ export function createTenantWithAdmin(db, params) {
   return getTenantSummary(db, tenantId);
 }
 
+export function updateTenantMemberLimit(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const memberLimit = Number.parseInt(String(params.memberLimit || ""), 10);
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!Number.isFinite(memberLimit) || memberLimit < 1) {
+    throw new Error("member_limit_invalid");
+  }
+
+  const currentMembers = countTenantMembers(db, tenantId);
+  if (currentMembers > memberLimit) {
+    throw new Error("member_limit_below_current_members");
+  }
+
+  db.prepare(
+    `UPDATE tenant_quotas
+     SET member_limit = @memberLimit,
+         updated_at = @updatedAt
+     WHERE tenant_id = @tenantId`,
+  ).run({
+    tenantId,
+    memberLimit,
+    updatedAt: nowIso(),
+  });
+
+  return getTenantSummary(db, tenantId);
+}
+
 export function countTenantMembers(db, tenantId) {
   return Number(
     getScalar(

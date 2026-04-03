@@ -72,6 +72,9 @@ export function createTenantApiClient() {
     createTenant(body) {
       return requestJson("/platform/tenants", { method: "POST", body });
     },
+    updateTenantMemberLimit(body) {
+      return requestJson("/platform/tenant-member-limit", { method: "POST", body });
+    },
     listPlatformCatalogAgents() {
       return requestJson("/platform/catalog-agents");
     },

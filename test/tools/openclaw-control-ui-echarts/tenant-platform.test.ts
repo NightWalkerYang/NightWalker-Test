@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { openTenantPlatformDb, closeTenantPlatformDb, createBootstrapPlatformAdmin, createTenantWithAdmin, createTenantMember, listTenantMembers, readOpenClawAgentCatalog, upsertTenantAgent, assignTenantAgentToUser, listAssignedAgentsForUser } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
+import { openTenantPlatformDb, closeTenantPlatformDb, createBootstrapPlatformAdmin, createTenantWithAdmin, createTenantMember, listTenantMembers, readOpenClawAgentCatalog, upsertTenantAgent, assignTenantAgentToUser, listAssignedAgentsForUser, updateTenantMemberLimit } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 
 const cleanupRoots = new Set();
 
@@ -127,6 +127,49 @@ describe("tenant platform database foundation", () => {
       expect(agents[0]?.agentName).toBe("财务分析助手");
       expect(agents[0]?.emoji).toBe("💼");
       expect(agents[0]?.balancePoints).toBe(42);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("updates tenant member limits without breaking current member counts", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "gamma",
+        name: "租户 Gamma",
+        adminUsername: "gamma-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+
+      const updated = updateTenantMemberLimit(db, {
+        tenantId: tenant.id,
+        memberLimit: 6,
+      });
+
+      expect(updated?.memberLimit).toBe(6);
+      expect(() =>
+        updateTenantMemberLimit(db, {
+          tenantId: tenant.id,
+          memberLimit: 0,
+        }),
+      ).toThrow("member_limit_invalid");
     } finally {
       closeTenantPlatformDb(db);
     }
