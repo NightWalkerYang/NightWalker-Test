@@ -19,6 +19,9 @@ export function createEchartsAdapter({ vendorBaseUrl }) {
     uiText: UI_TEXT,
     languageAliases: ECHARTS_LANGUAGE_ALIASES,
     getStyles: getEchartsStyles,
+    preload() {
+      return ensureLibraries();
+    },
     ensureReady: ensureLibraries,
     localizeErrorMessage,
     disposeState(state) {

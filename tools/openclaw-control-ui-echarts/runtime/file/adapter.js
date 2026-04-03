@@ -173,6 +173,9 @@ export function createFileAdapter({ vendorBaseUrl, controlUiRootUrl }) {
     },
     languageAliases: FILE_LANGUAGE_ALIASES,
     getStyles: getFileStyles,
+    preload() {
+      return ensureJson5();
+    },
     ensureReady: ensureJson5,
     localizeErrorMessage,
     async renderContent({ source, wrapper, host, context, renderHostScaffold }) {

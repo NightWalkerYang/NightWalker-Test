@@ -129,6 +129,7 @@ export function createFencedBlockRuntime(adaptersInput) {
   const registry = createAdapterRegistry(adaptersInput);
   const hostByAnchor = new WeakMap();
   const stateByHost = new WeakMap();
+  const pendingScanRoots = new Set();
 
   let stylesInstalled = false;
   let scanQueued = false;
@@ -153,8 +154,33 @@ export function createFencedBlockRuntime(adaptersInput) {
     document.head.append(style);
   }
 
+  function warmAdapters() {
+    for (const adapter of registry.adapters) {
+      if (typeof adapter.preload !== "function") {
+        continue;
+      }
+      Promise.resolve()
+        .then(() => adapter.preload())
+        .catch(() => {
+          // Ignore preload failures; the runtime will retry through ensureReady on demand.
+        });
+    }
+  }
+
+  function queryAllIncludingRoot(root, selector) {
+    if (!(root instanceof Element || root instanceof Document)) {
+      return [];
+    }
+    const results = [];
+    if (root instanceof Element && root.matches(selector)) {
+      results.push(root);
+    }
+    results.push(...root.querySelectorAll(selector));
+    return results;
+  }
+
   function findCandidateCodeBlocks(root) {
-    const codeElements = Array.from(root.querySelectorAll("code")).filter(
+    const codeElements = Array.from(queryAllIncludingRoot(root, "code")).filter(
       (codeEl) => !codeEl.closest(".oc-block-renderer"),
     );
 
@@ -426,7 +452,7 @@ export function createFencedBlockRuntime(adaptersInput) {
   }
 
   function syncStreamingPlaceholders(root) {
-    const textBlocks = Array.from(root.querySelectorAll(".chat-bubble .chat-text"));
+    const textBlocks = Array.from(queryAllIncludingRoot(root, ".chat-bubble .chat-text"));
     for (const textEl of textBlocks) {
       const adapter = findStreamingPlaceholderAdapter(textEl);
       if (!adapter) {
@@ -553,6 +579,37 @@ export function createFencedBlockRuntime(adaptersInput) {
     }
   }
 
+  function enqueueScanRoot(root = document) {
+    if (!(root instanceof Element || root instanceof Document)) {
+      pendingScanRoots.add(document);
+      return;
+    }
+
+    if (root instanceof Document) {
+      pendingScanRoots.clear();
+      pendingScanRoots.add(document);
+      return;
+    }
+
+    if (pendingScanRoots.has(document)) {
+      return;
+    }
+
+    for (const existingRoot of pendingScanRoots) {
+      if (!(existingRoot instanceof Element)) {
+        continue;
+      }
+      if (existingRoot.contains(root)) {
+        return;
+      }
+      if (root.contains(existingRoot)) {
+        pendingScanRoots.delete(existingRoot);
+      }
+    }
+
+    pendingScanRoots.add(root);
+  }
+
   async function runScan() {
     if (scanRunning) {
       scanQueued = true;
@@ -563,12 +620,17 @@ export function createFencedBlockRuntime(adaptersInput) {
     scanRunning = true;
 
     try {
-      syncStreamingPlaceholders(document);
-      const candidates = findCandidateCodeBlocks(document);
-      for (const { codeEl, adapter } of candidates) {
-        // Keep processing sequential to reduce DOM thrash during streaming updates.
-        // eslint-disable-next-line no-await-in-loop
-        await processCodeBlock(codeEl, adapter);
+      const scanRoots = pendingScanRoots.size ? [...pendingScanRoots] : [document];
+      pendingScanRoots.clear();
+
+      for (const root of scanRoots) {
+        syncStreamingPlaceholders(root);
+        const candidates = findCandidateCodeBlocks(root);
+        for (const { codeEl, adapter } of candidates) {
+          // Keep processing sequential to reduce DOM thrash during streaming updates.
+          // eslint-disable-next-line no-await-in-loop
+          await processCodeBlock(codeEl, adapter);
+        }
       }
     } finally {
       scanRunning = false;
@@ -578,7 +640,8 @@ export function createFencedBlockRuntime(adaptersInput) {
     }
   }
 
-  function scheduleScan() {
+  function scheduleScan(root = document) {
+    enqueueScanRoot(root);
     if (scanQueued) {
       return;
     }
@@ -588,14 +651,35 @@ export function createFencedBlockRuntime(adaptersInput) {
 
   function boot() {
     installStyles();
+    warmAdapters();
     scheduleScan();
 
-    const observer = new MutationObserver(() => {
-      scheduleScan();
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "childList") {
+          for (const node of mutation.addedNodes) {
+            if (node instanceof Element) {
+              scheduleScan(node);
+            }
+          }
+          if (mutation.target instanceof Element) {
+            scheduleScan(mutation.target);
+          }
+          continue;
+        }
+
+        if (mutation.type === "characterData") {
+          const parent = mutation.target.parentElement;
+          if (parent instanceof Element) {
+            scheduleScan(parent);
+          }
+        }
+      }
     });
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
     });
 
     window.addEventListener("resize", () => {
