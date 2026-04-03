@@ -24,6 +24,8 @@ const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
 const TOPBAR_META_MODE_ATTR = "data-oc-platform-search-mode";
 const TOPBAR_META_ORIGINAL_ATTR = "data-oc-platform-search-original";
+const TOPBAR_META_ROLE_ATTR = "data-oc-platform-role";
+const TOPBAR_META_USER_ATTR = "data-oc-platform-user";
 const TOPBAR_LOGOUT_SELECTOR = "[data-oc-platform-logout]";
 
 const ICONS = {
@@ -256,11 +258,22 @@ function syncPlatformTopbarMeta(session) {
   if (!search.hasAttribute(TOPBAR_META_ORIGINAL_ATTR)) {
     search.setAttribute(TOPBAR_META_ORIGINAL_ATTR, search.innerHTML);
   }
+  const role = String(session?.session?.role || "").trim();
+  const username = String(session?.session?.username || "").trim();
+  if (
+    search.getAttribute(TOPBAR_META_MODE_ATTR) === "meta" &&
+    search.getAttribute(TOPBAR_META_ROLE_ATTR) === role &&
+    search.getAttribute(TOPBAR_META_USER_ATTR) === username
+  ) {
+    return;
+  }
   search.setAttribute(TOPBAR_META_MODE_ATTR, "meta");
+  search.setAttribute(TOPBAR_META_ROLE_ATTR, role);
+  search.setAttribute(TOPBAR_META_USER_ATTR, username);
   search.innerHTML = `
-    <span class="pill"><span>当前角色</span><span class="mono">${session.session.role}</span></span>
-    <span class="pill"><span>当前登录</span><span class="mono">${session.session.username}</span></span>
-    <button class="btn btn--ghost" type="button" data-oc-platform-logout>退出登录</button>
+    <span class="pill"><span>当前角色</span><span class="mono">${role}</span></span>
+    <span class="pill"><span>当前登录</span><span class="mono">${username}</span></span>
+    <span class="btn btn--ghost" data-oc-platform-logout>退出登录</span>
   `;
 }
 
@@ -275,6 +288,8 @@ function clearPlatformTopbarMeta() {
   }
   search.removeAttribute(TOPBAR_META_MODE_ATTR);
   search.removeAttribute(TOPBAR_META_ORIGINAL_ATTR);
+  search.removeAttribute(TOPBAR_META_ROLE_ATTR);
+  search.removeAttribute(TOPBAR_META_USER_ATTR);
 }
 
 function ensureTopbarLogoutHandler() {
@@ -350,7 +365,16 @@ export function bootTenantEntry() {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node instanceof Element) {
-          scan(node);
+          if (
+            node.matches?.(SIDEBAR_NAV_SELECTOR) ||
+            node.matches?.(SIDEBAR_UTILITY_SELECTOR) ||
+            node.matches?.(TOPBAR_SEARCH_SELECTOR) ||
+            node.querySelector?.(SIDEBAR_NAV_SELECTOR) ||
+            node.querySelector?.(SIDEBAR_UTILITY_SELECTOR) ||
+            node.querySelector?.(TOPBAR_SEARCH_SELECTOR)
+          ) {
+            scan(node);
+          }
         }
       }
     }
