@@ -20,9 +20,11 @@ describe("zero-intrusive tenant entry", () => {
       token: "platform-token",
       session: {
         role: "platform_admin",
+        username: "platform-root",
       },
     });
     document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
       <nav class="sidebar-nav">
         <section class="nav-section" data-native-group="chat"></section>
         <section class="nav-section" data-native-group="control"></section>
@@ -50,6 +52,11 @@ describe("zero-intrusive tenant entry", () => {
 
     const chatGroup = document.querySelector('[data-native-group="chat"]');
     expect(managementSection?.nextElementSibling).toBe(chatGroup);
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前角色");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform_admin");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前登录");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform-root");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("退出登录");
   });
 
   it("keeps a tenant login shortcut in the sidebar utility area", () => {
@@ -111,10 +118,12 @@ describe("zero-intrusive tenant entry", () => {
       token: "platform-token",
       session: {
         role: "platform_admin",
+        username: "platform-root",
       },
     });
     window.history.replaceState({}, "", "/chat?ocTenantView=platform-tenants");
     document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
       <nav class="sidebar-nav">
         <section class="nav-section" data-native-group="chat">
           <div class="nav-section__items">
@@ -136,5 +145,7 @@ describe("zero-intrusive tenant entry", () => {
 
     expect(window.location.pathname).toBe("/chat");
     expect(window.location.search).not.toContain("ocTenantView");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前角色");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("退出登录");
   });
 });

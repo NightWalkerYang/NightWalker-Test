@@ -902,6 +902,8 @@
   - 原生单入口登录视图的最小样式覆盖
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js`
   - 在原生 `index.html` 上接管平台/租户登录视图
+- `tools/openclaw-control-ui-echarts/runtime/tenant/topbar-meta.css`
+  - 平台管理员全局顶栏状态样式
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js`
   - 在原生控制台根入口执行平台管理员会话守卫
 - `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
@@ -1218,6 +1220,7 @@
    - `runtime/tenant/api-client.js`
    - `runtime/tenant/auth-surface.css`
    - `runtime/tenant/auth-surface.js`
+   - `runtime/tenant/topbar-meta.css`
    - `runtime/tenant/platform-access-guard.js`
    - `runtime/tenant/entry.js`
    - `runtime/tenant/platform-surface.css`
@@ -1293,8 +1296,18 @@
    - `./?ocTenantView=platform-tenants`
    - `./?ocTenantView=platform-agent-assignment`
    - 平台管理内容已经直接在原生控制台内容区渲染，不再把主入口跳转到旧的独立平台页
+   - 平台管理视图已拆成独立的“租户管理”和“Agent 分配”内容区
+   - 平台管理视图顶部概览卡片和统计块已移除，内容区只保留实际业务区域
 
-5. 平台管理员基础能力已落地
+5. 平台管理员全局顶栏状态已落地
+   - 原生顶栏搜索位已被平台管理员状态条接管
+   - 全局显示：
+     - 当前角色
+     - 当前登录
+     - 退出登录
+   - 不再只在“租户管理”和“Agent 分配”内局部显示
+
+6. 平台管理员基础能力已落地
    - 平台管理员初始化
    - 平台管理员登录
    - 平台管理员退出
@@ -1302,21 +1315,21 @@
    - 租户列表展示
    - 平台管理员向租户下发 Agent
 
-6. 租户管理员基础能力已落地
+7. 租户管理员基础能力已落地
    - 租户管理员登录
    - 租户成员创建
    - 租户管理员给成员分配已下发到本租户的 Agent
 
-7. 租户成员基础能力已落地
+8. 租户成员基础能力已落地
    - 成员端 Agent 选择页
    - 某个 Agent 对应的聊天入口页
 
-8. 租户 sidecar 与数据库底座已落地
+9. 租户 sidecar 与数据库底座已落地
    - SQLite 持久化已打通
    - 平台初始化、登录、租户创建、成员管理、Agent 下发等第一阶段基础接口已打通
    - 服务器侧 `openclaw-tenant-platform` 已并入部署链路
 
-9. 当前暂时保留但不再作为主路线的兼容页面
+10. 当前暂时保留但不再作为主路线的兼容页面
    - `platform-tenant-console.html`
    - `platform-login.html`
    - `tenant-login.html`

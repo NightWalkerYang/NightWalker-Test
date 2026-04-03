@@ -1,0 +1,21 @@
+.topbar-search[data-oc-platform-search-mode="meta"] {
+  min-width: auto;
+  width: auto;
+  cursor: default;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.topbar-search[data-oc-platform-search-mode="meta"]:hover {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.topbar-search[data-oc-platform-search-mode="meta"] .pill,
+.topbar-search[data-oc-platform-search-mode="meta"] .btn {
+  height: 38px;
+  box-sizing: border-box;
+}

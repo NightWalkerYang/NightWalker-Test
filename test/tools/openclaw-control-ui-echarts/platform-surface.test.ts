@@ -100,14 +100,12 @@ describe("platform surface", () => {
     expect(content?.getAttribute("data-oc-platform-surface-active")).toBe("true");
     expect(document.querySelector("[data-oc-platform-surface-root]")).not.toBeNull();
     expect(document.querySelector(".content-header")).toBeNull();
+    expect(document.querySelector("[data-platform-metrics]")).toBeNull();
+    expect(document.body.textContent).not.toContain("平台管理台");
     expect(document.querySelector("[data-platform-tenant-list]")?.textContent).toContain("租户 Alpha");
     expect(document.querySelector("[data-platform-tenant-form]")).not.toBeNull();
     expect(document.querySelector("[data-platform-agent-form]")).toBeNull();
     expect(document.querySelector("[data-platform-tenant-agents]")).toBeNull();
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前角色");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform_admin");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前登录");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform-root");
   });
 
   it("mounts a dedicated agent allocation view without the tenant creation form", async () => {
@@ -191,10 +189,11 @@ describe("platform surface", () => {
     await bootPlatformSurface();
 
     expect(document.querySelector(".content-header")).toBeNull();
+    expect(document.querySelector("[data-platform-metrics]")).toBeNull();
+    expect(document.body.textContent).not.toContain("平台管理台");
     expect(document.querySelector("[data-platform-agent-form]")).not.toBeNull();
     expect(document.querySelector("[data-platform-tenant-form]")).toBeNull();
     expect(document.querySelector("[data-platform-tenant-agents]")).not.toBeNull();
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform-root");
   });
 
   it("unmounts when native route leaves the management view", async () => {
@@ -246,6 +245,5 @@ describe("platform surface", () => {
 
     expect(document.querySelector("[data-oc-platform-surface-root]")).toBeNull();
     expect(document.querySelector(".content")?.getAttribute("data-oc-platform-surface-active")).toBeNull();
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("搜索");
   });
 });

@@ -14,8 +14,6 @@ const ROOT_ATTR = "data-oc-platform-surface-root";
 const STYLE_ATTR = "data-oc-platform-surface-style";
 const ACTIVE_ATTR = "data-oc-platform-surface-active";
 const SECTION_ATTR = "data-oc-platform-section";
-const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
-
 function isPlatformManagementView(view) {
   return view === PLATFORM_TENANTS_VIEW || view === PLATFORM_AGENT_ASSIGNMENT_VIEW;
 }
@@ -58,52 +56,10 @@ function ensureRoot(content) {
   return root;
 }
 
-function syncTopbarMeta(session) {
-  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
-  if (!(search instanceof HTMLElement)) {
-    return;
-  }
-  if (!search.hasAttribute("data-oc-platform-search-original")) {
-    search.setAttribute("data-oc-platform-search-original", search.innerHTML);
-  }
-  search.setAttribute("data-oc-platform-search-mode", "meta");
-  search.innerHTML = `
-    <span class="pill"><span>当前角色</span><span class="mono">${session.session.role}</span></span>
-    <span class="pill"><span>当前登录</span><span class="mono">${session.session.username}</span></span>
-  `;
-}
-
-function clearTopbarMeta() {
-  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
-  if (!(search instanceof HTMLElement)) {
-    return;
-  }
-  const original = search.getAttribute("data-oc-platform-search-original");
-  if (typeof original === "string") {
-    search.innerHTML = original;
-  }
-  search.removeAttribute("data-oc-platform-search-mode");
-  search.removeAttribute("data-oc-platform-search-original");
-}
-
 function renderShell(root, section) {
   root.setAttribute(SECTION_ATTR, section);
   root.dataset.ocPlatformEmbedded = "true";
   root.innerHTML = `
-    <section class="card">
-      <div class="oc-platform-surface-topbar">
-        <div>
-          <div class="card-title">平台管理台</div>
-          <div class="card-sub">平台管理员统一管理租户、成员上限与 Agent 资源编排。</div>
-        </div>
-        <div class="oc-platform-surface-meta">
-          <button class="btn btn--ghost" type="button" data-platform-logout>退出登录</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="stat-grid" data-platform-metrics></section>
-
     <div data-platform-section-body></div>
 
     <div class="callout info oc-platform-surface-feedback" data-tenant-feedback>平台租户页已就绪。</div>
@@ -115,7 +71,6 @@ async function mountCurrentSurface(content) {
     content.removeAttribute(ACTIVE_ATTR);
     content.querySelector(`[${ROOT_ATTR}]`)?.remove();
     document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
-    clearTopbarMeta();
     return null;
   }
 
@@ -125,7 +80,6 @@ async function mountCurrentSurface(content) {
   }
 
   ensureStyle();
-  syncTopbarMeta(session);
   content.setAttribute(ACTIVE_ATTR, "true");
   const root = ensureRoot(content);
   const view = readTenantView();

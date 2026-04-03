@@ -1,4 +1,5 @@
 import {
+  PLATFORM_LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
@@ -8,6 +9,7 @@ import {
   readTenantView,
   readTenantSession,
 } from "./tenant-context.js";
+import { createTenantApiClient } from "./api-client.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import {
   bootTenantRouteSync,
@@ -18,6 +20,11 @@ import {
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
+const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
+const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
+const TOPBAR_META_MODE_ATTR = "data-oc-platform-search-mode";
+const TOPBAR_META_ORIGINAL_ATTR = "data-oc-platform-search-original";
+const TOPBAR_LOGOUT_SELECTOR = "[data-oc-platform-logout]";
 
 const ICONS = {
   tenants: `
@@ -227,6 +234,75 @@ function ensureTenantUtilityLink(container) {
   );
 }
 
+function ensureTopbarMetaStyle() {
+  let link = document.head.querySelector(`[${TOPBAR_META_STYLE_ATTR}]`);
+  if (link instanceof HTMLLinkElement) {
+    return link;
+  }
+  link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = new URL("./topbar-meta.css", import.meta.url).href;
+  link.setAttribute(TOPBAR_META_STYLE_ATTR, "true");
+  document.head.append(link);
+  return link;
+}
+
+function syncPlatformTopbarMeta(session) {
+  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  if (!(search instanceof HTMLElement)) {
+    return;
+  }
+  ensureTopbarMetaStyle();
+  if (!search.hasAttribute(TOPBAR_META_ORIGINAL_ATTR)) {
+    search.setAttribute(TOPBAR_META_ORIGINAL_ATTR, search.innerHTML);
+  }
+  search.setAttribute(TOPBAR_META_MODE_ATTR, "meta");
+  search.innerHTML = `
+    <span class="pill"><span>当前角色</span><span class="mono">${session.session.role}</span></span>
+    <span class="pill"><span>当前登录</span><span class="mono">${session.session.username}</span></span>
+    <button class="btn btn--ghost" type="button" data-oc-platform-logout>退出登录</button>
+  `;
+}
+
+function clearPlatformTopbarMeta() {
+  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  if (!(search instanceof HTMLElement)) {
+    return;
+  }
+  const original = search.getAttribute(TOPBAR_META_ORIGINAL_ATTR);
+  if (typeof original === "string") {
+    search.innerHTML = original;
+  }
+  search.removeAttribute(TOPBAR_META_MODE_ATTR);
+  search.removeAttribute(TOPBAR_META_ORIGINAL_ATTR);
+}
+
+function ensureTopbarLogoutHandler() {
+  if (document.documentElement.dataset.ocPlatformLogoutHandler === "true") {
+    return;
+  }
+  document.documentElement.dataset.ocPlatformLogoutHandler = "true";
+  document.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    const button = target.closest(TOPBAR_LOGOUT_SELECTOR);
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+    event.preventDefault();
+    const apiClient = createTenantApiClient();
+    try {
+      await apiClient.logout();
+    } catch {
+      // Local session is cleared in the API client before the request, so redirect anyway.
+    }
+    clearPlatformTopbarMeta();
+    window.location.href = PLATFORM_LOGIN_ROUTE;
+  });
+}
+
 export function bootTenantEntry() {
   if (window.__openclawTenantEntryBooted) {
     return;
@@ -236,10 +312,16 @@ export function bootTenantEntry() {
   }
   window.__openclawTenantEntryBooted = true;
   bootTenantRouteSync();
+  ensureTopbarLogoutHandler();
 
   const scan = (root = document) => {
     const session = readTenantSession();
     const scope = root instanceof Element || root instanceof Document ? root : document;
+    if (session?.session?.role === "platform_admin") {
+      syncPlatformTopbarMeta(session);
+    } else {
+      clearPlatformTopbarMeta();
+    }
     if (session?.session?.role === "platform_admin") {
       if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
         ensureSidebarRouteHandlers(scope);

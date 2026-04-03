@@ -7,24 +7,6 @@
   gap: 20px;
 }
 
-.oc-platform-surface-root .content-header {
-  padding: 0;
-}
-
-.oc-platform-surface-topbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.oc-platform-surface-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
 .oc-platform-surface-grid {
   display: grid;
   gap: 20px;
@@ -68,26 +50,6 @@
 
 .oc-platform-surface-feedback {
   margin-top: 0;
-}
-
-.topbar-search[data-oc-platform-search-mode="meta"] {
-  min-width: auto;
-  cursor: default;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.topbar-search[data-oc-platform-search-mode="meta"]:hover {
-  border: 0;
-  background: transparent;
-  color: inherit;
-}
-
-.topbar-search[data-oc-platform-search-mode="meta"] .pill {
-  height: 38px;
-  box-sizing: border-box;
 }
 
 @media (max-width: 1200px) {
