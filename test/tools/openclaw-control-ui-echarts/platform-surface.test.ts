@@ -201,6 +201,86 @@ describe("platform surface", () => {
     expect(tableBody?.textContent).not.toContain("人数调整");
   });
 
+  it("keeps the management search input focused while filtering", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=platform-tenants");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/platform/tenants")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-1",
+                    code: "alpha",
+                    name: "租户 Alpha",
+                    deploymentMode: "cloud",
+                    memberCount: 2,
+                    walletBalance: 8,
+                    agentCount: 1,
+                    memberLimit: 10,
+                    licenseExpiresAt: null,
+                    status: "active",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/platform/catalog-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/platform/tenant-members") || url.includes("/platform/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootPlatformSurface();
+
+    const input = document.querySelector("[data-platform-search]");
+    expect(input instanceof HTMLInputElement).toBe(true);
+    input.focus();
+    input.value = "alp";
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const nextInput = document.querySelector("[data-platform-search]");
+    expect(nextInput instanceof HTMLInputElement).toBe(true);
+    expect(nextInput.value).toBe("alp");
+    expect(document.activeElement).toBe(nextInput);
+    expect(nextInput.selectionStart).toBe(3);
+    expect(nextInput.selectionEnd).toBe(3);
+  });
+
   it("unmounts when native route leaves the management view", async () => {
     writeTenantSession({
       token: "platform-token",

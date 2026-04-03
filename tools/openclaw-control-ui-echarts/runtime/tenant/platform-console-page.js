@@ -490,7 +490,45 @@ function renderRateDialog(controller) {
   `;
 }
 
+function captureRenderFocusState(root) {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement) || !root.contains(active)) {
+    return null;
+  }
+  if (active.hasAttribute("data-platform-search")) {
+    return {
+      kind: "search",
+      selectionStart: active.selectionStart,
+      selectionEnd: active.selectionEnd,
+    };
+  }
+  return null;
+}
+
+function restoreRenderFocusState(root, state) {
+  if (!state) {
+    return;
+  }
+  if (state.kind === "search") {
+    const input = root.querySelector("[data-platform-search]");
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      if (
+        typeof state.selectionStart === "number" &&
+        typeof state.selectionEnd === "number"
+      ) {
+        try {
+          input.setSelectionRange(state.selectionStart, state.selectionEnd);
+        } catch {
+          // Ignore unsupported selection restoration.
+        }
+      }
+    }
+  }
+}
+
 function render(root, controller) {
+  const focusState = captureRenderFocusState(root);
   const filtered = filterTenants(controller);
   const pagination = paginate(filtered, getPageValue(controller));
   setPageValue(controller, pagination.page);
@@ -528,6 +566,7 @@ function render(root, controller) {
   if (controller.dialogs.rateOpen) {
     openDialog(root.querySelector("[data-platform-rate-dialog]"));
   }
+  restoreRenderFocusState(root, focusState);
 }
 
 async function refresh(root, controller) {
