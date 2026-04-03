@@ -31,6 +31,18 @@ describe("file adapter workspace download urls", () => {
     );
   });
 
+  it("builds same-origin agent workspace download urls with encoded path segments", () => {
+    const url = buildWorkspaceDownloadUrl(
+      new URL("https://hailstone.cn:18789/"),
+      "subotech-finance/cache/api_cache_202601_1775178974.xlsx",
+      "agent-workspace",
+    );
+
+    expect(url).toBe(
+      "https://hailstone.cn:18789/workspace-agent-downloads/subotech-finance/cache/api_cache_202601_1775178974.xlsx",
+    );
+  });
+
   it("renders a single download action for url cards", async () => {
     const { host } = await renderCard("https://files.example.com/export/report.xlsx");
     const labels = [...host.querySelectorAll(".oc-file-card__button")].map((element) =>
@@ -47,6 +59,20 @@ describe("file adapter workspace download urls", () => {
     );
 
     expect(labels).toEqual(["下载"]);
+  });
+
+  it("renders a single download action for agent workspace path cards", async () => {
+    const { host } = await renderCard(
+      "/home/node/.openclaw/workspace-agents/subotech-finance/cache/company_summary_202601_1775178979.xlsx",
+    );
+    const labels = [...host.querySelectorAll(".oc-file-card__button")].map((element) =>
+      element.textContent?.trim(),
+    );
+
+    expect(labels).toEqual(["下载"]);
+    expect(host.querySelector(".oc-file-card__path")?.textContent).toBe(
+      "subotech-finance/cache/company_summary_202601_1775178979.xlsx",
+    );
   });
 });
 

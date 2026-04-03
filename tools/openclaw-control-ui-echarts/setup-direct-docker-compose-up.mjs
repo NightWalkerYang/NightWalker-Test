@@ -67,6 +67,7 @@ function buildOverrideContent(extraMounts) {
     "    volumes:",
     "      - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro",
     "      - ${OPENCLAW_WORKSPACE_DIR}:/app/dist/control-ui/workspace-downloads:ro",
+    "      - ${OPENCLAW_CONFIG_DIR}/workspace-agents:/app/dist/control-ui/workspace-agent-downloads:ro",
     "      - ./docs/reference/templates:/app/docs/reference/templates:ro",
   ];
 

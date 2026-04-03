@@ -10,6 +10,8 @@ export const FILE_LANGUAGE_ALIASES = new Set([
 const HTTP_URL_PATTERN = /^https?:\/\/\S+$/i;
 const FILE_URL_PATTERN = /^file:\/\//i;
 const ABSOLUTE_PATH_PATTERN = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
+const WORKSPACE_SEGMENT = "workspace";
+const AGENT_WORKSPACES_SEGMENT = "workspace-agents";
 
 function stripMatchingQuotes(value) {
   const text = String(value || "").trim();
@@ -197,15 +199,52 @@ function normalizeWorkspaceRelativePath(rawPath) {
   return nextSegments.join("/");
 }
 
-function toWorkspaceRelativePath(rawPath) {
+function toScopedRelativePath(rawPath) {
   const decoded = normalizePathSeparators(decodeFileUrlPath(rawPath));
   const segments = decoded.split("/").filter(Boolean);
-  const workspaceIndex = segments.lastIndexOf("workspace");
-  if (workspaceIndex === -1 || workspaceIndex === segments.length - 1) {
-    throw new Error("Absolute file paths must stay inside the workspace.");
+  const workspaceIndex = segments.lastIndexOf(WORKSPACE_SEGMENT);
+  if (workspaceIndex !== -1 && workspaceIndex < segments.length - 1) {
+    return {
+      scope: "workspace",
+      path: normalizeWorkspaceRelativePath(segments.slice(workspaceIndex + 1).join("/")),
+    };
   }
 
-  return normalizeWorkspaceRelativePath(segments.slice(workspaceIndex + 1).join("/"));
+  const agentWorkspaceIndex = segments.lastIndexOf(AGENT_WORKSPACES_SEGMENT);
+  if (agentWorkspaceIndex !== -1 && agentWorkspaceIndex < segments.length - 2) {
+    return {
+      scope: "agent-workspace",
+      path: normalizeWorkspaceRelativePath(segments.slice(agentWorkspaceIndex + 1).join("/")),
+    };
+  }
+
+  throw new Error("Absolute file paths must stay inside the workspace or agent workspace.");
+}
+
+function inferPathScope(rawValue) {
+  const normalized = normalizePathSeparators(stripMatchingQuotes(rawValue)).replace(/^\.\/+/, "");
+  if (!normalized) {
+    return {
+      scope: "workspace",
+      path: normalized,
+    };
+  }
+
+  const segments = normalized.split("/").filter(Boolean);
+  if (
+    segments[0] === AGENT_WORKSPACES_SEGMENT &&
+    segments.length >= 3
+  ) {
+    return {
+      scope: "agent-workspace",
+      path: normalizeWorkspaceRelativePath(segments.slice(1).join("/")),
+    };
+  }
+
+  return {
+    scope: "workspace",
+    path: normalizeWorkspaceRelativePath(normalized),
+  };
 }
 
 function inferNameFromUrl(url) {
@@ -265,22 +304,23 @@ function normalizeDescriptor(candidate, fields = {}) {
     throw new Error("File blocks must contain one URL or one workspace path.");
   }
 
-  const relativePath = looksLikeAbsolutePath(rawValue)
-    ? toWorkspaceRelativePath(rawValue)
-    : normalizeWorkspaceRelativePath(rawValue);
-  const inferredName = inferNameFromPath(relativePath);
+  const normalizedPath = looksLikeAbsolutePath(rawValue)
+    ? toScopedRelativePath(rawValue)
+    : inferPathScope(rawValue);
+  const inferredName = inferNameFromPath(normalizedPath.path);
   const name = firstNonEmpty(fields.name, inferredName);
   const extension = inferExtension(name) === "FILE" ? inferExtension(inferredName) : inferExtension(name);
 
   return {
     kind: "path",
-    path: relativePath,
+    scope: normalizedPath.scope,
+    path: normalizedPath.path,
     rawPath: rawValue,
     name,
     extension,
     description: firstNonEmpty(fields.description),
     sizeLabel: normalizeSizeLabel(fields.size),
-    sourceLabel: "workspace",
+    sourceLabel: normalizedPath.scope === "agent-workspace" ? "agent workspace" : "workspace",
     rawValue,
   };
 }
@@ -353,6 +393,7 @@ export function localizeErrorMessage(detail) {
     ["File path must point to a file inside the workspace.", "文件路径必须指向工作区内的具体文件。"],
     ["File path escapes the workspace root.", "文件路径超出了工作区范围。"],
     ["Absolute file paths must stay inside the workspace.", "绝对路径必须位于工作区目录内。"],
+    ["Absolute file paths must stay inside the workspace or agent workspace.", "绝对路径必须位于工作区或 Agent 工作区目录内。"],
   ]);
 
   if (exactMessages.has(message)) {

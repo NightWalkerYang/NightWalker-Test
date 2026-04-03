@@ -395,6 +395,37 @@ function matchingCloserFor(openChar) {
   return "";
 }
 
+function findNextSignificantTrimmedLine(lines, startIndex) {
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const trimmed = lines[index].trimStart();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
+function popInlineClosers(stack, currentIndent, lineIndex) {
+  let closers = "";
+
+  while (stack.length > 0) {
+    const top = stack[stack.length - 1];
+    if (top.kind === "(" || top.indent < currentIndent || top.lineIndex > lineIndex) {
+      break;
+    }
+
+    const closer = matchingCloserFor(top.kind);
+    if (!closer) {
+      break;
+    }
+
+    closers += closer;
+    stack.pop();
+  }
+
+  return closers;
+}
+
 function repairLikelyMissingClosers(source) {
   const lines = source.split("\n");
   const repairedLines = [];
@@ -498,6 +529,23 @@ function repairLikelyMissingClosers(source) {
         lastSignificantChar = char;
       }
       cursor += 1;
+    }
+
+    const nextTrimmed = findNextSignificantTrimmedLine(lines, lineIndex + 1);
+    const shouldCloseBeforeSibling =
+      /,\s*$/.test(repairedLine) && /^[{\[]/.test(nextTrimmed);
+    const shouldCloseBeforeContainerEnd = /^[\]}]/.test(nextTrimmed);
+
+    if (shouldCloseBeforeSibling || shouldCloseBeforeContainerEnd) {
+      const closers = popInlineClosers(stack, indent, lineIndex);
+      if (closers) {
+        if (shouldCloseBeforeSibling) {
+          repairedLine = repairedLine.replace(/,\s*$/, `${closers},`);
+        } else {
+          repairedLine += closers;
+        }
+        changed = true;
+      }
     }
 
     repairedLines.push(repairedLine);

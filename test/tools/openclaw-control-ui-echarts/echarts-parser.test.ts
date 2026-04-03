@@ -277,4 +277,36 @@ describe("zero-intrusive echarts parser", () => {
     expect(payload.option.xAxis.data).toEqual(["North", "South"]);
     expect(payload.option.series[0].data).toEqual([21, 34]);
   });
+
+  it("repairs data item objects that omit trailing braces before sibling items", () => {
+    const payload = parse(
+      fenced(
+        "echarts",
+        String.raw`{
+  "title": { "text": "主要公司资产负债率对比", "left": "center" },
+  "tooltip": { "trigger": "axis", "formatter": "{b}: {c}%" },
+  "xAxis": {
+    "type": "category",
+    "data": ["国控集团", "资源建投", "国投运营"]
+  },
+  "yAxis": { "type": "value", "name": "资产负债率(%)", "max": 200 },
+  "series": [{
+    "name": "资产负债率",
+    "data": [
+      {"value": 100.02, "itemStyle": {"color": "#e74c3c"},
+      {"value": 142.06, "itemStyle": {"color": "#e74c3c"},
+      {"value": 70.71, "itemStyle": {"color": "#f39c12"}
+    ],
+    "type": "bar"
+  }]
+}`,
+      ),
+    );
+
+    expect(payload.option.series[0].data).toEqual([
+      { value: 100.02, itemStyle: { color: "#e74c3c" } },
+      { value: 142.06, itemStyle: { color: "#e74c3c" } },
+      { value: 70.71, itemStyle: { color: "#f39c12" } },
+    ]);
+  });
 });

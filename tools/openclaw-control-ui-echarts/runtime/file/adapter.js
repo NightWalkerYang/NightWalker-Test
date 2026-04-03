@@ -11,12 +11,14 @@ function encodeRelativePathForUrl(pathValue) {
     .join("/");
 }
 
-export function buildWorkspaceDownloadUrl(controlUiRootUrl, pathValue) {
+export function buildWorkspaceDownloadUrl(controlUiRootUrl, pathValue, scope = "workspace") {
   const encodedPath = encodeRelativePathForUrl(pathValue);
   if (!encodedPath) {
     return "";
   }
-  return new URL(`workspace-downloads/${encodedPath}`, controlUiRootUrl).href;
+  const basePath =
+    scope === "agent-workspace" ? "workspace-agent-downloads" : "workspace-downloads";
+  return new URL(`${basePath}/${encodedPath}`, controlUiRootUrl).href;
 }
 
 function triggerUrlDownload(url, fileName) {
@@ -135,7 +137,11 @@ function buildCard(payload, uiText, options = {}) {
       }),
     );
   } else {
-    const downloadUrl = buildWorkspaceDownloadUrl(options.controlUiRootUrl, payload.path);
+    const downloadUrl = buildWorkspaceDownloadUrl(
+      options.controlUiRootUrl,
+      payload.path,
+      payload.scope,
+    );
     if (downloadUrl) {
       actions.append(
         createButton({

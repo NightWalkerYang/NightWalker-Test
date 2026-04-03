@@ -88,6 +88,33 @@ describe("zero-intrusive file parser", () => {
     });
   });
 
+  it("normalizes absolute agent workspace paths to agent-relative paths", () => {
+    const payload = parse(
+      "/home/node/.openclaw/workspace-agents/subotech-finance/cache/api_cache_202601_1775178974.xlsx",
+    );
+
+    expect(payload).toMatchObject({
+      kind: "path",
+      scope: "agent-workspace",
+      path: "subotech-finance/cache/api_cache_202601_1775178974.xlsx",
+      name: "api_cache_202601_1775178974.xlsx",
+      sourceLabel: "agent workspace",
+    });
+  });
+
+  it("accepts workspace-agents relative paths", () => {
+    const payload = parse(
+      "workspace-agents/subotech-finance/cache/company_summary_202601_1775178979.xlsx",
+    );
+
+    expect(payload).toMatchObject({
+      kind: "path",
+      scope: "agent-workspace",
+      path: "subotech-finance/cache/company_summary_202601_1775178979.xlsx",
+      name: "company_summary_202601_1775178979.xlsx",
+    });
+  });
+
   it("normalizes windows and file:// workspace paths to relative paths", () => {
     const windowsPayload = parse(
       String.raw`C:\Users\root-ai\.openclaw\workspace\exports\预算执行\年度汇总.xls`,
@@ -119,7 +146,7 @@ describe("zero-intrusive file parser", () => {
 
   it("rejects absolute paths outside the workspace", () => {
     expect(() => parse("/home/root-ai/downloads/top-secret.xlsx")).toThrow(
-      "Absolute file paths must stay inside the workspace.",
+      "Absolute file paths must stay inside the workspace or agent workspace.",
     );
   });
 
