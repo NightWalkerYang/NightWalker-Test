@@ -31,7 +31,10 @@ describe("zero-intrusive tenant entry", () => {
         <section class="nav-section" data-native-group="agent"></section>
         <section class="nav-section" data-native-group="settings"></section>
       </nav>
-      <div class="sidebar-utility-group"></div>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">文档</a>
+        <a class="sidebar-utility-link oc-knowledge-graph-link">知识图谱</a>
+      </div>
     `;
 
     bootTenantEntry();
@@ -58,6 +61,11 @@ describe("zero-intrusive tenant entry", () => {
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("当前登录");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("platform-root");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("退出登录");
+    expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(false);
+    const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
+    expect(utilityItems.map((item) => item.textContent?.trim())).toEqual(["文档", "知识图谱"]);
+    expect(utilityItems[0]?.hidden).toBe(false);
+    expect(utilityItems[1]?.hidden).toBe(true);
   });
 
   it("keeps a tenant login shortcut in the sidebar utility area", () => {
@@ -80,11 +88,16 @@ describe("zero-intrusive tenant entry", () => {
       },
     });
     document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
       <nav class="sidebar-nav">
         <section class="nav-section" data-native-group="chat"></section>
         <section class="nav-section" data-native-group="control"></section>
       </nav>
-      <div class="sidebar-utility-group"></div>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">文档</a>
+        <a class="sidebar-utility-link oc-knowledge-graph-link">知识图谱</a>
+        <a class="sidebar-utility-link oc-tenant-user-link">租户登录</a>
+      </div>
     `;
 
     bootTenantEntry();
@@ -97,7 +110,15 @@ describe("zero-intrusive tenant entry", () => {
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=tenant-members");
     expect(items[1]?.textContent).toContain("Agent 分配");
     expect(items[1]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-assignment");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")).toBeNull();
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant_admin");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant-admin");
+    expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
+    expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
+    const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
+    expect(utilityItems).toHaveLength(3);
+    expect(utilityItems[0]?.hidden).toBe(true);
+    expect(utilityItems[1]?.hidden).toBe(true);
+    expect(utilityItems[2]?.hidden).toBe(true);
   });
 
   it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {
@@ -131,7 +152,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(items).toHaveLength(2);
     expect(items[0]?.textContent).toContain("成员管理");
     expect(items[1]?.textContent).toContain("Agent 分配");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")).toBeNull();
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant_admin");
   });
 
   it("skips tenant sidebar injection on the public lufeng route", () => {

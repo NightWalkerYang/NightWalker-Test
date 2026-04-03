@@ -12,9 +12,7 @@ import {
   TENANT_MEMBER_MANAGEMENT_ROUTE,
   TENANT_MEMBERS_VIEW,
   clearTenantViewFromHref,
-  readPlatformSession,
   readSessionForCurrentView,
-  readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
 import { createTenantApiClient } from "./api-client.js";
@@ -302,6 +300,66 @@ function ensureTenantUtilityLink(container) {
   );
 }
 
+function normalizeText(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function syncSidebarNavForRole(container, role) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+  const shouldTenantHideNativeSections = role === "tenant_admin";
+  for (const section of container.querySelectorAll(":scope > .nav-section")) {
+    if (!(section instanceof HTMLElement)) {
+      continue;
+    }
+    if (section.classList.contains(MANAGEMENT_SECTION_CLASS)) {
+      section.hidden = false;
+      continue;
+    }
+    section.hidden = shouldTenantHideNativeSections;
+  }
+}
+
+function shouldHideUtilityItem(item, role) {
+  if (!(item instanceof HTMLElement)) {
+    return false;
+  }
+  if (!role) {
+    return false;
+  }
+  const text = normalizeText(item.textContent);
+  const isTenantLogin =
+    item.querySelector(".oc-tenant-user-link") instanceof Element ||
+    text.includes("租户登录");
+  const isKnowledgeGraph =
+    item.querySelector(".oc-knowledge-graph-link") instanceof Element ||
+    text.includes("知识图谱");
+  const isDocs = text.includes("文档");
+
+  if (isTenantLogin || isKnowledgeGraph) {
+    return role === "platform_admin" || role === "tenant_admin";
+  }
+  if (isDocs) {
+    return role === "tenant_admin";
+  }
+  return false;
+}
+
+function syncSidebarUtilityForRole(container, role) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+  for (const child of container.children) {
+    if (!(child instanceof HTMLElement)) {
+      continue;
+    }
+    child.hidden = shouldHideUtilityItem(child, role);
+  }
+}
+
 function ensureTopbarMetaStyle() {
   let link = document.head.querySelector(`[${TOPBAR_META_STYLE_ATTR}]`);
   if (link instanceof HTMLLinkElement) {
@@ -381,7 +439,7 @@ function ensureTopbarDialogs() {
           <button class="btn" type="button" data-oc-platform-dialog-close="logout">关闭</button>
         </header>
         <div class="oc-platform-topbar-dialog__body">
-          <p class="oc-platform-topbar-dialog__text">确认退出当前平台管理员登录状态吗？</p>
+          <p class="oc-platform-topbar-dialog__text">确认退出当前登录状态吗？</p>
         </div>
         <footer class="oc-platform-topbar-dialog__actions">
           <button class="btn" type="button" data-oc-platform-dialog-close="logout">取消</button>
@@ -492,7 +550,7 @@ function ensureTopbarLogoutHandler() {
     if (profileButton instanceof HTMLButtonElement) {
       event.preventDefault();
       event.stopPropagation();
-      const session = readPlatformSession();
+      const session = readSessionForCurrentView();
       renderProfileDialog(session);
       showDialog(document.querySelector(TOPBAR_PROFILE_DIALOG_SELECTOR));
       return;
@@ -512,15 +570,17 @@ function ensureTopbarLogoutHandler() {
     }
     event.preventDefault();
     event.stopPropagation();
+    const session = readSessionForCurrentView();
+    const isPlatformAdmin = session?.session?.role === "platform_admin";
     const apiClient = createTenantApiClient();
     try {
-      await apiClient.logout();
+      await apiClient.logout(isPlatformAdmin ? "platform" : "tenant");
     } catch {
       // Local session is cleared in the API client before the request, so redirect anyway.
     }
     closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
-    window.location.href = PLATFORM_LOGIN_ROUTE;
+    window.location.href = isPlatformAdmin ? PLATFORM_LOGIN_ROUTE : TENANT_LOGIN_ROUTE;
   });
 }
 
@@ -536,35 +596,43 @@ export function bootTenantEntry() {
   ensureTopbarLogoutHandler();
 
   const scan = (root = document) => {
-    const platformSession = readPlatformSession();
     const session = readSessionForCurrentView();
+    const role = String(session?.session?.role || "");
     const scope = root instanceof Element || root instanceof Document ? root : document;
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
-    } else if (session?.session?.role === "platform_admin" && platformSession?.session?.role === "platform_admin") {
-      syncPlatformTopbarMeta(platformSession);
+    } else if (role === "platform_admin" || role === "tenant_admin") {
+      syncPlatformTopbarMeta(session);
     } else {
       clearPlatformTopbarMeta();
     }
     if (
       !isTenantAuthViewActive() &&
-      (session?.session?.role === "platform_admin" || session?.session?.role === "tenant_admin")
+      (role === "platform_admin" || role === "tenant_admin")
     ) {
       if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
         ensureSidebarRouteHandlers(scope);
         ensureManagementSection(scope);
+        syncSidebarNavForRole(scope, role);
       }
       for (const container of scope.querySelectorAll(SIDEBAR_NAV_SELECTOR)) {
         ensureSidebarRouteHandlers(container);
         ensureManagementSection(container);
+        syncSidebarNavForRole(container, role);
       }
     }
 
     if (scope instanceof Element && scope.matches(SIDEBAR_UTILITY_SELECTOR)) {
-      ensureTenantUtilityLink(scope);
+      if (!role) {
+        ensureTenantUtilityLink(scope);
+      }
+      syncSidebarUtilityForRole(scope, role);
     }
     for (const container of scope.querySelectorAll(SIDEBAR_UTILITY_SELECTOR)) {
-      ensureTenantUtilityLink(container);
+      if (!role) {
+        ensureTenantUtilityLink(container);
+      }
+      syncSidebarUtilityForRole(container, role);
     }
   };
 
