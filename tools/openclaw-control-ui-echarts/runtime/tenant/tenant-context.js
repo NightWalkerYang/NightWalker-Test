@@ -1,4 +1,5 @@
-const SESSION_STORAGE_KEY = "openclaw:tenant-platform:session:v1";
+const PLATFORM_SESSION_STORAGE_KEY = "openclaw:tenant-platform:platform-session:v1";
+const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
 const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
 const TENANT_VIEW_QUERY_KEY = "ocTenantView";
 export const PLATFORM_LOGIN_VIEW = "platform-login";
@@ -21,21 +22,69 @@ function safeStorage() {
   }
 }
 
-export function readTenantSession() {
+function readStoredSession(key) {
   try {
-    const raw = safeStorage()?.getItem(SESSION_STORAGE_KEY);
+    const raw = safeStorage()?.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
+function writeStoredSession(key, session) {
+  safeStorage()?.setItem(key, JSON.stringify(session));
+}
+
+function clearStoredSession(key) {
+  safeStorage()?.removeItem(key);
+}
+
+export function readPlatformSession() {
+  return readStoredSession(PLATFORM_SESSION_STORAGE_KEY);
+}
+
+export function readTenantSession() {
+  return readStoredSession(TENANT_SESSION_STORAGE_KEY);
+}
+
+export function readSessionForCurrentView(pathname = window.location.pathname) {
+  const view = readTenantView();
+  if (
+    view === PLATFORM_LOGIN_VIEW ||
+    view === PLATFORM_TENANTS_VIEW ||
+    view === PLATFORM_AGENT_ASSIGNMENT_VIEW
+  ) {
+    return readPlatformSession();
+  }
+  if (view === TENANT_LOGIN_VIEW) {
+    return readTenantSession();
+  }
+  const normalizedPath = String(pathname || "/").trim() || "/";
+  if (
+    normalizedPath.endsWith("/tenant-admin.html") ||
+    normalizedPath.endsWith("/tenant-agent-selector.html") ||
+    normalizedPath.endsWith("/tenant-chat.html") ||
+    normalizedPath.endsWith("/tenant-wallet.html")
+  ) {
+    return readTenantSession();
+  }
+  return readPlatformSession() || readTenantSession();
+}
+
 export function writeTenantSession(session) {
-  safeStorage()?.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  if (session?.session?.role === "platform_admin") {
+    writeStoredSession(PLATFORM_SESSION_STORAGE_KEY, session);
+    return;
+  }
+  writeStoredSession(TENANT_SESSION_STORAGE_KEY, session);
 }
 
 export function clearTenantSession() {
-  safeStorage()?.removeItem(SESSION_STORAGE_KEY);
+  clearStoredSession(TENANT_SESSION_STORAGE_KEY);
+}
+
+export function clearPlatformSession() {
+  clearStoredSession(PLATFORM_SESSION_STORAGE_KEY);
 }
 
 export function readTenantApiBaseOverride() {
@@ -96,8 +145,12 @@ export function redirectToRoleHome(session) {
 }
 
 export function requireTenantSession(allowedRoles, options = {}) {
-  const session = readTenantSession();
-  const loginHref = options.loginHref || TENANT_LOGIN_ROUTE;
+  const expectPlatformOnly =
+    Array.isArray(allowedRoles) &&
+    allowedRoles.length === 1 &&
+    allowedRoles[0] === "platform_admin";
+  const session = expectPlatformOnly ? readPlatformSession() : readTenantSession();
+  const loginHref = options.loginHref || (expectPlatformOnly ? PLATFORM_LOGIN_ROUTE : TENANT_LOGIN_ROUTE);
   if (!session?.token || !session?.session?.role) {
     window.location.href = loginHref;
     return null;

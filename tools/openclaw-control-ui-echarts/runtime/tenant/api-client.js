@@ -1,5 +1,8 @@
 import {
+  clearPlatformSession,
   clearTenantSession,
+  readPlatformSession,
+  readSessionForCurrentView,
   readTenantSession,
   resolveTenantApiBaseUrl,
   writeTenantSession,
@@ -19,7 +22,7 @@ function withQuery(path, params = {}) {
 
 async function requestJson(path, options = {}) {
   const baseUrl = resolveTenantApiBaseUrl().replace(/\/$/, "");
-  const session = readTenantSession();
+  const session = options.session || readSessionForCurrentView();
   const headers = {
     "content-type": "application/json",
     ...(options.headers || {}),
@@ -62,9 +65,23 @@ export function createTenantApiClient() {
     me() {
       return requestJson("/me");
     },
-    logout() {
-      clearTenantSession();
-      return requestJson("/logout", { method: "POST" });
+    logout(scope = "current") {
+      const session =
+        scope === "platform"
+          ? readPlatformSession()
+          : scope === "tenant"
+            ? readTenantSession()
+            : readSessionForCurrentView();
+      if (scope === "platform") {
+        clearPlatformSession();
+      } else if (scope === "tenant") {
+        clearTenantSession();
+      } else if (session?.session?.role === "platform_admin") {
+        clearPlatformSession();
+      } else {
+        clearTenantSession();
+      }
+      return requestJson("/logout", { method: "POST", session });
     },
     listPlatformTenants() {
       return requestJson("/platform/tenants");

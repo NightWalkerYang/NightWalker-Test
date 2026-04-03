@@ -90,7 +90,7 @@ export async function bootTenantAgentSelectorPage() {
   }
 
   root.querySelector("[data-tenant-member-logout]")?.addEventListener("click", async () => {
-    await apiClient.logout();
+    await apiClient.logout("tenant");
     window.location.href = TENANT_LOGIN_ROUTE;
   });
   return { root };

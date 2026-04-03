@@ -149,7 +149,7 @@ export async function bootTenantAdminPage() {
   });
 
   root.querySelector("[data-tenant-admin-logout]")?.addEventListener("click", async () => {
-    await apiClient.logout();
+    await apiClient.logout("tenant");
     window.location.href = TENANT_LOGIN_ROUTE;
   });
 

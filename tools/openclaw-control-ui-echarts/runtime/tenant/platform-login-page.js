@@ -2,9 +2,9 @@ import { createTenantApiClient } from "./api-client.js";
 import { renderTenantAuthLayout } from "./auth-layout.js";
 import {
   TENANT_LOGIN_ROUTE,
+  readPlatformSession,
   clearTenantSession,
   redirectToRoleHome,
-  readTenantSession,
 } from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-platform-login-page]";
@@ -59,7 +59,7 @@ export async function mountPlatformLoginPage(root) {
   });
 
   const apiClient = createTenantApiClient();
-  const session = readTenantSession();
+  const session = readPlatformSession();
   if (session?.session?.role === "platform_admin") {
     redirectToRoleHome(session.session);
     return null;

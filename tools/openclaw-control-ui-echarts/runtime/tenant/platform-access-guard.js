@@ -2,7 +2,7 @@ import {
   PLATFORM_LOGIN_ROUTE,
   PLATFORM_LOGIN_VIEW,
   TENANT_LOGIN_VIEW,
-  readTenantSession,
+  readPlatformSession,
   readTenantView,
 } from "./tenant-context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
@@ -18,7 +18,7 @@ export function isNativeControlUiPath(pathname = window.location.pathname) {
 export function resolvePlatformAccessDecision({
   pathname = window.location.pathname,
   href = window.location.href,
-  session = readTenantSession(),
+  session = readPlatformSession(),
 } = {}) {
   const view = readTenantView(href);
   if (view === PLATFORM_LOGIN_VIEW || view === TENANT_LOGIN_VIEW) {

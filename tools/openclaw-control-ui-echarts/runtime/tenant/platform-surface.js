@@ -2,7 +2,7 @@ import { mountPlatformConsolePage } from "./platform-console-page.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_TENANTS_VIEW,
-  readTenantSession,
+  readPlatformSession,
   readTenantView,
 } from "./tenant-context.js";
 import {
@@ -74,7 +74,7 @@ async function mountCurrentSurface(content) {
     return null;
   }
 
-  const session = readTenantSession();
+  const session = readPlatformSession();
   if (session?.session?.role !== "platform_admin") {
     return null;
   }

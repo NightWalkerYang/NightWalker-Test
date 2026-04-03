@@ -8,8 +8,8 @@ import {
   TENANT_LOGIN_VIEW,
   TENANT_LOGIN_ROUTE,
   clearTenantViewFromHref,
+  readPlatformSession,
   readTenantView,
-  readTenantSession,
 } from "./tenant-context.js";
 import { createTenantApiClient } from "./api-client.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
@@ -440,7 +440,7 @@ function ensureTopbarLogoutHandler() {
     if (profileButton instanceof HTMLButtonElement) {
       event.preventDefault();
       event.stopPropagation();
-      const session = readTenantSession();
+      const session = readPlatformSession();
       renderProfileDialog(session);
       showDialog(document.querySelector(TOPBAR_PROFILE_DIALOG_SELECTOR));
       return;
@@ -484,7 +484,7 @@ export function bootTenantEntry() {
   ensureTopbarLogoutHandler();
 
   const scan = (root = document) => {
-    const session = readTenantSession();
+    const session = readPlatformSession();
     const scope = root instanceof Element || root instanceof Document ? root : document;
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
