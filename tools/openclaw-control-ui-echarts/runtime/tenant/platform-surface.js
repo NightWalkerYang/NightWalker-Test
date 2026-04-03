@@ -1,15 +1,12 @@
 import { mountPlatformConsolePage } from "./platform-console-page.js";
 import {
-  PLATFORM_AGENT_ASSIGNMENT_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
-  PLATFORM_TENANT_MANAGEMENT_ROUTE,
   PLATFORM_TENANTS_VIEW,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
 import {
   bootTenantRouteSync,
-  navigateTenantRoute,
   onTenantRouteChange,
 } from "./route-sync.js";
 
@@ -17,6 +14,7 @@ const ROOT_ATTR = "data-oc-platform-surface-root";
 const STYLE_ATTR = "data-oc-platform-surface-style";
 const ACTIVE_ATTR = "data-oc-platform-surface-active";
 const SECTION_ATTR = "data-oc-platform-section";
+const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 
 function isPlatformManagementView(view) {
   return view === PLATFORM_TENANTS_VIEW || view === PLATFORM_AGENT_ASSIGNMENT_VIEW;
@@ -31,24 +29,8 @@ function isPlatformManagementRoute() {
   return isRootControlPath(window.location.pathname) && isPlatformManagementView(readTenantView());
 }
 
-function currentSectionHref(section) {
-  return section === "agent-allocation"
-    ? PLATFORM_AGENT_ASSIGNMENT_ROUTE
-    : PLATFORM_TENANT_MANAGEMENT_ROUTE;
-}
-
 function sectionForView(view) {
   return view === PLATFORM_AGENT_ASSIGNMENT_VIEW ? "agent-allocation" : "tenants";
-}
-
-function titleForSection(section) {
-  return section === "agent-allocation" ? "Agent 分配" : "租户管理";
-}
-
-function subtitleForSection(section) {
-  return section === "agent-allocation"
-    ? "平台管理员将现有 OpenClaw Agent 下发到目标租户，并配置租户侧描述、倍率和预算。"
-    : "平台管理员在这里创建租户、查看租户状态，并管理平台级成员与资源边界。";
 }
 
 function ensureStyle() {
@@ -76,58 +58,38 @@ function ensureRoot(content) {
   return root;
 }
 
-function updateSectionLinks(root, section) {
-  const sectionLinks = root.querySelectorAll("[href]");
-  for (const link of sectionLinks) {
-    if (!(link instanceof HTMLAnchorElement)) {
-      continue;
-    }
-    const href = link.getAttribute("href") || "";
-    if (href === currentSectionHref("tenants")) {
-      link.classList.toggle("active", section === "tenants");
-    }
-    if (href === currentSectionHref("agent-allocation")) {
-      link.classList.toggle("active", section === "agent-allocation");
-    }
-  }
-}
-
-function ensureRootHandlers(root) {
-  if (!(root instanceof HTMLElement) || root.dataset.ocPlatformRootHandlers === "true") {
+function syncTopbarMeta(session) {
+  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  if (!(search instanceof HTMLElement)) {
     return;
   }
-  root.dataset.ocPlatformRootHandlers = "true";
-  root.addEventListener("click", (event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) {
-      return;
-    }
-    const link = target.closest(
-      'a[href^="./?ocTenantView="], a[href^="/?ocTenantView="], a[href*="?ocTenantView="]',
-    );
-    if (!(link instanceof HTMLAnchorElement)) {
-      return;
-    }
-    event.preventDefault();
-    navigateTenantRoute(link.href);
-  });
+  if (!search.hasAttribute("data-oc-platform-search-original")) {
+    search.setAttribute("data-oc-platform-search-original", search.innerHTML);
+  }
+  search.setAttribute("data-oc-platform-search-mode", "meta");
+  search.innerHTML = `
+    <span class="pill"><span>当前角色</span><span class="mono">${session.session.role}</span></span>
+    <span class="pill"><span>当前登录</span><span class="mono">${session.session.username}</span></span>
+  `;
+}
+
+function clearTopbarMeta() {
+  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  if (!(search instanceof HTMLElement)) {
+    return;
+  }
+  const original = search.getAttribute("data-oc-platform-search-original");
+  if (typeof original === "string") {
+    search.innerHTML = original;
+  }
+  search.removeAttribute("data-oc-platform-search-mode");
+  search.removeAttribute("data-oc-platform-search-original");
 }
 
 function renderShell(root, section) {
   root.setAttribute(SECTION_ATTR, section);
   root.dataset.ocPlatformEmbedded = "true";
   root.innerHTML = `
-    <header class="content-header">
-      <div>
-        <h1 class="page-title">${titleForSection(section)}</h1>
-        <p class="page-sub">${subtitleForSection(section)}</p>
-      </div>
-      <div class="page-meta">
-        <a class="btn btn--ghost" href="${PLATFORM_TENANT_MANAGEMENT_ROUTE}">租户管理</a>
-        <a class="btn btn--ghost" href="${PLATFORM_AGENT_ASSIGNMENT_ROUTE}">Agent 分配</a>
-      </div>
-    </header>
-
     <section class="card">
       <div class="oc-platform-surface-topbar">
         <div>
@@ -135,8 +97,6 @@ function renderShell(root, section) {
           <div class="card-sub">平台管理员统一管理租户、成员上限与 Agent 资源编排。</div>
         </div>
         <div class="oc-platform-surface-meta">
-          <span class="pill"><span>当前角色</span><span class="mono">platform_admin</span></span>
-          <span class="pill"><span>当前登录</span><span class="mono" data-platform-username>platform-admin</span></span>
           <button class="btn btn--ghost" type="button" data-platform-logout>退出登录</button>
         </div>
       </div>
@@ -155,6 +115,7 @@ async function mountCurrentSurface(content) {
     content.removeAttribute(ACTIVE_ATTR);
     content.querySelector(`[${ROOT_ATTR}]`)?.remove();
     document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+    clearTopbarMeta();
     return null;
   }
 
@@ -164,6 +125,7 @@ async function mountCurrentSurface(content) {
   }
 
   ensureStyle();
+  syncTopbarMeta(session);
   content.setAttribute(ACTIVE_ATTR, "true");
   const root = ensureRoot(content);
   const view = readTenantView();
@@ -171,8 +133,6 @@ async function mountCurrentSurface(content) {
   if (root.getAttribute(SECTION_ATTR) !== section) {
     renderShell(root, section);
   }
-  ensureRootHandlers(root);
-  updateSectionLinks(root, section);
   await mountPlatformConsolePage(root, {
     embedded: true,
     section,

@@ -26,6 +26,7 @@ describe("platform surface", () => {
     });
     window.history.replaceState({}, "", "/?ocTenantView=platform-tenants");
     document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
       <div class="content">
         <div class="native-placeholder">native content</div>
       </div>
@@ -98,11 +99,15 @@ describe("platform surface", () => {
     const content = document.querySelector(".content");
     expect(content?.getAttribute("data-oc-platform-surface-active")).toBe("true");
     expect(document.querySelector("[data-oc-platform-surface-root]")).not.toBeNull();
-    expect(document.querySelector(".page-title")?.textContent).toContain("租户管理");
+    expect(document.querySelector(".content-header")).toBeNull();
     expect(document.querySelector("[data-platform-tenant-list]")?.textContent).toContain("租户 Alpha");
     expect(document.querySelector("[data-platform-tenant-form]")).not.toBeNull();
     expect(document.querySelector("[data-platform-agent-form]")).toBeNull();
     expect(document.querySelector("[data-platform-tenant-agents]")).toBeNull();
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前角色");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform_admin");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前登录");
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform-root");
   });
 
   it("mounts a dedicated agent allocation view without the tenant creation form", async () => {
@@ -115,6 +120,7 @@ describe("platform surface", () => {
     });
     window.history.replaceState({}, "", "/?ocTenantView=platform-agent-assignment");
     document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
       <div class="content">
         <div class="native-placeholder">native content</div>
       </div>
@@ -184,10 +190,11 @@ describe("platform surface", () => {
 
     await bootPlatformSurface();
 
-    expect(document.querySelector(".page-title")?.textContent).toContain("Agent 分配");
+    expect(document.querySelector(".content-header")).toBeNull();
     expect(document.querySelector("[data-platform-agent-form]")).not.toBeNull();
     expect(document.querySelector("[data-platform-tenant-form]")).toBeNull();
     expect(document.querySelector("[data-platform-tenant-agents]")).not.toBeNull();
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform-root");
   });
 
   it("unmounts when native route leaves the management view", async () => {
@@ -199,7 +206,7 @@ describe("platform surface", () => {
       },
     });
     window.history.replaceState({}, "", "/?ocTenantView=platform-tenants");
-    document.body.innerHTML = `<div class="content"><div class="native-placeholder">native content</div></div>`;
+    document.body.innerHTML = `<button class="topbar-search"><span class="topbar-search__label">搜索</span></button><div class="content"><div class="native-placeholder">native content</div></div>`;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input) => {
@@ -239,5 +246,6 @@ describe("platform surface", () => {
 
     expect(document.querySelector("[data-oc-platform-surface-root]")).toBeNull();
     expect(document.querySelector(".content")?.getAttribute("data-oc-platform-surface-active")).toBeNull();
+    expect(document.querySelector(".topbar-search")?.textContent).toContain("搜索");
   });
 });

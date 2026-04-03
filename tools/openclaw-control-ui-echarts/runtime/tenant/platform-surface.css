@@ -70,6 +70,26 @@
   margin-top: 0;
 }
 
+.topbar-search[data-oc-platform-search-mode="meta"] {
+  min-width: auto;
+  cursor: default;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.topbar-search[data-oc-platform-search-mode="meta"]:hover {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.topbar-search[data-oc-platform-search-mode="meta"] .pill {
+  height: 38px;
+  box-sizing: border-box;
+}
+
 @media (max-width: 1200px) {
   .oc-platform-surface-grid,
   .oc-platform-surface-grid--detail {
