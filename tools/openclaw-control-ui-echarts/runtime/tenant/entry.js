@@ -26,7 +26,14 @@ const TOPBAR_META_MODE_ATTR = "data-oc-platform-search-mode";
 const TOPBAR_META_ORIGINAL_ATTR = "data-oc-platform-search-original";
 const TOPBAR_META_ROLE_ATTR = "data-oc-platform-role";
 const TOPBAR_META_USER_ATTR = "data-oc-platform-user";
+const TOPBAR_HIDDEN_ATTR = "data-oc-platform-search-hidden";
+const TOPBAR_META_ROOT_SELECTOR = "[data-oc-platform-topbar-meta]";
+const TOPBAR_PROFILE_SELECTOR = "[data-oc-platform-profile]";
 const TOPBAR_LOGOUT_SELECTOR = "[data-oc-platform-logout]";
+const TOPBAR_PROFILE_DIALOG_SELECTOR = "[data-oc-platform-profile-dialog]";
+const TOPBAR_LOGOUT_DIALOG_SELECTOR = "[data-oc-platform-logout-dialog]";
+const TOPBAR_DIALOG_CLOSE_SELECTOR = "[data-oc-platform-dialog-close]";
+const TOPBAR_DIALOG_CONFIRM_LOGOUT_SELECTOR = "[data-oc-platform-confirm-logout]";
 
 const ICONS = {
   tenants: `
@@ -249,32 +256,136 @@ function ensureTopbarMetaStyle() {
   return link;
 }
 
+function showDialog(dialog) {
+  if (!(dialog instanceof HTMLDialogElement)) {
+    return;
+  }
+  if (typeof dialog.showModal === "function") {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    return;
+  }
+  dialog.setAttribute("open", "");
+}
+
+function closeDialog(dialog) {
+  if (!(dialog instanceof HTMLDialogElement)) {
+    return;
+  }
+  if (typeof dialog.close === "function") {
+    if (dialog.open) {
+      dialog.close();
+      return;
+    }
+  }
+  dialog.removeAttribute("open");
+}
+
+function ensureTopbarMetaRoot(search) {
+  const parent = search.parentElement;
+  if (!(parent instanceof HTMLElement)) {
+    return null;
+  }
+  let root = parent.querySelector(TOPBAR_META_ROOT_SELECTOR);
+  if (root instanceof HTMLElement) {
+    return root;
+  }
+  root = document.createElement("div");
+  root.className = "oc-platform-topbar-meta";
+  root.setAttribute("data-oc-platform-topbar-meta", "true");
+  search.insertAdjacentElement("afterend", root);
+  return root;
+}
+
+function ensureTopbarDialogs() {
+  let root = document.body.querySelector("[data-oc-platform-dialog-root]");
+  if (root instanceof HTMLElement) {
+    return root;
+  }
+  root = document.createElement("div");
+  root.setAttribute("data-oc-platform-dialog-root", "true");
+  root.innerHTML = `
+    <dialog class="oc-platform-topbar-dialog" data-oc-platform-profile-dialog>
+      <div class="oc-platform-topbar-dialog__panel">
+        <header class="oc-platform-topbar-dialog__header">
+          <h3 class="oc-platform-topbar-dialog__title">当前登录</h3>
+          <button class="btn" type="button" data-oc-platform-dialog-close="profile">关闭</button>
+        </header>
+        <div class="oc-platform-topbar-dialog__body" data-oc-platform-profile-content></div>
+      </div>
+    </dialog>
+    <dialog class="oc-platform-topbar-dialog" data-oc-platform-logout-dialog>
+      <div class="oc-platform-topbar-dialog__panel">
+        <header class="oc-platform-topbar-dialog__header">
+          <h3 class="oc-platform-topbar-dialog__title">确认退出</h3>
+          <button class="btn" type="button" data-oc-platform-dialog-close="logout">关闭</button>
+        </header>
+        <div class="oc-platform-topbar-dialog__body">
+          <p class="oc-platform-topbar-dialog__text">确认退出当前平台管理员登录状态吗？</p>
+        </div>
+        <footer class="oc-platform-topbar-dialog__actions">
+          <button class="btn" type="button" data-oc-platform-dialog-close="logout">取消</button>
+          <button class="btn primary" type="button" data-oc-platform-confirm-logout>确认退出</button>
+        </footer>
+      </div>
+    </dialog>
+  `;
+  document.body.append(root);
+  return root;
+}
+
+function renderProfileDialog(session) {
+  const content = document.body.querySelector("[data-oc-platform-profile-content]");
+  if (!(content instanceof HTMLElement)) {
+    return;
+  }
+  const role = String(session?.session?.role || "").trim();
+  const username = String(session?.session?.username || "").trim();
+  content.innerHTML = `
+    <dl class="oc-platform-topbar-dialog__meta">
+      <div>
+        <dt>当前角色</dt>
+        <dd>${role}</dd>
+      </div>
+      <div>
+        <dt>当前登录</dt>
+        <dd>${username}</dd>
+      </div>
+    </dl>
+  `;
+}
+
 function syncPlatformTopbarMeta(session) {
   const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
   if (!(search instanceof HTMLElement)) {
     return;
   }
   ensureTopbarMetaStyle();
-  if (!search.hasAttribute(TOPBAR_META_ORIGINAL_ATTR)) {
-    search.setAttribute(TOPBAR_META_ORIGINAL_ATTR, search.innerHTML);
+  ensureTopbarDialogs();
+  const root = ensureTopbarMetaRoot(search);
+  if (!(root instanceof HTMLElement)) {
+    return;
   }
   const role = String(session?.session?.role || "").trim();
   const username = String(session?.session?.username || "").trim();
   if (
-    search.getAttribute(TOPBAR_META_MODE_ATTR) === "meta" &&
-    search.getAttribute(TOPBAR_META_ROLE_ATTR) === role &&
-    search.getAttribute(TOPBAR_META_USER_ATTR) === username
+    root.getAttribute(TOPBAR_META_MODE_ATTR) === "meta" &&
+    root.getAttribute(TOPBAR_META_ROLE_ATTR) === role &&
+    root.getAttribute(TOPBAR_META_USER_ATTR) === username
   ) {
     return;
   }
-  search.setAttribute(TOPBAR_META_MODE_ATTR, "meta");
-  search.setAttribute(TOPBAR_META_ROLE_ATTR, role);
-  search.setAttribute(TOPBAR_META_USER_ATTR, username);
-  search.innerHTML = `
+  search.setAttribute(TOPBAR_HIDDEN_ATTR, "true");
+  root.setAttribute(TOPBAR_META_MODE_ATTR, "meta");
+  root.setAttribute(TOPBAR_META_ROLE_ATTR, role);
+  root.setAttribute(TOPBAR_META_USER_ATTR, username);
+  root.innerHTML = `
     <span class="pill"><span>当前角色</span><span class="mono">${role}</span></span>
-    <span class="pill"><span>当前登录</span><span class="mono">${username}</span></span>
-    <span class="btn btn--ghost" data-oc-platform-logout>退出登录</span>
+    <button class="btn btn--ghost" type="button" data-oc-platform-profile>当前登录<span class="mono">${username}</span></button>
+    <button class="btn btn--ghost" type="button" data-oc-platform-logout>退出登录</button>
   `;
+  renderProfileDialog(session);
 }
 
 function clearPlatformTopbarMeta() {
@@ -282,14 +393,16 @@ function clearPlatformTopbarMeta() {
   if (!(search instanceof HTMLElement)) {
     return;
   }
-  const original = search.getAttribute(TOPBAR_META_ORIGINAL_ATTR);
-  if (typeof original === "string") {
-    search.innerHTML = original;
+  search.removeAttribute(TOPBAR_HIDDEN_ATTR);
+  const root = document.querySelector(TOPBAR_META_ROOT_SELECTOR);
+  if (root instanceof HTMLElement) {
+    root.remove();
   }
-  search.removeAttribute(TOPBAR_META_MODE_ATTR);
-  search.removeAttribute(TOPBAR_META_ORIGINAL_ATTR);
-  search.removeAttribute(TOPBAR_META_ROLE_ATTR);
-  search.removeAttribute(TOPBAR_META_USER_ATTR);
+  for (const dialog of document.querySelectorAll(
+    `${TOPBAR_PROFILE_DIALOG_SELECTOR}, ${TOPBAR_LOGOUT_DIALOG_SELECTOR}`,
+  )) {
+    closeDialog(dialog);
+  }
 }
 
 function ensureTopbarLogoutHandler() {
@@ -302,17 +415,51 @@ function ensureTopbarLogoutHandler() {
     if (!(target instanceof Element)) {
       return;
     }
-    const button = target.closest(TOPBAR_LOGOUT_SELECTOR);
-    if (!(button instanceof HTMLButtonElement)) {
+    const closeButton = target.closest(TOPBAR_DIALOG_CLOSE_SELECTOR);
+    if (closeButton instanceof HTMLButtonElement) {
+      event.preventDefault();
+      event.stopPropagation();
+      const dialogType = closeButton.dataset.ocPlatformDialogClose || "";
+      if (dialogType === "profile") {
+        closeDialog(document.querySelector(TOPBAR_PROFILE_DIALOG_SELECTOR));
+      }
+      if (dialogType === "logout") {
+        closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
+      }
+      return;
+    }
+
+    const profileButton = target.closest(TOPBAR_PROFILE_SELECTOR);
+    if (profileButton instanceof HTMLButtonElement) {
+      event.preventDefault();
+      event.stopPropagation();
+      const session = readTenantSession();
+      renderProfileDialog(session);
+      showDialog(document.querySelector(TOPBAR_PROFILE_DIALOG_SELECTOR));
+      return;
+    }
+
+    const logoutButton = target.closest(TOPBAR_LOGOUT_SELECTOR);
+    if (logoutButton instanceof HTMLButtonElement) {
+      event.preventDefault();
+      event.stopPropagation();
+      showDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
+      return;
+    }
+
+    const confirmButton = target.closest(TOPBAR_DIALOG_CONFIRM_LOGOUT_SELECTOR);
+    if (!(confirmButton instanceof HTMLButtonElement)) {
       return;
     }
     event.preventDefault();
+    event.stopPropagation();
     const apiClient = createTenantApiClient();
     try {
       await apiClient.logout();
     } catch {
       // Local session is cleared in the API client before the request, so redirect anyway.
     }
+    closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
     window.location.href = PLATFORM_LOGIN_ROUTE;
   });

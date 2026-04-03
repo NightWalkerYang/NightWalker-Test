@@ -1,21 +1,105 @@
-.topbar-search[data-oc-platform-search-mode="meta"] {
-  min-width: auto;
-  width: auto;
-  cursor: default;
+.topbar-search[data-oc-platform-search-hidden="true"] {
+  display: none !important;
+}
+
+.oc-platform-topbar-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  margin-left: auto;
 }
 
-.topbar-search[data-oc-platform-search-mode="meta"]:hover {
-  border: 0;
-  background: transparent;
-  color: inherit;
-}
-
-.topbar-search[data-oc-platform-search-mode="meta"] .pill,
-.topbar-search[data-oc-platform-search-mode="meta"] .btn {
+.oc-platform-topbar-meta .pill,
+.oc-platform-topbar-meta .btn {
   height: 38px;
   box-sizing: border-box;
+}
+
+.oc-platform-topbar-meta .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oc-platform-topbar-dialog {
+  border: none;
+  padding: 0;
+  background: transparent;
+  width: min(92vw, 420px);
+  max-width: 420px;
+}
+
+.oc-platform-topbar-dialog::backdrop {
+  background: color-mix(in srgb, var(--overlay) 72%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.oc-platform-topbar-dialog__panel {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.oc-platform-topbar-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oc-platform-topbar-dialog__title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.oc-platform-topbar-dialog__body {
+  display: grid;
+  gap: 12px;
+}
+
+.oc-platform-topbar-dialog__text {
+  margin: 0;
+  color: var(--muted);
+}
+
+.oc-platform-topbar-dialog__meta {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.oc-platform-topbar-dialog__meta div {
+  display: grid;
+  gap: 4px;
+}
+
+.oc-platform-topbar-dialog__meta dt {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.oc-platform-topbar-dialog__meta dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.oc-platform-topbar-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .oc-platform-topbar-meta {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
 }

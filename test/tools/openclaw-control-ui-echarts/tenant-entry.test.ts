@@ -52,11 +52,12 @@ describe("zero-intrusive tenant entry", () => {
 
     const chatGroup = document.querySelector('[data-native-group="chat"]');
     expect(managementSection?.nextElementSibling).toBe(chatGroup);
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前角色");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform_admin");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前登录");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("platform-root");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("退出登录");
+    expect(document.querySelector(".topbar-search")?.getAttribute("data-oc-platform-search-hidden")).toBe("true");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("当前角色");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("platform_admin");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("当前登录");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("platform-root");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("退出登录");
   });
 
   it("keeps a tenant login shortcut in the sidebar utility area", () => {
@@ -145,7 +146,69 @@ describe("zero-intrusive tenant entry", () => {
 
     expect(window.location.pathname).toBe("/chat");
     expect(window.location.search).not.toContain("ocTenantView");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("当前角色");
-    expect(document.querySelector(".topbar-search")?.textContent).toContain("退出登录");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("当前角色");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("退出登录");
+  });
+
+  it("opens the platform profile dialog from the global topbar meta", () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+    `;
+
+    bootTenantEntry();
+
+    const profileButton = document.querySelector("[data-oc-platform-profile]");
+    expect(profileButton).not.toBeNull();
+    profileButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    const dialog = document.querySelector("[data-oc-platform-profile-dialog]");
+    expect(dialog?.hasAttribute("open") || dialog?.open).toBe(true);
+    expect(dialog?.textContent).toContain("platform-root");
+  });
+
+  it("opens the logout confirmation dialog from the global topbar meta", () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+    `;
+
+    bootTenantEntry();
+
+    const logoutButton = document.querySelector("[data-oc-platform-logout]");
+    expect(logoutButton).not.toBeNull();
+    logoutButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    const dialog = document.querySelector("[data-oc-platform-logout-dialog]");
+    expect(dialog?.hasAttribute("open") || dialog?.open).toBe(true);
+    expect(dialog?.textContent).toContain("确认退出");
   });
 });
