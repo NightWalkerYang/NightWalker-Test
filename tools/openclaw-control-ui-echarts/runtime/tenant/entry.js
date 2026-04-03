@@ -636,6 +636,18 @@ export function bootTenantEntry() {
     }
   };
 
+  let scheduled = false;
+  const scheduleScan = (root = document) => {
+    if (scheduled) {
+      return;
+    }
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      scan(root);
+    });
+  };
+
   scan(document);
   onTenantRouteChange(() => {
     scan(document);
@@ -645,15 +657,16 @@ export function bootTenantEntry() {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node instanceof Element) {
-          if (
-            node.matches?.(SIDEBAR_NAV_SELECTOR) ||
-            node.matches?.(SIDEBAR_UTILITY_SELECTOR) ||
-            node.matches?.(TOPBAR_SEARCH_SELECTOR) ||
+          const relevantRoot =
+            node.closest?.(SIDEBAR_NAV_SELECTOR) ||
+            node.closest?.(SIDEBAR_UTILITY_SELECTOR) ||
+            node.closest?.(TOPBAR_SEARCH_SELECTOR) ||
             node.querySelector?.(SIDEBAR_NAV_SELECTOR) ||
             node.querySelector?.(SIDEBAR_UTILITY_SELECTOR) ||
-            node.querySelector?.(TOPBAR_SEARCH_SELECTOR)
-          ) {
-            scan(node);
+            node.querySelector?.(TOPBAR_SEARCH_SELECTOR);
+          if (relevantRoot instanceof Element) {
+            scheduleScan(document);
+            return;
           }
         }
       }

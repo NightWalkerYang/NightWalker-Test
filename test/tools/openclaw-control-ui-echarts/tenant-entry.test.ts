@@ -295,4 +295,73 @@ describe("zero-intrusive tenant entry", () => {
     expect(dialog?.hasAttribute("open") || dialog?.open).toBe(true);
     expect(dialog?.textContent).toContain("确认退出");
   });
+
+  it("applies tenant-admin sidebar trimming to utility links added after boot", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group"></div>
+    `;
+
+    bootTenantEntry();
+
+    const utility = document.querySelector(".sidebar-utility-group");
+    utility?.insertAdjacentHTML(
+      "beforeend",
+      `
+        <a class="sidebar-utility-link">文档</a>
+        <a class="sidebar-utility-link oc-knowledge-graph-link">知识图谱</a>
+        <a class="sidebar-utility-link oc-tenant-user-link">租户登录</a>
+      `,
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
+    expect(utilityItems).toHaveLength(3);
+    expect(utilityItems.every((item) => item instanceof HTMLElement && item.hidden)).toBe(true);
+  });
+
+  it("applies tenant-admin topbar meta when the topbar search is added after boot", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    document.body.innerHTML = `
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group"></div>
+    `;
+
+    bootTenantEntry();
+
+    document.body.insertAdjacentHTML(
+      "afterbegin",
+      `<button class="topbar-search"><span class="topbar-search__label">搜索</span></button>`,
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "").toContain(
+      "tenant_admin",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "").toContain(
+      "tenant-admin",
+    );
+  });
 });
