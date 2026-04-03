@@ -35,7 +35,7 @@ export async function mountTenantLoginPage(root) {
 
   const apiClient = createTenantApiClient();
   const session = readTenantSession();
-  if (session?.session?.role) {
+  if (session?.session?.role && session.session.role !== "platform_admin") {
     redirectToRoleHome(session.session);
     return null;
   }

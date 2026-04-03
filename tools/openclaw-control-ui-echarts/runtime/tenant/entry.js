@@ -1,9 +1,11 @@
 import {
+  PLATFORM_LOGIN_VIEW,
   PLATFORM_LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
+  TENANT_LOGIN_VIEW,
   TENANT_LOGIN_ROUTE,
   clearTenantViewFromHref,
   readTenantView,
@@ -90,6 +92,11 @@ function updateManagementSectionState(section) {
     const expectedView = item.getAttribute("data-oc-platform-view")?.trim() || "";
     item.classList.toggle("nav-item--active", expectedView === activeView);
   }
+}
+
+function isTenantAuthViewActive() {
+  const activeView = readTenantView();
+  return activeView === PLATFORM_LOGIN_VIEW || activeView === TENANT_LOGIN_VIEW;
 }
 
 function ensureManagementSectionHandlers(section) {
@@ -479,12 +486,14 @@ export function bootTenantEntry() {
   const scan = (root = document) => {
     const session = readTenantSession();
     const scope = root instanceof Element || root instanceof Document ? root : document;
-    if (session?.session?.role === "platform_admin") {
+    if (isTenantAuthViewActive()) {
+      clearPlatformTopbarMeta();
+    } else if (session?.session?.role === "platform_admin") {
       syncPlatformTopbarMeta(session);
     } else {
       clearPlatformTopbarMeta();
     }
-    if (session?.session?.role === "platform_admin") {
+    if (!isTenantAuthViewActive() && session?.session?.role === "platform_admin") {
       if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
         ensureSidebarRouteHandlers(scope);
         ensureManagementSection(scope);
