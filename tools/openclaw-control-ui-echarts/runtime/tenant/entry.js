@@ -13,6 +13,7 @@ import {
   TENANT_MEMBERS_VIEW,
   clearTenantViewFromHref,
   readPlatformSession,
+  readSessionForCurrentView,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -260,7 +261,7 @@ function ensureManagementSection(container) {
   if (!(container instanceof HTMLElement)) {
     return;
   }
-  const session = readPlatformSession() || readTenantSession();
+  const session = readSessionForCurrentView();
   const role = String(session?.session?.role || "");
   const links = getManagementLinksForSession(session);
   const existing = container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`);
@@ -536,12 +537,11 @@ export function bootTenantEntry() {
 
   const scan = (root = document) => {
     const platformSession = readPlatformSession();
-    const tenantSession = readTenantSession();
-    const session = platformSession || tenantSession;
+    const session = readSessionForCurrentView();
     const scope = root instanceof Element || root instanceof Document ? root : document;
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
-    } else if (platformSession?.session?.role === "platform_admin") {
+    } else if (session?.session?.role === "platform_admin" && platformSession?.session?.role === "platform_admin") {
       syncPlatformTopbarMeta(platformSession);
     } else {
       clearPlatformTopbarMeta();

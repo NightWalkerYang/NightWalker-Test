@@ -100,6 +100,40 @@ describe("zero-intrusive tenant entry", () => {
     expect(document.querySelector("[data-oc-platform-topbar-meta]")).toBeNull();
   });
 
+  it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+    `;
+
+    bootTenantEntry();
+
+    const managementSection = document.querySelector(".oc-platform-management-section");
+    const items = managementSection?.querySelectorAll(".nav-item") ?? [];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toContain("成员管理");
+    expect(items[1]?.textContent).toContain("Agent 分配");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")).toBeNull();
+  });
+
   it("skips tenant sidebar injection on the public lufeng route", () => {
     window.history.replaceState({}, "", "/lufeng");
     document.body.innerHTML = `
