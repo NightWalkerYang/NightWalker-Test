@@ -69,7 +69,10 @@ describe("lufeng public chat surface", () => {
 
     expect(document.documentElement.getAttribute("data-oc-lufeng-route")).toBe("true");
     expect(document.body.getAttribute("data-oc-lufeng-route")).toBe("true");
-    expect(document.head.querySelector('[data-oc-lufeng-style="true"]')).not.toBeNull();
+    const styleElement = document.head.querySelector('[data-oc-lufeng-style="true"]');
+    expect(styleElement).not.toBeNull();
+    expect(styleElement).toBeInstanceOf(HTMLLinkElement);
+    expect(styleElement?.getAttribute("href")).toContain("/surface.css");
     expect(document.querySelector('[data-group="chat"]')?.getAttribute("data-oc-lufeng-nav")).toBe(
       "chat",
     );
