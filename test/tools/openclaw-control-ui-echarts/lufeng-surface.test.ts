@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bootLufengSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/lufeng/surface.js";
 
@@ -73,6 +74,9 @@ describe("lufeng public chat surface", () => {
     expect(styleElement).not.toBeNull();
     expect(styleElement).toBeInstanceOf(HTMLLinkElement);
     expect(styleElement?.getAttribute("href")).toContain("/surface.css");
+    expect(readFileSync("tools/openclaw-control-ui-echarts/runtime/lufeng/surface.css", "utf8")).toContain(
+      ".chat-group.assistant > .oc-text-logo--avatar",
+    );
     expect(document.querySelector('[data-group="chat"]')?.getAttribute("data-oc-lufeng-nav")).toBe(
       "chat",
     );

@@ -25,6 +25,7 @@ html[data-oc-lufeng-route="true"] .chat-group.assistant .chat-avatar {
 
 html[data-oc-lufeng-route="true"] .chat-group.assistant .chat-avatar--logo,
 html[data-oc-lufeng-route="true"] .chat-group.assistant .chat-avatar.assistant,
+html[data-oc-lufeng-route="true"] .chat-group.assistant > .oc-text-logo--avatar,
 html[data-oc-lufeng-route="true"] .agent-chat__welcome > img,
 html[data-oc-lufeng-route="true"] .agent-chat__welcome .agent-chat__avatar,
 html[data-oc-lufeng-route="true"] .agent-chat__welcome .agent-chat__avatar--logo {
