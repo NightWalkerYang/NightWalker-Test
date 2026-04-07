@@ -1,0 +1,17 @@
+{
+  // 本地授权版建议直接复用客户自己的 OpenClaw 配置。
+  // 这里提供的是最小示例，请按客户环境补充 provider / authProfiles / agents。
+
+  gateway: {
+    mode: "local",
+  },
+
+  agents: {
+    list: [
+      {
+        id: "main",
+        name: "默认助手",
+      },
+    ],
+  },
+}

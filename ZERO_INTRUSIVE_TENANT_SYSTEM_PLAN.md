@@ -1374,6 +1374,28 @@
      - 成员 Agent 选择页不再显示剩余积分
      - 本地聊天页只显示授权只读提示，不走积分扣费语义
 
+12. 非 Docker 本地运行包路径已落地
+   - 新增本地运行包脚本：`tools/openclaw-control-ui-echarts/package-local-runtime.mjs`
+   - 当前可以把本地部署版打包成“预装运行时 + tenant sidecar + 零侵入 Control UI + 本地授权模板”的交付目录
+   - 运行包内已提供：
+     - `runtime.env.example`
+     - `openclaw.local.example.json5`
+     - `start-gateway`
+     - `start-tenant-platform`
+     - `start-local-runtime`
+   - 运行包启动前会自动：
+     - 把 Gateway token 同步写入 Control UI 预启动脚本
+     - 建立 `workspace-downloads` 和 `workspace-agent-downloads` 指向本地数据目录
+     - 强制本地版 sidecar 使用 `local` 版型
+   - 这条路径的目标不是交付源码仓库，而是交付可运行目录
+   - 当前交付形态默认面向：
+     - 不允许 Docker 的客户机器
+     - 只需要运行、不参与构建的客户环境
+   - 当前本地运行包前提：
+     - 客户机器安装 Node.js `22.12+`
+     - 客户自行提供模型 API Key 或 coding plan
+     - 客户导入本地授权文件或输入续期码
+
 ## 十二、当前还需要继续确认的事项
 
 1. 通联聚合接入材料

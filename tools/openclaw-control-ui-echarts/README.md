@@ -211,6 +211,53 @@ Important:
 - this direct-override path is meant for repo-root Docker runs where the host path `./tools/openclaw-control-ui-echarts/generated/control-ui` is available
 - on Docker-only hosts, prefer `bash tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh`
 
+## Non-Docker Local Runtime Package
+
+If a customer machine cannot install Docker, you can stage a prebuilt local runtime package instead of shipping the repo.
+
+Run:
+
+```bash
+node tools/openclaw-control-ui-echarts/package-local-runtime.mjs
+```
+
+Default output:
+
+- `tools/openclaw-control-ui-echarts/generated/local-runtime`
+
+This packaging path:
+
+1. makes sure `dist/control-ui` exists and runs `pnpm ui:build` automatically when it is missing
+2. rebuilds the zero-intrusive Control UI overlay
+3. creates an npm tarball for the current OpenClaw version
+4. installs that tarball into a local `runtime/` directory under the output package
+5. overlays the generated Control UI and tenant sidecar onto that runtime
+6. writes local launchers, env templates, and data-directory skeletons
+
+The staged package includes:
+
+- a preinstalled OpenClaw runtime under `runtime/`
+- tenant sidecar code under the packaged runtime tree
+- `runtime.env.example`
+- `openclaw.local.example.json5`
+- `start-gateway`
+- `start-tenant-platform`
+- `start-local-runtime`
+
+The local runtime scripts automatically:
+
+- force the tenant platform into `local` edition mode
+- update the shared gateway token used by the zero-intrusive bootstrap scripts
+- point `workspace-downloads` at the local workspace directory
+- point `workspace-agent-downloads` at the local `workspace-agents` directory
+
+This path is intended for the local authorized edition:
+
+- no online payment flow
+- local license file / renewal-code control
+- customer-managed model API keys or coding plans
+- customer machine only runs the package and does not build from source
+
 ## Safety Limits
 
 The renderer intentionally does not execute arbitrary JavaScript from chat output.

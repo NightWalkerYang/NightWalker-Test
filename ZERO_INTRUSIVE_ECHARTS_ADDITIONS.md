@@ -25,11 +25,22 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `tools/openclaw-control-ui-echarts/openclaw-echarts-renderer.js`
 - `tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs`
+- `tools/openclaw-control-ui-echarts/package-local-runtime.mjs`
 - `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs`
 - `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh`
 - `tools/openclaw-control-ui-echarts/README.md`
 - `tools/openclaw-control-ui-echarts/RUNTIME_ARCHITECTURE.md`
 - `tools/openclaw-control-ui-echarts/generated/.gitignore`
+
+### Local Runtime Packaging
+
+- `tools/openclaw-control-ui-echarts/local-runtime/README.md`
+- `tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5`
+- `tools/openclaw-control-ui-echarts/local-runtime/runtime-common.mjs`
+- `tools/openclaw-control-ui-echarts/local-runtime/runtime.env.example`
+- `tools/openclaw-control-ui-echarts/local-runtime/start-gateway.mjs`
+- `tools/openclaw-control-ui-echarts/local-runtime/start-local-runtime.mjs`
+- `tools/openclaw-control-ui-echarts/local-runtime/start-tenant-platform.mjs`
 
 ### Runtime: Background
 
@@ -140,6 +151,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/local-runtime-common.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
@@ -185,6 +197,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tenant platform entry now rescans late-rendered native shell nodes so topbar and sidebar role-trimming still applies after Control UI rerenders.
 - Tenant platform routes now follow native history changes so management shortcuts switch without full-page reload and unmount correctly when leaving the management view.
 - The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, trims the sidebar down to the native chat section only, hides assistant avatars (including branded `SPTC` logo avatars), and locks the model/session controls.
+- A non-Docker local runtime package can now be staged with prebuilt gateway assets, the tenant sidecar, launch scripts, runtime env templates, and local-license bootstrap wiring.
 
 ## Important Notes
 
