@@ -1,12 +1,41 @@
 {
   // 本地授权版建议直接复用客户自己的 OpenClaw 配置。
-  // 这里提供的是最小示例，请按客户环境补充 provider / authProfiles / agents。
+  // 这里给出的是最小可运行示例。
+  //
+  // 1. 先在 runtime.env 中填好你实际要使用的模型凭证，例如：
+  //    OPENAI_API_KEY / OPENROUTER_API_KEY / VOLCENGINE_API_KEY
+  // 2. 再把下面的默认模型改成和你的 provider 对应的模型名。
+  //
+  // 常见示例：
+  // - OpenAI: "openai/gpt-5.4"
+  // - OpenRouter: "openrouter/anthropic/claude-sonnet-4-6"
+  // - 火山引擎常规 API: 按你当前 provider/model 命名填写
+  //
+  // 如果客户已有完整的 openclaw.json，优先直接复用现有配置，不必强行套这个示例。
 
   gateway: {
     mode: "local",
   },
 
+  env: {
+    vars: {
+      // 建议优先从 runtime.env 注入。
+      // 这里只是给最小示例留结构。
+      OPENAI_API_KEY: "${OPENAI_API_KEY}",
+    },
+  },
+
   agents: {
+    defaults: {
+      model: {
+        primary: "openai/gpt-5.4",
+      },
+      models: {
+        "openai/gpt-5.4": {
+          alias: "gpt",
+        },
+      },
+    },
     list: [
       {
         id: "main",

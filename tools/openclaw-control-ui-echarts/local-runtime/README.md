@@ -44,6 +44,18 @@
    - Windows: `start-local-runtime.cmd`
    - macOS/Linux: `./start-local-runtime.sh`
 
+最小填写建议：
+
+- `runtime.env`
+  - 至少确认 `OPENCLAW_GATEWAY_TOKEN`
+  - 再填写一种实际会用到的模型凭证，例如：
+    - `OPENAI_API_KEY`
+    - `OPENROUTER_API_KEY`
+    - `VOLCENGINE_API_KEY`
+- `data/.openclaw/openclaw.json`
+  - 至少确认 `agents.defaults.model.primary`
+  - 让它和你上面实际提供的模型提供商一致
+
 ## 单独启动
 
 - 只启动 Gateway

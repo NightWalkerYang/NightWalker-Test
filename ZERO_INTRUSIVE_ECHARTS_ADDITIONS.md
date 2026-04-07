@@ -200,6 +200,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, trims the sidebar down to the native chat section only, hides assistant avatars (including branded `SPTC` logo avatars), and locks the model/session controls.
 - A non-Docker local runtime package can now be staged with prebuilt gateway assets, the tenant sidecar, launch scripts, runtime env templates, and local-license bootstrap wiring.
 - The non-Docker local runtime package now includes a customer-facing deployment guide alongside the operator/runtime templates.
+- The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a minimal default model setup.
 
 ## Important Notes
 
