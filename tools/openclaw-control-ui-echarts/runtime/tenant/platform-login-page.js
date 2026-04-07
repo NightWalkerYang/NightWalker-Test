@@ -9,6 +9,22 @@ import {
 
 const PAGE_SELECTOR = "[data-oc-platform-login-page]";
 
+function describeLocalLicense(localLicense) {
+  if (!localLicense || localLicense.edition !== "local") {
+    return "";
+  }
+  if (localLicense.status === "active") {
+    return `本地授权有效，${localLicense.customerName || "当前客户"}，到期时间：${localLicense.expiresAt || "-"}`;
+  }
+  if (localLicense.status === "expired") {
+    return `本地授权已到期，到期时间：${localLicense.expiresAt || "-"}。平台管理员可登录后导入新授权或输入续期码。`;
+  }
+  if (localLicense.status === "missing") {
+    return "当前为本地部署版，尚未导入有效授权文件。平台管理员登录后可先导入授权。";
+  }
+  return "当前本地授权无效，请登录后导入新的授权文件。";
+}
+
 function setFeedback(root, text, isError = false) {
   const feedback = root.querySelector("[data-tenant-feedback]");
   if (!(feedback instanceof HTMLElement)) {
@@ -69,7 +85,12 @@ export async function mountPlatformLoginPage(root) {
     const bootstrap = await apiClient.bootstrap();
     const initialized = Boolean(bootstrap.initialized);
     showSetupMode(root, !initialized);
-    setFeedback(root, initialized ? "请输入平台管理员账号密码登录。" : "当前还没有平台管理员，请先完成初始化。");
+    const localMessage = describeLocalLicense(bootstrap.localLicense);
+    setFeedback(
+      root,
+      localMessage || (initialized ? "请输入平台管理员账号密码登录。" : "当前还没有平台管理员，请先完成初始化。"),
+      bootstrap.localLicense?.status === "expired" || bootstrap.localLicense?.status === "invalid",
+    );
   } catch (error) {
     showSetupMode(root, true);
     setFeedback(root, `租户平台 API 暂不可用：${error instanceof Error ? error.message : String(error)}`, true);

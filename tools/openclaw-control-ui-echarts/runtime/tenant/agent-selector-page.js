@@ -1,5 +1,10 @@
 import { createTenantApiClient } from "./api-client.js";
-import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
+import {
+  TENANT_LOGIN_ROUTE,
+  isLocalEditionSession,
+  isReadonlySession,
+  requireTenantSession,
+} from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-tenant-agent-selector-page]";
 
@@ -26,21 +31,22 @@ function renderAvatar(agent) {
   return escapeHtml(agent.emoji || "AI");
 }
 
-function statusLabel(agent) {
+function statusLabel(agent, localEdition) {
   if (agent.status !== "active") {
     return "已停用";
   }
-  if ((agent.balancePoints ?? 0) <= 0) {
+  if (!localEdition && (agent.balancePoints ?? 0) <= 0) {
     return "预算不足";
   }
   return "正常";
 }
 
-function renderAgents(root, agents) {
+function renderAgents(root, agents, session) {
   const container = root.querySelector("[data-tenant-agents]");
   if (!(container instanceof HTMLElement)) {
     return;
   }
+  const localEdition = isLocalEditionSession(session);
   if (!agents.length) {
     container.innerHTML = `<div class="tenant-empty">当前没有可用 Agent，请联系租户管理员分配。</div>`;
     return;
@@ -53,13 +59,11 @@ function renderAgents(root, agents) {
             <div class="tenant-agent-card__avatar">${renderAvatar(agent)}</div>
             <div>
               <h2 class="tenant-agent-card__title">${escapeHtml(agent.agentName)}</h2>
-              <span class="tenant-chip">${escapeHtml(statusLabel(agent))}</span>
+              <span class="tenant-chip">${escapeHtml(statusLabel(agent, localEdition))}</span>
             </div>
           </div>
           <p class="tenant-agent-card__desc">${escapeHtml(agent.description || "该 Agent 描述将由租户平台单独维护。")}</p>
-          <div class="tenant-item__row">
-            <span>剩余积分 ${agent.balancePoints ?? 0}</span>
-          </div>
+          ${localEdition ? "" : `<div class="tenant-item__row"><span>剩余积分 ${agent.balancePoints ?? 0}</span></div>`}
           <div class="tenant-actions" style="margin-top:14px;">
             <a class="tenant-btn tenant-btn--primary" href="./tenant-chat.html?tenantAgentId=${encodeURIComponent(agent.id)}">进入聊天</a>
           </div>
@@ -83,8 +87,14 @@ export async function bootTenantAgentSelectorPage() {
 
   try {
     const agents = await apiClient.listMemberAgents();
-    renderAgents(root, agents);
-    setFeedback(root, "请选择一个已分配的 Agent 继续使用。");
+    renderAgents(root, agents, session);
+    setFeedback(
+      root,
+      isLocalEditionSession(session) && isReadonlySession(session)
+        ? "当前本地授权已到期，仅允许只读查看历史和统计。"
+        : "请选择一个已分配的 Agent 继续使用。",
+      false,
+    );
   } catch (error) {
     setFeedback(root, error instanceof Error ? error.message : String(error), true);
   }

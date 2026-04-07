@@ -4,6 +4,7 @@ import path from "node:path";
 
 const DEFAULT_PORT = 18801;
 const DEFAULT_API_BASE_PATH = "/tenant-platform-api/v1";
+const DEFAULT_TENANT_PLATFORM_EDITION = "cloud";
 
 function resolveHomeDir() {
   return process.env.HOME?.trim() || os.homedir();
@@ -25,6 +26,14 @@ function resolveConfigFilePath(configDir) {
   return path.join(configDir, "openclaw.json");
 }
 
+function resolveEdition(env) {
+  return String(env.OPENCLAW_TENANT_PLATFORM_EDITION || DEFAULT_TENANT_PLATFORM_EDITION)
+    .trim()
+    .toLowerCase() === "local"
+    ? "local"
+    : "cloud";
+}
+
 function parsePort(rawValue, fallback) {
   const parsed = Number.parseInt(String(rawValue ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -36,6 +45,7 @@ function parsePort(rawValue, fallback) {
 export function resolveTenantPlatformConfig(env = process.env) {
   const configDir = resolveConfigDir();
   const stateDir = path.join(configDir, "tenant-platform");
+  const edition = resolveEdition(env);
   const dbPath =
     env.OPENCLAW_TENANT_PLATFORM_DB_PATH?.trim() ||
     path.join(stateDir, "tenant-platform.sqlite");
@@ -48,8 +58,17 @@ export function resolveTenantPlatformConfig(env = process.env) {
     env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
     "openclaw-tenant-platform-dev-secret";
   const configPath = resolveConfigFilePath(configDir);
+  const localLicensePath =
+    env.OPENCLAW_TENANT_PLATFORM_LICENSE_PATH?.trim() ||
+    path.join(stateDir, "local-license.json");
+  const localLicensePublicKey =
+    env.OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY?.trim() || "";
+  const localLicensePublicKeyPath =
+    env.OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH?.trim() ||
+    path.join(stateDir, "license-public.pem");
 
   return {
+    edition,
     bindHost,
     port,
     apiBasePath,
@@ -58,6 +77,9 @@ export function resolveTenantPlatformConfig(env = process.env) {
     stateDir,
     dbPath,
     sessionSecret,
+    localLicensePath,
+    localLicensePublicKey,
+    localLicensePublicKeyPath,
   };
 }
 

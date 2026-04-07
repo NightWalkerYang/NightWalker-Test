@@ -113,6 +113,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
@@ -145,6 +146,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-access-guard.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-local-edition.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tool-run-cluster.test.ts`
 - `test/tools/openclaw-control-ui-echarts/voice-input.test.ts`
@@ -171,6 +174,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - CSP-sensitive preboot behavior now uses same-origin external scripts instead of inline bootstrap blocks.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
+- The tenant platform sidecar now supports a local-edition license file, signature verification, renewal-code application, and read-only enforcement after expiry.
 - Platform admin login and tenant login now use the native Control UI single-entry route with `?ocTenantView=...`.
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.

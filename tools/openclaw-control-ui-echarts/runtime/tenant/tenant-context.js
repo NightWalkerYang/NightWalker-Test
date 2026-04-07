@@ -145,6 +145,14 @@ export function routeForRole(role) {
   return "./tenant-agent-selector.html";
 }
 
+export function isLocalEditionSession(session) {
+  return session?.session?.edition === "local";
+}
+
+export function isReadonlySession(session) {
+  return Boolean(session?.session?.readonly);
+}
+
 export function redirectToRoleHome(session) {
   window.location.href = routeForRole(session?.role);
 }

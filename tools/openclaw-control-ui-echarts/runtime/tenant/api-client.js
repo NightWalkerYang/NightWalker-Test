@@ -95,6 +95,15 @@ export function createTenantApiClient() {
     listPlatformCatalogAgents() {
       return requestJson("/platform/catalog-agents");
     },
+    getLocalLicense() {
+      return requestJson("/platform/local-license");
+    },
+    importLocalLicense(body) {
+      return requestJson("/platform/local-license/import", { method: "POST", body });
+    },
+    renewLocalLicense(body) {
+      return requestJson("/platform/local-license/renew", { method: "POST", body });
+    },
     listPlatformTenantMembers(tenantId) {
       return requestJson(withQuery("/platform/tenant-members", { tenantId }));
     },

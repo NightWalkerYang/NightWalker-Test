@@ -16,6 +16,11 @@ import {
   updateTenantMemberLimit,
   upsertTenantAgent,
 } from "./db.mjs";
+import {
+  applyLocalRenewalCode,
+  importLocalLicense,
+  readLocalLicenseState,
+} from "./license.mjs";
 
 function sendJson(request, response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -44,20 +49,21 @@ function readJsonBody(request) {
   });
 }
 
-function buildSessionPayload(user, tenantContext) {
-  const expiredReadonly = Boolean(
-    tenantContext?.deploymentMode === "local" &&
-      tenantContext?.licenseExpiresAt &&
-      Date.parse(tenantContext.licenseExpiresAt) <= Date.now(),
-  );
+function buildSessionPayload(user, tenantContext, config, localLicenseState) {
+  const localReadonly = Boolean(config.edition === "local" && localLicenseState?.readonly);
   return {
     userId: user.id,
     username: user.username,
     role: user.role,
     tenantId: tenantContext?.tenantId ?? null,
     tenantName: tenantContext?.tenantName ?? null,
-    deploymentMode: tenantContext?.deploymentMode ?? null,
-    readonly: expiredReadonly,
+    deploymentMode:
+      config.edition === "local" ? "local" : (tenantContext?.deploymentMode ?? null),
+    readonly: localReadonly,
+    edition: config.edition,
+    licenseStatus: localLicenseState?.status ?? null,
+    licenseExpiresAt: localLicenseState?.expiresAt ?? tenantContext?.licenseExpiresAt ?? null,
+    customerName: localLicenseState?.customerName ?? null,
   };
 }
 
@@ -91,6 +97,24 @@ function requireRole(request, response, session, allowedRoles) {
   return true;
 }
 
+function requireLocalWritable(request, response, deps) {
+  if (deps.config.edition !== "local") {
+    return true;
+  }
+  const localLicense = readLocalLicenseState(deps.config);
+  if (localLicense.status === "active") {
+    return true;
+  }
+  sendJson(request, response, 403, {
+    ok: false,
+    error: localLicense.status === "expired" ? "license_readonly" : "license_unavailable",
+    data: {
+      localLicense,
+    },
+  });
+  return false;
+}
+
 function normalizePath(basePath, pathname) {
   if (!pathname.startsWith(basePath)) {
     return null;
@@ -107,6 +131,7 @@ export function createTenantPlatformRouter(deps) {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
     const relativePath = normalizePath(deps.config.apiBasePath, url.pathname);
     const configAgents = readOpenClawAgentCatalog(deps.config.configPath);
+    const localLicense = readLocalLicenseState(deps.config);
 
     if (request.method === "OPTIONS") {
       sendJson(request, response, 204, {});
@@ -129,6 +154,8 @@ export function createTenantPlatformRouter(deps) {
         data: {
           ...getBootstrapStatus(deps.db),
           apiBasePath: deps.config.apiBasePath,
+          edition: deps.config.edition,
+          localLicense,
           configAgents,
         },
       });
@@ -142,7 +169,7 @@ export function createTenantPlatformRouter(deps) {
           username: String(body.username || "").trim(),
           password: String(body.password || ""),
         });
-        const session = buildSessionPayload(user, null);
+        const session = buildSessionPayload(user, null, deps.config, localLicense);
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -172,11 +199,23 @@ export function createTenantPlatformRouter(deps) {
           return;
         }
         const tenantContext = user.tenantId ? getTenantContextForUser(deps.db, user.id) : null;
+        if (
+          deps.config.edition === "local" &&
+          user.role !== "platform_admin" &&
+          (localLicense.status === "missing" || localLicense.status === "invalid")
+        ) {
+          sendJson(request, response, 403, {
+            ok: false,
+            error: "license_unavailable",
+            data: { localLicense },
+          });
+          return;
+        }
         if (tenantContext?.tenantStatus === "frozen") {
           sendJson(request, response, 403, { ok: false, error: "tenant_frozen" });
           return;
         }
-        const session = buildSessionPayload(user, tenantContext);
+        const session = buildSessionPayload(user, tenantContext, deps.config, localLicense);
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -204,7 +243,68 @@ export function createTenantPlatformRouter(deps) {
         return;
       }
       const tenant = session.tenantId ? getTenantContextForUser(deps.db, session.userId) : null;
-      sendJson(request, response, 200, { ok: true, data: { session, tenant } });
+      sendJson(request, response, 200, {
+        ok: true,
+        data: {
+          session,
+          tenant,
+          edition: deps.config.edition,
+          localLicense,
+        },
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/platform/local-license") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, { ok: true, data: localLicense });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/local-license/import") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (deps.config.edition !== "local") {
+        sendJson(request, response, 400, { ok: false, error: "local_edition_required" });
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const nextLicense = importLocalLicense(deps.config, body.licenseText || body.license);
+        sendJson(request, response, 200, { ok: true, data: nextLicense });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/local-license/renew") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (deps.config.edition !== "local") {
+        sendJson(request, response, 400, { ok: false, error: "local_edition_required" });
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const nextLicense = applyLocalRenewalCode(deps.config, body.renewalCode);
+        sendJson(request, response, 200, { ok: true, data: nextLicense });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 
@@ -222,6 +322,9 @@ export function createTenantPlatformRouter(deps) {
       if (!session || !requireRole(request, response, session, ["platform_admin"])) {
         return;
       }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
       try {
         const body = await readJsonBody(request);
         const tenant = createTenantWithAdmin(deps.db, {
@@ -230,9 +333,11 @@ export function createTenantPlatformRouter(deps) {
           adminUsername: String(body.adminUsername || "").trim(),
           adminPassword: String(body.adminPassword || ""),
           memberLimit: Number.parseInt(String(body.memberLimit || "5"), 10),
-          deploymentMode: body.deploymentMode === "local" ? "local" : "cloud",
-          licenseExpiresAt: String(body.licenseExpiresAt || "").trim() || null,
-          renewalCode: String(body.renewalCode || "").trim() || null,
+          deploymentMode: deps.config.edition === "local" ? "local" : (body.deploymentMode === "local" ? "local" : "cloud"),
+          licenseExpiresAt:
+            deps.config.edition === "local" ? null : (String(body.licenseExpiresAt || "").trim() || null),
+          renewalCode:
+            deps.config.edition === "local" ? null : (String(body.renewalCode || "").trim() || null),
         });
         logAudit(deps.db, {
           userId: session.userId,
@@ -254,6 +359,9 @@ export function createTenantPlatformRouter(deps) {
     if (request.method === "POST" && relativePath === "/platform/tenant-member-limit") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
         return;
       }
       try {
@@ -327,6 +435,9 @@ export function createTenantPlatformRouter(deps) {
       if (!session || !requireRole(request, response, session, ["platform_admin"])) {
         return;
       }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
       try {
         const body = await readJsonBody(request);
         const tenantId = readTenantId(body.tenantId);
@@ -338,8 +449,14 @@ export function createTenantPlatformRouter(deps) {
           tenantId,
           agentId: String(body.agentId || "").trim(),
           description: String(body.description || "").trim(),
-          rateMultiplier: Number.parseFloat(String(body.rateMultiplier || "1")) || 1,
-          balancePoints: Number.parseFloat(String(body.balancePoints || "0")) || 0,
+          rateMultiplier:
+            deps.config.edition === "local"
+              ? 1
+              : (Number.parseFloat(String(body.rateMultiplier || "1")) || 1),
+          balancePoints:
+            deps.config.edition === "local"
+              ? 0
+              : (Number.parseFloat(String(body.balancePoints || "0")) || 0),
           status: "active",
         });
         const agent = listTenantAgents(deps.db, tenantId, configAgents).find(
@@ -367,6 +484,9 @@ export function createTenantPlatformRouter(deps) {
     if (request.method === "POST" && relativePath === "/tenant/admin/members") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
         return;
       }
       try {
@@ -401,6 +521,9 @@ export function createTenantPlatformRouter(deps) {
     if (request.method === "POST" && relativePath === "/tenant/admin/assign-agent") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
         return;
       }
       try {

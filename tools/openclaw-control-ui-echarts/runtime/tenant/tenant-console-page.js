@@ -8,6 +8,10 @@ import {
 
 const PAGE_SIZE = 8;
 
+function isLocalEdition(controller) {
+  return controller?.session?.session?.edition === "local";
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -286,6 +290,7 @@ function renderCreateMemberDialog() {
 
 function renderAssignDialog(controller) {
   const member = controller.activeMember;
+  const localEdition = isLocalEdition(controller);
   return `
     <dialog class="oc-tenant-modal" data-tenant-assign-dialog>
       <div class="oc-tenant-modal__panel">
@@ -307,7 +312,7 @@ function renderAssignDialog(controller) {
                       ${controller.tenantAgents
                         .map(
                           (agent) =>
-                            `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.agentName)} · ${formatNumber(agent.balancePoints)} 积分</option>`,
+                            `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.agentName)}${localEdition ? "" : ` · ${formatNumber(agent.balancePoints)} 积分`}</option>`,
                         )
                         .join("")}
                     </select>

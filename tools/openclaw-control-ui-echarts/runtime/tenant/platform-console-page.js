@@ -23,6 +23,10 @@ function currentSectionHref(section) {
     : `./?ocTenantView=${PLATFORM_TENANT_MANAGEMENT_VIEW}`;
 }
 
+function isLocalEdition(controller) {
+  return controller?.session?.session?.edition === "local";
+}
+
 function formatNumber(value) {
   const numeric = Number(value || 0);
   return Number.isFinite(numeric)
@@ -49,6 +53,22 @@ function formatDateTime(value) {
 
 function deploymentModeLabel(mode) {
   return mode === "local" ? "本地部署" : "公有云";
+}
+
+function localLicenseStatusLabel(localLicense) {
+  if (!localLicense || localLicense.edition !== "local") {
+    return "-";
+  }
+  if (localLicense.status === "active") {
+    return "授权有效";
+  }
+  if (localLicense.status === "expired") {
+    return "已到期只读";
+  }
+  if (localLicense.status === "missing") {
+    return "未导入授权";
+  }
+  return "授权无效";
 }
 
 function isEmbedded(root) {
@@ -108,9 +128,11 @@ function ensureController(root, session, apiClient) {
       memberLimitOpen: false,
       assignOpen: false,
       rateOpen: false,
+      localLicenseOpen: false,
     },
     activeTenant: null,
     loadingRateAgents: false,
+    localLicense: null,
   };
 
   root.__ocPlatformConsoleController = controller;
@@ -139,6 +161,9 @@ function ensureController(root, session, apiClient) {
     if (event.target.matches("[data-platform-rate-dialog]")) {
       controller.dialogs.rateOpen = false;
       controller.rateDialogAgents = [];
+    }
+    if (event.target.matches("[data-platform-local-license-dialog]")) {
+      controller.dialogs.localLicenseOpen = false;
     }
     render(root, controller);
   });
@@ -183,6 +208,7 @@ function paginate(items, page) {
 
 function renderToolbar(controller) {
   const isTenantSection = controller.section === "tenants";
+  const localEdition = isLocalEdition(controller);
   return `
     <div class="data-table-toolbar oc-platform-table-toolbar">
       <label class="data-table-search">
@@ -198,11 +224,17 @@ function renderToolbar(controller) {
           ? `<button class="btn primary" type="button" data-platform-open-create>创建租户</button>`
           : ""
       }
+      ${
+        isTenantSection && localEdition
+          ? `<button class="btn" type="button" data-platform-open-local-license>授权管理</button>`
+          : ""
+      }
     </div>
   `;
 }
 
 function renderTenantManagementTable(controller, rows) {
+  const localEdition = isLocalEdition(controller);
   return `
     <div class="data-table-container">
       <table class="data-table">
@@ -210,12 +242,10 @@ function renderTenantManagementTable(controller, rows) {
           <tr>
             <th>租户名称</th>
             <th>租户编码</th>
-            <th>部署模式</th>
             <th>状态</th>
             <th>成员数</th>
             <th>人数上限</th>
-            <th>钱包积分</th>
-            <th>到期日期</th>
+            ${localEdition ? "" : "<th>部署模式</th><th>钱包积分</th><th>到期日期</th>"}
             <th>操作</th>
           </tr>
         </thead>
@@ -228,12 +258,18 @@ function renderTenantManagementTable(controller, rows) {
                       <tr>
                         <td>${escapeHtml(tenant.name)}</td>
                         <td>${escapeHtml(tenant.code)}</td>
-                        <td>${escapeHtml(deploymentModeLabel(tenant.deploymentMode))}</td>
                         <td><span class="data-table-badge data-table-badge--${tenant.status === "active" ? "direct" : "unknown"}">${escapeHtml(tenant.status)}</span></td>
                         <td>${formatNumber(tenant.memberCount)}</td>
                         <td>${formatNumber(tenant.memberLimit)}</td>
-                        <td>${formatNumber(tenant.walletBalance)}</td>
-                        <td>${escapeHtml(formatDateTime(tenant.licenseExpiresAt))}</td>
+                        ${
+                          localEdition
+                            ? ""
+                            : `
+                              <td>${escapeHtml(deploymentModeLabel(tenant.deploymentMode))}</td>
+                              <td>${formatNumber(tenant.walletBalance)}</td>
+                              <td>${escapeHtml(formatDateTime(tenant.licenseExpiresAt))}</td>
+                            `
+                        }
                         <td>
                           <div class="oc-platform-table-actions">
                             <button class="btn" type="button" data-platform-open-member-limit="${escapeHtml(tenant.id)}">人数调整</button>
@@ -243,7 +279,7 @@ function renderTenantManagementTable(controller, rows) {
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="9" class="oc-platform-table-empty">暂无租户数据</td></tr>`
+              : `<tr><td colspan="${localEdition ? 6 : 9}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
           }
         </tbody>
       </table>
@@ -252,6 +288,7 @@ function renderTenantManagementTable(controller, rows) {
 }
 
 function renderAgentAssignmentTable(controller, rows) {
+  const localEdition = isLocalEdition(controller);
   return `
     <div class="data-table-container">
       <table class="data-table">
@@ -259,10 +296,9 @@ function renderAgentAssignmentTable(controller, rows) {
           <tr>
             <th>租户名称</th>
             <th>租户编码</th>
-            <th>部署模式</th>
             <th>成员数</th>
             <th>已分配 Agent</th>
-            <th>钱包积分</th>
+            ${localEdition ? "" : "<th>部署模式</th><th>钱包积分</th>"}
             <th>状态</th>
             <th>操作</th>
           </tr>
@@ -276,22 +312,28 @@ function renderAgentAssignmentTable(controller, rows) {
                       <tr>
                         <td>${escapeHtml(tenant.name)}</td>
                         <td>${escapeHtml(tenant.code)}</td>
-                        <td>${escapeHtml(deploymentModeLabel(tenant.deploymentMode))}</td>
                         <td>${formatNumber(tenant.memberCount)}</td>
                         <td>${formatNumber(tenant.agentCount)}</td>
-                        <td>${formatNumber(tenant.walletBalance)}</td>
+                        ${
+                          localEdition
+                            ? ""
+                            : `
+                              <td>${escapeHtml(deploymentModeLabel(tenant.deploymentMode))}</td>
+                              <td>${formatNumber(tenant.walletBalance)}</td>
+                            `
+                        }
                         <td><span class="data-table-badge data-table-badge--${tenant.status === "active" ? "direct" : "unknown"}">${escapeHtml(tenant.status)}</span></td>
                         <td>
                           <div class="oc-platform-table-actions">
                             <button class="btn" type="button" data-platform-open-assign="${escapeHtml(tenant.id)}">分配Agent</button>
-                            <button class="btn" type="button" data-platform-open-rate="${escapeHtml(tenant.id)}">倍率调整</button>
+                            ${localEdition ? "" : `<button class="btn" type="button" data-platform-open-rate="${escapeHtml(tenant.id)}">倍率调整</button>`}
                           </div>
                         </td>
                       </tr>
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="8" class="oc-platform-table-empty">暂无租户数据</td></tr>`
+              : `<tr><td colspan="${localEdition ? 6 : 8}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
           }
         </tbody>
       </table>
@@ -314,6 +356,7 @@ function renderPagination(controller, pagination) {
 }
 
 function renderCreateDialog(controller) {
+  const localEdition = isLocalEdition(controller);
   return `
     <dialog class="oc-platform-modal" data-platform-create-dialog>
       <div class="oc-platform-modal__panel">
@@ -328,15 +371,21 @@ function renderCreateDialog(controller) {
             <label class="field"><span>管理员账号</span><input name="adminUsername" type="text" required /></label>
             <label class="field"><span>管理员密码</span><input name="adminPassword" type="password" required /></label>
             <label class="field"><span>人数上限</span><input name="memberLimit" type="number" min="1" value="5" required /></label>
-            <label class="field">
-              <span>部署模式</span>
-              <select name="deploymentMode">
-                <option value="cloud">公有云</option>
-                <option value="local">本地部署</option>
-              </select>
-            </label>
-            <label class="field"><span>到期日期（可选）</span><input name="licenseExpiresAt" type="datetime-local" /></label>
-            <label class="field"><span>续期码（可选）</span><input name="renewalCode" type="text" /></label>
+            ${
+              localEdition
+                ? `<input type="hidden" name="deploymentMode" value="local" />`
+                : `
+                  <label class="field">
+                    <span>部署模式</span>
+                    <select name="deploymentMode">
+                      <option value="cloud">公有云</option>
+                      <option value="local">本地部署</option>
+                    </select>
+                  </label>
+                  <label class="field"><span>到期日期（可选）</span><input name="licenseExpiresAt" type="datetime-local" /></label>
+                  <label class="field"><span>续期码（可选）</span><input name="renewalCode" type="text" /></label>
+                `
+            }
             <div class="oc-platform-modal__actions">
               <button class="btn primary" type="submit">创建租户</button>
             </div>
@@ -380,6 +429,7 @@ function renderMemberLimitDialog(controller) {
 
 function renderAssignDialog(controller) {
   const tenant = controller.activeTenant;
+  const localEdition = isLocalEdition(controller);
   return `
     <dialog class="oc-platform-modal" data-platform-assign-dialog>
       <div class="oc-platform-modal__panel">
@@ -407,8 +457,17 @@ function renderAssignDialog(controller) {
                     </select>
                   </label>
                   <label class="field"><span>简短描述</span><input name="description" type="text" placeholder="显示在成员 Agent 卡片上的描述" /></label>
-                  <label class="field"><span>计费倍率</span><input name="rateMultiplier" type="number" step="0.01" value="1" required /></label>
-                  <label class="field"><span>初始积分</span><input name="balancePoints" type="number" step="0.01" value="0" required /></label>
+                  ${
+                    localEdition
+                      ? `
+                        <input type="hidden" name="rateMultiplier" value="1" />
+                        <input type="hidden" name="balancePoints" value="0" />
+                      `
+                      : `
+                        <label class="field"><span>计费倍率</span><input name="rateMultiplier" type="number" step="0.01" value="1" required /></label>
+                        <label class="field"><span>初始积分</span><input name="balancePoints" type="number" step="0.01" value="0" required /></label>
+                      `
+                  }
                   <div class="oc-platform-modal__actions">
                     <button class="btn primary" type="submit">保存</button>
                   </div>
@@ -490,6 +549,50 @@ function renderRateDialog(controller) {
   `;
 }
 
+function renderLocalLicenseDialog(controller) {
+  if (!isLocalEdition(controller)) {
+    return "";
+  }
+  const localLicense = controller.localLicense;
+  return `
+    <dialog class="oc-platform-modal" data-platform-local-license-dialog>
+      <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
+        <header class="oc-platform-modal__header">
+          <h3 class="oc-platform-modal__title">本地授权管理</h3>
+          <button class="btn" type="button" data-platform-close-dialog="local-license">关闭</button>
+        </header>
+        <div class="oc-platform-modal__body">
+          <div class="callout ${localLicense?.status === "active" ? "info" : "danger"}">
+            <strong>${escapeHtml(localLicenseStatusLabel(localLicense))}</strong><br/>
+            客户名称：${escapeHtml(localLicense?.customerName || "-")}<br/>
+            到期时间：${escapeHtml(formatDateTime(localLicense?.expiresAt))}<br/>
+            剩余天数：${escapeHtml(localLicense?.remainingDays ?? "-")}<br/>
+            当前说明：${escapeHtml(localLicense?.reason || "-")}
+          </div>
+          <form class="oc-platform-modal__form" data-platform-license-import-form>
+            <label class="field">
+              <span>导入授权文件内容</span>
+              <textarea name="licenseText" rows="8" placeholder="粘贴签名后的授权 JSON"></textarea>
+            </label>
+            <div class="oc-platform-modal__actions">
+              <button class="btn primary" type="submit">导入授权</button>
+            </div>
+          </form>
+          <form class="oc-platform-modal__form" data-platform-license-renew-form>
+            <label class="field">
+              <span>续期码</span>
+              <input name="renewalCode" type="text" placeholder="输入续期码" />
+            </label>
+            <div class="oc-platform-modal__actions">
+              <button class="btn primary" type="submit">应用续期码</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
 function captureRenderFocusState(root) {
   const active = document.activeElement;
   if (!(active instanceof HTMLInputElement) || !root.contains(active)) {
@@ -552,6 +655,7 @@ function render(root, controller) {
     ${renderMemberLimitDialog(controller)}
     ${renderAssignDialog(controller)}
     ${renderRateDialog(controller)}
+    ${renderLocalLicenseDialog(controller)}
   `;
 
   if (controller.dialogs.createTenantOpen) {
@@ -566,16 +670,24 @@ function render(root, controller) {
   if (controller.dialogs.rateOpen) {
     openDialog(root.querySelector("[data-platform-rate-dialog]"));
   }
+  if (controller.dialogs.localLicenseOpen) {
+    openDialog(root.querySelector("[data-platform-local-license-dialog]"));
+  }
   restoreRenderFocusState(root, focusState);
 }
 
 async function refresh(root, controller) {
-  const [tenants, catalogAgents] = await Promise.all([
+  const tasks = [
     controller.apiClient.listPlatformTenants(),
     controller.apiClient.listPlatformCatalogAgents(),
-  ]);
+  ];
+  if (isLocalEdition(controller)) {
+    tasks.push(controller.apiClient.getLocalLicense());
+  }
+  const [tenants, catalogAgents, localLicense = null] = await Promise.all(tasks);
   controller.tenants = tenants;
   controller.catalogAgents = catalogAgents;
+  controller.localLicense = localLicense;
   if (
     controller.activeTenant &&
     !tenants.some((tenant) => tenant.id === controller.activeTenant.id)
@@ -648,6 +760,16 @@ async function handleClick(root, controller, event) {
       controller.rateDialogAgents = [];
       closeDialog(root.querySelector("[data-platform-rate-dialog]"));
     }
+    if (dialogKind === "local-license") {
+      controller.dialogs.localLicenseOpen = false;
+      closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
+    }
+    render(root, controller);
+    return;
+  }
+
+  if (target.closest("[data-platform-open-local-license]")) {
+    controller.dialogs.localLicenseOpen = true;
     render(root, controller);
     return;
   }
@@ -766,6 +888,36 @@ async function handleSubmit(root, controller, event) {
       await refresh(root, controller);
       closeDialog(root.querySelector("[data-platform-rate-dialog]"));
       setFeedback(root, "Agent 倍率已更新。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  if (target.matches("[data-platform-license-import-form]")) {
+    event.preventDefault();
+    try {
+      const payload = Object.fromEntries(new FormData(target).entries());
+      controller.localLicense = await controller.apiClient.importLocalLicense(payload);
+      controller.dialogs.localLicenseOpen = false;
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
+      setFeedback(root, "本地授权已更新。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  if (target.matches("[data-platform-license-renew-form]")) {
+    event.preventDefault();
+    try {
+      const payload = Object.fromEntries(new FormData(target).entries());
+      controller.localLicense = await controller.apiClient.renewLocalLicense(payload);
+      controller.dialogs.localLicenseOpen = false;
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
+      setFeedback(root, "续期码已生效。");
     } catch (error) {
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }

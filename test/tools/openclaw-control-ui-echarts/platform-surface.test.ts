@@ -281,6 +281,102 @@ describe("platform surface", () => {
     expect(nextInput.selectionEnd).toBe(3);
   });
 
+  it("hides cloud-only wallet and pricing controls in local edition", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+        edition: "local",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=platform-tenants");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/platform/tenants")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-1",
+                    code: "alpha",
+                    name: "租户 Alpha",
+                    deploymentMode: "local",
+                    memberCount: 2,
+                    walletBalance: 0,
+                    agentCount: 1,
+                    memberLimit: 10,
+                    licenseExpiresAt: "2099-01-01T00:00:00.000Z",
+                    status: "active",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/platform/catalog-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [{ id: "finance", name: "财务分析助手" }],
+              };
+            },
+          };
+        }
+        if (url.includes("/platform/local-license")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  edition: "local",
+                  status: "active",
+                  customerName: "禄丰本地客户",
+                  expiresAt: "2099-01-01T00:00:00.000Z",
+                  remainingDays: 9999,
+                  reason: null,
+                },
+              };
+            },
+          };
+        }
+        if (url.includes("/platform/tenant-members") || url.includes("/platform/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootPlatformSurface();
+
+    const table = document.querySelector(".data-table");
+    expect(table?.textContent).toContain("人数调整");
+    expect(table?.textContent).not.toContain("钱包积分");
+    expect(table?.textContent).not.toContain("部署模式");
+    expect(document.querySelector("[data-platform-open-local-license]")?.textContent).toContain(
+      "授权管理",
+    );
+  });
+
   it("unmounts when native route leaves the management view", async () => {
     writeTenantSession({
       token: "platform-token",

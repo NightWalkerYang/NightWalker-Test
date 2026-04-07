@@ -1,5 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
-import { requireTenantSession } from "./tenant-context.js";
+import { isLocalEditionSession, isReadonlySession, requireTenantSession } from "./tenant-context.js";
 import { readSelectedTenantAgentId } from "./chat-shell.js";
 
 const PAGE_SELECTOR = "[data-oc-tenant-chat-page]";
@@ -24,6 +24,8 @@ export async function bootTenantChatPage() {
   const apiClient = createTenantApiClient();
   const agents = await apiClient.listMemberAgents();
   const agent = agents.find((item) => item.id === tenantAgentId) ?? agents[0] ?? null;
+  const localEdition = isLocalEditionSession(session);
+  const readonly = isReadonlySession(session);
 
   const title = root.querySelector("[data-tenant-chat-title]");
   if (title instanceof HTMLElement) {
@@ -35,8 +37,9 @@ export async function bootTenantChatPage() {
     info.innerHTML = agent
       ? `
           <strong>${escapeHtml(agent.agentName)}</strong><br/>
-          当前剩余积分：${escapeHtml(agent.balancePoints ?? 0)}<br/>
+          ${localEdition ? "" : `当前剩余积分：${escapeHtml(agent.balancePoints ?? 0)}<br/>`}
           当前状态：${escapeHtml(agent.status)}
+          ${readonly ? "<br/>当前授权已到期，仅允许只读查看。" : ""}
         `
       : "当前没有可进入的 Agent。";
   }
@@ -50,4 +53,3 @@ if (document.readyState === "loading") {
 } else {
   void bootTenantChatPage();
 }
-

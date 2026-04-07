@@ -9,6 +9,22 @@ import {
 
 const PAGE_SELECTOR = "[data-oc-tenant-login-page]";
 
+function describeLocalLicense(localLicense) {
+  if (!localLicense || localLicense.edition !== "local") {
+    return "";
+  }
+  if (localLicense.status === "active") {
+    return `本地部署版当前授权有效，到期时间：${localLicense.expiresAt || "-"}`;
+  }
+  if (localLicense.status === "expired") {
+    return `本地授权已到期，到期时间：${localLicense.expiresAt || "-"}。当前仅允许只读查看历史和统计。`;
+  }
+  if (localLicense.status === "missing") {
+    return "当前本地部署版尚未导入授权，租户管理员和成员暂不可登录。";
+  }
+  return "当前本地授权无效，租户管理员和成员暂不可登录。";
+}
+
 function setFeedback(root, text, isError = false) {
   const feedback = root.querySelector("[data-tenant-feedback]");
   if (!(feedback instanceof HTMLElement)) {
@@ -47,7 +63,12 @@ export async function mountTenantLoginPage(root) {
     if (!bootstrap.initialized) {
       setFeedback(root, "平台管理员尚未初始化，请先从平台管理员入口完成初始化。", true);
     } else {
-      setFeedback(root, "请输入账号密码登录。");
+      const localMessage = describeLocalLicense(bootstrap.localLicense);
+      setFeedback(
+        root,
+        localMessage || "请输入账号密码登录。",
+        bootstrap.localLicense?.status === "missing" || bootstrap.localLicense?.status === "invalid",
+      );
     }
   } catch (error) {
     setFeedback(root, `租户平台 API 暂不可用：${error instanceof Error ? error.message : String(error)}`, true);
