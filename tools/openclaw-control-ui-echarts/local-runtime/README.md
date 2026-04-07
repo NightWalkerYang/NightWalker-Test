@@ -27,6 +27,8 @@
   - 本地运行包环境变量模板
 - `openclaw.local.example.json5`
   - OpenClaw 配置示例
+- `README-customer-deploy.md`
+  - 面向客户现场实施人员的部署说明
 - `data/`
   - 运行时数据目录
 

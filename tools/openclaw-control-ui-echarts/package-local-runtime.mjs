@@ -247,6 +247,10 @@ function stageRuntimePackage(outputDir, packageRoot, controlUiOutputDir, tarball
 
 function stageTemplates(outputDir) {
   copyTemplateFile("README.md", path.join(outputDir, "README-local-runtime.md"));
+  copyTemplateFile(
+    "CUSTOMER_DEPLOYMENT_GUIDE.md",
+    path.join(outputDir, "README-customer-deploy.md"),
+  );
   copyTemplateFile("runtime.env.example", path.join(outputDir, "runtime.env.example"));
   copyTemplateFile(
     "openclaw.local.example.json5",

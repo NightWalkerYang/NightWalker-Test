@@ -34,6 +34,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 ### Local Runtime Packaging
 
+- `tools/openclaw-control-ui-echarts/local-runtime/CUSTOMER_DEPLOYMENT_GUIDE.md`
 - `tools/openclaw-control-ui-echarts/local-runtime/README.md`
 - `tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5`
 - `tools/openclaw-control-ui-echarts/local-runtime/runtime-common.mjs`
@@ -198,6 +199,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tenant platform routes now follow native history changes so management shortcuts switch without full-page reload and unmount correctly when leaving the management view.
 - The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, trims the sidebar down to the native chat section only, hides assistant avatars (including branded `SPTC` logo avatars), and locks the model/session controls.
 - A non-Docker local runtime package can now be staged with prebuilt gateway assets, the tenant sidecar, launch scripts, runtime env templates, and local-license bootstrap wiring.
+- The non-Docker local runtime package now includes a customer-facing deployment guide alongside the operator/runtime templates.
 
 ## Important Notes
 
