@@ -25,6 +25,7 @@ OPENCLAW_GATEWAY_PORT=19999
     const rootDir = path.join("runtime-root");
     const resolved = resolveRuntimeEnv(rootDir, {});
     expect(resolved.env.OPENCLAW_TENANT_PLATFORM_EDITION).toBe("local");
+    expect(resolved.env.OPENCLAW_GATEWAY_BIND).toBe("lan");
     expect(resolved.env.OPENCLAW_GATEWAY_PORT).toBe("18789");
     expect(resolved.env.OPENCLAW_TENANT_PLATFORM_PORT).toBe("18801");
     expect(resolved.env.OPENCLAW_CONFIG_DIR).toBe(path.resolve(rootDir, "data/.openclaw"));

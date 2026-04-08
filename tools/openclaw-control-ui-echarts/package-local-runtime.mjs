@@ -14,6 +14,12 @@ const buildCustomControlUiScript = path.join(here, "build-custom-control-ui.mjs"
 const controlUiSourceDir = path.join(repoRoot, "dist", "control-ui");
 const sidecarSourceDir = path.join(here, "sidecar", "tenant-platform");
 const defaultGatewayToken = "local-runtime-shared-token";
+const localRuntimeExtraPackages = [
+  "@aws-sdk/client-bedrock",
+  "jimp",
+  "@jimp/utils",
+  "p-queue",
+];
 
 function usage() {
   process.stdout.write(
@@ -71,6 +77,32 @@ function ensureFileExists(filePath, label) {
   }
 }
 
+function packageNameToPathSegments(packageName) {
+  return packageName.split("/");
+}
+
+function resolvePackageJsonPath(nodeModulesRoot, packageName) {
+  return path.join(nodeModulesRoot, ...packageNameToPathSegments(packageName), "package.json");
+}
+
+export function resolveInstalledPackageVersion(nodeModulesRoot, packageName) {
+  const packageJsonPath = resolvePackageJsonPath(nodeModulesRoot, packageName);
+  ensureFileExists(packageJsonPath, `Installed package ${packageName}`);
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+  const version = String(packageJson.version || "").trim();
+  if (!version) {
+    throw new Error(`Installed package ${packageName} is missing a version.`);
+  }
+  return version;
+}
+
+export function buildRuntimeExtraDependencySpecs(nodeModulesRoot) {
+  return localRuntimeExtraPackages.map((packageName) => {
+    const version = resolveInstalledPackageVersion(nodeModulesRoot, packageName);
+    return `${packageName}@${version}`;
+  });
+}
+
 function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd || repoRoot,
@@ -93,20 +125,24 @@ function runCommand(command, args, options = {}) {
   return result;
 }
 
-function quoteCommandArg(value) {
-  const normalized = String(value ?? "");
-  if (!normalized || /[\s"]/u.test(normalized)) {
-    return `"${normalized.replace(/"/g, '\\"')}"`;
+function resolveNpmCliEntry() {
+  const candidates = [];
+  const npmExecPath = String(process.env.npm_execpath || "").trim();
+  if (npmExecPath) {
+    candidates.push(npmExecPath);
   }
-  return normalized;
+  candidates.push(path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"));
+  candidates.push(path.join(path.dirname(path.dirname(process.execPath)), "lib", "node_modules", "npm", "bin", "npm-cli.js"));
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error("Unable to resolve npm CLI entrypoint for local runtime packaging.");
 }
 
 function runNpmCommand(args, options = {}) {
-  if (process.platform === "win32") {
-    const commandLine = ["npm", ...args].map((entry) => quoteCommandArg(entry)).join(" ");
-    return runCommand("cmd.exe", ["/d", "/s", "/c", commandLine], options);
-  }
-  return runCommand("npm", args, options);
+  return runCommand(process.execPath, [resolveNpmCliEntry(), ...args], options);
 }
 
 function ensureControlUiSourceReady() {
@@ -227,6 +263,87 @@ function installRuntimeTarball(outputDir, tarballPath) {
   return packageRoot;
 }
 
+function installRuntimeExtraPackages(outputDir) {
+  const runtimeDir = path.join(outputDir, "runtime");
+  const extraSpecs = buildRuntimeExtraDependencySpecs(path.join(repoRoot, "node_modules"));
+  runNpmCommand([
+    "install",
+    "--omit=dev",
+    "--ignore-scripts",
+    "--no-fund",
+    "--no-audit",
+    "--prefix",
+    runtimeDir,
+    ...extraSpecs,
+  ]);
+}
+
+export function patchFileTypeRuntimeCompat(runtimeDir) {
+  const fileTypeDir = path.join(runtimeDir, "node_modules", "file-type");
+  ensureDirectoryExists(fileTypeDir, "Installed file-type package");
+  const packageJsonPath = path.join(fileTypeDir, "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+  const compatPath = path.join(fileTypeDir, "core.js");
+  const compatSource = `import {
+  fileTypeFromBlob,
+  fileTypeFromBuffer,
+  fileTypeFromFile,
+  fileTypeFromStream,
+  FileTypeParser,
+  supportedExtensions,
+  supportedMimeTypes,
+} from "./source/index.js";
+
+const fileTypeCoreCompat = {
+  fromBlob: fileTypeFromBlob,
+  fromBuffer: fileTypeFromBuffer,
+  fromFile: fileTypeFromFile,
+  fromStream: fileTypeFromStream,
+  FileTypeParser,
+  supportedExtensions,
+  supportedMimeTypes,
+};
+
+export const fromBlob = fileTypeFromBlob;
+export const fromBuffer = fileTypeFromBuffer;
+export const fromFile = fileTypeFromFile;
+export const fromStream = fileTypeFromStream;
+export { FileTypeParser, supportedExtensions, supportedMimeTypes };
+export default fileTypeCoreCompat;
+`;
+  fs.writeFileSync(compatPath, compatSource, "utf8");
+  const currentExports =
+    packageJson.exports && typeof packageJson.exports === "object" ? packageJson.exports : {};
+  const hasConditionalMainSugar =
+    !currentExports["."] &&
+    Object.keys(currentExports).some((key) => !key.startsWith("."));
+  const normalizedExports = hasConditionalMainSugar
+    ? {
+        ".": { ...currentExports },
+      }
+    : { ...currentExports };
+  if (!normalizedExports["./core.js"]) {
+    normalizedExports["./core.js"] = "./core.js";
+    packageJson.exports = normalizedExports;
+    fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
+  }
+}
+
+function verifyRuntimePackage(outputDir, packageRoot) {
+  const runtimeDir = path.join(outputDir, "runtime");
+  const requiredFiles = [
+    path.join(packageRoot, "openclaw.mjs"),
+    path.join(runtimeDir, "node_modules", "@aws-sdk", "client-bedrock", "package.json"),
+    path.join(runtimeDir, "node_modules", "jimp", "package.json"),
+    path.join(runtimeDir, "node_modules", "@jimp", "utils", "package.json"),
+    path.join(runtimeDir, "node_modules", "p-queue", "package.json"),
+    path.join(runtimeDir, "node_modules", "file-type", "core.js"),
+  ];
+  for (const requiredFile of requiredFiles) {
+    ensureFileExists(requiredFile, "Packaged local runtime dependency");
+  }
+}
+
 function stageRuntimePackage(outputDir, packageRoot, controlUiOutputDir, tarballPath) {
   const controlUiTarget = path.join(packageRoot, "dist", "control-ui");
   fs.rmSync(controlUiTarget, { recursive: true, force: true });
@@ -307,7 +424,10 @@ function main() {
     stageDataSkeleton(outputDir);
     if (!options.skipInstall) {
       const packageRoot = installRuntimeTarball(outputDir, tarballPath);
+      installRuntimeExtraPackages(outputDir);
+      patchFileTypeRuntimeCompat(path.join(outputDir, "runtime"));
       stageRuntimePackage(outputDir, packageRoot, controlUiOutputDir, tarballPath);
+      verifyRuntimePackage(outputDir, packageRoot);
     } else {
       const artifactsDir = path.join(outputDir, "artifacts");
       fs.mkdirSync(artifactsDir, { recursive: true });
@@ -331,10 +451,16 @@ function main() {
   );
 }
 
-try {
-  main();
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`${message}\n`);
-  process.exit(1);
+const isEntrypoint =
+  !!process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (isEntrypoint) {
+  try {
+    main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exit(1);
+  }
 }

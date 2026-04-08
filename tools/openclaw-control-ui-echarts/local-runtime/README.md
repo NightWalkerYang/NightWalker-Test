@@ -19,6 +19,8 @@
 
 - `runtime/`
   - 预装好的 OpenClaw npm 运行时
+  - 已补齐本地运行包所需的额外运行时依赖
+  - 已补齐 `file-type/core.js` 兼容入口
 - `scripts/`
   - `start-gateway.mjs`
   - `start-tenant-platform.mjs`

@@ -185,6 +185,7 @@ http://localhost:18789/?ocTenantView=tenant-login
 
 - Node.js 版本是否符合要求
 - `runtime.env` 是否存在
+- `runtime.env` 中 `OPENCLAW_GATEWAY_BIND` 是否保持为 `lan`、`loopback`、`tailnet`、`auto` 或 `custom`
 - `data/.openclaw/openclaw.json` 是否存在且格式正确
 - 授权公钥文件是否放在正确位置
 - 本机 `18789`、`18801` 端口是否被占用

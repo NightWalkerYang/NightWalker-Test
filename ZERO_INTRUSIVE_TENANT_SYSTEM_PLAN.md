@@ -1402,6 +1402,11 @@
      - `runtime.env.example` 已补充模型凭证占位项
      - `openclaw.local.example.json5` 已补充最小默认模型结构
      - 客户现场人员可以直接按模板替换实际 provider 和 model
+   - 当前已补齐非 Docker 运行包兼容层：
+     - 打包脚本会额外把运行时缺失的依赖一起装进运行包
+     - 运行包内会为 `file-type/core.js` 自动生成兼容入口
+     - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `lan`
+     - 目标是避免 Windows 测试机出现缺包启动失败和非法 bind 值启动失败
 
 ## 十二、当前还需要继续确认的事项
 
