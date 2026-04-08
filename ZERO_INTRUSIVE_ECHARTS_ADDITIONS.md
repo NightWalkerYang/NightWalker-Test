@@ -111,6 +111,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-surface.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-layout.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
@@ -153,6 +154,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/local-runtime-common.test.ts`
 - `test/tools/openclaw-control-ui-echarts/member-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/member-chat-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/package-local-runtime.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
@@ -195,6 +197,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
 - Tenant-member login now also lands inside the native Control UI shell, with only the injected `Agent` dropdown and an embedded `Agent选择` card view for assigned Agents.
+- Tenant members now click assigned Agent cards into the native `/chat` page, where a zero-intrusive sidebar adds `Agent选择`, `新建会话`, and a per-Agent session list while the native chat content and features remain intact.
 - Platform-admin identity and logout status now occupy the native topbar search slot globally across the root control UI.
 - Tenant-admin and tenant-member identity and logout status now occupy that same native topbar search slot on their native control-shell views, and role-scoped CSS plus runtime markers force their sidebar/footer down to only the injected management or Agent entry plus the version block.
 - Tenant platform entry now rescans late-rendered native shell nodes so topbar and sidebar role-trimming still applies after Control UI rerenders.

@@ -21,6 +21,12 @@ export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TEN
 export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
 export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
 
+function normalizeTenantSessionValue(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
 function safeStorage() {
   try {
     return window.localStorage;
@@ -204,13 +210,59 @@ export function clearSelectedTenantAgent() {
   clearStoredSession(TENANT_SELECTED_AGENT_STORAGE_KEY);
 }
 
-export function buildTenantMemberChatRoute(tenantAgentId) {
+export function buildTenantMemberChatRoute(tenantAgentId, sessionKey = "") {
   const url = new URL("./chat", document.baseURI);
   const normalized = String(tenantAgentId || "").trim();
   if (normalized) {
     url.searchParams.set("tenantAgentId", normalized);
   }
+  const normalizedSessionKey = String(sessionKey || "").trim();
+  if (normalizedSessionKey) {
+    url.searchParams.set("session", normalizedSessionKey);
+  }
   return url.href;
+}
+
+export function buildTenantMemberLegacySessionKey(selectedAgent) {
+  const agentId = normalizeTenantSessionValue(selectedAgent?.agentId);
+  const tenantAgentId = normalizeTenantSessionValue(selectedAgent?.id);
+  if (!agentId || !tenantAgentId) {
+    return "";
+  }
+  return `agent:${agentId}:tenant-${tenantAgentId}`;
+}
+
+export function buildTenantMemberSessionPrefix(session, selectedAgent) {
+  const agentId = normalizeTenantSessionValue(selectedAgent?.agentId);
+  const tenantId = normalizeTenantSessionValue(session?.session?.tenantId);
+  const userId = normalizeTenantSessionValue(session?.session?.userId);
+  const tenantAgentId = normalizeTenantSessionValue(selectedAgent?.id);
+  if (!agentId || !tenantId || !userId || !tenantAgentId) {
+    return "";
+  }
+  return `agent:${agentId}:tenant:${tenantId}:tenant-agent:${tenantAgentId}:user:${userId}:chat:`;
+}
+
+export function isTenantMemberSessionKey(sessionKey, session, selectedAgent) {
+  const normalizedSessionKey = normalizeTenantSessionValue(sessionKey);
+  if (!normalizedSessionKey) {
+    return false;
+  }
+  const prefix = buildTenantMemberSessionPrefix(session, selectedAgent);
+  const legacy = buildTenantMemberLegacySessionKey(selectedAgent);
+  return normalizedSessionKey === legacy || (prefix ? normalizedSessionKey.startsWith(prefix) : false);
+}
+
+export function createTenantMemberSessionKey(session, selectedAgent) {
+  const prefix = buildTenantMemberSessionPrefix(session, selectedAgent);
+  if (!prefix) {
+    return "";
+  }
+  const randomPart =
+    typeof crypto?.randomUUID === "function"
+      ? crypto.randomUUID().toLowerCase()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}${randomPart}`;
 }
 
 export function isLocalEditionSession(session) {
