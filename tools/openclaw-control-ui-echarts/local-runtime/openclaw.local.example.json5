@@ -17,14 +17,6 @@
     mode: "local",
   },
 
-  env: {
-    vars: {
-      // 建议优先从 runtime.env 注入。
-      // 这里只是给最小示例留结构。
-      OPENAI_API_KEY: "${OPENAI_API_KEY}",
-    },
-  },
-
   agents: {
     defaults: {
       model: {

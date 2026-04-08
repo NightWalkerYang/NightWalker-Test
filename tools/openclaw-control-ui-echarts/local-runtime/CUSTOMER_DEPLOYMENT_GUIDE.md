@@ -61,6 +61,12 @@ D:\openclaw-local-runtime
 - `runtime.env`
 - `data/.openclaw/openclaw.json`
 
+其中默认 `runtime.env` 已设置：
+
+- `OPENCLAW_GATEWAY_BIND=loopback`
+
+这样本机测试时不需要再额外配置 Control UI origin。
+
 如果只是首次测试，可以直接在这两份文件上修改，不需要再手工复制模板。
 
 ### 3. 准备 OpenClaw 配置文件
@@ -178,7 +184,8 @@ http://localhost:18789/?ocTenantView=tenant-login
 
 - Node.js 版本是否符合要求
 - `runtime.env` 是否存在
-- `runtime.env` 中 `OPENCLAW_GATEWAY_BIND` 是否保持为 `lan`、`loopback`、`tailnet`、`auto` 或 `custom`
+- `runtime.env` 中 `OPENCLAW_GATEWAY_BIND` 是否保持为 `loopback`、`lan`、`tailnet`、`auto` 或 `custom`
+- 如果改成了 `lan`，是否已经额外配置 Control UI origin 放行
 - `data/.openclaw/openclaw.json` 是否存在且格式正确
 - 授权公钥文件是否放在正确位置
 - 本机 `18789`、`18801` 端口是否被占用

@@ -202,8 +202,8 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - A non-Docker local runtime package can now be staged with prebuilt gateway assets, the tenant sidecar, launch scripts, runtime env templates, and local-license bootstrap wiring.
 - The non-Docker local runtime package now includes a customer-facing deployment guide alongside the operator/runtime templates.
 - The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a minimal default model setup.
-- The non-Docker local runtime packager now vendors missing runtime-only packages, patches `file-type/core.js` compatibility inside the packaged runtime, and defaults local gateway binding to `lan` so Windows local startup does not fail on missing module or invalid bind errors.
-- The non-Docker local runtime package now seeds an active `runtime.env` plus `data/.openclaw/openclaw.json` into the output, and the startup preparation layer will recreate the config from the bundled template if a customer deletes it.
+- The non-Docker local runtime packager now vendors missing runtime-only packages, patches `file-type/core.js` compatibility inside the packaged runtime, and seeds a default `loopback` gateway bind so the packaged local edition boots without extra Control UI origin setup.
+- The non-Docker local runtime package now seeds an active `runtime.env` plus `data/.openclaw/openclaw.json` into the output, trims the starter config so it no longer emits missing-`OPENAI_API_KEY` warnings by default, and recreates the config from the bundled template if a customer deletes it.
 
 ## Important Notes
 

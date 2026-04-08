@@ -128,7 +128,7 @@ export function resolveRuntimeEnv(rootDir, processEnv = process.env) {
       path.join("data", ".openclaw", "openclaw.json"),
     ),
     OPENCLAW_WORKSPACE_DIR: workspaceDir,
-    OPENCLAW_GATEWAY_BIND: String(merged.OPENCLAW_GATEWAY_BIND || "lan").trim(),
+    OPENCLAW_GATEWAY_BIND: String(merged.OPENCLAW_GATEWAY_BIND || "loopback").trim(),
     OPENCLAW_GATEWAY_PORT: String(merged.OPENCLAW_GATEWAY_PORT || "18789").trim(),
     OPENCLAW_GATEWAY_TOKEN: String(
       merged.OPENCLAW_GATEWAY_TOKEN || DEFAULT_GATEWAY_TOKEN,

@@ -40,6 +40,7 @@
 2. 运行包默认已经附带：
    - `runtime.env`
    - `data/.openclaw/openclaw.json`
+   - 默认 `runtime.env` 使用 `OPENCLAW_GATEWAY_BIND=loopback`，本机开箱即可访问
 3. 如需调整，再修改：
    - `runtime.env`
    - `data/.openclaw/openclaw.json`
@@ -59,6 +60,7 @@
     - `OPENAI_API_KEY`
     - `OPENROUTER_API_KEY`
     - `VOLCENGINE_API_KEY`
+  - 如果客户需要让局域网其他浏览器访问，再把 `OPENCLAW_GATEWAY_BIND` 改成 `lan`，并同步配置 Control UI origin 放行
 - `data/.openclaw/openclaw.json`
   - 至少确认 `agents.defaults.model.primary`
   - 让它和你上面实际提供的模型提供商一致

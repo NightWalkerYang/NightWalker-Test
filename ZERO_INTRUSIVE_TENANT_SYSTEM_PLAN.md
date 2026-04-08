@@ -1405,11 +1405,12 @@
    - 当前运行包默认已直接附带：
      - `runtime.env`
      - `data/.openclaw/openclaw.json`
+   - 当前默认 `OPENCLAW_GATEWAY_BIND=loopback`，本机开箱即可启动，不需要额外配置 Control UI origin
    - 即使客户误删 `data/.openclaw/openclaw.json`，启动准备层也会按包内模板自动补回
    - 当前已补齐非 Docker 运行包兼容层：
      - 打包脚本会额外把运行时缺失的依赖一起装进运行包
      - 运行包内会为 `file-type/core.js` 自动生成兼容入口
-     - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `lan`
+     - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `loopback`
      - 目标是避免 Windows 测试机出现缺包启动失败和非法 bind 值启动失败
 
 ## 十二、当前还需要继续确认的事项
