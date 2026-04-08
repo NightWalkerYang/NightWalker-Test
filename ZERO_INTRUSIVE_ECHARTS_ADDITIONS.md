@@ -204,6 +204,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a minimal default model setup.
 - The non-Docker local runtime packager now vendors missing runtime-only packages, patches `file-type/core.js` compatibility inside the packaged runtime, and seeds a default `loopback` gateway bind so the packaged local edition boots without extra Control UI origin setup.
 - The non-Docker local runtime package now seeds an active `runtime.env` plus `data/.openclaw/openclaw.json` into the output, trims the starter config so it no longer emits missing-`OPENAI_API_KEY` warnings by default, and recreates the config from the bundled template if a customer deletes it.
+- Local edition bootstrap now bypasses platform-admin setup entirely: the first local login initializes a single local tenant admin, members continue to use the tenant login entry, and native root access redirects to the tenant flow instead of the platform-admin flow.
 
 ## Important Notes
 

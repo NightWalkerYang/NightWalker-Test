@@ -2,6 +2,7 @@ import { createTenantApiClient } from "./api-client.js";
 import { renderTenantAuthLayout } from "./auth-layout.js";
 import {
   TENANT_LOGIN_ROUTE,
+  clearPlatformSession,
   readPlatformSession,
   clearTenantSession,
   redirectToRoleHome,
@@ -56,33 +57,37 @@ function showSetupMode(root, showSetup) {
 }
 
 export async function mountPlatformLoginPage(root) {
-  renderTenantAuthLayout(root, {
-    title: "平台管理员登录",
-    subtitle: "平台管理员从这里进入平台控制台，完成租户创建、Agent 下发和平台级运营管理。",
-    switchHref: TENANT_LOGIN_ROUTE,
-    switchLabel: "租户登录入口",
-    switchAttr: 'data-tenant-login-link',
-    loginTitle: "账号密码登录",
-    loginSubtitle: "仅限平台管理员使用。",
-    loginSubmitLabel: "登录",
-    setup: {
-      title: "初始化平台管理员",
-      subtitle: "当前系统还没有平台管理员，请先完成首次初始化。",
-      usernameLabel: "平台管理员账号",
-      passwordLabel: "平台管理员密码",
-      submitLabel: "完成初始化",
-    },
-  });
-
   const apiClient = createTenantApiClient();
-  const session = readPlatformSession();
-  if (session?.session?.role === "platform_admin") {
-    redirectToRoleHome(session.session);
-    return null;
-  }
-
+  let bootstrap;
   try {
-    const bootstrap = await apiClient.bootstrap();
+    bootstrap = await apiClient.bootstrap();
+    if (bootstrap.edition === "local") {
+      clearPlatformSession();
+      window.location.href = TENANT_LOGIN_ROUTE;
+      return null;
+    }
+    const session = readPlatformSession();
+    if (session?.session?.role === "platform_admin") {
+      redirectToRoleHome(session.session);
+      return null;
+    }
+    renderTenantAuthLayout(root, {
+      title: "平台管理员登录",
+      subtitle: "平台管理员从这里进入平台控制台，完成租户创建、Agent 下发和平台级运营管理。",
+      switchHref: TENANT_LOGIN_ROUTE,
+      switchLabel: "租户登录入口",
+      switchAttr: 'data-tenant-login-link',
+      loginTitle: "账号密码登录",
+      loginSubtitle: "仅限平台管理员使用。",
+      loginSubmitLabel: "登录",
+      setup: {
+        title: "初始化平台管理员",
+        subtitle: "当前系统还没有平台管理员，请先完成首次初始化。",
+        usernameLabel: "平台管理员账号",
+        passwordLabel: "平台管理员密码",
+        submitLabel: "完成初始化",
+      },
+    });
     const initialized = Boolean(bootstrap.initialized);
     showSetupMode(root, !initialized);
     const localMessage = describeLocalLicense(bootstrap.localLicense);
@@ -92,6 +97,28 @@ export async function mountPlatformLoginPage(root) {
       bootstrap.localLicense?.status === "expired" || bootstrap.localLicense?.status === "invalid",
     );
   } catch (error) {
+    const session = readPlatformSession();
+    if (session?.session?.role === "platform_admin") {
+      redirectToRoleHome(session.session);
+      return null;
+    }
+    renderTenantAuthLayout(root, {
+      title: "平台管理员登录",
+      subtitle: "平台管理员从这里进入平台控制台，完成租户创建、Agent 下发和平台级运营管理。",
+      switchHref: TENANT_LOGIN_ROUTE,
+      switchLabel: "租户登录入口",
+      switchAttr: 'data-tenant-login-link',
+      loginTitle: "账号密码登录",
+      loginSubtitle: "仅限平台管理员使用。",
+      loginSubmitLabel: "登录",
+      setup: {
+        title: "初始化平台管理员",
+        subtitle: "当前系统还没有平台管理员，请先完成首次初始化。",
+        usernameLabel: "平台管理员账号",
+        passwordLabel: "平台管理员密码",
+        submitLabel: "完成初始化",
+      },
+    });
     showSetupMode(root, true);
     setFeedback(root, `租户平台 API 暂不可用：${error instanceof Error ? error.message : String(error)}`, true);
   }

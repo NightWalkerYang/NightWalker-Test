@@ -54,4 +54,21 @@ describe("tenant auth layout", () => {
     expect(root.querySelector("[data-tenant-setup-form]")).toBeNull();
     expect(root.textContent).toContain("账号密码登录");
   });
+
+  it("omits the footer switch when no alternate login entry is provided", () => {
+    const root = document.createElement("main");
+    renderTenantAuthLayout(root, {
+      title: "本地部署登录",
+      subtitle: "本地入口。",
+      switchHref: "",
+      switchLabel: "",
+      switchAttr: "",
+      loginTitle: "账号密码登录",
+      loginSubtitle: "仅租户账号可用。",
+      loginSubmitLabel: "登录",
+      setup: null,
+    });
+
+    expect(root.querySelector(".oc-tenant-login-footer")).toBeNull();
+  });
 });

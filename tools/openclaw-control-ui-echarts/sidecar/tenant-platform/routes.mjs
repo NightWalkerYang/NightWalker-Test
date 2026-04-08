@@ -1,5 +1,6 @@
 import { issueSessionToken, readSessionToken, verifyPassword } from "./auth.mjs";
 import {
+  createBootstrapLocalTenantAdmin,
   assignTenantAgentToUser,
   createBootstrapPlatformAdmin,
   createTenantMember,
@@ -97,6 +98,11 @@ function requireRole(request, response, session, allowedRoles) {
   return true;
 }
 
+function requireEditionRole(request, response, session, deps, cloudRoles, localRoles = cloudRoles) {
+  const allowedRoles = deps.config.edition === "local" ? localRoles : cloudRoles;
+  return requireRole(request, response, session, allowedRoles);
+}
+
 function requireLocalWritable(request, response, deps) {
   if (deps.config.edition !== "local") {
     return true;
@@ -152,7 +158,7 @@ export function createTenantPlatformRouter(deps) {
       sendJson(request, response, 200, {
         ok: true,
         data: {
-          ...getBootstrapStatus(deps.db),
+          ...getBootstrapStatus(deps.db, deps.config.edition),
           apiBasePath: deps.config.apiBasePath,
           edition: deps.config.edition,
           localLicense,
@@ -163,6 +169,10 @@ export function createTenantPlatformRouter(deps) {
     }
 
     if (request.method === "POST" && relativePath === "/setup/platform-admin") {
+      if (deps.config.edition === "local") {
+        sendJson(request, response, 400, { ok: false, error: "local_edition_uses_tenant_admin" });
+        return;
+      }
       try {
         const body = await readJsonBody(request);
         const user = createBootstrapPlatformAdmin(deps.db, {
@@ -170,6 +180,36 @@ export function createTenantPlatformRouter(deps) {
           password: String(body.password || ""),
         });
         const session = buildSessionPayload(user, null, deps.config, localLicense);
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            token: issueSessionToken(session, deps.config.sessionSecret),
+            session,
+          },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/setup/local-tenant-admin") {
+      if (deps.config.edition !== "local") {
+        sendJson(request, response, 400, { ok: false, error: "local_edition_required" });
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const user = createBootstrapLocalTenantAdmin(deps.db, {
+          username: String(body.username || "").trim(),
+          password: String(body.password || ""),
+          tenantName: localLicense.customerName || "本地租户",
+        });
+        const tenantContext = getTenantContextForUser(deps.db, user.id);
+        const session = buildSessionPayload(user, tenantContext, deps.config, localLicense);
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -201,7 +241,7 @@ export function createTenantPlatformRouter(deps) {
         const tenantContext = user.tenantId ? getTenantContextForUser(deps.db, user.id) : null;
         if (
           deps.config.edition === "local" &&
-          user.role !== "platform_admin" &&
+          user.role === "member" &&
           (localLicense.status === "missing" || localLicense.status === "invalid")
         ) {
           sendJson(request, response, 403, {
@@ -257,7 +297,7 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "GET" && relativePath === "/platform/local-license") {
       const session = requireSession(request, response, deps);
-      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+      if (!session || !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])) {
         return;
       }
       sendJson(request, response, 200, { ok: true, data: localLicense });
@@ -266,7 +306,7 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "POST" && relativePath === "/platform/local-license/import") {
       const session = requireSession(request, response, deps);
-      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+      if (!session || !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])) {
         return;
       }
       if (deps.config.edition !== "local") {
@@ -288,7 +328,7 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "POST" && relativePath === "/platform/local-license/renew") {
       const session = requireSession(request, response, deps);
-      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+      if (!session || !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])) {
         return;
       }
       if (deps.config.edition !== "local") {

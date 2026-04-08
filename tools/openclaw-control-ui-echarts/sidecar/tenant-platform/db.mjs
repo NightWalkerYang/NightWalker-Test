@@ -6,6 +6,9 @@ import { ensureTenantPlatformDirs } from "./config.mjs";
 import { hashPassword } from "./auth.mjs";
 
 const MIGRATION_PATH = new URL("./migrations/001_init.sql", import.meta.url);
+const LOCAL_BOOTSTRAP_TENANT_CODE = "local";
+const LOCAL_BOOTSTRAP_TENANT_NAME = "本地租户";
+const LOCAL_BOOTSTRAP_MEMBER_LIMIT = 999;
 
 function nowIso() {
   return new Date().toISOString();
@@ -84,18 +87,29 @@ export function closeTenantPlatformDb(db) {
   }
 }
 
-export function getBootstrapStatus(db) {
-  const count = Number(
+export function getBootstrapStatus(db, edition = "cloud") {
+  const normalizedEdition = String(edition || "cloud").trim().toLowerCase();
+  const platformAdminCount = Number(
     getScalar(db, "SELECT COUNT(*) AS value FROM users WHERE role = 'platform_admin'") || 0,
   );
+  const localTenantAdminCount = Number(
+    getScalar(
+      db,
+      `SELECT COUNT(*) AS value
+       FROM tenant_memberships tm
+       JOIN tenants t ON t.id = tm.tenant_id
+       WHERE tm.role = 'tenant_admin' AND t.deployment_mode = 'local'`,
+    ) || 0,
+  );
   return {
-    initialized: count > 0,
-    platformAdminCount: count,
+    initialized: normalizedEdition === "local" ? localTenantAdminCount > 0 : platformAdminCount > 0,
+    platformAdminCount,
+    localTenantAdminCount,
   };
 }
 
 export function createBootstrapPlatformAdmin(db, params) {
-  if (getBootstrapStatus(db).initialized) {
+  if (getBootstrapStatus(db, "cloud").initialized) {
     throw new Error("平台管理员已初始化");
   }
   const now = nowIso();
@@ -109,6 +123,23 @@ export function createBootstrapPlatformAdmin(db, params) {
     passwordHash: hashPassword(params.password),
     createdAt: now,
     updatedAt: now,
+  });
+  return getUserByUsername(db, params.username);
+}
+
+export function createBootstrapLocalTenantAdmin(db, params) {
+  if (getBootstrapStatus(db, "local").initialized) {
+    throw new Error("本地租户管理员已初始化");
+  }
+  createTenantWithAdmin(db, {
+    code: LOCAL_BOOTSTRAP_TENANT_CODE,
+    name: String(params.tenantName || "").trim() || LOCAL_BOOTSTRAP_TENANT_NAME,
+    adminUsername: params.username.trim(),
+    adminPassword: params.password,
+    memberLimit: LOCAL_BOOTSTRAP_MEMBER_LIMIT,
+    deploymentMode: "local",
+    licenseExpiresAt: null,
+    renewalCode: null,
   });
   return getUserByUsername(db, params.username);
 }

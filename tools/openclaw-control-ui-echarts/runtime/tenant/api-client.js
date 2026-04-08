@@ -59,6 +59,9 @@ export function createTenantApiClient() {
     setupPlatformAdmin(body) {
       return requestJson("/setup/platform-admin", { method: "POST", body });
     },
+    setupLocalTenantAdmin(body) {
+      return requestJson("/setup/local-tenant-admin", { method: "POST", body });
+    },
     login(body) {
       return requestJson("/login", { method: "POST", body });
     },

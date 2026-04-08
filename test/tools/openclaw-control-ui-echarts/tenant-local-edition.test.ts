@@ -145,29 +145,36 @@ afterEach(async () => {
 });
 
 describe("tenant platform local edition", () => {
-  it("blocks mutating platform actions until a local license is imported", async () => {
+  it("bootstraps a local tenant admin and blocks writes until a local license is imported", async () => {
     const sandbox = createSandbox();
     const { baseUrl } = await startSandboxServer(sandbox);
 
-    const setup = await requestJson(baseUrl, "/setup/platform-admin", {
-      method: "POST",
-      body: { username: "platform-root", password: "secret" },
-    });
-    const token = setup.payload.data.token;
-
     const bootstrap = await requestJson(baseUrl, "/bootstrap");
     expect(bootstrap.payload.data.edition).toBe("local");
+    expect(bootstrap.payload.data.initialized).toBe(false);
+    expect(bootstrap.payload.data.platformAdminCount).toBe(0);
+    expect(bootstrap.payload.data.localTenantAdminCount).toBe(0);
     expect(bootstrap.payload.data.localLicense.status).toBe("missing");
 
-    const blockedCreate = await requestJson(baseUrl, "/platform/tenants", {
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const token = setup.payload.data.token;
+    expect(setup.status).toBe(200);
+    expect(setup.payload.data.session.role).toBe("tenant_admin");
+    expect(setup.payload.data.session.deploymentMode).toBe("local");
+
+    const initialized = await requestJson(baseUrl, "/bootstrap");
+    expect(initialized.payload.data.initialized).toBe(true);
+    expect(initialized.payload.data.localTenantAdminCount).toBe(1);
+
+    const blockedCreate = await requestJson(baseUrl, "/tenant/admin/members", {
       method: "POST",
       token,
       body: {
-        code: "local-a",
-        name: "本地客户 A",
-        adminUsername: "local-admin",
-        adminPassword: "secret",
-        memberLimit: 5,
+        username: "member-before-license",
+        password: "secret",
       },
     });
     expect(blockedCreate.status).toBe(403);
@@ -187,35 +194,31 @@ describe("tenant platform local edition", () => {
     });
     expect(importResponse.payload.data.status).toBe("active");
 
-    const createdTenant = await requestJson(baseUrl, "/platform/tenants", {
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
       method: "POST",
       token,
       body: {
-        code: "local-a",
-        name: "本地客户 A",
-        adminUsername: "local-admin",
-        adminPassword: "secret",
-        memberLimit: 5,
-        deploymentMode: "cloud",
+        username: "member-after-license",
+        password: "secret",
       },
     });
-    expect(createdTenant.status).toBe(200);
-    expect(createdTenant.payload.data.deploymentMode).toBe("local");
+    expect(createdMember.status).toBe(200);
+    expect(createdMember.payload.data.username).toBe("member-after-license");
   });
 
   it("allows readonly tenant login after expiry but blocks writes", async () => {
     const sandbox = createSandbox();
     const { baseUrl } = await startSandboxServer(sandbox);
 
-    const setup = await requestJson(baseUrl, "/setup/platform-admin", {
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
       method: "POST",
-      body: { username: "platform-root", password: "secret" },
+      body: { username: "local-admin", password: "secret" },
     });
-    const platformToken = setup.payload.data.token;
+    const tenantAdminToken = setup.payload.data.token;
 
     await requestJson(baseUrl, "/platform/local-license/import", {
       method: "POST",
-      token: platformToken,
+      token: tenantAdminToken,
       body: {
         licenseText: JSON.stringify(
           signLicense(sandbox.privateKey, {
@@ -226,22 +229,9 @@ describe("tenant platform local edition", () => {
       },
     });
 
-    const createdTenant = await requestJson(baseUrl, "/platform/tenants", {
-      method: "POST",
-      token: platformToken,
-      body: {
-        code: "local-b",
-        name: "本地客户 B",
-        adminUsername: "local-admin",
-        adminPassword: "secret",
-        memberLimit: 5,
-      },
-    });
-    expect(createdTenant.status).toBe(200);
-
     await requestJson(baseUrl, "/platform/local-license/import", {
       method: "POST",
-      token: platformToken,
+      token: tenantAdminToken,
       body: {
         licenseText: JSON.stringify(
           signLicense(sandbox.privateKey, {
@@ -273,5 +263,61 @@ describe("tenant platform local edition", () => {
     });
     expect(blockedMemberCreate.status).toBe(403);
     expect(blockedMemberCreate.payload.error).toBe("license_readonly");
+  });
+
+  it("blocks member login while the local license is missing but still allows tenant admins to log in", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(createMember.status).toBe(200);
+
+    fs.rmSync(sandbox.config.localLicensePath, { force: true });
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(403);
+    expect(memberLogin.payload.error).toBe("license_unavailable");
+
+    const adminLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "local-admin",
+        password: "secret",
+      },
+    });
+    expect(adminLogin.status).toBe(200);
+    expect(adminLogin.payload.data.session.role).toBe("tenant_admin");
   });
 });

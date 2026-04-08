@@ -134,23 +134,23 @@ start-local-runtime.cmd
 http://localhost:18789
 ```
 
-平台管理员入口：
-
-```text
-http://localhost:18789/?ocTenantView=platform-login
-```
-
 租户入口：
 
 ```text
 http://localhost:18789/?ocTenantView=tenant-login
 ```
 
+本地部署版默认只有：
+
+- 租户管理员
+- 租户成员
+
+不再要求平台管理员入口。
+
 ## 七、授权到期后的系统行为
 
 授权到期后：
 
-- 平台管理员仍可登录
 - 租户管理员和成员允许只读查看历史和统计
 - 不允许继续发送消息
 - 不允许继续进行关键写操作

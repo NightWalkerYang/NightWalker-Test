@@ -23,6 +23,7 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/",
         href: "https://www.hailstone.cn:18789/",
+        edition: "cloud",
         platformSession: null,
         tenantSession: null,
       }),
@@ -32,10 +33,21 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/chat",
         href: "https://www.hailstone.cn:18789/chat",
+        edition: "cloud",
         platformSession: null,
         tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
       }),
     ).toBe("redirect-tenant");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/",
+        href: "https://www.hailstone.cn:18789/",
+        edition: "local",
+        platformSession: null,
+        tenantSession: null,
+      }),
+    ).toBe("redirect-tenant-login");
   });
 
   it("allows platform admins and skips explicit tenant login views", () => {
@@ -43,6 +55,7 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/",
         href: "https://www.hailstone.cn:18789/",
+        edition: "cloud",
         platformSession: { token: "platform-token", session: { role: "platform_admin" } },
         tenantSession: null,
       }),
@@ -52,6 +65,7 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/",
         href: "https://www.hailstone.cn:18789/?ocTenantView=platform-login",
+        edition: "cloud",
         session: null,
       }),
     ).toBe("skip");
@@ -60,6 +74,7 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/lufeng",
         href: "https://www.hailstone.cn:18789/lufeng",
+        edition: "cloud",
         platformSession: null,
         tenantSession: null,
       }),
@@ -71,6 +86,7 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/",
         href: "https://www.hailstone.cn:18789/?ocTenantView=tenant-members",
+        edition: "cloud",
         platformSession: null,
         tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
       }),
@@ -80,9 +96,22 @@ describe("platform access guard", () => {
       resolvePlatformAccessDecision({
         pathname: "/chat",
         href: "https://www.hailstone.cn:18789/chat?ocTenantView=tenant-agent-assignment",
+        edition: "cloud",
         platformSession: null,
         tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
       }),
     ).toBe("allow");
+  });
+
+  it("redirects members to their own home instead of platform login", () => {
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/",
+        href: "https://www.hailstone.cn:18789/",
+        edition: "cloud",
+        platformSession: null,
+        tenantSession: { token: "member-token", session: { role: "member" } },
+      }),
+    ).toBe("redirect-member");
   });
 });

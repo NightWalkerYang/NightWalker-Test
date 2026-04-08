@@ -71,9 +71,13 @@ export function renderTenantAuthLayout(root, options) {
           passwordLabel: loginPasswordLabel,
         })}
         <div class="callout info oc-tenant-login-feedback" data-tenant-feedback hidden></div>
-        <div class="oc-tenant-login-footer">
-          <a class="session-link" href="${escapeHtml(switchHref)}" ${switchAttr}>${escapeHtml(switchLabel)}</a>
-        </div>
+        ${
+          switchHref && switchLabel
+            ? `<div class="oc-tenant-login-footer">
+                <a class="session-link" href="${escapeHtml(switchHref)}" ${switchAttr}>${escapeHtml(switchLabel)}</a>
+              </div>`
+            : ""
+        }
       </div>
     </section>
   `;
