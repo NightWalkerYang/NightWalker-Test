@@ -4,7 +4,8 @@ import {
   readPlatformSession,
   readSessionForCurrentView,
   readTenantSession,
-  resolveTenantApiBaseUrl,
+  resolveTenantApiBaseCandidates,
+  writeTenantApiBaseOverride,
   writeTenantSession,
 } from "./tenant-context.js";
 
@@ -20,8 +21,24 @@ function withQuery(path, params = {}) {
   return suffix ? `${path}?${suffix}` : path;
 }
 
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function shouldRetryTransportError(error) {
+  const message = String(error?.message || error || "").trim().toLowerCase();
+  return (
+    error instanceof TypeError ||
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("load failed")
+  );
+}
+
 async function requestJson(path, options = {}) {
-  const baseUrl = resolveTenantApiBaseUrl().replace(/\/$/, "");
+  const baseUrls = resolveTenantApiBaseCandidates();
   const session = options.session || readSessionForCurrentView();
   const headers = {
     "content-type": "application/json",
@@ -31,30 +48,59 @@ async function requestJson(path, options = {}) {
     headers.authorization = `Bearer ${session.token}`;
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: options.method || "GET",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  const maxAttempts = Math.max(1, Number.parseInt(String(options.maxAttempts || "1"), 10) || 1);
+  const retryDelayMs = Math.max(
+    0,
+    Number.parseInt(String(options.retryDelayMs || "0"), 10) || 0,
+  );
+  let lastError = null;
 
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    for (const baseUrl of baseUrls) {
+      try {
+        const response = await fetch(`${baseUrl}${path}`, {
+          method: options.method || "GET",
+          headers,
+          body: options.body ? JSON.stringify(options.body) : undefined,
+        });
 
-  if (!response.ok || !payload?.ok) {
-    const message = payload?.error || `HTTP ${response.status}`;
-    throw new Error(message);
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
+
+        if (!response.ok || !payload?.ok) {
+          const message = payload?.error || `HTTP ${response.status}`;
+          throw new Error(message);
+        }
+
+        if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+          writeTenantApiBaseOverride(baseUrl);
+        }
+        return payload.data;
+      } catch (error) {
+        lastError = error;
+        if (!shouldRetryTransportError(error)) {
+          throw error;
+        }
+      }
+    }
+    if (attempt < maxAttempts - 1 && retryDelayMs > 0) {
+      await delay(retryDelayMs);
+    }
   }
-  return payload.data;
+  throw (lastError instanceof Error ? lastError : new Error(String(lastError || "request_failed")));
 }
 
 export function createTenantApiClient() {
   return {
     bootstrap() {
-      return requestJson("/bootstrap");
+      return requestJson("/bootstrap", {
+        maxAttempts: 8,
+        retryDelayMs: 300,
+      });
     },
     setupPlatformAdmin(body) {
       return requestJson("/setup/platform-admin", { method: "POST", body });

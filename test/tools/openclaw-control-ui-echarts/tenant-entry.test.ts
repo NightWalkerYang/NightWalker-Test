@@ -97,6 +97,7 @@ describe("zero-intrusive tenant entry", () => {
         <a class="sidebar-utility-link">文档</a>
         <a class="sidebar-utility-link oc-knowledge-graph-link">知识图谱</a>
         <a class="sidebar-utility-link oc-tenant-user-link">租户登录</a>
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
       </div>
     `;
 
@@ -115,10 +116,11 @@ describe("zero-intrusive tenant entry", () => {
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
     const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
-    expect(utilityItems).toHaveLength(3);
+    expect(utilityItems).toHaveLength(4);
     expect(utilityItems[0]?.hidden).toBe(true);
     expect(utilityItems[1]?.hidden).toBe(true);
     expect(utilityItems[2]?.hidden).toBe(true);
+    expect(utilityItems[3]?.hidden).toBe(false);
   });
 
   it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {
@@ -309,7 +311,9 @@ describe("zero-intrusive tenant entry", () => {
       <nav class="sidebar-nav">
         <section class="nav-section" data-native-group="chat"></section>
       </nav>
-      <div class="sidebar-utility-group"></div>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
     `;
 
     bootTenantEntry();
@@ -328,8 +332,9 @@ describe("zero-intrusive tenant entry", () => {
     await Promise.resolve();
 
     const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
-    expect(utilityItems).toHaveLength(3);
-    expect(utilityItems.every((item) => item instanceof HTMLElement && item.hidden)).toBe(true);
+    expect(utilityItems).toHaveLength(4);
+    expect(utilityItems[0] instanceof HTMLElement ? utilityItems[0].hidden : true).toBe(false);
+    expect(utilityItems.slice(1).every((item) => item instanceof HTMLElement && item.hidden)).toBe(true);
   });
 
   it("applies tenant-admin topbar meta when the topbar search is added after boot", async () => {
@@ -344,7 +349,9 @@ describe("zero-intrusive tenant entry", () => {
       <nav class="sidebar-nav">
         <section class="nav-section" data-native-group="chat"></section>
       </nav>
-      <div class="sidebar-utility-group"></div>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
     `;
 
     bootTenantEntry();
@@ -363,5 +370,9 @@ describe("zero-intrusive tenant entry", () => {
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "").toContain(
       "tenant-admin",
     );
+    const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
+    expect(utilityItems).toHaveLength(1);
+    expect(utilityItems[0]?.textContent).toContain("版本");
+    expect(utilityItems[0] instanceof HTMLElement ? utilityItems[0].hidden : true).toBe(false);
   });
 });

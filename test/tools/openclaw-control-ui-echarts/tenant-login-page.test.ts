@@ -79,4 +79,38 @@ describe("tenant login page", () => {
     expect(root.querySelector("[data-tenant-login-form]")?.hasAttribute("hidden")).toBe(true);
     expect(root.querySelector("[data-platform-login-link]")).toBeNull();
   });
+
+  it("retries local bootstrap fetches before surfacing an API error", async () => {
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-login");
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ok: true,
+            data: {
+              initialized: false,
+              edition: "local",
+              localLicense: {
+                edition: "local",
+                status: "missing",
+              },
+            },
+          };
+        },
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const root = document.createElement("main");
+    document.body.append(root);
+
+    await mountTenantLoginPage(root);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(root.textContent).toContain("初始化租户管理员");
+    expect(root.textContent).not.toContain("API 暂不可用");
+  });
 });

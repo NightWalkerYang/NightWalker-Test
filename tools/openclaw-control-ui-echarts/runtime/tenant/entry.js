@@ -338,6 +338,11 @@ function shouldHideUtilityItem(item, role) {
     item.querySelector(".oc-knowledge-graph-link") instanceof Element ||
     text.includes("知识图谱");
   const isDocs = text.includes("文档");
+  const isVersion = text.includes("版本");
+
+  if (role === "tenant_admin") {
+    return !isVersion;
+  }
 
   if (isTenantLogin || isKnowledgeGraph) {
     return role === "platform_admin" || role === "tenant_admin";

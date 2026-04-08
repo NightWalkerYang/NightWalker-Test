@@ -1329,6 +1329,7 @@
      - `成员管理`
      - `Agent 分配`
      - 版本信息
+   - 租户管理员底部入口已进一步收紧为仅保留版本块，不再显示文档、知识图谱、租户登录等平台入口
    - 原生顶栏搜索位已被租户管理员状态条接管，全局显示：
      - 当前角色
      - 当前登录
@@ -1393,6 +1394,10 @@
      - 把 Gateway token 同步写入 Control UI 预启动脚本
      - 建立 `workspace-downloads` 和 `workspace-agent-downloads` 指向本地数据目录
      - 强制本地版 sidecar 使用 `local` 版型
+   - 本地版 tenant API 启动链路已增加：
+     - bootstrap 重试
+     - `localhost / 127.0.0.1 / 当前主机名` 多基址回退
+     - 用于降低本机启动初期出现 `API 暂不可用：Failed to fetch` 的概率
    - 这条路径的目标不是交付源码仓库，而是交付可运行目录
    - 当前交付形态默认面向：
      - 不允许 Docker 的客户机器

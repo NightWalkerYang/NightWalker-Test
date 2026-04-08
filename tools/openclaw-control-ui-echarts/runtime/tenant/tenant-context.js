@@ -106,22 +106,40 @@ export function writeTenantApiBaseOverride(value) {
 }
 
 export function resolveTenantApiBaseUrl() {
+  return resolveTenantApiBaseCandidates()[0] || "/tenant-platform-api/v1";
+}
+
+export function resolveTenantApiBaseCandidates() {
+  const candidates = [];
+  const seen = new Set();
+  const pushCandidate = (value) => {
+    const normalized = String(value || "").trim().replace(/\/$/, "");
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    candidates.push(normalized);
+  };
+
   const fromStorage = readTenantApiBaseOverride();
   if (fromStorage) {
-    return fromStorage;
+    pushCandidate(fromStorage);
   }
 
   const meta = document.querySelector('meta[name="oc-tenant-api-base"]');
   const fromMeta = meta?.getAttribute("content")?.trim();
   if (fromMeta) {
-    return fromMeta;
+    pushCandidate(fromMeta);
   }
 
   if (window.location.protocol === "http:" && window.location.port === "18789") {
-    return `${window.location.protocol}//${window.location.hostname}:18801/tenant-platform-api/v1`;
+    pushCandidate(`${window.location.protocol}//${window.location.hostname}:18801/tenant-platform-api/v1`);
+    pushCandidate(`${window.location.protocol}//127.0.0.1:18801/tenant-platform-api/v1`);
+    pushCandidate(`${window.location.protocol}//localhost:18801/tenant-platform-api/v1`);
   }
 
-  return "/tenant-platform-api/v1";
+  pushCandidate("/tenant-platform-api/v1");
+  return candidates;
 }
 
 export function readTenantView(locationHref = window.location.href) {
