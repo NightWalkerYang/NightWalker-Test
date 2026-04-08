@@ -15,6 +15,7 @@ import {
   TENANT_MEMBERS_VIEW,
   clearSelectedTenantAgent,
   clearTenantViewFromHref,
+  readSelectedTenantAgent,
   readSessionForCurrentView,
   readTenantView,
 } from "./tenant-context.js";
@@ -145,6 +146,14 @@ function getSectionConfigForSession(session) {
     };
   }
   if (role === "member") {
+    const currentPath = new URL(window.location.href, document.baseURI).pathname;
+    const selectedAgent = readSelectedTenantAgent();
+    if (currentPath === "/chat" && selectedAgent?.id && selectedAgent?.agentId) {
+      return {
+        label: "Agent",
+        links: [],
+      };
+    }
     return {
       label: "Agent",
       links: [

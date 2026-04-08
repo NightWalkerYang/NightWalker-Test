@@ -4,7 +4,10 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { bootTenantEntry } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
-import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
+import {
+  writeSelectedTenantAgent,
+  writeTenantSession,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -164,6 +167,40 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[0] instanceof HTMLElement ? utilityItems[0].hidden : false).toBe(true);
     expect(utilityItems[1] instanceof HTMLElement ? utilityItems[1].hidden : false).toBe(true);
     expect(utilityItems[2] instanceof HTMLElement ? utilityItems[2].hidden : true).toBe(false);
+  });
+
+  it("does not keep the Agent selector menu in the sidebar on member chat routes", () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      status: "active",
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">文档</a>
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+
+    bootTenantEntry();
+
+    expect(document.querySelector(".oc-platform-management-section")).toBeNull();
+    expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
+    expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
   });
 
   it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {

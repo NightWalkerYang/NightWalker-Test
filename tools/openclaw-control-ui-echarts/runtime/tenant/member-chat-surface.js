@@ -16,11 +16,13 @@ import {
 const DOC_ATTR = "data-oc-member-chat-route";
 const STYLE_ATTR = "data-oc-member-chat-surface-style";
 const SECTION_ATTR = "data-oc-member-chat-section";
+const HEADER_ATTR = "data-oc-member-chat-header";
 const SESSION_LIST_ATTR = "data-oc-member-chat-session-list";
 const ACTIVE_SESSION_ATTR = "data-oc-member-chat-active-session";
 const LABEL_ATTR = "data-oc-member-chat-label";
 const APP_SELECTOR = "openclaw-app";
 const SIDEBAR_SELECTOR = ".sidebar-nav";
+const CONTENT_SELECTOR = ".content";
 const SECTION_CLASS = "nav-section oc-member-chat-section";
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
@@ -93,10 +95,7 @@ function resolveSessionLabel(row, index) {
   return index === 0 ? "当前会话" : `会话 ${index + 1}`;
 }
 
-function buildSidebarMarkup(selectedAgent, sessions, currentSessionKey) {
-  const agentName = escapeHtml(selectedAgent?.agentName || "当前 Agent");
-  const agentBadge = escapeHtml(selectedAgent?.emoji || "AI");
-  const description = escapeHtml(selectedAgent?.description || "已分配 Agent");
+function buildSidebarMarkup(sessions, currentSessionKey) {
   const items = sessions.length
     ? sessions
         .map((row, index) => {
@@ -128,17 +127,27 @@ function buildSidebarMarkup(selectedAgent, sessions, currentSessionKey) {
       </span>
     </button>
     <div class="nav-section__items">
-      <div class="oc-member-chat-agent-card">
-        <div class="oc-member-chat-agent-card__avatar">${agentBadge}</div>
-        <div class="oc-member-chat-agent-card__meta">
-          <div class="oc-member-chat-agent-card__name">${agentName}</div>
-          <div class="oc-member-chat-agent-card__desc">${description}</div>
-        </div>
-      </div>
-      <button class="btn oc-member-chat-action" type="button" data-member-chat-back>Agent选择</button>
       <button class="btn primary oc-member-chat-action" type="button" data-member-chat-new>新建会话</button>
       <div class="oc-member-chat-session-list" ${SESSION_LIST_ATTR}="true">
         ${items}
+      </div>
+    </div>
+  `;
+}
+
+function buildHeaderMarkup(selectedAgent) {
+  const agentName = escapeHtml(selectedAgent?.agentName || "当前 Agent");
+  const description = escapeHtml(selectedAgent?.description || "已分配 Agent");
+  const agentBadge = escapeHtml(selectedAgent?.emoji || "AI");
+  return `
+    <div class="oc-member-chat-header__body">
+      <button class="btn oc-member-chat-header__back" type="button" data-member-chat-back>Agent选择</button>
+      <div class="oc-member-chat-header__agent">
+        <div class="oc-member-chat-header__avatar">${agentBadge}</div>
+        <div class="oc-member-chat-header__meta">
+          <div class="oc-member-chat-header__name">${agentName}</div>
+          <div class="oc-member-chat-header__desc">${description}</div>
+        </div>
       </div>
     </div>
   `;
@@ -193,6 +202,18 @@ function ensureSection(sidebar) {
   const firstNativeSection = sidebar.querySelector(":scope > .nav-section:not(.oc-platform-management-section)");
   sidebar.insertBefore(section, firstNativeSection);
   return section;
+}
+
+function ensureHeader(content) {
+  let header = content.querySelector(`[${HEADER_ATTR}]`);
+  if (header instanceof HTMLElement) {
+    return header;
+  }
+  header = document.createElement("section");
+  header.className = "oc-member-chat-header";
+  header.setAttribute(HEADER_ATTR, "true");
+  content.prepend(header);
+  return header;
 }
 
 function closeAllDialogs() {
@@ -260,11 +281,6 @@ function attachSectionHandlers(section, controller) {
     if (!(target instanceof Element)) {
       return;
     }
-    if (target.closest("[data-member-chat-back]")) {
-      event.preventDefault();
-      navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE);
-      return;
-    }
     if (target.closest("[data-member-chat-new]")) {
       event.preventDefault();
       const nextSessionKey = createTenantMemberSessionKey(controller.session, controller.selectedAgent);
@@ -295,16 +311,39 @@ function attachSectionHandlers(section, controller) {
   });
 }
 
+function attachHeaderHandlers(header) {
+  if (!(header instanceof HTMLElement) || header.dataset.ocMemberChatHandlers === "true") {
+    return;
+  }
+  header.dataset.ocMemberChatHandlers = "true";
+  header.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    if (!target.closest("[data-member-chat-back]")) {
+      return;
+    }
+    event.preventDefault();
+    navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE);
+  });
+}
+
 function renderSidebarSection(controller) {
   const section = ensureSection(controller.sidebar);
-  section.innerHTML = buildSidebarMarkup(
-    controller.selectedAgent,
-    controller.sessions,
-    controller.currentSessionKey,
-  );
+  section.innerHTML = buildSidebarMarkup(controller.sessions, controller.currentSessionKey);
   section.setAttribute(ACTIVE_SESSION_ATTR, controller.currentSessionKey);
   section.setAttribute(LABEL_ATTR, controller.selectedAgent?.agentName || "");
   attachSectionHandlers(section, controller);
+}
+
+function renderContentHeader(controller) {
+  if (!(controller.content instanceof HTMLElement)) {
+    return;
+  }
+  const header = ensureHeader(controller.content);
+  header.innerHTML = buildHeaderMarkup(controller.selectedAgent);
+  attachHeaderHandlers(header);
 }
 
 async function syncMemberChatSurface() {
@@ -312,6 +351,7 @@ async function syncMemberChatSurface() {
     document.documentElement.removeAttribute(DOC_ATTR);
     document.body?.removeAttribute(DOC_ATTR);
     document.querySelector(`[${SECTION_ATTR}]`)?.remove();
+    document.querySelector(`[${HEADER_ATTR}]`)?.remove();
     return;
   }
 
@@ -322,9 +362,15 @@ async function syncMemberChatSurface() {
 
   const app = document.querySelector(APP_SELECTOR);
   const sidebar = document.querySelector(SIDEBAR_SELECTOR);
+  const content = document.querySelector(CONTENT_SELECTOR);
   const session = readTenantSession();
   const selectedAgent = readSelectedTenantAgent();
-  if (!(app instanceof HTMLElement) || !(sidebar instanceof HTMLElement) || !session || !selectedAgent?.id) {
+  if (
+    !(app instanceof HTMLElement) ||
+    !(sidebar instanceof HTMLElement) ||
+    !session ||
+    !selectedAgent?.id
+  ) {
     return;
   }
   if (!app.client || !app.connected) {
@@ -337,6 +383,7 @@ async function syncMemberChatSurface() {
   const controller = {
     app,
     sidebar,
+    content,
     session,
     selectedAgent,
     sessions: ensureVisibleCurrentSession(sessions, currentSessionKey),
@@ -344,6 +391,7 @@ async function syncMemberChatSurface() {
   };
 
   renderSidebarSection(controller);
+  renderContentHeader(controller);
   syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
   pinMemberChatSession(app, currentSessionKey);
 }
@@ -370,11 +418,19 @@ export function bootMemberChatSurface() {
         if (node.closest?.(`[${SECTION_ATTR}]`)) {
           continue;
         }
-        if (node.matches(APP_SELECTOR) || node.matches(SIDEBAR_SELECTOR)) {
+        if (
+          node.matches(APP_SELECTOR) ||
+          node.matches(SIDEBAR_SELECTOR) ||
+          node.matches(CONTENT_SELECTOR)
+        ) {
           void syncMemberChatSurface();
           return;
         }
-        if (node.querySelector?.(APP_SELECTOR) || node.querySelector?.(SIDEBAR_SELECTOR)) {
+        if (
+          node.querySelector?.(APP_SELECTOR) ||
+          node.querySelector?.(SIDEBAR_SELECTOR) ||
+          node.querySelector?.(CONTENT_SELECTOR)
+        ) {
           void syncMemberChatSurface();
           return;
         }
