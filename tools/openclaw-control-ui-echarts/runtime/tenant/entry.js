@@ -40,6 +40,7 @@ const TOPBAR_PROFILE_DIALOG_SELECTOR = "[data-oc-platform-profile-dialog]";
 const TOPBAR_LOGOUT_DIALOG_SELECTOR = "[data-oc-platform-logout-dialog]";
 const TOPBAR_DIALOG_CLOSE_SELECTOR = "[data-oc-platform-dialog-close]";
 const TOPBAR_DIALOG_CONFIRM_LOGOUT_SELECTOR = "[data-oc-platform-confirm-logout]";
+const TENANT_ROLE_CONTEXT_ATTR = "data-oc-tenant-role-context";
 
 const ICONS = {
   tenants: `
@@ -527,6 +528,14 @@ function clearPlatformTopbarMeta() {
   }
 }
 
+function syncTenantRoleContext(role) {
+  if (role === "platform_admin" || role === "tenant_admin") {
+    document.documentElement.setAttribute(TENANT_ROLE_CONTEXT_ATTR, role);
+    return;
+  }
+  document.documentElement.removeAttribute(TENANT_ROLE_CONTEXT_ATTR);
+}
+
 function ensureTopbarLogoutHandler() {
   if (document.documentElement.dataset.ocPlatformLogoutHandler === "true") {
     return;
@@ -604,6 +613,7 @@ export function bootTenantEntry() {
     const session = readSessionForCurrentView();
     const role = String(session?.session?.role || "");
     const scope = root instanceof Element || root instanceof Document ? root : document;
+    syncTenantRoleContext(role);
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
     } else if (role === "platform_admin" || role === "tenant_admin") {

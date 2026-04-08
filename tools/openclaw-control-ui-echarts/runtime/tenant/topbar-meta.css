@@ -2,6 +2,10 @@
   display: none !important;
 }
 
+:root[data-oc-tenant-role-context="tenant_admin"] .sidebar-nav > .nav-section:not(.oc-platform-management-section) {
+  display: none !important;
+}
+
 .oc-platform-topbar-meta {
   display: inline-flex;
   align-items: center;

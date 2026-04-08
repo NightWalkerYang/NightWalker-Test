@@ -113,6 +113,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(items[1]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-assignment");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant_admin");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant-admin");
+    expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe("tenant_admin");
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
     const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
@@ -155,6 +156,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(items[0]?.textContent).toContain("成员管理");
     expect(items[1]?.textContent).toContain("Agent 分配");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant_admin");
+    expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe("tenant_admin");
   });
 
   it("skips tenant sidebar injection on the public lufeng route", () => {
