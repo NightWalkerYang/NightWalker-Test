@@ -2,14 +2,22 @@
   display: none !important;
 }
 
-:root[data-oc-tenant-role-context="tenant_admin"] .sidebar-nav > .nav-section:not(.oc-platform-management-section),
-:root[data-oc-tenant-role-context="member"] .sidebar-nav > .nav-section:not(.oc-platform-management-section) {
+:root[data-oc-tenant-role-context="tenant_admin"] .sidebar-nav .nav-section:not([data-oc-role-nav]),
+:root[data-oc-tenant-role-context="member"] .sidebar-nav .nav-section:not([data-oc-role-nav]) {
   display: none !important;
 }
 
-:root[data-oc-tenant-role-context="tenant_admin"] .sidebar-utility-group > :not([data-oc-utility-version]),
-:root[data-oc-tenant-role-context="member"] .sidebar-utility-group > :not([data-oc-utility-version]) {
+:root[data-oc-tenant-role-context="tenant_admin"] .sidebar-utility-group [data-oc-utility-hidden],
+:root[data-oc-tenant-role-context="member"] .sidebar-utility-group [data-oc-utility-hidden] {
   display: none !important;
+}
+
+:root[data-oc-tenant-role-context="member"] .oc-platform-management-section > .nav-section__label {
+  display: none !important;
+}
+
+:root[data-oc-tenant-role-context="member"] .oc-platform-management-section > .nav-section__items {
+  margin-top: 0;
 }
 
 .oc-platform-topbar-meta {

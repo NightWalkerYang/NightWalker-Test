@@ -196,7 +196,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
 - Tenant-member login now also lands inside the native Control UI shell, with only the injected `Agent` dropdown and an embedded `Agent选择` card view for assigned Agents.
 - Platform-admin identity and logout status now occupy the native topbar search slot globally across the root control UI.
-- Tenant-admin and tenant-member identity and logout status now occupy that same native topbar search slot on their native control-shell views, and role-scoped CSS plus runtime markers force their sidebar/footer down to only the injected management or Agent group plus the version block.
+- Tenant-admin and tenant-member identity and logout status now occupy that same native topbar search slot on their native control-shell views, and role-scoped CSS plus runtime markers force their sidebar/footer down to only the injected management or Agent entry plus the version block.
 - Tenant platform entry now rescans late-rendered native shell nodes so topbar and sidebar role-trimming still applies after Control UI rerenders.
 - Tenant-admin shell trimming now keeps only the `管理` dropdown and the version block, while local-edition tenant API calls retry bootstrap and fall back across loopback/base-url candidates to avoid transient `Failed to fetch` startup errors.
 - Tenant-admin shell now also sets a role-scoped root attribute and uses injected CSS to force-hide all native sidebar sections outside the injected `管理` group, avoiding native shell rerender leaks.

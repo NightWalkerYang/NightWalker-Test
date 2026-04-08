@@ -248,6 +248,7 @@ function createManagementSection(session) {
   const section = document.createElement("section");
   section.className = `nav-section ${MANAGEMENT_SECTION_CLASS}`;
   section.setAttribute("data-oc-management-role", String(session?.session?.role || ""));
+  section.setAttribute("data-oc-role-nav", "true");
 
   const config = getSectionConfigForSession(session);
   const label = createSectionLabel(config.label);
@@ -391,7 +392,9 @@ function syncUtilityItemAttributes(item) {
     return;
   }
   const text = normalizeText(item.textContent);
-  item.toggleAttribute("data-oc-utility-version", text.includes("版本"));
+  const isVersion = text.includes("版本");
+  item.toggleAttribute("data-oc-utility-version", isVersion);
+  item.toggleAttribute("data-oc-utility-hidden", !isVersion);
 }
 
 function syncSidebarUtilityForRole(container, role) {
