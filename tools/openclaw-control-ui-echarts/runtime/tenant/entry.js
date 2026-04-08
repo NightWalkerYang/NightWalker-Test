@@ -386,6 +386,14 @@ function shouldHideUtilityItem(item, role) {
   return false;
 }
 
+function syncUtilityItemAttributes(item) {
+  if (!(item instanceof HTMLElement)) {
+    return;
+  }
+  const text = normalizeText(item.textContent);
+  item.toggleAttribute("data-oc-utility-version", text.includes("版本"));
+}
+
 function syncSidebarUtilityForRole(container, role) {
   if (!(container instanceof HTMLElement)) {
     return;
@@ -394,6 +402,7 @@ function syncSidebarUtilityForRole(container, role) {
     if (!(child instanceof HTMLElement)) {
       continue;
     }
+    syncUtilityItemAttributes(child);
     child.hidden = shouldHideUtilityItem(child, role);
   }
 }
