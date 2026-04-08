@@ -124,6 +124,48 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[3]?.hidden).toBe(false);
   });
 
+  it("injects an Agent-only sidebar group for tenant members", () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">文档</a>
+        <a class="sidebar-utility-link oc-knowledge-graph-link">知识图谱</a>
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+
+    bootTenantEntry();
+
+    const section = document.querySelector(".oc-platform-management-section");
+    const items = section?.querySelectorAll(".nav-item") ?? [];
+    expect(section).not.toBeNull();
+    expect(section?.querySelector(".nav-section__label-text")?.textContent).toContain("Agent");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.textContent).toContain("Agent选择");
+    expect(items[0]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-selector");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("member");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("member-user");
+    expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe("member");
+    expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
+    expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
+    const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
+    expect(utilityItems).toHaveLength(3);
+    expect(utilityItems[0] instanceof HTMLElement ? utilityItems[0].hidden : false).toBe(true);
+    expect(utilityItems[1] instanceof HTMLElement ? utilityItems[1].hidden : false).toBe(true);
+    expect(utilityItems[2] instanceof HTMLElement ? utilityItems[2].hidden : true).toBe(false);
+  });
+
   it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {
     writeTenantSession({
       token: "platform-token",

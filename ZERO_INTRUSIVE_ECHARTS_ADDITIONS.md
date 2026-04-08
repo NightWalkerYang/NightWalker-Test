@@ -109,15 +109,16 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-surface.css`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-layout.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-page.js`
-- `tools/openclaw-control-ui-echarts/runtime/tenant/agent-selector-page.js`
-- `tools/openclaw-control-ui-echarts/runtime/tenant/chat-shell.js`
-- `tools/openclaw-control-ui-echarts/runtime/tenant/chat-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-console-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js`
 
 ### Sidecar: Tenant Platform
@@ -133,8 +134,6 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Static Pages
 
 - `tools/openclaw-control-ui-echarts/static/knowledge-graph.html`
-- `tools/openclaw-control-ui-echarts/static/tenant-agent-selector.html`
-- `tools/openclaw-control-ui-echarts/static/tenant-chat.html`
 
 ### Tests
 
@@ -153,6 +152,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/lufeng-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/local-runtime-common.test.ts`
+- `test/tools/openclaw-control-ui-echarts/member-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/package-local-runtime.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
@@ -194,8 +194,9 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
+- Tenant-member login now also lands inside the native Control UI shell, with only the injected `Agent` dropdown and an embedded `Agent选择` card view for assigned Agents.
 - Platform-admin identity and logout status now occupy the native topbar search slot globally across the root control UI.
-- Tenant-admin identity and logout status now occupy that same native topbar search slot on tenant management views, and sidebar/footer links are trimmed by role without touching source code.
+- Tenant-admin and tenant-member identity and logout status now occupy that same native topbar search slot on their native control-shell views, and sidebar/footer links are trimmed by role without touching source code.
 - Tenant platform entry now rescans late-rendered native shell nodes so topbar and sidebar role-trimming still applies after Control UI rerenders.
 - Tenant-admin shell trimming now keeps only the `管理` dropdown and the version block, while local-edition tenant API calls retry bootstrap and fall back across loopback/base-url candidates to avoid transient `Failed to fetch` startup errors.
 - Tenant-admin shell now also sets a role-scoped root attribute and uses injected CSS to force-hide all native sidebar sections outside the injected `管理` group, avoiding native shell rerender leaks.

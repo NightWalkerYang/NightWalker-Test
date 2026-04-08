@@ -7,10 +7,13 @@ import {
   PLATFORM_TENANT_MANAGEMENT_VIEW,
   TENANT_AGENT_ASSIGNMENT_ROUTE,
   TENANT_AGENT_ASSIGNMENT_VIEW,
+  TENANT_AGENT_SELECTOR_ROUTE,
+  TENANT_AGENT_SELECTOR_VIEW,
   TENANT_LOGIN_VIEW,
   TENANT_LOGIN_ROUTE,
   TENANT_MEMBER_MANAGEMENT_ROUTE,
   TENANT_MEMBERS_VIEW,
+  clearSelectedTenantAgent,
   clearTenantViewFromHref,
   readSessionForCurrentView,
   readTenantView,
@@ -70,12 +73,12 @@ const ICONS = {
   `,
 };
 
-function createSectionLabel() {
+function createSectionLabel(text = "管理") {
   const label = document.createElement("button");
   label.type = "button";
   label.className = "nav-section__label";
   label.innerHTML = `
-    <span class="nav-section__label-text">管理</span>
+    <span class="nav-section__label-text">${text}</span>
     <span class="nav-section__chevron" aria-hidden="true">${ICONS.chevronDown}</span>
   `;
   return label;
@@ -93,49 +96,70 @@ function createNavItem({ className, href, title, text, icon }) {
   return link;
 }
 
-function getManagementLinksForSession(session) {
+function getSectionConfigForSession(session) {
   const role = session?.session?.role || "";
   if (role === "platform_admin") {
-    return [
-      {
-        className: "oc-tenant-management-link",
-        href: PLATFORM_TENANT_MANAGEMENT_ROUTE,
-        title: "租户管理",
-        text: "租户管理",
-        icon: ICONS.tenants,
-        activeView: PLATFORM_TENANT_MANAGEMENT_VIEW,
-      },
-      {
-        className: "oc-platform-agent-link",
-        href: PLATFORM_AGENT_ASSIGNMENT_ROUTE,
-        title: "Agent 分配",
-        text: "Agent 分配",
-        icon: ICONS.agentAllocation,
-        activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
-      },
-    ];
+    return {
+      label: "管理",
+      links: [
+        {
+          className: "oc-tenant-management-link",
+          href: PLATFORM_TENANT_MANAGEMENT_ROUTE,
+          title: "租户管理",
+          text: "租户管理",
+          icon: ICONS.tenants,
+          activeView: PLATFORM_TENANT_MANAGEMENT_VIEW,
+        },
+        {
+          className: "oc-platform-agent-link",
+          href: PLATFORM_AGENT_ASSIGNMENT_ROUTE,
+          title: "Agent 分配",
+          text: "Agent 分配",
+          icon: ICONS.agentAllocation,
+          activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
+        },
+      ],
+    };
   }
   if (role === "tenant_admin") {
-    return [
-      {
-        className: "oc-tenant-members-link",
-        href: TENANT_MEMBER_MANAGEMENT_ROUTE,
-        title: "成员管理",
-        text: "成员管理",
-        icon: ICONS.members,
-        activeView: TENANT_MEMBERS_VIEW,
-      },
-      {
-        className: "oc-tenant-agent-link",
-        href: TENANT_AGENT_ASSIGNMENT_ROUTE,
-        title: "Agent 分配",
-        text: "Agent 分配",
-        icon: ICONS.agentAllocation,
-        activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
-      },
-    ];
+    return {
+      label: "管理",
+      links: [
+        {
+          className: "oc-tenant-members-link",
+          href: TENANT_MEMBER_MANAGEMENT_ROUTE,
+          title: "成员管理",
+          text: "成员管理",
+          icon: ICONS.members,
+          activeView: TENANT_MEMBERS_VIEW,
+        },
+        {
+          className: "oc-tenant-agent-link",
+          href: TENANT_AGENT_ASSIGNMENT_ROUTE,
+          title: "Agent 分配",
+          text: "Agent 分配",
+          icon: ICONS.agentAllocation,
+          activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
+        },
+      ],
+    };
   }
-  return [];
+  if (role === "member") {
+    return {
+      label: "Agent",
+      links: [
+        {
+          className: "oc-member-agent-selector-link",
+          href: TENANT_AGENT_SELECTOR_ROUTE,
+          title: "Agent 选择",
+          text: "Agent选择",
+          icon: ICONS.agentAllocation,
+          activeView: TENANT_AGENT_SELECTOR_VIEW,
+        },
+      ],
+    };
+  }
+  return { label: "管理", links: [] };
 }
 
 function updateManagementSectionState(section) {
@@ -182,7 +206,8 @@ function isManagementViewActive() {
     activeView === PLATFORM_TENANT_MANAGEMENT_VIEW ||
     activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
     activeView === TENANT_MEMBERS_VIEW ||
-    activeView === TENANT_AGENT_ASSIGNMENT_VIEW
+    activeView === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    activeView === TENANT_AGENT_SELECTOR_VIEW
   );
 }
 
@@ -224,10 +249,11 @@ function createManagementSection(session) {
   section.className = `nav-section ${MANAGEMENT_SECTION_CLASS}`;
   section.setAttribute("data-oc-management-role", String(session?.session?.role || ""));
 
-  const label = createSectionLabel();
+  const config = getSectionConfigForSession(session);
+  const label = createSectionLabel(config.label);
   const items = document.createElement("div");
   items.className = "nav-section__items";
-  const links = getManagementLinksForSession(session);
+  const links = config.links;
   const activeView = readTenantView();
   for (const link of links) {
     const item = createNavItem({
@@ -262,14 +288,20 @@ function ensureManagementSection(container) {
   }
   const session = readSessionForCurrentView();
   const role = String(session?.session?.role || "");
-  const links = getManagementLinksForSession(session);
+  const config = getSectionConfigForSession(session);
+  const links = config.links;
   const existing = container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`);
   if (!links.length) {
     existing?.remove();
     return;
   }
   if (existing instanceof HTMLElement) {
-    if (existing.getAttribute("data-oc-management-role") !== role) {
+    const labelText =
+      existing.querySelector(".nav-section__label-text")?.textContent?.trim() || "";
+    if (
+      existing.getAttribute("data-oc-management-role") !== role ||
+      labelText !== config.label
+    ) {
       existing.remove();
     } else {
       updateManagementSectionState(existing);
@@ -311,7 +343,7 @@ function syncSidebarNavForRole(container, role) {
   if (!(container instanceof HTMLElement)) {
     return;
   }
-  const shouldTenantHideNativeSections = role === "tenant_admin";
+  const shouldTenantHideNativeSections = role === "tenant_admin" || role === "member";
   for (const section of container.querySelectorAll(":scope > .nav-section")) {
     if (!(section instanceof HTMLElement)) {
       continue;
@@ -341,7 +373,7 @@ function shouldHideUtilityItem(item, role) {
   const isDocs = text.includes("文档");
   const isVersion = text.includes("版本");
 
-  if (role === "tenant_admin") {
+  if (role === "tenant_admin" || role === "member") {
     return !isVersion;
   }
 
@@ -529,7 +561,7 @@ function clearPlatformTopbarMeta() {
 }
 
 function syncTenantRoleContext(role) {
-  if (role === "platform_admin" || role === "tenant_admin") {
+  if (role === "platform_admin" || role === "tenant_admin" || role === "member") {
     document.documentElement.setAttribute(TENANT_ROLE_CONTEXT_ATTR, role);
     return;
   }
@@ -592,6 +624,9 @@ function ensureTopbarLogoutHandler() {
     } catch {
       // Local session is cleared in the API client before the request, so redirect anyway.
     }
+    if (!isPlatformAdmin) {
+      clearSelectedTenantAgent();
+    }
     closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
     window.location.href = isPlatformAdmin ? PLATFORM_LOGIN_ROUTE : TENANT_LOGIN_ROUTE;
@@ -616,14 +651,14 @@ export function bootTenantEntry() {
     syncTenantRoleContext(role);
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
-    } else if (role === "platform_admin" || role === "tenant_admin") {
+    } else if (role === "platform_admin" || role === "tenant_admin" || role === "member") {
       syncPlatformTopbarMeta(session);
     } else {
       clearPlatformTopbarMeta();
     }
     if (
       !isTenantAuthViewActive() &&
-      (role === "platform_admin" || role === "tenant_admin")
+      (role === "platform_admin" || role === "tenant_admin" || role === "member")
     ) {
       if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
         ensureSidebarRouteHandlers(scope);

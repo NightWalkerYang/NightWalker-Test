@@ -114,4 +114,26 @@ describe("platform access guard", () => {
       }),
     ).toBe("redirect-member");
   });
+
+  it("allows members on the native Agent selector and selected-agent chat routes", () => {
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/",
+        href: "https://www.hailstone.cn:18789/?ocTenantView=tenant-agent-selector",
+        edition: "cloud",
+        platformSession: null,
+        tenantSession: { token: "member-token", session: { role: "member" } },
+      }),
+    ).toBe("allow");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/chat",
+        href: "https://www.hailstone.cn:18789/chat?tenantAgentId=tenant-agent-1",
+        edition: "cloud",
+        platformSession: null,
+        tenantSession: { token: "member-token", session: { role: "member" } },
+      }),
+    ).toBe("allow");
+  });
 });

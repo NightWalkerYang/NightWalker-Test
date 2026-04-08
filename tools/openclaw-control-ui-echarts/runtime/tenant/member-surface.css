@@ -1,0 +1,104 @@
+.content[data-oc-member-surface-active="true"] > :not([data-oc-member-surface-root]) {
+  display: none !important;
+}
+
+.oc-member-surface-root {
+  display: block;
+}
+
+.oc-member-agent-view {
+  display: grid;
+  gap: 16px;
+}
+
+.oc-member-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.oc-member-agent-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.oc-member-agent-card__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.oc-member-agent-card__avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 24px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.oc-member-agent-card__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.oc-member-agent-card__meta {
+  display: grid;
+  gap: 6px;
+}
+
+.oc-member-agent-card__title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.oc-member-agent-card__status {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.oc-member-agent-card__desc,
+.oc-member-agent-card__points {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.oc-member-agent-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.oc-member-agent-empty {
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 18px;
+}
+
+.oc-member-surface-feedback {
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .oc-member-agent-grid {
+    grid-template-columns: 1fr;
+  }
+}

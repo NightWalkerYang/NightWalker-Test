@@ -928,12 +928,14 @@
   - 平台管理员登录页逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
   - 租户登录页逻辑
-- `tools/openclaw-control-ui-echarts/runtime/tenant/agent-selector-page.js`
-  - 登录后的 Agent 选择页逻辑
-- `tools/openclaw-control-ui-echarts/runtime/tenant/chat-shell.js`
-  - 租户聊天壳层，负责把当前租户会话映射到 OpenClaw 会话
-- `tools/openclaw-control-ui-echarts/runtime/tenant/chat-page.js`
-  - 租户成员聊天页逻辑
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-console-page.js`
+  - 租户成员原生控制台 `Agent选择` 视图逻辑
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-surface.js`
+  - 将租户成员的 `Agent选择` 视图嵌入原生控制台内容区
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-surface.css`
+  - 租户成员原生控制台卡片视图样式
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js`
+  - 成员在原生 `/chat` 路由下固定已选择 Agent 会话的壳层逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-page.js`
   - 租户管理员列表与分配视图逻辑
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-console-page.js`
@@ -941,10 +943,8 @@
 
 ### 3. 静态页面
 
-- `tools/openclaw-control-ui-echarts/static/tenant-agent-selector.html`
-  - Agent 选择页
-- `tools/openclaw-control-ui-echarts/static/tenant-chat.html`
-  - 租户成员聊天页
+- 当前不再保留租户成员独立静态页面
+- 租户成员改为直接复用原生控制台单入口
 
 ### 4. 未来会修改的零侵入文件
 
@@ -1209,8 +1209,7 @@
    - 原生侧边栏“管理”分组
    - 原生单入口平台管理视图：`./?ocTenantView=platform-tenants`
    - 原生单入口平台管理视图：`./?ocTenantView=platform-agent-assignment`
-   - `tenant-agent-selector.html`
-   - `tenant-chat.html`
+   - 成员原生单入口 Agent 选择视图：`./?ocTenantView=tenant-agent-selector`
 
 12. 第一阶段必须新增的零侵入运行时文件
    - `runtime/tenant/tenant-context.js`
@@ -1224,9 +1223,10 @@
    - `runtime/tenant/platform-surface.js`
    - `runtime/tenant/platform-login-page.js`
    - `runtime/tenant/login-page.js`
-   - `runtime/tenant/agent-selector-page.js`
-   - `runtime/tenant/chat-shell.js`
-   - `runtime/tenant/chat-page.js`
+   - `runtime/tenant/member-console-page.js`
+   - `runtime/tenant/member-surface.js`
+   - `runtime/tenant/member-surface.css`
+   - `runtime/tenant/member-chat-surface.js`
    - `runtime/tenant/tenant-console-page.js`
    - `runtime/tenant/platform-console-page.js`
 
@@ -1341,8 +1341,16 @@
    - 原生壳层即使延迟重渲染，租户入口仍会重新接管顶栏与侧边栏角色裁剪
 
 8. 租户成员基础能力已落地
-   - 成员端 Agent 选择页
-   - 某个 Agent 对应的聊天入口页
+   - 租户成员已切换为原生控制台内容区视图，不再依赖独立 `tenant-agent-selector.html / tenant-chat.html`
+   - 原生侧边栏当前只保留：
+     - `Agent`
+     - `Agent选择`
+   - 原生顶栏搜索位已被租户成员状态条接管，全局显示：
+     - 当前角色
+     - 当前登录
+     - 退出登录
+   - 租户成员原生内容区当前以卡片方式显示已分配 Agent
+   - 租户成员从卡片进入聊天后，已改为复用原生 `/chat`，并按已选择 Agent 固定会话
 
 9. 租户 sidecar 与数据库底座已落地
    - SQLite 持久化已打通

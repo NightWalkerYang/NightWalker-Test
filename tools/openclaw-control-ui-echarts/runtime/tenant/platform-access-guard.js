@@ -1,11 +1,13 @@
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
+  TENANT_AGENT_SELECTOR_VIEW,
   PLATFORM_LOGIN_ROUTE,
   PLATFORM_LOGIN_VIEW,
   TENANT_LOGIN_ROUTE,
   TENANT_MEMBERS_VIEW,
   TENANT_LOGIN_VIEW,
   clearPlatformSession,
+  readSelectedTenantAgentId,
   routeForRole,
   readPlatformSession,
   readTenantSession,
@@ -30,6 +32,7 @@ export function resolvePlatformAccessDecision({
   tenantSession = readTenantSession(),
 } = {}) {
   const view = readTenantView(href);
+  const selectedTenantAgentId = readSelectedTenantAgentId(href);
   if (view === PLATFORM_LOGIN_VIEW || view === TENANT_LOGIN_VIEW) {
     return "skip";
   }
@@ -46,6 +49,21 @@ export function resolvePlatformAccessDecision({
     tenantSession?.token &&
     tenantSession?.session?.role === "tenant_admin" &&
     (view === TENANT_MEMBERS_VIEW || view === TENANT_AGENT_ASSIGNMENT_VIEW)
+  ) {
+    return "allow";
+  }
+  if (
+    tenantSession?.token &&
+    tenantSession?.session?.role === "member" &&
+    view === TENANT_AGENT_SELECTOR_VIEW
+  ) {
+    return "allow";
+  }
+  if (
+    tenantSession?.token &&
+    tenantSession?.session?.role === "member" &&
+    selectedTenantAgentId &&
+    String(pathname || "").trim() === "/chat"
   ) {
     return "allow";
   }

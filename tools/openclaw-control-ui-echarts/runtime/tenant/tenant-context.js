@@ -1,6 +1,7 @@
 const PLATFORM_SESSION_STORAGE_KEY = "openclaw:tenant-platform:platform-session:v1";
 const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
 const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
+const TENANT_SELECTED_AGENT_STORAGE_KEY = "openclaw:tenant-platform:selected-agent:v1";
 const TENANT_VIEW_QUERY_KEY = "ocTenantView";
 export const PLATFORM_LOGIN_VIEW = "platform-login";
 export const TENANT_LOGIN_VIEW = "tenant-login";
@@ -11,12 +12,14 @@ export const PLATFORM_TENANT_MANAGEMENT_VIEW = PLATFORM_TENANTS_VIEW;
 export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
+export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
 export const PLATFORM_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_LOGIN_VIEW}`;
 export const TENANT_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_LOGIN_VIEW}`;
 export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_TENANTS_VIEW}`;
 export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
 export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
 export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
+export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
 
 function safeStorage() {
   try {
@@ -63,13 +66,10 @@ export function readSessionForCurrentView(pathname = window.location.pathname) {
   if (view === TENANT_LOGIN_VIEW) {
     return readTenantSession();
   }
-  if (view === TENANT_MEMBERS_VIEW || view === TENANT_AGENT_ASSIGNMENT_VIEW) {
-    return readTenantSession();
-  }
-  const normalizedPath = String(pathname || "/").trim() || "/";
   if (
-    normalizedPath.endsWith("/tenant-agent-selector.html") ||
-    normalizedPath.endsWith("/tenant-chat.html")
+    view === TENANT_MEMBERS_VIEW ||
+    view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    view === TENANT_AGENT_SELECTOR_VIEW
   ) {
     return readTenantSession();
   }
@@ -160,7 +160,57 @@ export function routeForRole(role) {
   if (role === "tenant_admin") {
     return TENANT_MEMBER_MANAGEMENT_ROUTE;
   }
-  return "./tenant-agent-selector.html";
+  return TENANT_AGENT_SELECTOR_ROUTE;
+}
+
+export function readSelectedTenantAgent(locationHref = window.location.href) {
+  const url = new URL(locationHref, document.baseURI);
+  const tenantAgentId = url.searchParams.get("tenantAgentId")?.trim() || "";
+  const stored = readStoredSession(TENANT_SELECTED_AGENT_STORAGE_KEY);
+  if (!tenantAgentId) {
+    return stored;
+  }
+  if (stored?.id === tenantAgentId) {
+    return stored;
+  }
+  return {
+    ...(stored && typeof stored === "object" ? stored : {}),
+    id: tenantAgentId,
+  };
+}
+
+export function readSelectedTenantAgentId(locationHref = window.location.href) {
+  return readSelectedTenantAgent(locationHref)?.id?.trim() || "";
+}
+
+export function writeSelectedTenantAgent(agent) {
+  if (!agent || typeof agent !== "object") {
+    clearStoredSession(TENANT_SELECTED_AGENT_STORAGE_KEY);
+    return;
+  }
+  writeStoredSession(TENANT_SELECTED_AGENT_STORAGE_KEY, {
+    id: String(agent.id || "").trim(),
+    agentId: String(agent.agentId || "").trim(),
+    agentName: String(agent.agentName || "").trim(),
+    balancePoints: Number(agent.balancePoints || 0),
+    status: String(agent.status || "").trim(),
+    avatar: agent.avatar || null,
+    emoji: agent.emoji || null,
+    description: String(agent.description || "").trim(),
+  });
+}
+
+export function clearSelectedTenantAgent() {
+  clearStoredSession(TENANT_SELECTED_AGENT_STORAGE_KEY);
+}
+
+export function buildTenantMemberChatRoute(tenantAgentId) {
+  const url = new URL("./chat", document.baseURI);
+  const normalized = String(tenantAgentId || "").trim();
+  if (normalized) {
+    url.searchParams.set("tenantAgentId", normalized);
+  }
+  return url.href;
 }
 
 export function isLocalEditionSession(session) {
