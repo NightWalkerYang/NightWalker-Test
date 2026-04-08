@@ -37,12 +37,17 @@
 ## 客户机器启动步骤
 
 1. 安装 Node.js `22.12+`
-2. 将 `runtime.env.example` 复制为 `runtime.env`
-3. 将 `openclaw.local.example.json5` 按需改成客户自己的 `openclaw.json`，放到：
+2. 运行包默认已经附带：
+   - `runtime.env`
    - `data/.openclaw/openclaw.json`
-4. 将授权公钥放到：
+3. 如需调整，再修改：
+   - `runtime.env`
+   - `data/.openclaw/openclaw.json`
+4. 将 `openclaw.local.example.json5` 按需改成客户自己的 `openclaw.json`，放到：
+   - `data/.openclaw/openclaw.json`
+5. 将授权公钥放到：
    - `data/.openclaw/tenant-platform/license-public.pem`
-5. 启动：
+6. 启动：
    - Windows: `start-local-runtime.cmd`
    - macOS/Linux: `./start-local-runtime.sh`
 

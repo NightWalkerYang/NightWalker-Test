@@ -54,31 +54,24 @@
 D:\openclaw-local-runtime
 ```
 
-### 2. 准备环境变量文件
+### 2. 检查默认运行配置
 
-将：
+运行包默认已经附带：
 
-```text
-runtime.env.example
-```
+- `runtime.env`
+- `data/.openclaw/openclaw.json`
 
-复制为：
-
-```text
-runtime.env
-```
-
-如无特殊要求，可先保留默认值。
+如果只是首次测试，可以直接在这两份文件上修改，不需要再手工复制模板。
 
 ### 3. 准备 OpenClaw 配置文件
 
-将：
+如需重新参考模板，可以用：
 
 ```text
 openclaw.local.example.json5
 ```
 
-作为模板，整理成本地实际配置文件：
+整理成本地实际配置文件：
 
 ```text
 data/.openclaw/openclaw.json

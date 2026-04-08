@@ -1402,6 +1402,10 @@
      - `runtime.env.example` 已补充模型凭证占位项
      - `openclaw.local.example.json5` 已补充最小默认模型结构
      - 客户现场人员可以直接按模板替换实际 provider 和 model
+   - 当前运行包默认已直接附带：
+     - `runtime.env`
+     - `data/.openclaw/openclaw.json`
+   - 即使客户误删 `data/.openclaw/openclaw.json`，启动准备层也会按包内模板自动补回
    - 当前已补齐非 Docker 运行包兼容层：
      - 打包脚本会额外把运行时缺失的依赖一起装进运行包
      - 运行包内会为 `file-type/core.js` 自动生成兼容入口

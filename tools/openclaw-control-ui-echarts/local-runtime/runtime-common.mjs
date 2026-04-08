@@ -235,6 +235,12 @@ export function prepareLocalRuntime(rootDir, processEnv = process.env) {
   fs.mkdirSync(resolved.workspaceAgentsDir, { recursive: true });
   fs.mkdirSync(resolved.tenantPlatformStateDir, { recursive: true });
   fs.mkdirSync(resolved.logsDir, { recursive: true });
+  if (!fs.existsSync(resolved.env.OPENCLAW_CONFIG_PATH)) {
+    const defaultConfigTemplatePath = path.join(rootDir, "openclaw.local.example.json5");
+    if (fs.existsSync(defaultConfigTemplatePath)) {
+      fs.copyFileSync(defaultConfigTemplatePath, resolved.env.OPENCLAW_CONFIG_PATH);
+    }
+  }
   if (!fs.existsSync(resolved.openclawEntry)) {
     throw new Error(`missing_openclaw_entry:${resolved.openclawEntry}`);
   }

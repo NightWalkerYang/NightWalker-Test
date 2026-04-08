@@ -1,13 +1,31 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   parseRuntimeEnvFile,
+  prepareLocalRuntime,
   resolveRuntimeEnv,
   syncControlUiBootstrapScripts,
 } from "../../../tools/openclaw-control-ui-echarts/local-runtime/runtime-common.mjs";
 
+const tempDirs = [];
+
+function createTempDir() {
+  const dirPath = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-local-runtime-common-"));
+  tempDirs.push(dirPath);
+  return dirPath;
+}
+
 describe("local runtime common", () => {
+  afterEach(() => {
+    while (tempDirs.length > 0) {
+      const dirPath = tempDirs.pop();
+      fs.rmSync(dirPath, { recursive: true, force: true });
+    }
+  });
+
   it("parses simple runtime env files", () => {
     expect(
       parseRuntimeEnvFile(`
@@ -48,5 +66,42 @@ OPENCLAW_GATEWAY_PORT=19999
     expect(updated).toContain('data-openclaw-auto-token-bootstrap data-gateway-token="next-token"');
     expect(updated).toContain('data-openclaw-lufeng-bootstrap data-gateway-token="next-token"');
     expect(updated).not.toContain('data-gateway-token="old"');
+  });
+
+  it("seeds the runtime config file from the packaged template when missing", () => {
+    const rootDir = createTempDir();
+    const packageRoot = path.join(rootDir, "runtime", "node_modules", "openclaw");
+    fs.mkdirSync(path.join(packageRoot, "dist", "control-ui"), { recursive: true });
+    fs.mkdirSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "sidecar",
+        "tenant-platform",
+      ),
+      { recursive: true },
+    );
+    fs.writeFileSync(path.join(packageRoot, "openclaw.mjs"), "export {};\n");
+    fs.writeFileSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "sidecar",
+        "tenant-platform",
+        "server.mjs",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(packageRoot, "dist", "control-ui", "index.html"),
+      "<html><head></head><body></body></html>\n",
+    );
+    fs.writeFileSync(path.join(rootDir, "openclaw.local.example.json5"), "{ gateway: { mode: 'local' } }\n");
+
+    const prepared = prepareLocalRuntime(rootDir, {});
+    expect(fs.existsSync(prepared.env.OPENCLAW_CONFIG_PATH)).toBe(true);
+    expect(fs.readFileSync(prepared.env.OPENCLAW_CONFIG_PATH, "utf8")).toContain("mode");
   });
 });

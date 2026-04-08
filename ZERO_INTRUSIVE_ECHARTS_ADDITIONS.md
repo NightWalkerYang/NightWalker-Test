@@ -203,6 +203,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The non-Docker local runtime package now includes a customer-facing deployment guide alongside the operator/runtime templates.
 - The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a minimal default model setup.
 - The non-Docker local runtime packager now vendors missing runtime-only packages, patches `file-type/core.js` compatibility inside the packaged runtime, and defaults local gateway binding to `lan` so Windows local startup does not fail on missing module or invalid bind errors.
+- The non-Docker local runtime package now seeds an active `runtime.env` plus `data/.openclaw/openclaw.json` into the output, and the startup preparation layer will recreate the config from the bundled template if a customer deletes it.
 
 ## Important Notes
 

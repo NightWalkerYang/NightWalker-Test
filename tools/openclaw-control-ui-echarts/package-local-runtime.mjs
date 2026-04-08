@@ -77,6 +77,28 @@ function ensureFileExists(filePath, label) {
   }
 }
 
+function removeDirectorySafe(targetPath) {
+  fs.rmSync(targetPath, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 200,
+  });
+}
+
+function createPackagingEnv(tempDir, extraEnv = {}) {
+  const cacheDir = path.join(tempDir, "npm-cache");
+  fs.mkdirSync(cacheDir, { recursive: true });
+  return {
+    ...process.env,
+    TMP: tempDir,
+    TEMP: tempDir,
+    TMPDIR: tempDir,
+    npm_config_cache: cacheDir,
+    ...extraEnv,
+  };
+}
+
 function packageNameToPathSegments(packageName) {
   return packageName.split("/");
 }
@@ -215,10 +237,9 @@ node "%~dp0scripts\\start-local-runtime.mjs" %*
 
 function buildCustomControlUi(tempDir) {
   const controlUiOutputDir = path.join(tempDir, "control-ui");
-  const env = {
-    ...process.env,
+  const env = createPackagingEnv(tempDir, {
     OPENCLAW_GATEWAY_TOKEN: defaultGatewayToken,
-  };
+  });
   runCommand(
     process.execPath,
     [buildCustomControlUiScript, "--source", controlUiSourceDir, "--output", controlUiOutputDir],
@@ -232,7 +253,7 @@ function buildNpmTarball(tempDir) {
   fs.mkdirSync(packDir, { recursive: true });
   const result = runNpmCommand(
     ["pack", "--ignore-scripts", "--json", "--pack-destination", packDir],
-    { captureOutput: true },
+    { captureOutput: true, env: createPackagingEnv(tempDir) },
   );
   const parsed = JSON.parse(result.stdout);
   const entry = Array.isArray(parsed) ? parsed[0] : null;
@@ -245,7 +266,7 @@ function buildNpmTarball(tempDir) {
   };
 }
 
-function installRuntimeTarball(outputDir, tarballPath) {
+function installRuntimeTarball(outputDir, tarballPath, tempDir) {
   const runtimeDir = path.join(outputDir, "runtime");
   fs.mkdirSync(runtimeDir, { recursive: true });
   runNpmCommand([
@@ -257,13 +278,13 @@ function installRuntimeTarball(outputDir, tarballPath) {
     "--prefix",
     runtimeDir,
     tarballPath,
-  ]);
+  ], { env: createPackagingEnv(tempDir) });
   const packageRoot = path.join(runtimeDir, "node_modules", "openclaw");
   ensureFileExists(path.join(packageRoot, "openclaw.mjs"), "Installed OpenClaw entry");
   return packageRoot;
 }
 
-function installRuntimeExtraPackages(outputDir) {
+function installRuntimeExtraPackages(outputDir, tempDir) {
   const runtimeDir = path.join(outputDir, "runtime");
   const extraSpecs = buildRuntimeExtraDependencySpecs(path.join(repoRoot, "node_modules"));
   runNpmCommand([
@@ -275,7 +296,7 @@ function installRuntimeExtraPackages(outputDir) {
     "--prefix",
     runtimeDir,
     ...extraSpecs,
-  ]);
+  ], { env: createPackagingEnv(tempDir) });
 }
 
 export function patchFileTypeRuntimeCompat(runtimeDir) {
@@ -395,6 +416,11 @@ function stageDataSkeleton(outputDir) {
   for (const dirPath of dirs) {
     fs.mkdirSync(dirPath, { recursive: true });
   }
+  copyTemplateFile(
+    "openclaw.local.example.json5",
+    path.join(outputDir, "data", ".openclaw", "openclaw.json"),
+  );
+  copyTemplateFile("runtime.env.example", path.join(outputDir, "runtime.env"));
 }
 
 function main() {
@@ -413,18 +439,20 @@ function main() {
     throw new Error("Refusing to overwrite the repository root.");
   }
 
-  fs.rmSync(outputDir, { recursive: true, force: true });
+  removeDirectorySafe(outputDir);
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-local-runtime-"));
+  const tempRoot = path.join(path.dirname(outputDir), ".openclaw-local-runtime-tmp");
+  fs.mkdirSync(tempRoot, { recursive: true });
+  const tempDir = fs.mkdtempSync(path.join(tempRoot, "build-"));
   try {
     const controlUiOutputDir = buildCustomControlUi(tempDir);
     const { tarballPath } = buildNpmTarball(tempDir);
     stageTemplates(outputDir);
     stageDataSkeleton(outputDir);
     if (!options.skipInstall) {
-      const packageRoot = installRuntimeTarball(outputDir, tarballPath);
-      installRuntimeExtraPackages(outputDir);
+      const packageRoot = installRuntimeTarball(outputDir, tarballPath, tempDir);
+      installRuntimeExtraPackages(outputDir, tempDir);
       patchFileTypeRuntimeCompat(path.join(outputDir, "runtime"));
       stageRuntimePackage(outputDir, packageRoot, controlUiOutputDir, tarballPath);
       verifyRuntimePackage(outputDir, packageRoot);
@@ -438,7 +466,12 @@ function main() {
       });
     }
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    removeDirectorySafe(tempDir);
+    try {
+      fs.rmdirSync(tempRoot);
+    } catch {
+      // Ignore non-empty or missing temp root.
+    }
   }
 
   process.stdout.write(
