@@ -249,17 +249,18 @@ async function loadMemberSessions(app, selectedAgent, session) {
         for (const preview of previewResp.previews) {
           if (preview.items && preview.items.length > 0) {
             const userMsg = preview.items.find((item) => item.role === "user");
-            if (userMsg && userMsg.content) {
-              let text = "";
-              if (typeof userMsg.content === "string") {
-                text = userMsg.content;
-              } else if (Array.isArray(userMsg.content)) {
-                text = userMsg.content.map((b) => b?.text || "").join(" ");
+            if (userMsg) {
+              // sessions.preview returns { role, text } items (not { role, content })
+              let text = typeof userMsg.text === "string" ? userMsg.text.trim() : "";
+              if (!text && userMsg.content) {
+                if (typeof userMsg.content === "string") {
+                  text = userMsg.content.trim();
+                } else if (Array.isArray(userMsg.content)) {
+                  text = userMsg.content.map((b) => b?.text || "").join(" ").trim();
+                }
               }
-              text = String(text || "").trim();
               if (text) {
                 if (text.length > 20) text = text.slice(0, 20) + "...";
-                console.log("[Tenant UI] Found title for", preview.key, "->", text);
                 previewMap.set(String(preview.key).trim().toLowerCase(), text);
               }
             }
@@ -461,6 +462,10 @@ function pinMemberChatSession(app, sessionKey) {
   if (!(app instanceof HTMLElement) || !sessionKey) {
     return;
   }
+
+  // Always update the mutable pinned key reference FIRST
+  app.__ocPinnedSessionKey = sessionKey;
+
   if (!app.__openclawTenantMemberPatched) {
     if (typeof app.setTab === "function") {
       const originalSetTab = app.setTab.bind(app);
@@ -468,39 +473,51 @@ function pinMemberChatSession(app, sessionKey) {
     }
     if (typeof app.applySettings === "function") {
       const originalApplySettings = app.applySettings.bind(app);
+      // Use app.__ocPinnedSessionKey (mutable) so switching sessions works correctly.
+      // Do NOT capture `sessionKey` from the closure here - it would be stale on re-calls.
       app.applySettings = (next) =>
         originalApplySettings({
           ...next,
-          sessionKey,
-          lastActiveSessionKey: sessionKey,
+          sessionKey: app.__ocPinnedSessionKey,
+          lastActiveSessionKey: app.__ocPinnedSessionKey,
         });
     }
     app.__openclawTenantMemberPatched = true;
   }
+
   if (typeof app.setTab === "function" && app.tab !== "chat") {
     app.setTab("chat");
   }
+
   if (app.sessionKey !== sessionKey) {
+    // Clear old state immediately for snappy UX
     app.chatMessages = [];
     app.chatThinkingLevel = null;
     app.chatStreamStartedAt = null;
+    app.chatStream = null;
     app.chatLoading = true;
+    if (typeof app.resetToolStream === "function") app.resetToolStream();
     app.requestUpdate?.();
+
+    // Set the new session key directly (bypass overridden applySettings for this)
     app.sessionKey = sessionKey;
-    if (typeof app.applySettings === "function" && app.settings) {
-      app.applySettings({
-        ...app.settings,
-        sessionKey,
-        lastActiveSessionKey: sessionKey,
-      });
-    }
+
     if (typeof app.loadAssistantIdentity === "function") {
       void app.loadAssistantIdentity();
     }
-    app.client.request("chat.history", { sessionKey, limit: 200 })
+
+    // Load chat history for the new session directly via the client
+    const targetKey = sessionKey;
+    app.client.request("chat.history", { sessionKey: targetKey, limit: 200 })
       .then(res => {
-        if (app.sessionKey === sessionKey) {
-          app.chatMessages = Array.isArray(res?.messages) ? res.messages : [];
+        if (app.__ocPinnedSessionKey === targetKey) {
+          const msgs = Array.isArray(res?.messages) ? res.messages : [];
+          app.chatMessages = msgs.filter(m => {
+            // Filter out silent replies (openclaw internal)
+            if (m?.role !== "assistant") return true;
+            const text = typeof m?.text === "string" ? m.text : "";
+            return !text.startsWith("<|openclaw-silent|");
+          });
           app.chatThinkingLevel = res?.thinkingLevel ?? null;
           app.chatStream = null;
           app.chatStreamStartedAt = null;
@@ -510,8 +527,8 @@ function pinMemberChatSession(app, sessionKey) {
           app.requestUpdate?.();
         }
       })
-      .catch(err => {
-        if (app.sessionKey === sessionKey) {
+      .catch(() => {
+        if (app.__ocPinnedSessionKey === targetKey) {
           app.chatMessages = [];
           app.chatThinkingLevel = null;
           app.chatLoading = false;
@@ -526,12 +543,8 @@ function pinMemberChatSession(app, sessionKey) {
       const result = await originalRequest(method, params);
       if (method === "chat.send") {
         setTimeout(() => {
-          if (typeof window.syncMemberChatSurface === "function") {
-             window.syncMemberChatSurface();
-          } else {
-             void syncMemberChatSurface();
-          }
-        }, 1000);
+          void syncMemberChatSurface();
+        }, 1200);
       }
       return result;
     };
