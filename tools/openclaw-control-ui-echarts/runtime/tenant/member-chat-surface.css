@@ -104,3 +104,17 @@
   text-overflow: ellipsis;
   max-width: 220px;
 }
+
+.oc-member-chat-toast-root {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.oc-member-chat-toast {
+  min-width: 220px;
+  box-shadow: 0 16px 40px rgb(15 23 42 / 12%);
+}

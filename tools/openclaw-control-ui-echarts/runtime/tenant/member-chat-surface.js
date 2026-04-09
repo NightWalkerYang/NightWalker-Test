@@ -27,6 +27,8 @@ const DELETE_DIALOG_ROOT_ATTR = "data-oc-member-chat-delete-dialog-root";
 const DELETE_DIALOG_SELECTOR = "[data-oc-member-chat-delete-dialog]";
 const DELETE_DIALOG_CLOSE_SELECTOR = "[data-oc-member-chat-delete-close]";
 const DELETE_DIALOG_CONFIRM_SELECTOR = "[data-oc-member-chat-confirm-delete]";
+const TOAST_ROOT_ATTR = "data-oc-member-chat-toast-root";
+const TOAST_SELECTOR = "[data-oc-member-chat-toast]";
 const APP_SELECTOR = "openclaw-app";
 const SIDEBAR_SELECTOR = ".sidebar-nav";
 const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
@@ -63,6 +65,24 @@ function ensureStyle() {
   link.setAttribute(STYLE_ATTR, "true");
   document.head.append(link);
   return link;
+}
+
+function showTransientToast(controller, message) {
+  let root = document.body.querySelector(`[${TOAST_ROOT_ATTR}]`);
+  if (!(root instanceof HTMLElement)) {
+    root = document.createElement("div");
+    root.className = "oc-member-chat-toast-root";
+    root.setAttribute(TOAST_ROOT_ATTR, "true");
+    document.body.append(root);
+  }
+  root.innerHTML = `<div class="callout info oc-member-chat-toast" data-oc-member-chat-toast>${escapeHtml(message)}</div>`;
+  if (controller.toastTimer) {
+    window.clearTimeout(controller.toastTimer);
+  }
+  controller.toastTimer = window.setTimeout(() => {
+    root.querySelector(TOAST_SELECTOR)?.remove();
+    controller.toastTimer = 0;
+  }, 1000);
 }
 
 function normalizeSessionRows(result) {
@@ -268,6 +288,9 @@ function applyHiddenDelete(controller, nextHiddenKey) {
       createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
     controller.currentSessionKey = fallbackSessionKey;
     controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
+    controller.hasDraftSession = !controller.sessionsFromGateway.some(
+      (row) => String(row?.key || "").trim().toLowerCase() === fallbackSessionKey,
+    );
     syncRouteForSession(controller.selectedAgent, fallbackSessionKey, { replace: true });
     pinMemberChatSession(controller.app, fallbackSessionKey);
   }
@@ -394,9 +417,14 @@ function attachSectionHandlers(section, controller) {
     }
     if (target.closest("[data-member-chat-new]")) {
       event.preventDefault();
+      if (controller.hasDraftSession) {
+        showTransientToast(controller, "已经是新的会话了");
+        return;
+      }
       const nextSessionKey = createTenantMemberSessionKey(controller.session, controller.selectedAgent);
       controller.currentSessionKey = nextSessionKey;
       controller.sessions = ensureVisibleCurrentSession(controller.sessions, nextSessionKey);
+      controller.hasDraftSession = true;
       syncRouteForSession(controller.selectedAgent, nextSessionKey, { replace: false });
       pinMemberChatSession(controller.app, nextSessionKey);
       renderSidebarSection(controller);
@@ -410,6 +438,9 @@ function attachSectionHandlers(section, controller) {
         return;
       }
       controller.currentSessionKey = nextSessionKey;
+      controller.hasDraftSession = !controller.sessionsFromGateway.some(
+        (row) => String(row?.key || "").trim().toLowerCase() === nextSessionKey,
+      );
       syncRouteForSession(controller.selectedAgent, nextSessionKey, { replace: false });
       pinMemberChatSession(controller.app, nextSessionKey);
       renderSidebarSection(controller);
@@ -476,6 +507,7 @@ async function syncMemberChatSurface() {
     document.querySelector(`[${SECTION_ATTR}]`)?.remove();
     document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
     document.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`)?.remove();
+    document.querySelector(`[${TOAST_ROOT_ATTR}]`)?.remove();
     return;
   }
 
@@ -501,8 +533,13 @@ async function syncMemberChatSurface() {
     return;
   }
 
-  const sessions = await loadMemberSessions(app, selectedAgent, session);
-  const currentSessionKey = findTargetSessionKey(selectedAgent, session, window.location.href, sessions);
+  const sessionsFromGateway = await loadMemberSessions(app, selectedAgent, session);
+  const currentSessionKey = findTargetSessionKey(
+    selectedAgent,
+    session,
+    window.location.href,
+    sessionsFromGateway,
+  );
 
   const controller = {
     app,
@@ -510,9 +547,14 @@ async function syncMemberChatSurface() {
     breadcrumb,
     session,
     selectedAgent,
-    sessions: ensureVisibleCurrentSession(sessions, currentSessionKey),
+    sessionsFromGateway,
+    sessions: ensureVisibleCurrentSession(sessionsFromGateway, currentSessionKey),
     currentSessionKey,
+    hasDraftSession: !sessionsFromGateway.some(
+      (row) => String(row?.key || "").trim().toLowerCase() === currentSessionKey,
+    ),
     pendingDeleteSessionKey: "",
+    toastTimer: 0,
   };
 
   renderSidebarSection(controller);

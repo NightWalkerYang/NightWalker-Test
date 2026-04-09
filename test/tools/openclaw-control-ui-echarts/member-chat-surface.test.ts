@@ -65,6 +65,7 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
   delete window.__openclawMemberChatSurfaceBooted;
   delete window.__openclawTenantRouteSyncBooted;
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -174,6 +175,62 @@ describe("member chat surface", () => {
     expect(decodedSearch).toContain("tenantAgentId=tenant-agent-1");
     expect(decodedSearch).toContain("session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:");
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("新会话");
+  });
+
+  it("shows a short toast instead of creating another draft session when already in a new session", async () => {
+    vi.useFakeTimers();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:draft",
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    const initialSearch = window.location.search;
+    const newButton = document.querySelector("[data-member-chat-new]");
+    expect(newButton).not.toBeNull();
+    newButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(window.location.search).toBe(initialSearch);
+    expect(document.querySelector("[data-oc-member-chat-toast]")?.textContent).toContain("已经是新的会话了");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await Promise.resolve();
+
+    expect(document.querySelector("[data-oc-member-chat-toast]")).toBeNull();
   });
 
   it("hides deleted sessions from the sidebar while keeping the current session usable", async () => {
