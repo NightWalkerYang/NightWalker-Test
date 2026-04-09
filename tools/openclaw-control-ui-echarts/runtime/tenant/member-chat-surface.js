@@ -3,7 +3,9 @@ import {
   buildTenantMemberChatRoute,
   buildTenantMemberLegacySessionKey,
   createTenantMemberSessionKey,
+  hideTenantMemberSession,
   isTenantMemberSessionKey,
+  readHiddenTenantMemberSessions,
   readSelectedTenantAgent,
   readTenantSession,
 } from "./tenant-context.js";
@@ -20,6 +22,7 @@ const TOP_ACTION_ATTR = "data-oc-member-chat-top-action";
 const SESSION_LIST_ATTR = "data-oc-member-chat-session-list";
 const ACTIVE_SESSION_ATTR = "data-oc-member-chat-active-session";
 const LABEL_ATTR = "data-oc-member-chat-label";
+const DELETE_ATTR = "data-member-chat-delete";
 const APP_SELECTOR = "openclaw-app";
 const SIDEBAR_SELECTOR = ".sidebar-nav";
 const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
@@ -100,20 +103,33 @@ function buildSidebarMarkup(sessions, currentSessionKey) {
     ? sessions
         .map((row, index) => {
           const active = row.key === currentSessionKey;
+          const sessionKey = escapeHtml(row.key);
+          const sessionLabel = escapeHtml(resolveSessionLabel(row, index));
           const updated = formatRelativeTime(row.updatedAt);
           return `
-            <button
-              class="oc-member-chat-session-item nav-item ${active ? "nav-item--active" : ""}"
-              type="button"
-              data-member-chat-session="${escapeHtml(row.key)}"
-              title="${escapeHtml(resolveSessionLabel(row, index))}"
-            >
-              <span class="nav-item__icon" aria-hidden="true">💬</span>
-              <span class="nav-item__text">
-                <span class="oc-member-chat-session-item__label">${escapeHtml(resolveSessionLabel(row, index))}</span>
-                <span class="oc-member-chat-session-item__meta">${escapeHtml(updated || "未开始")}</span>
-              </span>
-            </button>
+            <div class="oc-member-chat-session-row ${active ? "oc-member-chat-session-row--active" : ""}">
+              <button
+                class="oc-member-chat-session-item nav-item ${active ? "nav-item--active" : ""}"
+                type="button"
+                data-member-chat-session="${sessionKey}"
+                title="${sessionLabel}"
+              >
+                <span class="nav-item__icon" aria-hidden="true">💬</span>
+                <span class="nav-item__text">
+                  <span class="oc-member-chat-session-item__label">${sessionLabel}</span>
+                  <span class="oc-member-chat-session-item__meta">${escapeHtml(updated || "未开始")}</span>
+                </span>
+              </button>
+              <button
+                class="oc-member-chat-session-delete"
+                type="button"
+                ${DELETE_ATTR}="${sessionKey}"
+                title="删除会话"
+                aria-label="删除会话"
+              >
+                ×
+              </button>
+            </div>
           `;
         })
         .join("")
@@ -178,8 +194,11 @@ function findTargetSessionKey(selectedAgent, session, href, sessions) {
 
 async function loadMemberSessions(app, selectedAgent, session) {
   const rows = normalizeSessionRows(await app.client.request("sessions.list", {}));
+  const hidden = new Set(readHiddenTenantMemberSessions(session, selectedAgent));
   const filtered = rows.filter((row) => isTenantMemberSessionKey(row.key, session, selectedAgent));
-  return filtered.toSorted((left, right) => (Number(right.updatedAt || 0) - Number(left.updatedAt || 0)));
+  return filtered
+    .filter((row) => !hidden.has(String(row.key || "").trim().toLowerCase()))
+    .toSorted((left, right) => (Number(right.updatedAt || 0) - Number(left.updatedAt || 0)));
 }
 
 function ensureSection(sidebar) {
@@ -293,6 +312,28 @@ function attachSectionHandlers(section, controller) {
       controller.currentSessionKey = nextSessionKey;
       syncRouteForSession(controller.selectedAgent, nextSessionKey, { replace: false });
       pinMemberChatSession(controller.app, nextSessionKey);
+      renderSidebarSection(controller);
+      return;
+    }
+    const deleteButton = target.closest(`[${DELETE_ATTR}]`);
+    if (deleteButton instanceof HTMLElement) {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextHiddenKey = String(deleteButton.getAttribute(DELETE_ATTR) || "").trim().toLowerCase();
+      if (!nextHiddenKey) {
+        return;
+      }
+      hideTenantMemberSession(controller.session, controller.selectedAgent, nextHiddenKey);
+      controller.sessions = controller.sessions.filter((row) => String(row?.key || "").trim().toLowerCase() !== nextHiddenKey);
+      if (controller.currentSessionKey === nextHiddenKey) {
+        const fallbackSessionKey =
+          controller.sessions[0]?.key?.trim().toLowerCase() ||
+          createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
+        controller.currentSessionKey = fallbackSessionKey;
+        controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
+        syncRouteForSession(controller.selectedAgent, fallbackSessionKey, { replace: true });
+        pinMemberChatSession(controller.app, fallbackSessionKey);
+      }
       renderSidebarSection(controller);
       return;
     }

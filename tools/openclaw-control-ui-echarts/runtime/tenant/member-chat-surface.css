@@ -27,9 +27,33 @@
   gap: 8px;
 }
 
+.oc-member-chat-session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .oc-member-chat-session-item {
   width: 100%;
   text-align: left;
+}
+
+.oc-member-chat-session-delete {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  font-size: 16px;
+}
+
+.oc-member-chat-session-delete:hover {
+  color: var(--text);
+  border-color: var(--danger, var(--accent));
 }
 
 .oc-member-chat-session-item .nav-item__text {
