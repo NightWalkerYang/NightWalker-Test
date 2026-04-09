@@ -249,9 +249,17 @@ async function loadMemberSessions(app, selectedAgent, session) {
           if (preview.items && preview.items.length > 0) {
             const userMsg = preview.items.find((item) => item.role === "user");
             if (userMsg && userMsg.content) {
-              let text = String(userMsg.content).trim();
-              if (text.length > 20) text = text.slice(0, 20) + "...";
-              previewMap.set(String(preview.key).trim().toLowerCase(), text);
+              let text = "";
+              if (typeof userMsg.content === "string") {
+                text = userMsg.content;
+              } else if (Array.isArray(userMsg.content)) {
+                text = userMsg.content.map((b) => b?.text || "").join(" ");
+              }
+              text = String(text || "").trim();
+              if (text) {
+                if (text.length > 20) text = text.slice(0, 20) + "...";
+                previewMap.set(String(preview.key).trim().toLowerCase(), text);
+              }
             }
           }
         }
@@ -473,6 +481,8 @@ function pinMemberChatSession(app, sessionKey) {
   if (app.sessionKey !== sessionKey) {
     app.chatMessages = [];
     app.chatThinkingLevel = null;
+    app.chatStreamStartedAt = null;
+    app.requestUpdate?.();
     app.sessionKey = sessionKey;
     if (typeof app.applySettings === "function" && app.settings) {
       app.applySettings({
@@ -484,6 +494,7 @@ function pinMemberChatSession(app, sessionKey) {
     if (typeof app.loadAssistantIdentity === "function") {
       void app.loadAssistantIdentity();
     }
+    setTimeout(() => { app.chatMessages = []; app.requestUpdate?.(); }, 0);
   }
 
   if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
