@@ -671,6 +671,42 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "POST" && relativePath === "/member/sessions/delete") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const openclawSessionKey = String(body.openclawSessionKey || "").trim();
+        if (!openclawSessionKey) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        deps.db.exec("BEGIN TRANSACTION");
+        try {
+          deps.db.prepare(
+            `DELETE FROM tenant_agent_sessions
+             WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`
+          ).run({
+            userId: session.userId,
+            openclawSessionKey,
+          });
+          deps.db.exec("COMMIT");
+          sendJson(request, response, 200, { ok: true });
+        } catch (err) {
+          deps.db.exec("ROLLBACK");
+          throw err;
+        }
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     sendJson(request, response, 404, { ok: false, error: "not_found" });
   };
 }

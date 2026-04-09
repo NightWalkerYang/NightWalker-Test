@@ -186,6 +186,9 @@ export function createTenantApiClient() {
     hideMemberSession(body) {
       return requestJson("/member/sessions/hide", { method: "POST", body });
     },
+    deleteMemberSession(body) {
+      return requestJson("/member/sessions/delete", { method: "POST", body });
+    },
     persistSession(payload) {
       writeTenantSession(payload);
     },

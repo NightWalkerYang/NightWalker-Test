@@ -579,6 +579,16 @@ export function hideTenantAgentSession(db, params) {
   });
 }
 
+export function deleteTenantAgentSession(db, params) {
+  db.prepare(
+    `DELETE FROM tenant_agent_sessions
+     WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`
+  ).run({
+    userId: params.userId,
+    openclawSessionKey: params.openclawSessionKey,
+  });
+}
+
 export function listTenantAgentSessions(db, params) {
   return db
     .prepare(

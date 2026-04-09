@@ -485,6 +485,24 @@ function pinMemberChatSession(app, sessionKey) {
       void app.loadAssistantIdentity();
     }
   }
+
+  if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
+    const originalRequest = app.client.request.bind(app.client);
+    app.client.request = async (method, params) => {
+      const result = await originalRequest(method, params);
+      if (method === "chat.send") {
+        setTimeout(() => {
+          if (typeof window.syncMemberChatSurface === "function") {
+             window.syncMemberChatSurface();
+          } else {
+             void syncMemberChatSurface();
+          }
+        }, 1000);
+      }
+      return result;
+    };
+    app.__openclawClientPatched = true;
+  }
 }
 
 function syncRouteForSession(selectedAgent, sessionKey, { replace = true } = {}) {
@@ -537,6 +555,17 @@ function attachSectionHandlers(section, controller) {
       if (!nextSessionKey || nextSessionKey === ctrl.currentSessionKey) {
         return;
       }
+      
+      if (ctrl.hasDraftSession) {
+        try {
+          createTenantApiClient().deleteMemberSession({ openclawSessionKey: ctrl.currentSessionKey });
+        } catch (e) {}
+        ctrl.sessions = ctrl.sessions.filter(
+          (row) => String(row?.key || "").trim().toLowerCase() !== ctrl.currentSessionKey
+        );
+        ctrl.hasDraftSession = false;
+      }
+      
       ctrl.currentSessionKey = nextSessionKey;
       ctrl.hasDraftSession = !ctrl.sessionsFromGateway.some(
         (row) => String(row?.key || "").trim().toLowerCase() === nextSessionKey,
@@ -579,6 +608,11 @@ function attachTopActionHandlers(root) {
       return;
     }
     event.preventDefault();
+    if (window._ocMemberChatSurfaceController?.hasDraftSession) {
+      try {
+        createTenantApiClient().deleteMemberSession({ openclawSessionKey: window._ocMemberChatSurfaceController.currentSessionKey });
+      } catch (e) {}
+    }
     navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE);
   });
 }
@@ -662,7 +696,9 @@ async function syncMemberChatSurface() {
   ensureDeleteDialog(controller);
   syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
   pinMemberChatSession(app, currentSessionKey);
+  window._ocMemberChatSurfaceController = controller;
 }
+window.syncMemberChatSurface = syncMemberChatSurface;
 
 export function bootMemberChatSurface() {
   bootTenantRouteSync();
