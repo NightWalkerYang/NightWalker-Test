@@ -204,6 +204,7 @@ describe("member chat surface", () => {
     `;
     const app = createAppStub();
     document.body.append(app);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     bootMemberChatSurface();
     await flush();
@@ -215,8 +216,53 @@ describe("member chat surface", () => {
 
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).not.toContain("历史主会话");
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("本周分析");
+    expect(confirmSpy).toHaveBeenCalled();
     expect(readHiddenTenantMemberSessions({
       session: { tenantId: "t-1", userId: "user-1" },
     }, { id: "tenant-agent-1" })).toContain("agent:subotech-finance:tenant-tenant-agent-1");
+  });
+
+  it("keeps the session when delete confirm is canceled", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const deleteButtons = [...document.querySelectorAll("[data-member-chat-delete]")];
+    expect(deleteButtons).toHaveLength(2);
+    deleteButtons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("历史主会话");
+    expect(readHiddenTenantMemberSessions({
+      session: { tenantId: "t-1", userId: "user-1" },
+    }, { id: "tenant-agent-1" })).not.toContain("agent:subotech-finance:tenant-tenant-agent-1");
   });
 });

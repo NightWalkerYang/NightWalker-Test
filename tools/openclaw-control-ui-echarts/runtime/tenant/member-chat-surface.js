@@ -127,7 +127,7 @@ function buildSidebarMarkup(sessions, currentSessionKey) {
                 title="删除会话"
                 aria-label="删除会话"
               >
-                ×
+                删除
               </button>
             </div>
           `;
@@ -321,6 +321,10 @@ function attachSectionHandlers(section, controller) {
       event.stopPropagation();
       const nextHiddenKey = String(deleteButton.getAttribute(DELETE_ATTR) || "").trim().toLowerCase();
       if (!nextHiddenKey) {
+        return;
+      }
+      const confirmed = window.confirm("确认删除当前会话吗？删除后仅从当前列表隐藏，不会影响历史统计。");
+      if (!confirmed) {
         return;
       }
       hideTenantMemberSession(controller.session, controller.selectedAgent, nextHiddenKey);
