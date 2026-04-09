@@ -471,6 +471,8 @@ function pinMemberChatSession(app, sessionKey) {
     app.setTab("chat");
   }
   if (app.sessionKey !== sessionKey) {
+    app.chatMessages = [];
+    app.chatThinkingLevel = null;
     app.sessionKey = sessionKey;
     if (typeof app.applySettings === "function" && app.settings) {
       app.applySettings({
