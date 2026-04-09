@@ -23,6 +23,10 @@ const SESSION_LIST_ATTR = "data-oc-member-chat-session-list";
 const ACTIVE_SESSION_ATTR = "data-oc-member-chat-active-session";
 const LABEL_ATTR = "data-oc-member-chat-label";
 const DELETE_ATTR = "data-member-chat-delete";
+const DELETE_DIALOG_ROOT_ATTR = "data-oc-member-chat-delete-dialog-root";
+const DELETE_DIALOG_SELECTOR = "[data-oc-member-chat-delete-dialog]";
+const DELETE_DIALOG_CLOSE_SELECTOR = "[data-oc-member-chat-delete-close]";
+const DELETE_DIALOG_CONFIRM_SELECTOR = "[data-oc-member-chat-confirm-delete]";
 const APP_SELECTOR = "openclaw-app";
 const SIDEBAR_SELECTOR = ".sidebar-nav";
 const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
@@ -227,6 +231,102 @@ function ensureTopActionRow(breadcrumb) {
   return root;
 }
 
+function showDialog(dialog) {
+  if (!(dialog instanceof HTMLDialogElement)) {
+    return;
+  }
+  if (typeof dialog.showModal === "function") {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    return;
+  }
+  dialog.setAttribute("open", "");
+}
+
+function closeDialog(dialog) {
+  if (!(dialog instanceof HTMLDialogElement)) {
+    return;
+  }
+  if (typeof dialog.close === "function") {
+    if (dialog.open) {
+      dialog.close();
+      return;
+    }
+  }
+  dialog.removeAttribute("open");
+}
+
+function applyHiddenDelete(controller, nextHiddenKey) {
+  hideTenantMemberSession(controller.session, controller.selectedAgent, nextHiddenKey);
+  controller.sessions = controller.sessions.filter(
+    (row) => String(row?.key || "").trim().toLowerCase() !== nextHiddenKey,
+  );
+  if (controller.currentSessionKey === nextHiddenKey) {
+    const fallbackSessionKey =
+      controller.sessions[0]?.key?.trim().toLowerCase() ||
+      createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
+    controller.currentSessionKey = fallbackSessionKey;
+    controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
+    syncRouteForSession(controller.selectedAgent, fallbackSessionKey, { replace: true });
+    pinMemberChatSession(controller.app, fallbackSessionKey);
+  }
+  renderSidebarSection(controller);
+}
+
+function ensureDeleteDialog(controller) {
+  let root = document.body.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`);
+  if (!(root instanceof HTMLElement)) {
+    root = document.createElement("div");
+    root.setAttribute(DELETE_DIALOG_ROOT_ATTR, "true");
+    root.innerHTML = `
+      <dialog class="oc-platform-topbar-dialog" data-oc-member-chat-delete-dialog>
+        <div class="oc-platform-topbar-dialog__panel">
+          <header class="oc-platform-topbar-dialog__header">
+            <h3 class="oc-platform-topbar-dialog__title">确认删除</h3>
+            <button class="btn" type="button" data-oc-member-chat-delete-close>关闭</button>
+          </header>
+          <div class="oc-platform-topbar-dialog__body">
+            <p class="oc-platform-topbar-dialog__text">删除后不可恢复，确认删除?</p>
+          </div>
+          <footer class="oc-platform-topbar-dialog__actions">
+            <button class="btn" type="button" data-oc-member-chat-delete-close>取消</button>
+            <button class="btn primary" type="button" data-oc-member-chat-confirm-delete>确认删除</button>
+          </footer>
+        </div>
+      </dialog>
+    `;
+    document.body.append(root);
+  }
+  if (root.dataset.ocMemberChatHandlers !== "true") {
+    root.dataset.ocMemberChatHandlers = "true";
+    root.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (target.closest(DELETE_DIALOG_CLOSE_SELECTOR)) {
+        event.preventDefault();
+        controller.pendingDeleteSessionKey = "";
+        closeDialog(root.querySelector(DELETE_DIALOG_SELECTOR));
+        return;
+      }
+      if (!target.closest(DELETE_DIALOG_CONFIRM_SELECTOR)) {
+        return;
+      }
+      event.preventDefault();
+      const nextHiddenKey = String(controller.pendingDeleteSessionKey || "").trim().toLowerCase();
+      controller.pendingDeleteSessionKey = "";
+      closeDialog(root.querySelector(DELETE_DIALOG_SELECTOR));
+      if (!nextHiddenKey) {
+        return;
+      }
+      applyHiddenDelete(controller, nextHiddenKey);
+    });
+  }
+  return root.querySelector(DELETE_DIALOG_SELECTOR);
+}
+
 function closeAllDialogs() {
   for (const dialog of document.querySelectorAll("dialog[open]")) {
     if (dialog instanceof HTMLDialogElement) {
@@ -323,22 +423,8 @@ function attachSectionHandlers(section, controller) {
       if (!nextHiddenKey) {
         return;
       }
-      const confirmed = window.confirm("确认删除当前会话吗？删除后仅从当前列表隐藏，不会影响历史统计。");
-      if (!confirmed) {
-        return;
-      }
-      hideTenantMemberSession(controller.session, controller.selectedAgent, nextHiddenKey);
-      controller.sessions = controller.sessions.filter((row) => String(row?.key || "").trim().toLowerCase() !== nextHiddenKey);
-      if (controller.currentSessionKey === nextHiddenKey) {
-        const fallbackSessionKey =
-          controller.sessions[0]?.key?.trim().toLowerCase() ||
-          createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
-        controller.currentSessionKey = fallbackSessionKey;
-        controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
-        syncRouteForSession(controller.selectedAgent, fallbackSessionKey, { replace: true });
-        pinMemberChatSession(controller.app, fallbackSessionKey);
-      }
-      renderSidebarSection(controller);
+      controller.pendingDeleteSessionKey = nextHiddenKey;
+      showDialog(ensureDeleteDialog(controller));
       return;
     }
     if (target.closest("[data-member-chat-collapse]")) {
@@ -389,6 +475,7 @@ async function syncMemberChatSurface() {
     document.body?.removeAttribute(DOC_ATTR);
     document.querySelector(`[${SECTION_ATTR}]`)?.remove();
     document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
+    document.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`)?.remove();
     return;
   }
 
@@ -425,10 +512,12 @@ async function syncMemberChatSurface() {
     selectedAgent,
     sessions: ensureVisibleCurrentSession(sessions, currentSessionKey),
     currentSessionKey,
+    pendingDeleteSessionKey: "",
   };
 
   renderSidebarSection(controller);
   renderTopAction(controller);
+  ensureDeleteDialog(controller);
   syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
   pinMemberChatSession(app, currentSessionKey);
 }

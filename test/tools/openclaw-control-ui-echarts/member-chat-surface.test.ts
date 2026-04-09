@@ -204,7 +204,6 @@ describe("member chat surface", () => {
     `;
     const app = createAppStub();
     document.body.append(app);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     bootMemberChatSurface();
     await flush();
@@ -213,16 +212,21 @@ describe("member chat surface", () => {
     expect(deleteButtons).toHaveLength(2);
     deleteButtons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
+    expect(document.querySelector("[data-oc-member-chat-delete-dialog]")?.open).toBe(true);
+
+    const confirmButton = document.querySelector("[data-oc-member-chat-confirm-delete]");
+    expect(confirmButton).not.toBeNull();
+    confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
 
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).not.toContain("历史主会话");
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("本周分析");
-    expect(confirmSpy).toHaveBeenCalled();
     expect(readHiddenTenantMemberSessions({
       session: { tenantId: "t-1", userId: "user-1" },
     }, { id: "tenant-agent-1" })).toContain("agent:subotech-finance:tenant-tenant-agent-1");
   });
 
-  it("keeps the session when delete confirm is canceled", async () => {
+  it("keeps the session when delete dialog is canceled", async () => {
     writeTenantSession({
       token: "member-token",
       session: {
@@ -250,7 +254,6 @@ describe("member chat surface", () => {
     `;
     const app = createAppStub();
     document.body.append(app);
-    vi.spyOn(window, "confirm").mockReturnValue(false);
 
     bootMemberChatSurface();
     await flush();
@@ -258,6 +261,12 @@ describe("member chat surface", () => {
     const deleteButtons = [...document.querySelectorAll("[data-member-chat-delete]")];
     expect(deleteButtons).toHaveLength(2);
     deleteButtons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector("[data-oc-member-chat-delete-dialog]")?.open).toBe(true);
+
+    const cancelButton = document.querySelector("[data-oc-member-chat-delete-close]");
+    expect(cancelButton).not.toBeNull();
+    cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
 
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("历史主会话");
