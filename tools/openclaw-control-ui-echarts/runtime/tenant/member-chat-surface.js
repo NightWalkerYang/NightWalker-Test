@@ -231,6 +231,36 @@ async function loadMemberSessions(app, selectedAgent, session) {
   const filteredFromGateway = rows.filter((row) => isTenantMemberSessionKey(row.key, session, selectedAgent));
   const result = [];
 
+  const keysToPreview = [];
+  for (const gatewayRow of filteredFromGateway) {
+    const key = String(gatewayRow.key).trim().toLowerCase();
+    const dbRow = registeredMap.get(key);
+    if (!dbRow || dbRow.title === "新会话") {
+      keysToPreview.push(key);
+    }
+  }
+
+  const previewMap = new Map();
+  if (keysToPreview.length > 0) {
+    try {
+      const previewResp = await app.client.request("sessions.preview", { keys: keysToPreview, limit: 20 });
+      if (previewResp?.previews) {
+        for (const preview of previewResp.previews) {
+          if (preview.items && preview.items.length > 0) {
+            const userMsg = preview.items.find((item) => item.role === "user");
+            if (userMsg && userMsg.content) {
+              let text = String(userMsg.content).trim();
+              if (text.length > 20) text = text.slice(0, 20) + "...";
+              previewMap.set(String(preview.key).trim().toLowerCase(), text);
+            }
+          }
+        }
+      }
+    } catch(err) {
+      console.warn("Failed to fetch session previews", err);
+    }
+  }
+
   for (const gatewayRow of filteredFromGateway) {
     const key = String(gatewayRow.key).trim().toLowerCase();
     const dbRow = registeredMap.get(key);
@@ -239,17 +269,29 @@ async function loadMemberSessions(app, selectedAgent, session) {
       continue;
     }
 
-    if (!dbRow) {
+    let nextTitle = gatewayRow.title || "新会话";
+    if (previewMap.has(key)) {
+       nextTitle = previewMap.get(key);
+    } else if (dbRow && dbRow.title !== "新会话") {
+       nextTitle = dbRow.title;
+    }
+
+    if (!dbRow || (dbRow.title === "新会话" && nextTitle !== "新会话")) {
       try {
         await apiClient.registerMemberSession({
           tenantAgentId: selectedAgent.id,
           openclawSessionKey: key,
-          title: gatewayRow.title || "新会话",
+          title: nextTitle,
         });
+        if (dbRow) dbRow.title = nextTitle;
       } catch (err) {}
     }
 
-    result.push(gatewayRow);
+    result.push({
+       ...gatewayRow,
+       title: nextTitle,
+       label: nextTitle !== "新会话" ? nextTitle : gatewayRow.label
+    });
   }
 
   for (const dbRow of registeredSessions) {
@@ -453,51 +495,53 @@ function syncRouteForSession(selectedAgent, sessionKey, { replace = true } = {})
 }
 
 function attachSectionHandlers(section, controller) {
+  section._ocController = controller;
   if (section.dataset.ocMemberChatHandlers === "true") {
     return;
   }
   section.dataset.ocMemberChatHandlers = "true";
   section.addEventListener("click", (event) => {
+    const ctrl = section._ocController;
     const target = event.target;
     if (!(target instanceof Element)) {
       return;
     }
     if (target.closest("[data-member-chat-new]")) {
       event.preventDefault();
-      if (controller.hasDraftSession) {
-        showTransientToast(controller, "已经是新的会话了");
+      if (ctrl.hasDraftSession) {
+        showTransientToast(ctrl, "已经是新的会话了");
         return;
       }
-      const nextSessionKey = createTenantMemberSessionKey(controller.session, controller.selectedAgent);
+      const nextSessionKey = createTenantMemberSessionKey(ctrl.session, ctrl.selectedAgent);
       
       createTenantApiClient().registerMemberSession({
-        tenantAgentId: controller.selectedAgent.id,
+        tenantAgentId: ctrl.selectedAgent.id,
         openclawSessionKey: nextSessionKey,
         title: "新会话"
       }).catch(() => {});
 
-      controller.currentSessionKey = nextSessionKey;
-      controller.sessions = ensureVisibleCurrentSession(controller.sessions, nextSessionKey);
-      controller.hasDraftSession = true;
-      syncRouteForSession(controller.selectedAgent, nextSessionKey, { replace: false });
-      pinMemberChatSession(controller.app, nextSessionKey);
-      renderSidebarSection(controller);
+      ctrl.currentSessionKey = nextSessionKey;
+      ctrl.sessions = ensureVisibleCurrentSession(ctrl.sessions, nextSessionKey);
+      ctrl.hasDraftSession = true;
+      syncRouteForSession(ctrl.selectedAgent, nextSessionKey, { replace: false });
+      pinMemberChatSession(ctrl.app, nextSessionKey);
+      renderSidebarSection(ctrl);
       return;
     }
     const sessionButton = target.closest("[data-member-chat-session]");
     if (sessionButton instanceof HTMLElement) {
       event.preventDefault();
       const nextSessionKey = String(sessionButton.dataset.memberChatSession || "").trim().toLowerCase();
-      if (!nextSessionKey || nextSessionKey === controller.currentSessionKey) {
+      if (!nextSessionKey || nextSessionKey === ctrl.currentSessionKey) {
         return;
       }
-      controller.currentSessionKey = nextSessionKey;
-      controller.hasDraftSession = !controller.sessionsFromGateway.some(
+      ctrl.currentSessionKey = nextSessionKey;
+      ctrl.hasDraftSession = !ctrl.sessionsFromGateway.some(
         (row) => String(row?.key || "").trim().toLowerCase() === nextSessionKey,
       );
-      syncRouteForSession(controller.selectedAgent, nextSessionKey, { replace: false });
-      pinMemberChatSession(controller.app, nextSessionKey);
-      renderSidebarSection(controller);
+      syncRouteForSession(ctrl.selectedAgent, nextSessionKey, { replace: false });
+      pinMemberChatSession(ctrl.app, nextSessionKey);
+      renderSidebarSection(ctrl);
       return;
     }
     const deleteButton = target.closest(`[${DELETE_ATTR}]`);
@@ -508,8 +552,8 @@ function attachSectionHandlers(section, controller) {
       if (!nextHiddenKey) {
         return;
       }
-      controller.pendingDeleteSessionKey = nextHiddenKey;
-      showDialog(ensureDeleteDialog(controller));
+      ctrl.pendingDeleteSessionKey = nextHiddenKey;
+      showDialog(ensureDeleteDialog(ctrl));
       return;
     }
     if (target.closest("[data-member-chat-collapse]")) {
