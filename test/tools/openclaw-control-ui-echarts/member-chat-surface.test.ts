@@ -88,9 +88,10 @@ describe("member chat surface", () => {
     });
     window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
     document.body.innerHTML = `
-      <main class="content">
-        <section class="chat-page"></section>
-      </main>
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
       <nav class="sidebar-nav">
         <section class="nav-section oc-platform-management-section" data-oc-role-nav="true">
           <div class="nav-section__items">
@@ -111,8 +112,8 @@ describe("member chat surface", () => {
     expect(section?.textContent).toContain("本周分析");
     expect(section?.textContent).toContain("历史主会话");
     expect(section?.textContent).not.toContain("Agent选择");
-    expect(document.querySelector("[data-oc-member-chat-header]")?.textContent).toContain("Agent选择");
-    expect(document.querySelector("[data-oc-member-chat-header]")?.textContent).toContain("苏博泰克财务分析助手");
+    expect(document.querySelector("[data-oc-member-chat-top-action]")?.textContent).toContain("Agent选择");
+    expect(document.querySelector("[data-oc-member-chat-top-action]")?.textContent).toContain("苏博泰克财务分析助手");
     expect(window.location.search).toContain("tenantAgentId=tenant-agent-1");
     expect(window.location.search).toContain("session=agent%3Asubotech-finance%3Atenant%3At-1%3Atenant-agent%3Atenant-agent-1%3Auser%3Auser-1%3Achat%3Alatest");
     expect(app.sessionKey).toBe(
@@ -145,9 +146,10 @@ describe("member chat surface", () => {
       "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:existing",
     );
     document.body.innerHTML = `
-      <main class="content">
-        <section class="chat-page"></section>
-      </main>
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
       <nav class="sidebar-nav">
         <section class="nav-section oc-platform-management-section" data-oc-role-nav="true">
           <div class="nav-section__items">

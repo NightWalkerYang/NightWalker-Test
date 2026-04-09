@@ -197,7 +197,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
 - Tenant-member login now also lands inside the native Control UI shell, with only the injected `Agent` dropdown and an embedded `Agent选择` card view for assigned Agents.
-- Tenant members now click assigned Agent cards into the native `/chat` page, where a zero-intrusive sidebar adds `新建会话` plus a per-Agent session list, while `Agent选择` moves into the chat content header and the native chat content and features remain intact.
+- Tenant members now click assigned Agent cards into the native `/chat` page, where a zero-intrusive sidebar adds `新建会话` plus a per-Agent session list, while `Agent选择` moves into the native top breadcrumb area and the native chat content and features remain intact.
 - Platform-admin identity and logout status now occupy the native topbar search slot globally across the root control UI.
 - Tenant-admin and tenant-member identity and logout status now occupy that same native topbar search slot on their native control-shell views, and role-scoped CSS plus runtime markers force their sidebar/footer down to only the injected management or Agent entry plus the version block.
 - Tenant platform entry now rescans late-rendered native shell nodes so topbar and sidebar role-trimming still applies after Control UI rerenders.

@@ -16,13 +16,13 @@ import {
 const DOC_ATTR = "data-oc-member-chat-route";
 const STYLE_ATTR = "data-oc-member-chat-surface-style";
 const SECTION_ATTR = "data-oc-member-chat-section";
-const HEADER_ATTR = "data-oc-member-chat-header";
+const TOP_ACTION_ATTR = "data-oc-member-chat-top-action";
 const SESSION_LIST_ATTR = "data-oc-member-chat-session-list";
 const ACTIVE_SESSION_ATTR = "data-oc-member-chat-active-session";
 const LABEL_ATTR = "data-oc-member-chat-label";
 const APP_SELECTOR = "openclaw-app";
 const SIDEBAR_SELECTOR = ".sidebar-nav";
-const CONTENT_SELECTOR = ".content";
+const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
 const SECTION_CLASS = "nav-section oc-member-chat-section";
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
@@ -135,21 +135,13 @@ function buildSidebarMarkup(sessions, currentSessionKey) {
   `;
 }
 
-function buildHeaderMarkup(selectedAgent) {
+function buildTopActionMarkup(selectedAgent) {
   const agentName = escapeHtml(selectedAgent?.agentName || "当前 Agent");
-  const description = escapeHtml(selectedAgent?.description || "已分配 Agent");
-  const agentBadge = escapeHtml(selectedAgent?.emoji || "AI");
   return `
-    <div class="oc-member-chat-header__body">
-      <button class="btn oc-member-chat-header__back" type="button" data-member-chat-back>Agent选择</button>
-      <div class="oc-member-chat-header__agent">
-        <div class="oc-member-chat-header__avatar">${agentBadge}</div>
-        <div class="oc-member-chat-header__meta">
-          <div class="oc-member-chat-header__name">${agentName}</div>
-          <div class="oc-member-chat-header__desc">${description}</div>
-        </div>
-      </div>
-    </div>
+    <button class="btn btn--ghost oc-member-chat-top-action__button" type="button" data-member-chat-back title="返回 Agent 选择">
+      Agent选择
+    </button>
+    <span class="oc-member-chat-top-action__label" title="${agentName}">${agentName}</span>
   `;
 }
 
@@ -204,16 +196,16 @@ function ensureSection(sidebar) {
   return section;
 }
 
-function ensureHeader(content) {
-  let header = content.querySelector(`[${HEADER_ATTR}]`);
-  if (header instanceof HTMLElement) {
-    return header;
+function ensureTopActionRow(breadcrumb) {
+  let root = breadcrumb.querySelector(`[${TOP_ACTION_ATTR}]`);
+  if (root instanceof HTMLElement) {
+    return root;
   }
-  header = document.createElement("section");
-  header.className = "oc-member-chat-header";
-  header.setAttribute(HEADER_ATTR, "true");
-  content.prepend(header);
-  return header;
+  root = document.createElement("span");
+  root.className = "oc-member-chat-top-action";
+  root.setAttribute(TOP_ACTION_ATTR, "true");
+  breadcrumb.append(root);
+  return root;
 }
 
 function closeAllDialogs() {
@@ -311,12 +303,12 @@ function attachSectionHandlers(section, controller) {
   });
 }
 
-function attachHeaderHandlers(header) {
-  if (!(header instanceof HTMLElement) || header.dataset.ocMemberChatHandlers === "true") {
+function attachTopActionHandlers(root) {
+  if (!(root instanceof HTMLElement) || root.dataset.ocMemberChatHandlers === "true") {
     return;
   }
-  header.dataset.ocMemberChatHandlers = "true";
-  header.addEventListener("click", (event) => {
+  root.dataset.ocMemberChatHandlers = "true";
+  root.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof Element)) {
       return;
@@ -337,13 +329,13 @@ function renderSidebarSection(controller) {
   attachSectionHandlers(section, controller);
 }
 
-function renderContentHeader(controller) {
-  if (!(controller.content instanceof HTMLElement)) {
+function renderTopAction(controller) {
+  if (!(controller.breadcrumb instanceof HTMLElement)) {
     return;
   }
-  const header = ensureHeader(controller.content);
-  header.innerHTML = buildHeaderMarkup(controller.selectedAgent);
-  attachHeaderHandlers(header);
+  const root = ensureTopActionRow(controller.breadcrumb);
+  root.innerHTML = buildTopActionMarkup(controller.selectedAgent);
+  attachTopActionHandlers(root);
 }
 
 async function syncMemberChatSurface() {
@@ -351,7 +343,7 @@ async function syncMemberChatSurface() {
     document.documentElement.removeAttribute(DOC_ATTR);
     document.body?.removeAttribute(DOC_ATTR);
     document.querySelector(`[${SECTION_ATTR}]`)?.remove();
-    document.querySelector(`[${HEADER_ATTR}]`)?.remove();
+    document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
     return;
   }
 
@@ -362,7 +354,7 @@ async function syncMemberChatSurface() {
 
   const app = document.querySelector(APP_SELECTOR);
   const sidebar = document.querySelector(SIDEBAR_SELECTOR);
-  const content = document.querySelector(CONTENT_SELECTOR);
+  const breadcrumb = document.querySelector(BREADCRUMB_SELECTOR);
   const session = readTenantSession();
   const selectedAgent = readSelectedTenantAgent();
   if (
@@ -383,7 +375,7 @@ async function syncMemberChatSurface() {
   const controller = {
     app,
     sidebar,
-    content,
+    breadcrumb,
     session,
     selectedAgent,
     sessions: ensureVisibleCurrentSession(sessions, currentSessionKey),
@@ -391,7 +383,7 @@ async function syncMemberChatSurface() {
   };
 
   renderSidebarSection(controller);
-  renderContentHeader(controller);
+  renderTopAction(controller);
   syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
   pinMemberChatSession(app, currentSessionKey);
 }
@@ -421,7 +413,7 @@ export function bootMemberChatSurface() {
         if (
           node.matches(APP_SELECTOR) ||
           node.matches(SIDEBAR_SELECTOR) ||
-          node.matches(CONTENT_SELECTOR)
+          node.matches(BREADCRUMB_SELECTOR)
         ) {
           void syncMemberChatSurface();
           return;
@@ -429,7 +421,7 @@ export function bootMemberChatSurface() {
         if (
           node.querySelector?.(APP_SELECTOR) ||
           node.querySelector?.(SIDEBAR_SELECTOR) ||
-          node.querySelector?.(CONTENT_SELECTOR)
+          node.querySelector?.(BREADCRUMB_SELECTOR)
         ) {
           void syncMemberChatSurface();
           return;
