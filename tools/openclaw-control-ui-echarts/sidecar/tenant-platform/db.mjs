@@ -526,3 +526,68 @@ export function logAudit(db, params) {
     createdAt: nowIso(),
   });
 }
+
+export function registerTenantAgentSession(db, params) {
+  const existing = db
+    .prepare("SELECT id FROM tenant_agent_sessions WHERE openclaw_session_key = ?")
+    .get(params.openclawSessionKey);
+  const now = nowIso();
+
+  if (existing) {
+    db.prepare(
+      `UPDATE tenant_agent_sessions
+       SET title = @title,
+           updated_at = @updatedAt,
+           hidden_at = NULL
+       WHERE id = @id`
+    ).run({
+      id: existing.id,
+      title: params.title || "新会话",
+      updatedAt: now,
+    });
+    return existing.id;
+  }
+
+  const sessionId = createId("session");
+  db.prepare(
+    `INSERT INTO tenant_agent_sessions (id, tenant_id, user_id, tenant_agent_id, openclaw_session_key, title, created_at, updated_at)
+     VALUES (@id, @tenantId, @userId, @tenantAgentId, @openclawSessionKey, @title, @createdAt, @updatedAt)`
+  ).run({
+    id: sessionId,
+    tenantId: params.tenantId,
+    userId: params.userId,
+    tenantAgentId: params.tenantAgentId,
+    openclawSessionKey: params.openclawSessionKey,
+    title: params.title || "新会话",
+    createdAt: now,
+    updatedAt: now,
+  });
+  return sessionId;
+}
+
+export function hideTenantAgentSession(db, params) {
+  db.prepare(
+    `UPDATE tenant_agent_sessions
+     SET hidden_at = @hiddenAt,
+         updated_at = @updatedAt
+     WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`
+  ).run({
+    userId: params.userId,
+    openclawSessionKey: params.openclawSessionKey,
+    hiddenAt: nowIso(),
+    updatedAt: nowIso(),
+  });
+}
+
+export function listTenantAgentSessions(db, params) {
+  return db
+    .prepare(
+      `SELECT id, tenant_id AS tenantId, user_id AS userId, tenant_agent_id AS tenantAgentId,
+              openclaw_session_key AS openclawSessionKey, openclaw_session_id AS openclawSessionId,
+              title, hidden_at AS hiddenAt, created_at AS createdAt, updated_at AS updatedAt
+       FROM tenant_agent_sessions
+       WHERE user_id = ? AND tenant_agent_id = ? AND hidden_at IS NULL
+       ORDER BY updated_at DESC`
+    )
+    .all(params.userId, params.tenantAgentId);
+}

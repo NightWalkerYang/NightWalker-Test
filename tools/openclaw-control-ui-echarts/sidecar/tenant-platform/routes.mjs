@@ -16,6 +16,9 @@ import {
   readOpenClawAgentCatalog,
   updateTenantMemberLimit,
   upsertTenantAgent,
+  registerTenantAgentSession,
+  hideTenantAgentSession,
+  listTenantAgentSessions,
 } from "./db.mjs";
 import {
   applyLocalRenewalCode,
@@ -592,6 +595,79 @@ export function createTenantPlatformRouter(deps) {
         ok: true,
         data: listAssignedAgentsForUser(deps.db, session, configAgents),
       });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/sessions") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const tenantAgentId = String(url.searchParams.get("tenantAgentId") || "").trim();
+      if (!tenantAgentId) {
+        sendJson(request, response, 400, { ok: false, error: "tenant_agent_id_required" });
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantAgentSessions(deps.db, { userId: session.userId, tenantAgentId }),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/member/sessions") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenantAgentId = String(body.tenantAgentId || "").trim();
+        const openclawSessionKey = String(body.openclawSessionKey || "").trim();
+        if (!tenantAgentId || !openclawSessionKey) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        const sessionId = registerTenantAgentSession(deps.db, {
+          tenantId: session.tenantId,
+          userId: session.userId,
+          tenantAgentId,
+          openclawSessionKey,
+          title: String(body.title || "").trim() || "新会话",
+        });
+        sendJson(request, response, 200, { ok: true, data: { sessionId } });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/member/sessions/hide") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const openclawSessionKey = String(body.openclawSessionKey || "").trim();
+        if (!openclawSessionKey) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        hideTenantAgentSession(deps.db, {
+          userId: session.userId,
+          openclawSessionKey,
+        });
+        sendJson(request, response, 200, { ok: true });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 

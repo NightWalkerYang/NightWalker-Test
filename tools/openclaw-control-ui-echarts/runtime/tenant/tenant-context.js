@@ -2,7 +2,6 @@ const PLATFORM_SESSION_STORAGE_KEY = "openclaw:tenant-platform:platform-session:
 const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
 const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
 const TENANT_SELECTED_AGENT_STORAGE_KEY = "openclaw:tenant-platform:selected-agent:v1";
-const TENANT_HIDDEN_MEMBER_SESSIONS_STORAGE_KEY = "openclaw:tenant-platform:hidden-member-sessions:v1";
 const TENANT_VIEW_QUERY_KEY = "ocTenantView";
 export const PLATFORM_LOGIN_VIEW = "platform-login";
 export const TENANT_LOGIN_VIEW = "tenant-login";
@@ -285,43 +284,6 @@ export function createTenantMemberSessionKey(session, selectedAgent) {
       ? crypto.randomUUID().toLowerCase()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   return `${prefix}${randomPart}`;
-}
-
-export function buildHiddenTenantMemberSessionBucketKey(session, selectedAgent) {
-  const tenantId = normalizeTenantSessionValue(session?.session?.tenantId);
-  const userId = normalizeTenantSessionValue(session?.session?.userId);
-  const tenantAgentId = normalizeTenantSessionValue(selectedAgent?.id);
-  if (!tenantId || !userId || !tenantAgentId) {
-    return "";
-  }
-  return `${tenantId}:${userId}:${tenantAgentId}`;
-}
-
-export function readHiddenTenantMemberSessions(session, selectedAgent) {
-  const bucketKey = buildHiddenTenantMemberSessionBucketKey(session, selectedAgent);
-  if (!bucketKey) {
-    return [];
-  }
-  const store = readStoredObject(TENANT_HIDDEN_MEMBER_SESSIONS_STORAGE_KEY);
-  const values = Array.isArray(store?.[bucketKey]) ? store[bucketKey] : [];
-  return values
-    .map((value) => normalizeTenantSessionValue(value))
-    .filter(Boolean);
-}
-
-export function hideTenantMemberSession(session, selectedAgent, sessionKey) {
-  const bucketKey = buildHiddenTenantMemberSessionBucketKey(session, selectedAgent);
-  const normalizedSessionKey = normalizeTenantSessionValue(sessionKey);
-  if (!bucketKey || !normalizedSessionKey) {
-    return;
-  }
-  const store = readStoredObject(TENANT_HIDDEN_MEMBER_SESSIONS_STORAGE_KEY);
-  const values = Array.isArray(store?.[bucketKey]) ? store[bucketKey] : [];
-  if (values.includes(normalizedSessionKey)) {
-    return;
-  }
-  store[bucketKey] = [...values, normalizedSessionKey];
-  writeStoredObject(TENANT_HIDDEN_MEMBER_SESSIONS_STORAGE_KEY, store);
 }
 
 export function isLocalEditionSession(session) {

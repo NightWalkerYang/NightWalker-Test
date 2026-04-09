@@ -177,6 +177,15 @@ export function createTenantApiClient() {
     listMemberAgents() {
       return requestJson("/member/agents");
     },
+    listMemberSessions(tenantAgentId) {
+      return requestJson(withQuery("/member/sessions", { tenantAgentId }));
+    },
+    registerMemberSession(body) {
+      return requestJson("/member/sessions", { method: "POST", body });
+    },
+    hideMemberSession(body) {
+      return requestJson("/member/sessions/hide", { method: "POST", body });
+    },
     persistSession(payload) {
       writeTenantSession(payload);
     },

@@ -3,12 +3,11 @@ import {
   buildTenantMemberChatRoute,
   buildTenantMemberLegacySessionKey,
   createTenantMemberSessionKey,
-  hideTenantMemberSession,
   isTenantMemberSessionKey,
-  readHiddenTenantMemberSessions,
   readSelectedTenantAgent,
   readTenantSession,
 } from "./tenant-context.js";
+import { createTenantApiClient } from "./api-client.js";
 import {
   bootTenantRouteSync,
   navigateTenantRoute,
@@ -217,12 +216,55 @@ function findTargetSessionKey(selectedAgent, session, href, sessions) {
 }
 
 async function loadMemberSessions(app, selectedAgent, session) {
+  const apiClient = createTenantApiClient();
+  let registeredSessions = [];
+  try {
+    registeredSessions = await apiClient.listMemberSessions(selectedAgent.id);
+  } catch (error) {
+    console.error("Failed to list member sessions from platform", error);
+  }
+  const registeredMap = new Map(
+    registeredSessions.map((r) => [String(r.openclawSessionKey).trim().toLowerCase(), r])
+  );
+
   const rows = normalizeSessionRows(await app.client.request("sessions.list", {}));
-  const hidden = new Set(readHiddenTenantMemberSessions(session, selectedAgent));
-  const filtered = rows.filter((row) => isTenantMemberSessionKey(row.key, session, selectedAgent));
-  return filtered
-    .filter((row) => !hidden.has(String(row.key || "").trim().toLowerCase()))
-    .toSorted((left, right) => (Number(right.updatedAt || 0) - Number(left.updatedAt || 0)));
+  const filteredFromGateway = rows.filter((row) => isTenantMemberSessionKey(row.key, session, selectedAgent));
+  const result = [];
+
+  for (const gatewayRow of filteredFromGateway) {
+    const key = String(gatewayRow.key).trim().toLowerCase();
+    const dbRow = registeredMap.get(key);
+
+    if (dbRow && dbRow.hiddenAt) {
+      continue;
+    }
+
+    if (!dbRow) {
+      try {
+        await apiClient.registerMemberSession({
+          tenantAgentId: selectedAgent.id,
+          openclawSessionKey: key,
+          title: gatewayRow.title || "新会话",
+        });
+      } catch (err) {}
+    }
+
+    result.push(gatewayRow);
+  }
+
+  for (const dbRow of registeredSessions) {
+    const key = String(dbRow.openclawSessionKey).trim().toLowerCase();
+    if (dbRow.hiddenAt) continue;
+    if (!result.some((r) => String(r.key).toLowerCase() === key)) {
+      result.push({
+        key: dbRow.openclawSessionKey,
+        label: dbRow.title || "新会话",
+        updatedAt: new Date(dbRow.updatedAt).getTime(),
+      });
+    }
+  }
+
+  return result.toSorted((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
 }
 
 function ensureSection(sidebar) {
@@ -277,8 +319,13 @@ function closeDialog(dialog) {
   dialog.removeAttribute("open");
 }
 
-function applyHiddenDelete(controller, nextHiddenKey) {
-  hideTenantMemberSession(controller.session, controller.selectedAgent, nextHiddenKey);
+async function applyHiddenDelete(controller, nextHiddenKey) {
+  try {
+    await createTenantApiClient().hideMemberSession({ openclawSessionKey: nextHiddenKey });
+  } catch (error) {
+    showTransientToast(controller, "删除会话失败");
+    return;
+  }
   controller.sessions = controller.sessions.filter(
     (row) => String(row?.key || "").trim().toLowerCase() !== nextHiddenKey,
   );
@@ -422,6 +469,13 @@ function attachSectionHandlers(section, controller) {
         return;
       }
       const nextSessionKey = createTenantMemberSessionKey(controller.session, controller.selectedAgent);
+      
+      createTenantApiClient().registerMemberSession({
+        tenantAgentId: controller.selectedAgent.id,
+        openclawSessionKey: nextSessionKey,
+        title: "新会话"
+      }).catch(() => {});
+
       controller.currentSessionKey = nextSessionKey;
       controller.sessions = ensureVisibleCurrentSession(controller.sessions, nextSessionKey);
       controller.hasDraftSession = true;
