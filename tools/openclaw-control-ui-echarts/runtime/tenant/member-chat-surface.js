@@ -244,6 +244,7 @@ async function loadMemberSessions(app, selectedAgent, session) {
   if (keysToPreview.length > 0) {
     try {
       const previewResp = await app.client.request("sessions.preview", { keys: keysToPreview, limit: 20 });
+      console.log("[Tenant UI] previewResp:", previewResp);
       if (previewResp?.previews) {
         for (const preview of previewResp.previews) {
           if (preview.items && preview.items.length > 0) {
@@ -258,6 +259,7 @@ async function loadMemberSessions(app, selectedAgent, session) {
               text = String(text || "").trim();
               if (text) {
                 if (text.length > 20) text = text.slice(0, 20) + "...";
+                console.log("[Tenant UI] Found title for", preview.key, "->", text);
                 previewMap.set(String(preview.key).trim().toLowerCase(), text);
               }
             }
@@ -482,6 +484,7 @@ function pinMemberChatSession(app, sessionKey) {
     app.chatMessages = [];
     app.chatThinkingLevel = null;
     app.chatStreamStartedAt = null;
+    app.chatLoading = true;
     app.requestUpdate?.();
     app.sessionKey = sessionKey;
     if (typeof app.applySettings === "function" && app.settings) {
@@ -494,7 +497,27 @@ function pinMemberChatSession(app, sessionKey) {
     if (typeof app.loadAssistantIdentity === "function") {
       void app.loadAssistantIdentity();
     }
-    setTimeout(() => { app.chatMessages = []; app.requestUpdate?.(); }, 0);
+    app.client.request("chat.history", { sessionKey, limit: 200 })
+      .then(res => {
+        if (app.sessionKey === sessionKey) {
+          app.chatMessages = Array.isArray(res?.messages) ? res.messages : [];
+          app.chatThinkingLevel = res?.thinkingLevel ?? null;
+          app.chatStream = null;
+          app.chatStreamStartedAt = null;
+          if (typeof app.resetToolStream === "function") app.resetToolStream();
+          if (typeof app.resetChatScroll === "function") app.resetChatScroll();
+          app.chatLoading = false;
+          app.requestUpdate?.();
+        }
+      })
+      .catch(err => {
+        if (app.sessionKey === sessionKey) {
+          app.chatMessages = [];
+          app.chatThinkingLevel = null;
+          app.chatLoading = false;
+          app.requestUpdate?.();
+        }
+      });
   }
 
   if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
