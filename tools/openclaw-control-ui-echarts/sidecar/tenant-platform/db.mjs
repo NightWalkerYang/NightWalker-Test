@@ -596,7 +596,7 @@ export function listTenantAgentSessions(db, params) {
               openclaw_session_key AS openclawSessionKey, openclaw_session_id AS openclawSessionId,
               title, hidden_at AS hiddenAt, created_at AS createdAt, updated_at AS updatedAt
        FROM tenant_agent_sessions
-       WHERE user_id = ? AND tenant_agent_id = ? AND hidden_at IS NULL
+       WHERE user_id = ? AND tenant_agent_id = ?
        ORDER BY updated_at DESC`
     )
     .all(params.userId, params.tenantAgentId);

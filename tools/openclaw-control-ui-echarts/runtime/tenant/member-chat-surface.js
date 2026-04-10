@@ -109,6 +109,65 @@ function formatRelativeTime(value) {
   return `${days} 天前`;
 }
 
+function normalizeSessionTitleValue(value) {
+  return String(value ?? "").trim();
+}
+
+function isGeneratedTimestampTitle(value) {
+  const normalized = normalizeSessionTitleValue(value);
+  if (!normalized) {
+    return false;
+  }
+  return (
+    /^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(normalized) ||
+    /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(normalized)
+  );
+}
+
+function isProvisionalSessionTitle(value) {
+  const normalized = normalizeSessionTitleValue(value);
+  if (!normalized) {
+    return true;
+  }
+  return normalized === "新会话" || isGeneratedTimestampTitle(normalized);
+}
+
+function extractTextFragments(value) {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractTextFragments(item));
+  }
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  const fragments = [];
+  if (typeof value.text === "string") {
+    fragments.push(value.text);
+  }
+  if (typeof value.message === "string") {
+    fragments.push(value.message);
+  }
+  if (Array.isArray(value.content)) {
+    fragments.push(...value.content.flatMap((item) => extractTextFragments(item)));
+  }
+  return fragments;
+}
+
+function buildSessionTitleFromText(value) {
+  const text = extractTextFragments(value)
+    .map((fragment) => String(fragment || "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) {
+    return "";
+  }
+  return text.length > 20 ? `${text.slice(0, 20)}...` : text;
+}
+
 function resolveSessionLabel(row, index) {
   const label = String(row?.label || "").trim();
   if (label) {
@@ -119,6 +178,17 @@ function resolveSessionLabel(row, index) {
     return displayName;
   }
   return index === 0 ? "当前会话" : `会话 ${index + 1}`;
+}
+
+function findFirstUserMessageTitle(messages) {
+  if (!Array.isArray(messages)) {
+    return "";
+  }
+  const firstUser = messages.find((message) => String(message?.role || "").trim() === "user");
+  if (!firstUser) {
+    return "";
+  }
+  return buildSessionTitleFromText(firstUser);
 }
 
 function buildSidebarMarkup(sessions, currentSessionKey) {
@@ -231,45 +301,32 @@ async function loadMemberSessions(app, selectedAgent, session) {
   const filteredFromGateway = rows.filter((row) => isTenantMemberSessionKey(row.key, session, selectedAgent));
   const result = [];
 
-  const keysToPreview = [];
+  const keysToHydrateFromHistory = [];
   for (const gatewayRow of filteredFromGateway) {
     const key = String(gatewayRow.key).trim().toLowerCase();
     const dbRow = registeredMap.get(key);
-    if (!dbRow || dbRow.title === "新会话") {
-      keysToPreview.push(key);
+    const dbTitle = normalizeSessionTitleValue(dbRow?.title);
+    const gatewayTitle = normalizeSessionTitleValue(gatewayRow.title || gatewayRow.label);
+    if (!dbRow || isProvisionalSessionTitle(dbTitle) || isProvisionalSessionTitle(gatewayTitle)) {
+      keysToHydrateFromHistory.push(key);
     }
   }
 
-  const previewMap = new Map();
-  if (keysToPreview.length > 0) {
-    try {
-      const previewResp = await app.client.request("sessions.preview", { keys: keysToPreview, limit: 20 });
-      console.log("[Tenant UI] previewResp:", previewResp);
-      if (previewResp?.previews) {
-        for (const preview of previewResp.previews) {
-          if (preview.items && preview.items.length > 0) {
-            const userMsg = preview.items.find((item) => item.role === "user");
-            if (userMsg) {
-              // sessions.preview returns { role, text } items (not { role, content })
-              let text = typeof userMsg.text === "string" ? userMsg.text.trim() : "";
-              if (!text && userMsg.content) {
-                if (typeof userMsg.content === "string") {
-                  text = userMsg.content.trim();
-                } else if (Array.isArray(userMsg.content)) {
-                  text = userMsg.content.map((b) => b?.text || "").join(" ").trim();
-                }
-              }
-              if (text) {
-                if (text.length > 20) text = text.slice(0, 20) + "...";
-                previewMap.set(String(preview.key).trim().toLowerCase(), text);
-              }
-            }
+  const hydratedTitleMap = new Map();
+  if (keysToHydrateFromHistory.length > 0) {
+    await Promise.all(
+      keysToHydrateFromHistory.map(async (key) => {
+        try {
+          const historyResp = await app.client.request("chat.history", { sessionKey: key, limit: 200 });
+          const nextTitle = findFirstUserMessageTitle(historyResp?.messages);
+          if (nextTitle) {
+            hydratedTitleMap.set(key, nextTitle);
           }
+        } catch (error) {
+          console.warn("Failed to hydrate member session title from history", error);
         }
-      }
-    } catch(err) {
-      console.warn("Failed to fetch session previews", err);
-    }
+      }),
+    );
   }
 
   for (const gatewayRow of filteredFromGateway) {
@@ -280,14 +337,19 @@ async function loadMemberSessions(app, selectedAgent, session) {
       continue;
     }
 
-    let nextTitle = gatewayRow.title || "新会话";
-    if (previewMap.has(key)) {
-       nextTitle = previewMap.get(key);
-    } else if (dbRow && dbRow.title !== "新会话") {
-       nextTitle = dbRow.title;
+    const dbTitle = normalizeSessionTitleValue(dbRow?.title);
+    const gatewayTitle = normalizeSessionTitleValue(gatewayRow.title || gatewayRow.label);
+
+    let nextTitle = "新会话";
+    if (hydratedTitleMap.has(key)) {
+      nextTitle = hydratedTitleMap.get(key);
+    } else if (!isProvisionalSessionTitle(dbTitle)) {
+      nextTitle = dbTitle;
+    } else if (!isProvisionalSessionTitle(gatewayTitle)) {
+      nextTitle = gatewayTitle;
     }
 
-    if (!dbRow || (dbRow.title === "新会话" && nextTitle !== "新会话")) {
+    if (!dbRow || (isProvisionalSessionTitle(dbTitle) && nextTitle !== dbTitle)) {
       try {
         await apiClient.registerMemberSession({
           tenantAgentId: selectedAgent.id,
@@ -299,9 +361,9 @@ async function loadMemberSessions(app, selectedAgent, session) {
     }
 
     result.push({
-       ...gatewayRow,
-       title: nextTitle,
-       label: nextTitle !== "新会话" ? nextTitle : gatewayRow.label
+      ...gatewayRow,
+      title: nextTitle,
+      label: nextTitle !== "新会话" ? nextTitle : gatewayRow.label,
     });
   }
 
@@ -318,6 +380,48 @@ async function loadMemberSessions(app, selectedAgent, session) {
   }
 
   return result.toSorted((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+}
+
+async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) {
+  const normalizedSessionKey = String(sessionKey || "").trim().toLowerCase();
+  if (!normalizedSessionKey) {
+    return;
+  }
+  const nextTitle = buildSessionTitleFromText(messagePayload);
+  if (!nextTitle) {
+    return;
+  }
+  const currentRow = controller.sessions.find(
+    (row) => String(row?.key || "").trim().toLowerCase() === normalizedSessionKey,
+  );
+  const currentTitle = normalizeSessionTitleValue(currentRow?.title || currentRow?.label);
+  if (!isProvisionalSessionTitle(currentTitle)) {
+    return;
+  }
+  try {
+    await createTenantApiClient().registerMemberSession({
+      tenantAgentId: controller.selectedAgent.id,
+      openclawSessionKey: normalizedSessionKey,
+      title: nextTitle,
+    });
+  } catch (error) {
+    console.warn("Failed to persist member session title", error);
+    return;
+  }
+
+  for (const row of controller.sessions) {
+    if (String(row?.key || "").trim().toLowerCase() === normalizedSessionKey) {
+      row.title = nextTitle;
+      row.label = nextTitle;
+    }
+  }
+  for (const row of controller.sessionsFromGateway) {
+    if (String(row?.key || "").trim().toLowerCase() === normalizedSessionKey) {
+      row.title = nextTitle;
+      row.label = nextTitle;
+    }
+  }
+  renderSidebarSection(controller);
 }
 
 function ensureSection(sidebar) {
@@ -421,16 +525,20 @@ function ensureDeleteDialog(controller) {
     `;
     document.body.append(root);
   }
+  root._ocController = controller;
   if (root.dataset.ocMemberChatHandlers !== "true") {
     root.dataset.ocMemberChatHandlers = "true";
     root.addEventListener("click", (event) => {
+      const activeController = root._ocController;
       const target = event.target;
       if (!(target instanceof Element)) {
         return;
       }
       if (target.closest(DELETE_DIALOG_CLOSE_SELECTOR)) {
         event.preventDefault();
-        controller.pendingDeleteSessionKey = "";
+        if (activeController) {
+          activeController.pendingDeleteSessionKey = "";
+        }
         closeDialog(root.querySelector(DELETE_DIALOG_SELECTOR));
         return;
       }
@@ -438,13 +546,19 @@ function ensureDeleteDialog(controller) {
         return;
       }
       event.preventDefault();
-      const nextHiddenKey = String(controller.pendingDeleteSessionKey || "").trim().toLowerCase();
-      controller.pendingDeleteSessionKey = "";
+      const nextHiddenKey = String(activeController?.pendingDeleteSessionKey || "")
+        .trim()
+        .toLowerCase();
+      if (activeController) {
+        activeController.pendingDeleteSessionKey = "";
+      }
       closeDialog(root.querySelector(DELETE_DIALOG_SELECTOR));
       if (!nextHiddenKey) {
         return;
       }
-      applyHiddenDelete(controller, nextHiddenKey);
+      if (activeController) {
+        applyHiddenDelete(activeController, nextHiddenKey);
+      }
     });
   }
   return root.querySelector(DELETE_DIALOG_SELECTOR);
@@ -542,6 +656,13 @@ function pinMemberChatSession(app, sessionKey) {
     app.client.request = async (method, params) => {
       const result = await originalRequest(method, params);
       if (method === "chat.send") {
+        if (window._ocMemberChatSurfaceController?.currentSessionKey) {
+          void ensureMemberSessionTitle(
+            window._ocMemberChatSurfaceController,
+            window._ocMemberChatSurfaceController.currentSessionKey,
+            params?.message,
+          );
+        }
         setTimeout(() => {
           void syncMemberChatSurface();
         }, 1200);

@@ -5,16 +5,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bootMemberChatSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js";
 import {
-  readHiddenTenantMemberSessions,
   writeSelectedTenantAgent,
   writeTenantSession,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 
-function createAppStub() {
+function createAppStub(overrides = {}) {
   const app = document.createElement("openclaw-app");
   app.connected = true;
+  const customRequest = overrides.request;
   app.client = {
-    request: vi.fn(async (method) => {
+    request: vi.fn(async (method, params) => {
+      if (typeof customRequest === "function") {
+        return customRequest(method, params);
+      }
+      if (method === "chat.history") {
+        return { messages: [] };
+      }
       if (method !== "sessions.list") {
         throw new Error(`unexpected method: ${method}`);
       }
@@ -52,6 +58,71 @@ function createAppStub() {
   return app;
 }
 
+function installTenantApiFetchStub({ sessions = [] } = {}) {
+  const state = {
+    sessions: sessions.map((session) => ({ ...session })),
+  };
+  globalThis.fetch = vi.fn(async (input, options = {}) => {
+    const url = String(input);
+    const method = String(options.method || "GET").toUpperCase();
+    const okJson = (data) => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data,
+      }),
+    });
+    if (url.includes("/member/sessions?")) {
+      return okJson(state.sessions);
+    }
+    if (url.endsWith("/member/sessions") && method === "POST") {
+      const body = JSON.parse(String(options.body || "{}"));
+      const existing = state.sessions.find(
+        (session) => session.openclawSessionKey === body.openclawSessionKey,
+      );
+      if (existing) {
+        existing.title = body.title;
+        existing.hiddenAt = null;
+        existing.updatedAt = new Date().toISOString();
+      } else {
+        state.sessions.push({
+          openclawSessionKey: body.openclawSessionKey,
+          title: body.title,
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        });
+      }
+      return okJson({ sessionId: "session-1" });
+    }
+    if (url.endsWith("/member/sessions/hide") && method === "POST") {
+      const body = JSON.parse(String(options.body || "{}"));
+      const existing = state.sessions.find(
+        (session) => session.openclawSessionKey === body.openclawSessionKey,
+      );
+      if (existing) {
+        existing.hiddenAt = new Date().toISOString();
+      } else {
+        state.sessions.push({
+          openclawSessionKey: body.openclawSessionKey,
+          title: "新会话",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: new Date().toISOString(),
+        });
+      }
+      return okJson({});
+    }
+    if (url.endsWith("/member/sessions/delete") && method === "POST") {
+      const body = JSON.parse(String(options.body || "{}"));
+      state.sessions = state.sessions.filter(
+        (session) => session.openclawSessionKey !== body.openclawSessionKey,
+      );
+      return okJson({});
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+  return state;
+}
+
 async function flush() {
   await Promise.resolve();
   await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -71,6 +142,7 @@ afterEach(() => {
 
 describe("member chat surface", () => {
   it("mounts a member session sidebar on /chat and pins the latest assigned session", async () => {
+    installTenantApiFetchStub();
     writeTenantSession({
       token: "member-token",
       session: {
@@ -125,6 +197,7 @@ describe("member chat surface", () => {
   });
 
   it("creates a new member session and shows it in the sidebar list", async () => {
+    installTenantApiFetchStub();
     writeTenantSession({
       token: "member-token",
       session: {
@@ -177,8 +250,147 @@ describe("member chat surface", () => {
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("新会话");
   });
 
+  it("replaces generated timestamp titles with the first member message preview", async () => {
+    installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "[Fri 2026-04-10 00:40 UTC]",
+          updatedAt: "2026-04-10T00:40:00.000Z",
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub({
+      request: async (method, params) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+                title: "[Fri 2026-04-10 00:40 UTC]",
+                updatedAt: Date.now(),
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          expect(params).toEqual({
+            sessionKey:
+              "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+            limit: 200,
+          });
+          return {
+            messages: [
+              { role: "assistant", text: "你好" },
+              { role: "user", text: "这是成员发送的第一条消息需要被截取成标题展示" },
+              { role: "assistant", text: "收到" },
+            ],
+          };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
+      "这是成员发送的第一条消息需要被截取成标题...",
+    );
+    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).not.toContain(
+      "[Fri 2026-04-10 00:40 UTC]",
+    );
+  });
+
+  it("uses the first member message as the title for a new draft session", async () => {
+    const apiState = installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub({
+      request: async (method) => {
+        if (method === "sessions.list") {
+          return { sessions: [] };
+        }
+        if (method === "chat.send") {
+          return { ok: true };
+        }
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    await app.client.request("chat.send", {
+      message: "这是成员发送的第一条消息需要被截取成标题展示",
+    });
+    await flush();
+
+    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
+      "这是成员发送的第一条消息需要被截取成标题...",
+    );
+    expect(apiState.sessions).toHaveLength(1);
+    expect(apiState.sessions[0]?.title).toBe("这是成员发送的第一条消息需要被截取成标题...");
+  });
+
   it("shows a short toast instead of creating another draft session when already in a new session", async () => {
     vi.useFakeTimers();
+    installTenantApiFetchStub();
     writeTenantSession({
       token: "member-token",
       session: {
@@ -234,6 +446,22 @@ describe("member chat surface", () => {
   });
 
   it("hides deleted sessions from the sidebar while keeping the current session usable", async () => {
+    const apiState = installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey: "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "本周分析",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        },
+        {
+          openclawSessionKey: "agent:subotech-finance:tenant-tenant-agent-1",
+          title: "历史主会话",
+          updatedAt: new Date(Date.now() - 60_000).toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
     writeTenantSession({
       token: "member-token",
       session: {
@@ -275,15 +503,33 @@ describe("member chat surface", () => {
     expect(confirmButton).not.toBeNull();
     confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
+    await flush();
 
-    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).not.toContain("历史主会话");
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("本周分析");
-    expect(readHiddenTenantMemberSessions({
-      session: { tenantId: "t-1", userId: "user-1" },
-    }, { id: "tenant-agent-1" })).toContain("agent:subotech-finance:tenant-tenant-agent-1");
+    expect(document.querySelector("[data-oc-member-chat-delete-dialog]")?.open).toBe(false);
+    expect(
+      apiState.sessions.find((session) => session.openclawSessionKey === "agent:subotech-finance:tenant-tenant-agent-1")
+        ?.hiddenAt,
+    ).toBeTruthy();
   });
 
   it("keeps the session when delete dialog is canceled", async () => {
+    const apiState = installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey: "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "本周分析",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        },
+        {
+          openclawSessionKey: "agent:subotech-finance:tenant-tenant-agent-1",
+          title: "历史主会话",
+          updatedAt: new Date(Date.now() - 60_000).toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
     writeTenantSession({
       token: "member-token",
       session: {
@@ -325,10 +571,12 @@ describe("member chat surface", () => {
     expect(cancelButton).not.toBeNull();
     cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
+    await flush();
 
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain("历史主会话");
-    expect(readHiddenTenantMemberSessions({
-      session: { tenantId: "t-1", userId: "user-1" },
-    }, { id: "tenant-agent-1" })).not.toContain("agent:subotech-finance:tenant-tenant-agent-1");
+    expect(
+      apiState.sessions.find((session) => session.openclawSessionKey === "agent:subotech-finance:tenant-tenant-agent-1")
+        ?.hiddenAt,
+    ).toBeFalsy();
   });
 });
