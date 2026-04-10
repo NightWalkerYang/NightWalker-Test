@@ -414,11 +414,16 @@ PY
 create_login_route_entry() {
   local index_path="$1"
   local login_dir
+  local login_html
+  local temp_login
   login_dir="$(dirname "$index_path")/login"
+  login_html="$(dirname "$index_path")/login.html"
+  temp_login="$(mktemp)"
   mkdir -p "$login_dir"
 
   if grep -Eqi '<base[[:space:]][^>]*href=' "$index_path"; then
     cp "$index_path" "$login_dir/index.html"
+    cp "$index_path" "$login_html"
     return 0
   fi
 
@@ -429,7 +434,11 @@ create_login_route_entry() {
       inserted = 1
     }
     { print }
-  ' "$index_path" >"$login_dir/index.html"
+  ' "$index_path" >"$temp_login"
+
+  cp "$temp_login" "$login_dir/index.html"
+  cp "$temp_login" "$login_html"
+  rm -f "$temp_login"
 }
 
 extract_offline_vendors() {

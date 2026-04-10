@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -43,6 +44,47 @@ describe("package local runtime", () => {
       `@jimp/utils@${resolveInstalledPackageVersion(nodeModulesRoot, "@jimp/utils")}`,
       `p-queue@${resolveInstalledPackageVersion(nodeModulesRoot, "p-queue")}`,
     ]);
+  });
+
+  it("builds custom control-ui with stable /login aliases", () => {
+    const sourceDir = path.join(createTempDir(), "source-ui");
+    const outputDir = path.join(createTempDir(), "output-ui");
+    fs.mkdirSync(sourceDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sourceDir, "index.html"),
+      "<html><head></head><body>ok</body></html>\n",
+      "utf8",
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(
+          process.cwd(),
+          "tools",
+          "openclaw-control-ui-echarts",
+          "build-custom-control-ui.mjs",
+        ),
+        "--source",
+        sourceDir,
+        "--output",
+        outputDir,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(fs.existsSync(path.join(outputDir, "index.html"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "login", "index.html"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "login.html"))).toBe(true);
+
+    const loginIndex = fs.readFileSync(path.join(outputDir, "login", "index.html"), "utf8");
+    const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");
+    expect(loginIndex).toContain('<base href="/" />');
+    expect(loginHtml).toContain('<base href="/" />');
   });
 
   it("patches file-type runtime compat with core.js export", () => {

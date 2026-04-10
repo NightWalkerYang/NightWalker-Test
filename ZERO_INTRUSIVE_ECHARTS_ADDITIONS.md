@@ -217,6 +217,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Local edition bootstrap now bypasses platform-admin setup entirely: the first local login initializes a single local tenant admin, members continue to use the tenant login entry, and native root access redirects to the tenant flow instead of the platform-admin flow.
 - Unified `/login` now validates cached sessions before auto-redirect and logout clears both platform/tenant local sessions to prevent login-control redirect loops.
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.
+- The custom Control UI build chain now generates stable `/login` aliases (`login/index.html` and `login.html`) without the previous directory/file collision, so zero-intrusive redeploys no longer fail or regress into `Not Found` because of broken login entry artifacts.
 
 ## Important Notes
 

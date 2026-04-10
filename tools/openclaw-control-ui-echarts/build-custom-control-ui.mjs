@@ -161,10 +161,8 @@ function buildLoginEntryHtml(indexHtml) {
 function writeLoginRouteAliases(outputDir, indexContent) {
   const loginIndexPath = path.join(outputDir, "login", "index.html");
   const loginHtmlPath = path.join(outputDir, "login.html");
-  const loginPath = path.join(outputDir, "login");
   writeTextIntoOutput(indexContent, loginIndexPath);
   writeTextIntoOutput(indexContent, loginHtmlPath);
-  writeTextIntoOutput(indexContent, loginPath);
 }
 
 function extractEmbeddedLibraries(bundleSource) {
@@ -221,12 +219,7 @@ function main() {
     ),
   );
   fs.writeFileSync(outputIndexPath, finalizedIndexHtml, "utf8");
-  writeTextIntoOutput(
-    buildLoginEntryHtml(finalizedIndexHtml),
-    path.join(outputDir, "login", "index.html"),
-  );
-  const patchedIndexContent = fs.readFileSync(outputIndexPath, "utf8");
-  writeLoginRouteAliases(outputDir, patchedIndexContent);
+  writeLoginRouteAliases(outputDir, buildLoginEntryHtml(finalizedIndexHtml));
 
   const embeddedLibraries = extractEmbeddedLibraries(
     fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),
