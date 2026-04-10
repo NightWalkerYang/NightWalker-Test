@@ -11,6 +11,8 @@ import {
   TENANT_MEMBER_MANAGEMENT_ROUTE,
   TENANT_MEMBERS_VIEW,
   isTenantLoginView,
+  clearPlatformSession,
+  clearTenantSession,
   clearSelectedTenantAgent,
   clearTenantViewFromHref,
   readSelectedTenantAgent,
@@ -642,12 +644,12 @@ function ensureTopbarLogoutHandler() {
     } catch {
       // Local session is cleared in the API client before the request, so redirect anyway.
     }
-    if (!isPlatformAdmin) {
-      clearSelectedTenantAgent();
-    }
+    clearPlatformSession();
+    clearTenantSession();
+    clearSelectedTenantAgent();
     closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
-    window.location.href = LOGIN_ROUTE;
+    window.location.replace(LOGIN_ROUTE);
   });
 }
 

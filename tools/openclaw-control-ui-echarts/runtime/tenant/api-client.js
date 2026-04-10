@@ -111,8 +111,8 @@ export function createTenantApiClient() {
     login(body) {
       return requestJson("/login", { method: "POST", body });
     },
-    me() {
-      return requestJson("/me");
+    me(session) {
+      return requestJson("/me", { session });
     },
     logout(scope = "current") {
       const session =

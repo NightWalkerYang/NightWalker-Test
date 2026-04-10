@@ -56,11 +56,16 @@ function showSetupMode(root, showSetup) {
   }
 }
 
-function redirectIfAuthenticated({ isLocalEdition }) {
+async function redirectIfAuthenticated({ apiClient, isLocalEdition }) {
   const tenantSession = readTenantSession();
   if (tenantSession?.token && tenantSession?.session?.role && tenantSession.session.role !== "platform_admin") {
-    redirectToRoleHome(tenantSession.session);
-    return true;
+    try {
+      await apiClient.me(tenantSession);
+      redirectToRoleHome(tenantSession.session);
+      return true;
+    } catch {
+      clearTenantSession();
+    }
   }
 
   const platformSession = readPlatformSession();
@@ -72,8 +77,13 @@ function redirectIfAuthenticated({ isLocalEdition }) {
   }
 
   if (platformSession?.token && platformSession?.session?.role === "platform_admin") {
-    redirectToRoleHome(platformSession.session);
-    return true;
+    try {
+      await apiClient.me(platformSession);
+      redirectToRoleHome(platformSession.session);
+      return true;
+    } catch {
+      clearPlatformSession();
+    }
   }
   return false;
 }
@@ -124,7 +134,7 @@ export async function mountTenantLoginPage(root) {
   if (isLocalEdition) {
     clearPlatformSession();
   }
-  if (redirectIfAuthenticated({ isLocalEdition })) {
+  if (await redirectIfAuthenticated({ apiClient, isLocalEdition })) {
     return null;
   }
 

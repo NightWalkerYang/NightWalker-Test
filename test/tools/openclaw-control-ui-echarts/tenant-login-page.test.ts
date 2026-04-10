@@ -4,7 +4,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountTenantLoginPage } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js";
-import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
+import {
+  readPlatformSession,
+  writeTenantSession,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -16,13 +19,6 @@ afterEach(() => {
 describe("tenant login page", () => {
   it("renders unified login when opened from /login", async () => {
     window.history.replaceState({}, "", "/login");
-    writeTenantSession({
-      token: "platform-token",
-      session: {
-        role: "platform_admin",
-        username: "platform-root",
-      },
-    });
     const fetchMock = vi.fn(async () =>
       ({
         ok: true,
@@ -44,6 +40,49 @@ describe("tenant login page", () => {
     expect(window.location.pathname).toBe("/login");
     expect(root.textContent).toContain("统一登录");
     expect(root.querySelector("[data-tenant-login-form]")).not.toBeNull();
+  });
+
+  it("clears invalid stored sessions instead of redirect-looping", async () => {
+    window.history.replaceState({}, "", "/login");
+    writeTenantSession({
+      token: "expired-platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ok: true,
+            data: { initialized: true, edition: "cloud" },
+          };
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        async json() {
+          return {
+            ok: false,
+            error: "unauthorized",
+          };
+        },
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const root = document.createElement("main");
+    document.body.append(root);
+
+    await mountTenantLoginPage(root);
+
+    expect(readPlatformSession()).toBeNull();
+    expect(root.querySelector("[data-tenant-login-form]")?.hasAttribute("hidden")).toBe(false);
+    expect(root.textContent).toContain("统一登录");
   });
 
   it("shows local tenant-admin setup when local edition is uninitialized", async () => {
