@@ -100,6 +100,19 @@ function ensureDirectoryExists(dirPath, label) {
   }
 }
 
+function resetDirectoryContents(outputDir) {
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+    return;
+  }
+  if (!fs.statSync(outputDir).isDirectory()) {
+    throw new Error(`Output directory path is not a directory: ${outputDir}`);
+  }
+  for (const entry of fs.readdirSync(outputDir)) {
+    fs.rmSync(path.join(outputDir, entry), { recursive: true, force: true });
+  }
+}
+
 function injectRuntimeScript(indexHtml) {
   const scriptTag =
     '    <script type="module" src="./assets/openclaw-echarts-renderer.js"></script>\n';
@@ -200,8 +213,7 @@ function main() {
   ensureDirectoryExists(CONTROL_UI_STATIC_DIR_SOURCE, "Control UI static overlay assets");
   ensureFileExists(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "Offline bundled ECharts userscript");
 
-  fs.rmSync(outputDir, { recursive: true, force: true });
-  fs.mkdirSync(outputDir, { recursive: true });
+  resetDirectoryContents(outputDir);
   fs.cpSync(sourceDir, outputDir, { recursive: true, force: true });
   fs.cpSync(CONTROL_UI_STATIC_DIR_SOURCE, outputDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(outputDir, "workspace-downloads"), { recursive: true });

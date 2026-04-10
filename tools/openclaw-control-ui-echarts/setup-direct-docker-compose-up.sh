@@ -44,6 +44,12 @@ require_dir() {
   [[ -d "$dir_path" ]] || fail "$label not found at $dir_path"
 }
 
+reset_output_dir_preserve_mount() {
+  local dir_path="$1"
+  mkdir -p "$dir_path"
+  find "$dir_path" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+}
+
 trim_whitespace() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -511,7 +517,7 @@ main() {
   local source_dir
   source_dir="$(resolve_source_dir)"
 
-  rm -rf "$OUTPUT_DIR"
+  reset_output_dir_preserve_mount "$OUTPUT_DIR"
   mkdir -p "$OUTPUT_DIR/assets/vendor"
   cp -R "$source_dir"/. "$OUTPUT_DIR"/
   cp -R "$CONTROL_UI_STATIC_DIR"/. "$OUTPUT_DIR"/

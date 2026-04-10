@@ -56,27 +56,24 @@ describe("package local runtime", () => {
       "utf8",
     );
 
-    const result = spawnSync(
-      process.execPath,
-      [
-        path.join(
-          process.cwd(),
-          "tools",
-          "openclaw-control-ui-echarts",
-          "build-custom-control-ui.mjs",
-        ),
-        "--source",
-        sourceDir,
-        "--output",
-        outputDir,
-      ],
-      {
-        cwd: process.cwd(),
-        encoding: "utf8",
-      },
+    const scriptPath = path.join(
+      process.cwd(),
+      "tools",
+      "openclaw-control-ui-echarts",
+      "build-custom-control-ui.mjs",
     );
+    const buildArgs = [scriptPath, "--source", sourceDir, "--output", outputDir];
+    const firstBuild = spawnSync(process.execPath, buildArgs, {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    expect(firstBuild.status, firstBuild.stderr || firstBuild.stdout).toBe(0);
 
-    expect(result.status, result.stderr || result.stdout).toBe(0);
+    const secondBuild = spawnSync(process.execPath, buildArgs, {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    expect(secondBuild.status, secondBuild.stderr || secondBuild.stdout).toBe(0);
     expect(fs.existsSync(path.join(outputDir, "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "login", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "login.html"))).toBe(true);

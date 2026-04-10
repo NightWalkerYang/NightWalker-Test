@@ -218,6 +218,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Unified `/login` now validates cached sessions before auto-redirect and logout clears both platform/tenant local sessions to prevent login-control redirect loops.
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.
 - The custom Control UI build chain now generates stable `/login` aliases (`login/index.html` and `login.html`) without the previous directory/file collision, so zero-intrusive redeploys no longer fail or regress into `Not Found` because of broken login entry artifacts.
+- The Control UI rebuild scripts now preserve the `generated/control-ui` root directory itself and only replace its contents, preventing Docker bind mounts from sticking to a deleted empty directory and causing post-redeploy `Not Found` pages.
 
 ## Important Notes
 
