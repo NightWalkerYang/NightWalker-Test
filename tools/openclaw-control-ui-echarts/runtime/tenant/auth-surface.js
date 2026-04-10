@@ -1,6 +1,5 @@
-import { mountPlatformLoginPage } from "./platform-login-page.js";
 import { mountTenantLoginPage } from "./login-page.js";
-import { PLATFORM_LOGIN_VIEW, TENANT_LOGIN_VIEW, readTenantView } from "./tenant-context.js";
+import { isTenantLoginView, readTenantView } from "./tenant-context.js";
 
 const ROOT_ATTR = "data-oc-tenant-auth-root";
 const ACTIVE_ATTR = "data-oc-tenant-auth-active";
@@ -34,7 +33,7 @@ function ensureRoot() {
 
 export async function bootTenantAuthSurface() {
   const view = readTenantView();
-  if (view !== PLATFORM_LOGIN_VIEW && view !== TENANT_LOGIN_VIEW) {
+  if (!isTenantLoginView(view)) {
     document.body.removeAttribute(ACTIVE_ATTR);
     document.querySelector(`[${ROOT_ATTR}]`)?.remove();
     document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
@@ -44,8 +43,5 @@ export async function bootTenantAuthSurface() {
   document.body.setAttribute(ACTIVE_ATTR, "true");
   ensureStyle();
   const root = ensureRoot();
-  if (view === PLATFORM_LOGIN_VIEW) {
-    return mountPlatformLoginPage(root);
-  }
   return mountTenantLoginPage(root);
 }

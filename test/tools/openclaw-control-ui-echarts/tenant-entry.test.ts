@@ -79,7 +79,7 @@ describe("zero-intrusive tenant entry", () => {
     const tenantLinks = document.querySelectorAll(".oc-tenant-user-link");
     expect(tenantLinks).toHaveLength(1);
     expect(tenantLinks[0]?.textContent).toContain("租户登录");
-    expect(tenantLinks[0]?.getAttribute("href")).toContain("ocTenantView=tenant-login");
+    expect(tenantLinks[0]?.getAttribute("href")).toContain("/login");
   });
 
   it("injects a native-style management section for tenant admins", () => {

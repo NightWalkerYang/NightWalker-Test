@@ -1,12 +1,10 @@
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_AGENT_SELECTOR_VIEW,
-  PLATFORM_LOGIN_ROUTE,
-  PLATFORM_LOGIN_VIEW,
-  TENANT_LOGIN_ROUTE,
+  LOGIN_ROUTE,
   TENANT_MEMBERS_VIEW,
-  TENANT_LOGIN_VIEW,
   clearPlatformSession,
+  isTenantLoginView,
   readSelectedTenantAgentId,
   routeForRole,
   readPlatformSession,
@@ -33,7 +31,7 @@ export function resolvePlatformAccessDecision({
 } = {}) {
   const view = readTenantView(href);
   const selectedTenantAgentId = readSelectedTenantAgentId(href);
-  if (view === PLATFORM_LOGIN_VIEW || view === TENANT_LOGIN_VIEW) {
+  if (isTenantLoginView(view)) {
     return "skip";
   }
   if (isLufengPublicPath(pathname)) {
@@ -99,7 +97,7 @@ export async function bootPlatformAccessGuard() {
   window.__openclawPlatformAccessGuardBooted = true;
 
   const view = readTenantView();
-  if (view === PLATFORM_LOGIN_VIEW || view === TENANT_LOGIN_VIEW) {
+  if (isTenantLoginView(view)) {
     return;
   }
   if (isLufengPublicPath(window.location.pathname) || !isNativeControlUiPath(window.location.pathname)) {
@@ -118,9 +116,9 @@ export async function bootPlatformAccessGuard() {
     tenantSession,
   });
   if (decision === "redirect") {
-    window.location.href = PLATFORM_LOGIN_ROUTE;
+    window.location.href = LOGIN_ROUTE;
   } else if (decision === "redirect-tenant-login") {
-    window.location.href = TENANT_LOGIN_ROUTE;
+    window.location.href = LOGIN_ROUTE;
   } else if (decision === "redirect-tenant") {
     window.location.href = routeForRole(tenantSession?.session?.role);
   } else if (decision === "redirect-member") {

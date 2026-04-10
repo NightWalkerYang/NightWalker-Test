@@ -3,6 +3,8 @@ const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
 const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
 const TENANT_SELECTED_AGENT_STORAGE_KEY = "openclaw:tenant-platform:selected-agent:v1";
 const TENANT_VIEW_QUERY_KEY = "ocTenantView";
+const LOGIN_PATHNAME = "/login";
+export const LOGIN_VIEW = "login";
 export const PLATFORM_LOGIN_VIEW = "platform-login";
 export const TENANT_LOGIN_VIEW = "tenant-login";
 export const PLATFORM_TENANTS_VIEW = "platform-tenants";
@@ -13,8 +15,9 @@ export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
-export const PLATFORM_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_LOGIN_VIEW}`;
-export const TENANT_LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_LOGIN_VIEW}`;
+export const LOGIN_ROUTE = "./login";
+export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
+export const TENANT_LOGIN_ROUTE = LOGIN_ROUTE;
 export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_TENANTS_VIEW}`;
 export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
 export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
@@ -83,6 +86,9 @@ export function readTenantSession() {
 
 export function readSessionForCurrentView(pathname = window.location.pathname) {
   const view = readTenantView();
+  if (view === LOGIN_VIEW) {
+    return readPlatformSession() || readTenantSession();
+  }
   if (
     view === PLATFORM_LOGIN_VIEW ||
     view === PLATFORM_TENANTS_VIEW ||
@@ -169,8 +175,19 @@ export function resolveTenantApiBaseCandidates() {
   return candidates;
 }
 
+function normalizePathname(pathname) {
+  const normalized = String(pathname || "").trim();
+  if (!normalized) {
+    return "/";
+  }
+  return normalized.replace(/\/+$/, "") || "/";
+}
+
 export function readTenantView(locationHref = window.location.href) {
   const url = new URL(locationHref, document.baseURI);
+  if (normalizePathname(url.pathname) === LOGIN_PATHNAME) {
+    return LOGIN_VIEW;
+  }
   return url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "";
 }
 
@@ -321,6 +338,10 @@ export function isLocalEditionSession(session) {
 
 export function isReadonlySession(session) {
   return Boolean(session?.session?.readonly);
+}
+
+export function isTenantLoginView(view = readTenantView()) {
+  return view === LOGIN_VIEW || view === PLATFORM_LOGIN_VIEW || view === TENANT_LOGIN_VIEW;
 }
 
 export function redirectToRoleHome(session) {

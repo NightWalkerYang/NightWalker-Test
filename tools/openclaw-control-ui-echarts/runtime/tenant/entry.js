@@ -1,6 +1,5 @@
 import {
-  PLATFORM_LOGIN_VIEW,
-  PLATFORM_LOGIN_ROUTE,
+  LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
@@ -9,10 +8,9 @@ import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_AGENT_SELECTOR_ROUTE,
   TENANT_AGENT_SELECTOR_VIEW,
-  TENANT_LOGIN_VIEW,
-  TENANT_LOGIN_ROUTE,
   TENANT_MEMBER_MANAGEMENT_ROUTE,
   TENANT_MEMBERS_VIEW,
+  isTenantLoginView,
   clearSelectedTenantAgent,
   clearTenantViewFromHref,
   readSelectedTenantAgent,
@@ -183,8 +181,7 @@ function updateManagementSectionState(section) {
 }
 
 function isTenantAuthViewActive() {
-  const activeView = readTenantView();
-  return activeView === PLATFORM_LOGIN_VIEW || activeView === TENANT_LOGIN_VIEW;
+  return isTenantLoginView(readTenantView());
 }
 
 function ensureManagementSectionHandlers(section) {
@@ -335,7 +332,7 @@ function ensureTenantUtilityLink(container) {
   container.append(
     createNavItem({
       className: "sidebar-utility-link oc-tenant-user-link",
-      href: new URL(TENANT_LOGIN_ROUTE, document.baseURI).href,
+      href: new URL(LOGIN_ROUTE, document.baseURI).href,
       title: "租户登录入口",
       text: "租户登录",
       icon: ICONS.tenant,
@@ -650,7 +647,7 @@ function ensureTopbarLogoutHandler() {
     }
     closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
-    window.location.href = isPlatformAdmin ? PLATFORM_LOGIN_ROUTE : TENANT_LOGIN_ROUTE;
+    window.location.href = LOGIN_ROUTE;
   });
 }
 

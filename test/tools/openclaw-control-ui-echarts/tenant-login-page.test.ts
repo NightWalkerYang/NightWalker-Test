@@ -14,8 +14,8 @@ afterEach(() => {
 });
 
 describe("tenant login page", () => {
-  it("does not redirect platform admins away from the tenant login view", async () => {
-    window.history.replaceState({}, "", "/?ocTenantView=tenant-login");
+  it("renders unified login when opened from /login", async () => {
+    window.history.replaceState({}, "", "/login");
     writeTenantSession({
       token: "platform-token",
       session: {
@@ -41,13 +41,13 @@ describe("tenant login page", () => {
 
     await mountTenantLoginPage(root);
 
-    expect(window.location.search).toContain("ocTenantView=tenant-login");
-    expect(root.textContent).toContain("租户登录");
+    expect(window.location.pathname).toBe("/login");
+    expect(root.textContent).toContain("统一登录");
     expect(root.querySelector("[data-tenant-login-form]")).not.toBeNull();
   });
 
   it("shows local tenant-admin setup when local edition is uninitialized", async () => {
-    window.history.replaceState({}, "", "/?ocTenantView=tenant-login");
+    window.history.replaceState({}, "", "/login");
     const fetchMock = vi.fn(async () =>
       ({
         ok: true,
@@ -81,7 +81,7 @@ describe("tenant login page", () => {
   });
 
   it("retries local bootstrap fetches before surfacing an API error", async () => {
-    window.history.replaceState({}, "", "/?ocTenantView=tenant-login");
+    window.history.replaceState({}, "", "/login");
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))
