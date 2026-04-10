@@ -394,6 +394,27 @@ index_path.write_text(html, encoding="utf-8")
 PY
 }
 
+create_login_route_entry() {
+  local index_path="$1"
+  local login_dir
+  login_dir="$(dirname "$index_path")/login"
+  mkdir -p "$login_dir"
+
+  if grep -Eqi '<base[[:space:]][^>]*href=' "$index_path"; then
+    cp "$index_path" "$login_dir/index.html"
+    return 0
+  fi
+
+  awk '
+    BEGIN { inserted = 0 }
+    /<\/head>/ && inserted == 0 {
+      print "    <base href=\"/\" />"
+      inserted = 1
+    }
+    { print }
+  ' "$index_path" >"$login_dir/index.html"
+}
+
 extract_offline_vendors() {
   local bundle_path="$1"
   local vendor_dir="$2"
@@ -482,6 +503,7 @@ main() {
   inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
   inject_runtime_script "$OUTPUT_DIR/index.html"
   replace_brand_favicons "$OUTPUT_DIR/index.html"
+  create_login_route_entry "$OUTPUT_DIR/index.html"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
 

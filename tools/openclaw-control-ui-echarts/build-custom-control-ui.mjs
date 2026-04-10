@@ -148,6 +148,25 @@ function writeTextIntoOutput(content, outputFile) {
   fs.writeFileSync(outputFile, content, "utf8");
 }
 
+function buildLoginEntryHtml(indexHtml) {
+  if (/<base\s+[^>]*href\s*=/.test(indexHtml)) {
+    return indexHtml;
+  }
+  if (!indexHtml.includes("</head>")) {
+    throw new Error("index.html is missing </head>; cannot create /login entry.");
+  }
+  return indexHtml.replace("</head>", '    <base href="/" />\n  </head>');
+}
+
+function writeLoginRouteAliases(outputDir, indexContent) {
+  const loginIndexPath = path.join(outputDir, "login", "index.html");
+  const loginHtmlPath = path.join(outputDir, "login.html");
+  const loginPath = path.join(outputDir, "login");
+  writeTextIntoOutput(indexContent, loginIndexPath);
+  writeTextIntoOutput(indexContent, loginHtmlPath);
+  writeTextIntoOutput(indexContent, loginPath);
+}
+
 function extractEmbeddedLibraries(bundleSource) {
   const match = bundleSource.match(EMBEDDED_LIBRARY_PATTERN);
   if (!match?.groups) {
@@ -193,18 +212,21 @@ function main() {
   const outputIndexPath = path.join(outputDir, "index.html");
   const outputIndex = fs.readFileSync(outputIndexPath, "utf8");
   const autoGatewayToken = resolveAutoGatewayToken();
-  fs.writeFileSync(
-    outputIndexPath,
-    injectRuntimeScript(
-      replaceBrandFavicons(
-        injectAutoGatewayTokenBootstrap(
-          injectLufengPublicBootstrap(outputIndex, autoGatewayToken),
-          autoGatewayToken,
-        ),
+  const finalizedIndexHtml = injectRuntimeScript(
+    replaceBrandFavicons(
+      injectAutoGatewayTokenBootstrap(
+        injectLufengPublicBootstrap(outputIndex, autoGatewayToken),
+        autoGatewayToken,
       ),
     ),
-    "utf8",
   );
+  fs.writeFileSync(outputIndexPath, finalizedIndexHtml, "utf8");
+  writeTextIntoOutput(
+    buildLoginEntryHtml(finalizedIndexHtml),
+    path.join(outputDir, "login", "index.html"),
+  );
+  const patchedIndexContent = fs.readFileSync(outputIndexPath, "utf8");
+  writeLoginRouteAliases(outputDir, patchedIndexContent);
 
   const embeddedLibraries = extractEmbeddedLibraries(
     fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),
