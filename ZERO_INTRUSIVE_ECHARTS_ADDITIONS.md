@@ -191,7 +191,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
 - The tenant platform sidecar now supports a local-edition license file, signature verification, renewal-code application, and read-only enforcement after expiry.
-- Platform admin login and tenant login now use the native Control UI single-entry route with `?ocTenantView=...`.
+- Platform admin login and tenant login now use the native Control UI unified single-entry route `/login`.
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
