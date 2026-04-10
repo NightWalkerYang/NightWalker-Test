@@ -15,6 +15,7 @@ export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
+export const TENANT_USAGE_STATS_VIEW = "tenant-usage-stats";
 export const LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`;
 export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
 export const TENANT_LOGIN_ROUTE = LOGIN_ROUTE;
@@ -23,6 +24,7 @@ export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PL
 export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
 export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
 export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
+export const TENANT_USAGE_STATS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_USAGE_STATS_VIEW}`;
 
 function normalizeTenantSessionValue(value) {
   return String(value ?? "")
@@ -102,7 +104,8 @@ export function readSessionForCurrentView(pathname = window.location.pathname) {
   if (
     view === TENANT_MEMBERS_VIEW ||
     view === TENANT_AGENT_ASSIGNMENT_VIEW ||
-    view === TENANT_AGENT_SELECTOR_VIEW
+    view === TENANT_AGENT_SELECTOR_VIEW ||
+    view === TENANT_USAGE_STATS_VIEW
   ) {
     return readTenantSession();
   }

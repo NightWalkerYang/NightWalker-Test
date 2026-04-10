@@ -722,6 +722,71 @@ export function listTenantAgents(db, tenantId, configAgents = []) {
     });
 }
 
+export function listTenantUsageRecords(db, params) {
+  const tenantId = String(params?.tenantId || "").trim();
+  if (!tenantId) {
+    return { items: [], total: 0, page: 1, pageSize: 8 };
+  }
+  const search = String(params?.search || "").trim();
+  const rawPageSize = Number(params?.pageSize);
+  const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0
+    ? Math.min(Math.floor(rawPageSize), 50)
+    : 8;
+  const rawPage = Number(params?.page);
+  const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+  const offset = (page - 1) * pageSize;
+
+  const whereClauses = [
+    "l.tenant_id = @tenantId",
+    "l.direction = 'debit'",
+    "l.category IN ('usage', 'consume')",
+  ];
+  const bindings = { tenantId };
+  if (search) {
+    whereClauses.push(
+      "(LOWER(u.username) LIKE @search OR LOWER(ta.agent_id) LIKE @search)",
+    );
+    bindings.search = `%${search.toLowerCase()}%`;
+  }
+  const whereSql = whereClauses.join(" AND ");
+
+  const total = Number(
+    db
+      .prepare(
+        `SELECT COUNT(*) AS total
+         FROM tenant_wallet_ledger l
+         LEFT JOIN users u ON u.id = l.actor_user_id
+         LEFT JOIN tenant_agents ta ON ta.id = l.tenant_agent_id
+         WHERE ${whereSql}`,
+      )
+      .get(bindings)?.total || 0,
+  );
+
+  const items = db
+    .prepare(
+      `SELECT l.id AS id,
+              l.created_at AS createdAt,
+              l.amount_points AS creditsUsed,
+              l.note AS note,
+              l.actor_user_id AS memberId,
+              u.username AS memberUsername,
+              l.tenant_agent_id AS tenantAgentId,
+              ta.agent_id AS agentId,
+              JSON_EXTRACT(l.note, '$.tokens') AS tokens,
+              JSON_EXTRACT(l.note, '$.model') AS model,
+              JSON_EXTRACT(l.note, '$.sessionKey') AS sessionKey
+         FROM tenant_wallet_ledger l
+         LEFT JOIN users u ON u.id = l.actor_user_id
+         LEFT JOIN tenant_agents ta ON ta.id = l.tenant_agent_id
+         WHERE ${whereSql}
+         ORDER BY l.created_at DESC
+         LIMIT @limit OFFSET @offset`,
+    )
+    .all({ ...bindings, limit: pageSize, offset });
+
+  return { items, total, page, pageSize };
+}
+
 export function assignTenantAgentToUser(db, params) {
   const tenantAgent = db
     .prepare(

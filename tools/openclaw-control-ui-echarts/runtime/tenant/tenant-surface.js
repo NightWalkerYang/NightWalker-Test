@@ -1,7 +1,9 @@
 import { mountTenantConsolePage } from "./tenant-console-page.js";
+import { mountTenantUsageStatsPage } from "./tenant-usage-stats-page.js";
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_MEMBERS_VIEW,
+  TENANT_USAGE_STATS_VIEW,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -16,7 +18,11 @@ const ACTIVE_ATTR = "data-oc-tenant-surface-active";
 const SECTION_ATTR = "data-oc-tenant-section";
 
 function isTenantManagementView(view) {
-  return view === TENANT_MEMBERS_VIEW || view === TENANT_AGENT_ASSIGNMENT_VIEW;
+  return (
+    view === TENANT_MEMBERS_VIEW ||
+    view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    view === TENANT_USAGE_STATS_VIEW
+  );
 }
 
 function isRootControlPath(pathname = window.location.pathname) {
@@ -29,7 +35,13 @@ function isTenantManagementRoute() {
 }
 
 function sectionForView(view) {
-  return view === TENANT_AGENT_ASSIGNMENT_VIEW ? "agent-assignment" : "members";
+  if (view === TENANT_AGENT_ASSIGNMENT_VIEW) {
+    return "agent-assignment";
+  }
+  if (view === TENANT_USAGE_STATS_VIEW) {
+    return "usage-stats";
+  }
+  return "members";
 }
 
 function ensureStyle() {
@@ -86,10 +98,14 @@ async function mountCurrentSurface(content) {
   if (root.getAttribute(SECTION_ATTR) !== section) {
     renderShell(root, section);
   }
-  await mountTenantConsolePage(root, {
-    embedded: true,
-    section,
-  });
+  if (section === "usage-stats") {
+    await mountTenantUsageStatsPage(root, { embedded: true });
+  } else {
+    await mountTenantConsolePage(root, {
+      embedded: true,
+      section,
+    });
+  }
   return root;
 }
 

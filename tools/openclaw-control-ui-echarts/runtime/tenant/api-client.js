@@ -174,6 +174,11 @@ export function createTenantApiClient() {
     assignTenantAgent(body) {
       return requestJson("/tenant/admin/assign-agent", { method: "POST", body });
     },
+    listTenantUsageStats({ page = 1, pageSize = 8, search = "" } = {}) {
+      return requestJson(
+        withQuery("/tenant/admin/usage-stats", { page, pageSize, search }),
+      );
+    },
     listMemberAgents() {
       return requestJson("/member/agents");
     },

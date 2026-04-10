@@ -12,6 +12,7 @@ import {
   listTenants,
   listTenantAgents,
   listTenantMembers,
+  listTenantUsageRecords,
   logAudit,
   readOpenClawAgentCatalog,
   updateTenantMemberLimit,
@@ -583,6 +584,47 @@ export function createTenantPlatformRouter(deps) {
           data: {
             assignmentId: assignment.assignmentId,
             derivedAgentId: assignment.derivedAgentId,
+          },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/usage-stats") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const result = listTenantUsageRecords(deps.db, {
+          tenantId: session.tenantId,
+          search: url.searchParams.get("search") || "",
+          page: url.searchParams.get("page"),
+          pageSize: url.searchParams.get("pageSize"),
+        });
+        const configMap = new Map(
+          (configAgents || []).map((entry) => [entry.id, entry]),
+        );
+        const items = result.items.map((row) => {
+          const configEntry = configMap.get(row.agentId) ?? null;
+          return {
+            ...row,
+            agentName: configEntry?.name ?? row.agentId ?? "-",
+            agentEmoji: configEntry?.emoji ?? null,
+          };
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            items,
+            total: result.total,
+            page: result.page,
+            pageSize: result.pageSize,
           },
         });
       } catch (error) {
