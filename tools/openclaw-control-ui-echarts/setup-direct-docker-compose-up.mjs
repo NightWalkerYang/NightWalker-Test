@@ -150,9 +150,54 @@ function writeRootOverride() {
   return extraMounts;
 }
 
+function syncGatewayControlUiRoot() {
+  const check = spawnSync("docker", ["compose", "config"], {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+  if (check.status !== 0) {
+    process.stderr.write(
+      "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.root.\n",
+    );
+    return false;
+  }
+
+  const result = spawnSync(
+    "docker",
+    [
+      "compose",
+      "run",
+      "--rm",
+      "--no-deps",
+      "openclaw-cli",
+      "config",
+      "set",
+      "gateway.controlUi.root",
+      "/app/dist/control-ui",
+    ],
+    {
+      cwd: repoRoot,
+      stdio: "pipe",
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0) {
+    process.stderr.write(
+      [
+        "WARN: failed to sync gateway.controlUi.root automatically; run this manually:",
+        "  docker compose run --rm --no-deps openclaw-cli config set gateway.controlUi.root /app/dist/control-ui",
+      ].join("\n") + "\n",
+    );
+    return false;
+  }
+  process.stdout.write("Synced gateway.controlUi.root=/app/dist/control-ui\n");
+  return true;
+}
+
 function main() {
   buildCustomControlUi();
   const extraMounts = writeRootOverride();
+  syncGatewayControlUiRoot();
 
   process.stdout.write(
     [

@@ -285,6 +285,23 @@ EOF
   fi
 }
 
+sync_gateway_control_ui_root() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf '%s\n' "WARN: docker not found; skip syncing gateway.controlUi.root." >&2
+    return 0
+  fi
+  if ! (cd "$ROOT_DIR" && docker compose config >/dev/null 2>&1); then
+    printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.root." >&2
+    return 0
+  fi
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps openclaw-cli config set gateway.controlUi.root /app/dist/control-ui >/dev/null 2>&1; then
+    printf '%s\n' "Synced gateway.controlUi.root=/app/dist/control-ui"
+  else
+    printf '%s\n' "WARN: failed to sync gateway.controlUi.root automatically; run this manually:" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps openclaw-cli config set gateway.controlUi.root /app/dist/control-ui" >&2
+  fi
+}
+
 inject_runtime_script() {
   local index_path="$1"
   local temp_index="$index_path.tmp"
@@ -506,6 +523,7 @@ main() {
   create_login_route_entry "$OUTPUT_DIR/index.html"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
+  sync_gateway_control_ui_root
 
   printf '%s\n' "Custom Control UI root written to: $OUTPUT_DIR"
   printf '%s\n' "Wrote $OVERRIDE_PATH"
