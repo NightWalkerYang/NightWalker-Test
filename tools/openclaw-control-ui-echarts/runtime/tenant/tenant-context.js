@@ -15,7 +15,7 @@ export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
-export const LOGIN_ROUTE = "./login";
+export const LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`;
 export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
 export const TENANT_LOGIN_ROUTE = LOGIN_ROUTE;
 export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_TENANTS_VIEW}`;
