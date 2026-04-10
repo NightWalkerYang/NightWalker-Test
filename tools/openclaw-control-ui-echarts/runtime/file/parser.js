@@ -12,6 +12,11 @@ const FILE_URL_PATTERN = /^file:\/\//i;
 const ABSOLUTE_PATH_PATTERN = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
 const WORKSPACE_SEGMENT = "workspace";
 const AGENT_WORKSPACES_SEGMENT = "workspace-agents";
+const DERIVED_WORKSPACE_PREFIX = "workspace-";
+const RESERVED_WORKSPACE_PREFIX_SEGMENTS = new Set([
+  "workspace-downloads",
+  "workspace-agent-downloads",
+]);
 
 function stripMatchingQuotes(value) {
   const text = String(value || "").trim();
@@ -174,6 +179,20 @@ function normalizePathSeparators(pathValue) {
     .trim();
 }
 
+function isDerivedWorkspaceSegment(segment) {
+  const normalized = String(segment || "").trim().toLowerCase();
+  if (!normalized.startsWith(DERIVED_WORKSPACE_PREFIX)) {
+    return false;
+  }
+  if (normalized.length <= DERIVED_WORKSPACE_PREFIX.length) {
+    return false;
+  }
+  if (RESERVED_WORKSPACE_PREFIX_SEGMENTS.has(normalized)) {
+    return false;
+  }
+  return true;
+}
+
 function normalizeWorkspaceRelativePath(rawPath) {
   const normalized = normalizePathSeparators(stripMatchingQuotes(rawPath)).replace(/^\.\/+/, "");
   if (!normalized) {
@@ -218,6 +237,19 @@ function toScopedRelativePath(rawPath) {
     };
   }
 
+  const derivedWorkspaceIndex = segments.findIndex(
+    (segment) => isDerivedWorkspaceSegment(segment),
+  );
+  if (derivedWorkspaceIndex !== -1 && derivedWorkspaceIndex < segments.length - 1) {
+    const derivedAgentId = segments[derivedWorkspaceIndex].slice(DERIVED_WORKSPACE_PREFIX.length);
+    return {
+      scope: "agent-workspace",
+      path: normalizeWorkspaceRelativePath(
+        [derivedAgentId, ...segments.slice(derivedWorkspaceIndex + 1)].join("/"),
+      ),
+    };
+  }
+
   throw new Error("Absolute file paths must stay inside the workspace or agent workspace.");
 }
 
@@ -238,6 +270,17 @@ function inferPathScope(rawValue) {
     return {
       scope: "agent-workspace",
       path: normalizeWorkspaceRelativePath(segments.slice(1).join("/")),
+    };
+  }
+
+  if (
+    isDerivedWorkspaceSegment(segments[0]) &&
+    segments.length >= 2
+  ) {
+    const derivedAgentId = segments[0].slice(DERIVED_WORKSPACE_PREFIX.length);
+    return {
+      scope: "agent-workspace",
+      path: normalizeWorkspaceRelativePath([derivedAgentId, ...segments.slice(1)].join("/")),
     };
   }
 

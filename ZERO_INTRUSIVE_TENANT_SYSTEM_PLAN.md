@@ -1449,6 +1449,17 @@
      - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `loopback`
      - 目标是避免 Windows 测试机出现缺包启动失败和非法 bind 值启动失败
 
+13. 成员级 Agent 隔离（方案 A + 部分模板继承）已落地
+   - 租户管理员执行“成员分配 Agent”时，sidecar 会为该 `成员-租户Agent` 生成稳定的派生 `agentId`
+   - 该派生 `agentId` 会写入 `user_agent_assignments.derived_agent_id`，并通过列表接口返回给租户成员聊天页
+   - sidecar 会为派生 `agentId` 初始化独立工作区：
+     - 目标目录：`workspace-agents/<derived-agent-id>`
+     - 运行时别名：`workspace-<derived-agent-id>`
+   - 工作区初始化采用“部分模板继承”：
+     - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / skills`
+     - 仅在派生工作区缺失时复制，不覆盖成员后续个性化修改
+   - 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态
+
 ## 十二、当前还需要继续确认的事项
 
 1. 通联聚合接入材料

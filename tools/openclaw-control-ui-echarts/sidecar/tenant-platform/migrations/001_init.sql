@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS user_agent_assignments (
   tenant_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   tenant_agent_id TEXT NOT NULL,
+  derived_agent_id TEXT,
+  derived_workspace_dir TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL,
   UNIQUE(user_id, tenant_agent_id),
@@ -153,6 +155,10 @@ CREATE INDEX IF NOT EXISTS idx_tenant_memberships_tenant_role
 
 CREATE INDEX IF NOT EXISTS idx_user_agent_assignments_user
   ON user_agent_assignments (user_id, status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_agent_assignments_derived_agent
+  ON user_agent_assignments (derived_agent_id)
+  WHERE derived_agent_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_tenant_agent_sessions_user_agent
   ON tenant_agent_sessions (user_id, tenant_agent_id, updated_at DESC);

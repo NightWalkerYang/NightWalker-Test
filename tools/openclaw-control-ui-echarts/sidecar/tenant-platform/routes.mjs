@@ -571,12 +571,20 @@ export function createTenantPlatformRouter(deps) {
       }
       try {
         const body = await readJsonBody(request);
-        const assignmentId = assignTenantAgentToUser(deps.db, {
+        const assignment = assignTenantAgentToUser(deps.db, {
           tenantId: session.tenantId,
           userId: String(body.userId || "").trim(),
           tenantAgentId: String(body.tenantAgentId || "").trim(),
+          configPath: deps.config.configPath,
+          configDir: deps.config.configDir,
         });
-        sendJson(request, response, 200, { ok: true, data: { assignmentId } });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            assignmentId: assignment.assignmentId,
+            derivedAgentId: assignment.derivedAgentId,
+          },
+        });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,
@@ -593,7 +601,15 @@ export function createTenantPlatformRouter(deps) {
       }
       sendJson(request, response, 200, {
         ok: true,
-        data: listAssignedAgentsForUser(deps.db, session, configAgents),
+        data: listAssignedAgentsForUser(
+          deps.db,
+          {
+            ...session,
+            configPath: deps.config.configPath,
+            configDir: deps.config.configDir,
+          },
+          configAgents,
+        ),
       });
       return;
     }

@@ -218,6 +218,7 @@ export function writeSelectedTenantAgent(agent) {
   writeStoredSession(TENANT_SELECTED_AGENT_STORAGE_KEY, {
     id: String(agent.id || "").trim(),
     agentId: String(agent.agentId || "").trim(),
+    baseAgentId: String(agent.baseAgentId || agent.agentId || "").trim(),
     agentName: String(agent.agentName || "").trim(),
     balancePoints: Number(agent.balancePoints || 0),
     status: String(agent.status || "").trim(),
@@ -245,7 +246,7 @@ export function buildTenantMemberChatRoute(tenantAgentId, sessionKey = "") {
 }
 
 export function buildTenantMemberLegacySessionKey(selectedAgent) {
-  const agentId = normalizeTenantSessionValue(selectedAgent?.agentId);
+  const agentId = resolveTenantSessionAgentIds(selectedAgent)[0];
   const tenantAgentId = normalizeTenantSessionValue(selectedAgent?.id);
   if (!agentId || !tenantAgentId) {
     return "";
@@ -253,8 +254,31 @@ export function buildTenantMemberLegacySessionKey(selectedAgent) {
   return `agent:${agentId}:tenant-${tenantAgentId}`;
 }
 
-export function buildTenantMemberSessionPrefix(session, selectedAgent) {
-  const agentId = normalizeTenantSessionValue(selectedAgent?.agentId);
+export function buildTenantMemberLegacySessionKeys(selectedAgent) {
+  const tenantAgentId = normalizeTenantSessionValue(selectedAgent?.id);
+  if (!tenantAgentId) {
+    return [];
+  }
+  return resolveTenantSessionAgentIds(selectedAgent).map(
+    (agentId) => `agent:${agentId}:tenant-${tenantAgentId}`,
+  );
+}
+
+function resolveTenantSessionAgentIds(selectedAgent) {
+  const primary = normalizeTenantSessionValue(selectedAgent?.agentId);
+  const base = normalizeTenantSessionValue(selectedAgent?.baseAgentId);
+  const values = [];
+  if (primary) {
+    values.push(primary);
+  }
+  if (base && base !== primary) {
+    values.push(base);
+  }
+  return values;
+}
+
+export function buildTenantMemberSessionPrefix(session, selectedAgent, explicitAgentId = "") {
+  const agentId = normalizeTenantSessionValue(explicitAgentId) || resolveTenantSessionAgentIds(selectedAgent)[0];
   const tenantId = normalizeTenantSessionValue(session?.session?.tenantId);
   const userId = normalizeTenantSessionValue(session?.session?.userId);
   const tenantAgentId = normalizeTenantSessionValue(selectedAgent?.id);
@@ -269,9 +293,14 @@ export function isTenantMemberSessionKey(sessionKey, session, selectedAgent) {
   if (!normalizedSessionKey) {
     return false;
   }
-  const prefix = buildTenantMemberSessionPrefix(session, selectedAgent);
-  const legacy = buildTenantMemberLegacySessionKey(selectedAgent);
-  return normalizedSessionKey === legacy || (prefix ? normalizedSessionKey.startsWith(prefix) : false);
+  const legacyKeys = buildTenantMemberLegacySessionKeys(selectedAgent);
+  if (legacyKeys.includes(normalizedSessionKey)) {
+    return true;
+  }
+  const sessionPrefixes = resolveTenantSessionAgentIds(selectedAgent)
+    .map((agentId) => buildTenantMemberSessionPrefix(session, selectedAgent, agentId))
+    .filter(Boolean);
+  return sessionPrefixes.some((prefix) => normalizedSessionKey.startsWith(prefix));
 }
 
 export function createTenantMemberSessionKey(session, selectedAgent) {

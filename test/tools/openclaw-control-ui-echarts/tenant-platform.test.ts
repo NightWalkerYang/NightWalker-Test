@@ -33,6 +33,7 @@ function createTempSandbox() {
   return {
     root,
     config: {
+      configDir,
       stateDir: path.join(configDir, "tenant-platform"),
       dbPath: path.join(configDir, "tenant-platform", "tenant-platform.sqlite"),
       configPath,
@@ -112,11 +113,19 @@ describe("tenant platform database foundation", () => {
         status: "active",
       });
 
-      assignTenantAgentToUser(db, {
+      const assignment = assignTenantAgentToUser(db, {
         tenantId: tenant.id,
         userId: member.id,
         tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
       });
+      expect(String(assignment.derivedAgentId || "")).toMatch(/^tenant-/);
+      expect(
+        fs.existsSync(
+          path.join(sandbox.config.configDir, "workspace-agents", String(assignment.derivedAgentId)),
+        ),
+      ).toBe(true);
 
       const agents = listAssignedAgentsForUser(
         db,
@@ -124,6 +133,8 @@ describe("tenant platform database foundation", () => {
         catalog,
       );
       expect(agents).toHaveLength(1);
+      expect(agents[0]?.baseAgentId).toBe("finance");
+      expect(agents[0]?.agentId).toBe(assignment.derivedAgentId);
       expect(agents[0]?.agentName).toBe("财务分析助手");
       expect(agents[0]?.emoji).toBe("💼");
       expect(agents[0]?.balancePoints).toBe(42);

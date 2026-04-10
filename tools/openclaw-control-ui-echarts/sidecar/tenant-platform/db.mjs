@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
+import os from "node:os";
+import path from "node:path";
 import JSON5 from "json5";
 import { DatabaseSync } from "node:sqlite";
 import { ensureTenantPlatformDirs } from "./config.mjs";
@@ -9,6 +11,17 @@ const MIGRATION_PATH = new URL("./migrations/001_init.sql", import.meta.url);
 const LOCAL_BOOTSTRAP_TENANT_CODE = "local";
 const LOCAL_BOOTSTRAP_TENANT_NAME = "本地租户";
 const LOCAL_BOOTSTRAP_MEMBER_LIMIT = 999;
+const DERIVED_AGENT_TEMPLATE_ENTRIES = [
+  "AGENTS.md",
+  "SOUL.md",
+  "IDENTITY.md",
+  "USER.md",
+  "TOOLS.md",
+  "HEARTBEAT.md",
+  "BOOTSTRAP.md",
+  "skills",
+];
+const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
 
 function nowIso() {
   return new Date().toISOString();
@@ -43,6 +56,253 @@ function runInTransaction(db, fn) {
   }
 }
 
+function ensureSchemaCompatibility(db) {
+  const columns = db.prepare("PRAGMA table_info(user_agent_assignments)").all();
+  const knownColumns = new Set(columns.map((row) => String(row?.name || "").trim()));
+  if (!knownColumns.has("derived_agent_id")) {
+    db.exec("ALTER TABLE user_agent_assignments ADD COLUMN derived_agent_id TEXT;");
+  }
+  if (!knownColumns.has("derived_workspace_dir")) {
+    db.exec("ALTER TABLE user_agent_assignments ADD COLUMN derived_workspace_dir TEXT;");
+  }
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_user_agent_assignments_derived_agent
+       ON user_agent_assignments (derived_agent_id)
+       WHERE derived_agent_id IS NOT NULL`,
+  );
+}
+
+function normalizeSegment(value, fallback = "x", maxLength = 24) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength);
+  return normalized || fallback;
+}
+
+function shortStableHash(input) {
+  return crypto.createHash("sha1").update(String(input || "")).digest("hex").slice(0, 12);
+}
+
+function deriveTenantMemberAgentId(params) {
+  const basePart = normalizeSegment(params.baseAgentId, "agent", 18);
+  const tenantPart = normalizeSegment(params.tenantId, "tenant", 12);
+  const fingerprint = shortStableHash(
+    `${params.tenantId}:${params.userId}:${params.tenantAgentId}:${params.baseAgentId}`,
+  );
+  return `tenant-${tenantPart}-${basePart}-${fingerprint}`;
+}
+
+function resolveConfigDir(params = {}) {
+  const explicit = String(params.configDir || "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  const fromPath = String(params.configPath || "").trim();
+  if (fromPath) {
+    return path.dirname(fromPath);
+  }
+  const env = String(process.env.OPENCLAW_CONFIG_DIR || "").trim();
+  if (env) {
+    return env;
+  }
+  const home = process.env.HOME?.trim() || os.homedir();
+  return path.join(home, ".openclaw");
+}
+
+function resolveHomePath(input, configDir) {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return "";
+  }
+  let normalized = raw;
+  if (raw.startsWith("~/")) {
+    const home = process.env.HOME?.trim() || os.homedir();
+    normalized = path.join(home, raw.slice(2));
+  }
+  if (!path.isAbsolute(normalized)) {
+    return path.resolve(configDir, normalized);
+  }
+  return path.resolve(normalized);
+}
+
+function parseOpenClawConfig(configPath) {
+  try {
+    const text = fs.readFileSync(configPath, "utf8");
+    const parsed = JSON5.parse(text);
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function listConfigAgents(configPayload) {
+  const agents = configPayload?.agents;
+  if (!agents || typeof agents !== "object") {
+    return [];
+  }
+  return Array.isArray(agents.list) ? agents.list : [];
+}
+
+function resolveDefaultAgentIdFromConfig(configPayload) {
+  const list = listConfigAgents(configPayload);
+  if (!list.length) {
+    return "main";
+  }
+  const explicitDefault = list.find((entry) => entry?.default);
+  const id = String((explicitDefault ?? list[0])?.id || "").trim();
+  return id || "main";
+}
+
+function resolveAgentEntryFromConfig(configPayload, agentId) {
+  const normalized = String(agentId || "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  return (
+    listConfigAgents(configPayload).find(
+      (entry) => String(entry?.id || "").trim().toLowerCase() === normalized,
+    ) ?? null
+  );
+}
+
+function resolveBaseWorkspaceDir(params) {
+  const configDir = resolveConfigDir(params);
+  const configPayload = parseOpenClawConfig(params.configPath);
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  const entry = resolveAgentEntryFromConfig(configPayload, baseAgentId);
+  const defaultAgentId = resolveDefaultAgentIdFromConfig(configPayload);
+  const candidates = [];
+
+  const configuredWorkspace = resolveHomePath(entry?.workspace, configDir);
+  if (configuredWorkspace) {
+    candidates.push(configuredWorkspace);
+  }
+
+  const explicitAgentWorkspace = path.join(configDir, "workspace-agents", baseAgentId);
+  candidates.push(explicitAgentWorkspace);
+
+  if (baseAgentId && baseAgentId === defaultAgentId) {
+    const defaultsWorkspace = resolveHomePath(configPayload?.agents?.defaults?.workspace, configDir);
+    if (defaultsWorkspace) {
+      candidates.push(defaultsWorkspace);
+    }
+    candidates.push(path.join(configDir, "workspace"));
+  }
+
+  if (baseAgentId) {
+    candidates.push(path.join(configDir, `workspace-${baseAgentId}`));
+  }
+
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const normalized = path.resolve(candidate);
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    if (fs.existsSync(normalized)) {
+      return normalized;
+    }
+  }
+
+  return candidates[0] ? path.resolve(candidates[0]) : "";
+}
+
+function copySeedEntry(source, target) {
+  if (!fs.existsSync(source) || fs.existsSync(target)) {
+    return;
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const sourceStats = fs.statSync(source);
+  if (sourceStats.isDirectory()) {
+    fs.cpSync(source, target, { recursive: true });
+    return;
+  }
+  fs.copyFileSync(source, target);
+}
+
+function ensureDerivedWorkspaceAlias(aliasPath, targetPath) {
+  try {
+    if (fs.existsSync(aliasPath)) {
+      const stats = fs.lstatSync(aliasPath);
+      if (stats.isSymbolicLink()) {
+        const resolved = path.resolve(path.dirname(aliasPath), fs.readlinkSync(aliasPath));
+        if (resolved === path.resolve(targetPath)) {
+          return true;
+        }
+      }
+      if (stats.isDirectory()) {
+        return false;
+      }
+      fs.rmSync(aliasPath, { force: true });
+    }
+    const symlinkType = process.platform === "win32" ? "junction" : "dir";
+    fs.symlinkSync(targetPath, aliasPath, symlinkType);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ensureTenantDerivedWorkspace(params) {
+  const configDir = resolveConfigDir(params);
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!derivedAgentId) {
+    throw new Error("derived_agent_id_required");
+  }
+
+  const canonicalWorkspace = path.join(configDir, "workspace-agents", derivedAgentId);
+  const runtimeWorkspace = path.join(configDir, `workspace-${derivedAgentId}`);
+  fs.mkdirSync(canonicalWorkspace, { recursive: true });
+
+  const sourceWorkspace = resolveBaseWorkspaceDir(params);
+  if (sourceWorkspace) {
+    for (const entry of DERIVED_AGENT_TEMPLATE_ENTRIES) {
+      copySeedEntry(path.join(sourceWorkspace, entry), path.join(canonicalWorkspace, entry));
+    }
+  }
+
+  const metadataPath = path.join(canonicalWorkspace, DERIVED_AGENT_METADATA_FILE);
+  if (!fs.existsSync(metadataPath)) {
+    fs.writeFileSync(
+      metadataPath,
+      JSON.stringify(
+        {
+          tenantId: params.tenantId,
+          userId: params.userId,
+          tenantAgentId: params.tenantAgentId,
+          baseAgentId: params.baseAgentId,
+          derivedAgentId,
+          sourceWorkspace: sourceWorkspace || null,
+          createdAt: nowIso(),
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+  }
+
+  const linked = ensureDerivedWorkspaceAlias(runtimeWorkspace, canonicalWorkspace);
+  if (!linked && !fs.existsSync(runtimeWorkspace)) {
+    fs.mkdirSync(runtimeWorkspace, { recursive: true });
+    for (const entry of DERIVED_AGENT_TEMPLATE_ENTRIES) {
+      copySeedEntry(path.join(canonicalWorkspace, entry), path.join(runtimeWorkspace, entry));
+    }
+  }
+
+  return {
+    canonicalWorkspace,
+    runtimeWorkspace,
+  };
+}
+
 function normalizeAgentIdentity(agent) {
   const identity = agent?.identity && typeof agent.identity === "object" ? agent.identity : {};
   const name =
@@ -59,9 +319,8 @@ function normalizeAgentIdentity(agent) {
 
 export function readOpenClawAgentCatalog(configPath) {
   try {
-    const raw = fs.readFileSync(configPath, "utf8");
-    const parsed = JSON5.parse(raw);
-    const list = Array.isArray(parsed?.agents?.list) ? parsed.agents.list : [];
+    const parsed = parseOpenClawConfig(configPath);
+    const list = listConfigAgents(parsed);
     if (list.length === 0) {
       return [{ id: "main", name: "main", emoji: null, avatar: null }];
     }
@@ -78,6 +337,7 @@ export function openTenantPlatformDb(config) {
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec(fs.readFileSync(MIGRATION_PATH, "utf8"));
+  ensureSchemaCompatibility(db);
   return db;
 }
 
@@ -463,37 +723,106 @@ export function listTenantAgents(db, tenantId, configAgents = []) {
 }
 
 export function assignTenantAgentToUser(db, params) {
-  const existing = db
+  const tenantAgent = db
+    .prepare(
+      `SELECT id, tenant_id AS tenantId, agent_id AS baseAgentId
+       FROM tenant_agents
+       WHERE id = ?`,
+    )
+    .get(params.tenantAgentId);
+  if (!tenantAgent) {
+    throw new Error("tenant_agent_not_found");
+  }
+  if (String(tenantAgent.tenantId || "").trim() !== String(params.tenantId || "").trim()) {
+    throw new Error("tenant_mismatch");
+  }
+  const membership = db
     .prepare(
       `SELECT id
-       FROM user_agent_assignments
-       WHERE user_id = ? AND tenant_agent_id = ?`,
+       FROM tenant_memberships
+       WHERE tenant_id = ? AND user_id = ? AND role = 'member' AND status = 'active'`,
     )
-    .get(params.userId, params.tenantAgentId);
-  if (existing) {
-    db.prepare("UPDATE user_agent_assignments SET status = 'active' WHERE id = ?").run(existing.id);
-    return existing.id;
+    .get(params.tenantId, params.userId);
+  if (!membership) {
+    throw new Error("member_not_found");
   }
-  const assignmentId = createId("assignment");
-  db.prepare(
-    `INSERT INTO user_agent_assignments (id, tenant_id, user_id, tenant_agent_id, status, created_at)
-     VALUES (@id, @tenantId, @userId, @tenantAgentId, 'active', @createdAt)`,
-  ).run({
-    id: assignmentId,
-    tenantId: params.tenantId,
-    userId: params.userId,
-    tenantAgentId: params.tenantAgentId,
-    createdAt: nowIso(),
+
+  return runInTransaction(db, () => {
+    const existing = db
+      .prepare(
+        `SELECT id, derived_agent_id AS derivedAgentId, derived_workspace_dir AS derivedWorkspaceDir
+         FROM user_agent_assignments
+         WHERE user_id = ? AND tenant_agent_id = ?`,
+      )
+      .get(params.userId, params.tenantAgentId);
+
+    const derivedAgentId =
+      String(existing?.derivedAgentId || "").trim() ||
+      deriveTenantMemberAgentId({
+        tenantId: params.tenantId,
+        userId: params.userId,
+        tenantAgentId: params.tenantAgentId,
+        baseAgentId: tenantAgent.baseAgentId,
+      });
+
+    const workspace = ensureTenantDerivedWorkspace({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      tenantAgentId: params.tenantAgentId,
+      baseAgentId: tenantAgent.baseAgentId,
+      derivedAgentId,
+      configPath: params.configPath,
+      configDir: params.configDir,
+    });
+
+    if (existing) {
+      db.prepare(
+        `UPDATE user_agent_assignments
+         SET status = 'active',
+             derived_agent_id = @derivedAgentId,
+             derived_workspace_dir = @derivedWorkspaceDir
+         WHERE id = @id`,
+      ).run({
+        id: existing.id,
+        derivedAgentId,
+        derivedWorkspaceDir: workspace.canonicalWorkspace,
+      });
+      return {
+        assignmentId: existing.id,
+        derivedAgentId,
+      };
+    }
+
+    const assignmentId = createId("assignment");
+    db.prepare(
+      `INSERT INTO user_agent_assignments
+         (id, tenant_id, user_id, tenant_agent_id, derived_agent_id, derived_workspace_dir, status, created_at)
+       VALUES
+         (@id, @tenantId, @userId, @tenantAgentId, @derivedAgentId, @derivedWorkspaceDir, 'active', @createdAt)`,
+    ).run({
+      id: assignmentId,
+      tenantId: params.tenantId,
+      userId: params.userId,
+      tenantAgentId: params.tenantAgentId,
+      derivedAgentId,
+      derivedWorkspaceDir: workspace.canonicalWorkspace,
+      createdAt: nowIso(),
+    });
+    return {
+      assignmentId,
+      derivedAgentId,
+    };
   });
-  return assignmentId;
 }
 
 export function listAssignedAgentsForUser(db, params, configAgents = []) {
   const configMap = new Map(configAgents.map((entry) => [entry.id, entry]));
   return db
     .prepare(
-      `SELECT ta.id, ta.agent_id AS agentId, ta.description, ta.rate_multiplier AS rateMultiplier,
-              ta.status, ta.balance_points AS balancePoints, ta.updated_at AS updatedAt
+      `SELECT ta.id, ta.agent_id AS baseAgentId, ta.description, ta.rate_multiplier AS rateMultiplier,
+              ta.status, ta.balance_points AS balancePoints, ta.updated_at AS updatedAt,
+              ua.id AS assignmentId, ua.tenant_id AS tenantId, ua.user_id AS userId, ua.tenant_agent_id AS tenantAgentId,
+              ua.derived_agent_id AS derivedAgentId, ua.derived_workspace_dir AS derivedWorkspaceDir
        FROM user_agent_assignments ua
        JOIN tenant_agents ta ON ta.id = ua.tenant_agent_id
        WHERE ua.user_id = ? AND ua.status = 'active' AND ta.status = 'active'
@@ -501,10 +830,43 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
     )
     .all(params.userId)
     .map((row) => {
-      const configEntry = configMap.get(row.agentId) ?? null;
+      let resolvedAgentId = String(row.derivedAgentId || "").trim();
+      if (!resolvedAgentId) {
+        resolvedAgentId = deriveTenantMemberAgentId({
+          tenantId: row.tenantId,
+          userId: row.userId,
+          tenantAgentId: row.tenantAgentId,
+          baseAgentId: row.baseAgentId,
+        });
+        const workspace = ensureTenantDerivedWorkspace({
+          tenantId: row.tenantId,
+          userId: row.userId,
+          tenantAgentId: row.tenantAgentId,
+          baseAgentId: row.baseAgentId,
+          derivedAgentId: resolvedAgentId,
+          configPath: params.configPath,
+          configDir: params.configDir,
+        });
+        db.prepare(
+          `UPDATE user_agent_assignments
+           SET derived_agent_id = @derivedAgentId,
+               derived_workspace_dir = @derivedWorkspaceDir
+           WHERE id = @assignmentId`,
+        ).run({
+          assignmentId: row.assignmentId,
+          derivedAgentId: resolvedAgentId,
+          derivedWorkspaceDir: workspace.canonicalWorkspace,
+        });
+      }
+
+      const baseAgentId = String(row.baseAgentId || "").trim();
+      const agentId = resolvedAgentId || baseAgentId;
+      const configEntry = configMap.get(baseAgentId) ?? configMap.get(resolvedAgentId) ?? null;
       return {
         ...row,
-        agentName: configEntry?.name ?? row.agentId,
+        agentId,
+        baseAgentId,
+        agentName: configEntry?.name ?? baseAgentId ?? agentId,
         emoji: configEntry?.emoji ?? null,
         avatar: configEntry?.avatar ?? null,
       };

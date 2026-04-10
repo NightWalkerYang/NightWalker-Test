@@ -102,6 +102,20 @@ describe("zero-intrusive file parser", () => {
     });
   });
 
+  it("normalizes derived workspace-<agentId> absolute paths to agent-relative paths", () => {
+    const payload = parse(
+      "/home/node/.openclaw/workspace-tenant-local-finance-a1b2c3/cache/report.xlsx",
+    );
+
+    expect(payload).toMatchObject({
+      kind: "path",
+      scope: "agent-workspace",
+      path: "tenant-local-finance-a1b2c3/cache/report.xlsx",
+      name: "report.xlsx",
+      sourceLabel: "agent workspace",
+    });
+  });
+
   it("accepts workspace-agents relative paths", () => {
     const payload = parse(
       "workspace-agents/subotech-finance/cache/company_summary_202601_1775178979.xlsx",
