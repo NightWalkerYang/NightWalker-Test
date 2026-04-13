@@ -595,6 +595,98 @@ describe("member chat surface", () => {
     ]);
   });
 
+  it("syncs usage records from session usage timeseries with input and output tokens", async () => {
+    const apiState = installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    const app = createAppStub({
+      request: async (method, params) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: sessionKey,
+                label: "本周分析",
+                updatedAt: Date.now(),
+                modelProvider: "openai",
+                model: "gpt-5.4",
+              },
+            ],
+          };
+        }
+        if (method === "sessions.usage.timeseries") {
+          expect(params).toEqual({ key: sessionKey });
+          return {
+            sessionId: "sess-usage",
+            points: [
+              {
+                timestamp: "2026-04-13T09:30:00.000Z",
+                input: 120,
+                output: 45,
+                cacheRead: 20,
+                cacheWrite: 0,
+                totalTokens: 185,
+                cost: 0.12,
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+    await flush();
+
+    const syncPayload = apiState.usageSyncPayloads.find(
+      (payload) => payload.openclawSessionKey === sessionKey,
+    );
+    expect(syncPayload).toBeTruthy();
+    expect(syncPayload.records).toEqual([
+      expect.objectContaining({
+        usageDay: "2026-04-13",
+        provider: "openai",
+        model: "gpt-5.4",
+        inputTokens: 120,
+        outputTokens: 45,
+        cacheReadTokens: 20,
+        cacheWriteTokens: 0,
+        totalTokens: 185,
+        totalCost: 0.12,
+      }),
+    ]);
+  });
+
   it("shows a short toast instead of creating another draft session when already in a new session", async () => {
     vi.useFakeTimers();
     installTenantApiFetchStub();

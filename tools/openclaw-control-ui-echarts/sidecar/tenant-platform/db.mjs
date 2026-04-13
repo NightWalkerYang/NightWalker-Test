@@ -1072,8 +1072,30 @@ export function syncTenantUsageRecords(db, params) {
        WHERE openclaw_session_key = @openclawSessionKey
          AND source_fingerprint = @sourceFingerprint`,
     );
+    const selectLegacyExisting = db.prepare(
+      `SELECT id,
+              source_fingerprint AS sourceFingerprint,
+              input_tokens AS inputTokens,
+              output_tokens AS outputTokens,
+              cache_read_tokens AS cacheReadTokens,
+              cache_write_tokens AS cacheWriteTokens,
+              total_tokens AS totalTokens,
+              total_cost AS totalCost
+       FROM tenant_usage_records
+       WHERE openclaw_session_key = @openclawSessionKey
+         AND message_timestamp = @messageTimestamp
+         AND user_id = @userId
+         AND tenant_agent_id = @tenantAgentId
+         AND COALESCE(provider, '') = COALESCE(@provider, '')
+         AND COALESCE(model, '') = COALESCE(@model, '')
+         AND input_tokens = 0
+         AND output_tokens = 0
+         AND total_tokens = @totalTokens
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    );
     const selectUsageLedger = db.prepare(
-      `SELECT id, amount_points AS amountPoints
+      `SELECT id, amount_points AS amountPoints, note
        FROM tenant_wallet_ledger
        WHERE tenant_id = @tenantId
          AND category = 'usage_charge'
@@ -1133,6 +1155,23 @@ export function syncTenantUsageRecords(db, params) {
          total_tokens = excluded.total_tokens,
          total_cost = excluded.total_cost,
          updated_at = excluded.updated_at`,
+    );
+    const updateLegacyUsageRecord = db.prepare(
+      `UPDATE tenant_usage_records
+       SET source_fingerprint = @sourceFingerprint,
+           tenant_agent_id = @tenantAgentId,
+           message_timestamp = @messageTimestamp,
+           usage_day = @usageDay,
+           provider = @provider,
+           model = @model,
+           input_tokens = @inputTokens,
+           output_tokens = @outputTokens,
+           cache_read_tokens = @cacheReadTokens,
+           cache_write_tokens = @cacheWriteTokens,
+           total_tokens = @totalTokens,
+           total_cost = @totalCost,
+           updated_at = @updatedAt
+       WHERE id = @id`,
     );
     const updateTenantAgentBalance = db.prepare(
       `UPDATE tenant_agents
@@ -1212,34 +1251,95 @@ export function syncTenantUsageRecords(db, params) {
         openclawSessionKey,
         sourceFingerprint,
       });
+      const legacyExisting = existing
+        ? null
+        : selectLegacyExisting.get({
+            openclawSessionKey,
+            messageTimestamp,
+            userId,
+            tenantAgentId,
+            provider: String(record?.provider || "").trim() || null,
+            model: String(record?.model || "").trim() || null,
+            totalTokens,
+          });
       const totalCost =
         toFiniteNumber(record?.totalCost, 0) > 0 ? toFiniteNumber(record?.totalCost, 0) : null;
-      upsert.run({
-        id: existing?.id || createId("usage"),
-        tenantId,
-        userId,
-        tenantAgentId,
-        openclawSessionKey,
-        sourceFingerprint,
-        messageTimestamp,
-        usageDay,
-        provider: String(record?.provider || "").trim() || null,
-        model: String(record?.model || "").trim() || null,
-        inputTokens,
-        outputTokens,
-        cacheReadTokens,
-        cacheWriteTokens,
-        totalTokens,
-        totalCost,
-        createdAt: existing?.id ? now : now,
-        updatedAt: now,
-      });
+      if (existing) {
+        upsert.run({
+          id: existing.id,
+          tenantId,
+          userId,
+          tenantAgentId,
+          openclawSessionKey,
+          sourceFingerprint,
+          messageTimestamp,
+          usageDay,
+          provider: String(record?.provider || "").trim() || null,
+          model: String(record?.model || "").trim() || null,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+          totalTokens,
+          totalCost,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else if (legacyExisting?.id) {
+        updateLegacyUsageRecord.run({
+          id: legacyExisting.id,
+          tenantAgentId,
+          sourceFingerprint,
+          messageTimestamp,
+          usageDay,
+          provider: String(record?.provider || "").trim() || null,
+          model: String(record?.model || "").trim() || null,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+          totalTokens,
+          totalCost,
+          updatedAt: now,
+        });
+      } else {
+        upsert.run({
+          id: createId("usage"),
+          tenantId,
+          userId,
+          tenantAgentId,
+          openclawSessionKey,
+          sourceFingerprint,
+          messageTimestamp,
+          usageDay,
+          provider: String(record?.provider || "").trim() || null,
+          model: String(record?.model || "").trim() || null,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+          totalTokens,
+          totalCost,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
 
       const usageLedgerNote = buildUsageLedgerNote(openclawSessionKey, sourceFingerprint);
-      const existingLedger = selectUsageLedger.get({
-        tenantId,
-        note: usageLedgerNote,
-      });
+      const legacyUsageLedgerNote = legacyExisting?.sourceFingerprint
+        ? buildUsageLedgerNote(openclawSessionKey, legacyExisting.sourceFingerprint)
+        : usageLedgerNote;
+      const existingLedger =
+        selectUsageLedger.get({
+          tenantId,
+          note: usageLedgerNote,
+        }) ??
+        (legacyUsageLedgerNote === usageLedgerNote
+          ? null
+          : selectUsageLedger.get({
+              tenantId,
+              note: legacyUsageLedgerNote,
+            }));
       const previousPoints = normalizeNonNegativePoints(existingLedger?.amountPoints);
       const nextPoints = billingEnabled ? resolveUsageChargePoints(totalCost, rateMultiplier) : 0;
       const deltaPoints = roundPoints(nextPoints - previousPoints);
@@ -1274,7 +1374,7 @@ export function syncTenantUsageRecords(db, params) {
         }
       }
 
-      if (existing?.id) {
+      if (existing?.id || legacyExisting?.id) {
         updated += 1;
       } else {
         inserted += 1;

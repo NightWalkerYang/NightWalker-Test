@@ -357,4 +357,152 @@ describe("tenant platform database foundation", () => {
       closeTenantPlatformDb(db);
     }
   });
+
+  it("repairs legacy zero-token usage records in place when corrected usage arrives", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "epsilon",
+        name: "租户 Epsilon",
+        adminUsername: "epsilon-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 10,
+        status: "active",
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const sessionKey = "agent:finance:tenant:epsilon:user:member-a:chat:latest";
+      const baseRecord = {
+        messageTimestamp: "2026-04-13T09:30:00.000Z",
+        usageDay: "2026-04-13",
+        provider: "openai",
+        model: "openai/gpt-5.4",
+        totalTokens: 165,
+        totalCost: 0.12,
+      };
+
+      const firstSync = syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "legacy-zero",
+            inputTokens: 0,
+            outputTokens: 0,
+            ...baseRecord,
+          },
+        ],
+      });
+      expect(firstSync.inserted).toBe(1);
+      expect(firstSync.updated).toBe(0);
+
+      const repairedSync = syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "legacy-correct",
+            inputTokens: 120,
+            outputTokens: 45,
+            ...baseRecord,
+          },
+        ],
+      });
+      expect(repairedSync.inserted).toBe(0);
+      expect(repairedSync.updated).toBe(1);
+      expect(repairedSync.pointsDelta).toBe(0);
+      expect(repairedSync.agentBalancePoints).toBeCloseTo(9.88, 8);
+
+      expect(
+        listTenantUsageRecords(db, {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 8,
+          search: "",
+        }).items,
+      ).toHaveLength(1);
+      expect(
+        listTenantUsageRecords(db, {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 8,
+          search: "",
+        }).items[0],
+      ).toMatchObject({
+        creditsUsed: 0.12,
+        totalTokens: 165,
+        inputTokens: 120,
+        outputTokens: 45,
+        memberUsername: member.username,
+        agentId: "finance",
+      });
+
+      const usageRows = db
+        .prepare(
+          `SELECT source_fingerprint AS sourceFingerprint,
+                  input_tokens AS inputTokens,
+                  output_tokens AS outputTokens
+           FROM tenant_usage_records
+           WHERE tenant_id = ?
+           ORDER BY created_at DESC`,
+        )
+        .all(tenant.id);
+      expect(usageRows).toHaveLength(1);
+      expect(usageRows[0]).toMatchObject({
+        sourceFingerprint: "legacy-correct",
+        inputTokens: 120,
+        outputTokens: 45,
+      });
+
+      const ledgerRows = db
+        .prepare(
+          `SELECT category, amount_points AS amountPoints, balance_after AS balanceAfter, note
+           FROM tenant_wallet_ledger
+           WHERE tenant_id = ?
+           ORDER BY created_at ASC`,
+        )
+        .all(tenant.id);
+      expect(ledgerRows).toHaveLength(1);
+      expect(ledgerRows[0]).toMatchObject({
+        category: "usage_charge",
+        amountPoints: 0.12,
+        balanceAfter: 9.88,
+      });
+      expect(String(ledgerRows[0]?.note || "")).toContain("legacy-correct");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
 });

@@ -255,6 +255,28 @@ function formatUsageDay(timestampIso) {
   ).padStart(2, "0")}`;
 }
 
+function extractUsagePointSnapshot(point) {
+  const inputTokens = normalizeUsageMetric(point?.input);
+  const outputTokens = normalizeUsageMetric(point?.output);
+  const cacheReadTokens = normalizeUsageMetric(point?.cacheRead);
+  const cacheWriteTokens = normalizeUsageMetric(point?.cacheWrite);
+  const totalTokensRaw = normalizeUsageMetric(point?.totalTokens);
+  const totalTokens =
+    totalTokensRaw || inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+  const totalCost = normalizeUsageMetric(point?.cost);
+  if (!totalTokens && !totalCost) {
+    return null;
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    totalTokens,
+    totalCost,
+  };
+}
+
 function buildUsageFingerprint(message, index, usageSnapshot, messageTimestamp) {
   const messageId = String(message?.id || message?.messageId || message?.message_id || "").trim();
   if (messageId) {
@@ -313,11 +335,127 @@ function buildUsageRecords(messages) {
   });
 }
 
+function resolveSessionUsageMetadata(controller, sessionKey) {
+  const normalizedKey = String(sessionKey || "").trim().toLowerCase();
+  if (!normalizedKey) {
+    return { provider: "", model: "" };
+  }
+  const candidates = [
+    ...(Array.isArray(controller?.sessionsFromGateway) ? controller.sessionsFromGateway : []),
+    ...(Array.isArray(controller?.sessions) ? controller.sessions : []),
+  ];
+  const sessionRow = candidates.find(
+    (row) => String(row?.key || "").trim().toLowerCase() === normalizedKey,
+  );
+  return {
+    provider: String(sessionRow?.modelProvider || sessionRow?.provider || "").trim(),
+    model: String(sessionRow?.model || sessionRow?.modelName || "").trim(),
+  };
+}
+
+function extractUsagePointTimestampIso(point) {
+  const raw = point?.timestamp;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return new Date(raw).toISOString();
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+  }
+  return "";
+}
+
+function buildUsagePointFingerprint(sessionKey, index, usageSnapshot, messageTimestamp, provider, model) {
+  return [
+    "timeseries",
+    String(sessionKey || "").trim(),
+    "idx",
+    String(index),
+    "ts",
+    String(messageTimestamp || ""),
+    "model",
+    String(model || ""),
+    "provider",
+    String(provider || ""),
+    "in",
+    String(usageSnapshot.inputTokens),
+    "out",
+    String(usageSnapshot.outputTokens),
+    "cr",
+    String(usageSnapshot.cacheReadTokens),
+    "cw",
+    String(usageSnapshot.cacheWriteTokens),
+    "total",
+    String(usageSnapshot.totalTokens),
+  ].join("|");
+}
+
+function buildUsageRecordsFromTimeseries(controller, sessionKey, points) {
+  if (!Array.isArray(points)) {
+    return [];
+  }
+  const sessionUsageMetadata = resolveSessionUsageMetadata(controller, sessionKey);
+  return points.flatMap((point, index) => {
+    const usageSnapshot = extractUsagePointSnapshot(point);
+    if (!usageSnapshot) {
+      return [];
+    }
+    const messageTimestamp = extractUsagePointTimestampIso(point) || new Date().toISOString();
+    const provider = String(point?.provider || sessionUsageMetadata.provider || "").trim();
+    const model = String(point?.model || sessionUsageMetadata.model || "").trim();
+    return [
+      {
+        sourceFingerprint: buildUsagePointFingerprint(
+          sessionKey,
+          index,
+          usageSnapshot,
+          messageTimestamp,
+          provider,
+          model,
+        ),
+        messageTimestamp,
+        usageDay: formatUsageDay(messageTimestamp),
+        provider,
+        model,
+        inputTokens: usageSnapshot.inputTokens,
+        outputTokens: usageSnapshot.outputTokens,
+        cacheReadTokens: usageSnapshot.cacheReadTokens,
+        cacheWriteTokens: usageSnapshot.cacheWriteTokens,
+        totalTokens: usageSnapshot.totalTokens,
+        totalCost: usageSnapshot.totalCost,
+      },
+    ];
+  });
+}
+
+async function loadUsageRecordsFromTimeseries(controller, sessionKey) {
+  // Prefer transcript-derived usage so we keep the source-side input/output split.
+  try {
+    const response = await controller?.app?.client?.request?.("sessions.usage.timeseries", {
+      key: sessionKey,
+    });
+    const points = Array.isArray(response?.points) ? response.points : [];
+    return buildUsageRecordsFromTimeseries(controller, sessionKey, points);
+  } catch {
+    return [];
+  }
+}
+
+async function buildUsageRecordsForSession(controller, sessionKey, messages) {
+  const timeseriesRecords = await loadUsageRecordsFromTimeseries(controller, sessionKey);
+  if (timeseriesRecords.length > 0) {
+    return timeseriesRecords;
+  }
+  return buildUsageRecords(messages);
+}
+
 async function syncMemberUsageRecords(controller, sessionKey, messages) {
   if (!controller?.selectedAgent?.id || !sessionKey) {
     return;
   }
-  const records = buildUsageRecords(messages);
+  const records = await buildUsageRecordsForSession(controller, sessionKey, messages);
   if (records.length === 0) {
     return;
   }

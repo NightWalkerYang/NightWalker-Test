@@ -1380,7 +1380,7 @@
      - `统计`
      - `耗量统计`
      - 版本信息
-   - 耗量统计页当前以零侵入 usage 同步记录为主数据源：租户成员聊天页会从 `chat.history` 提取 assistant usage，并幂等写入 `tenant_usage_records`
+   - 耗量统计页当前以零侵入 usage 同步记录为主数据源：租户成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage，必要时回退 `chat.history`，并幂等写入 `tenant_usage_records`
    - 当前已接通服务端分页记录视图，可查看成员、Agent、总 token、输入、输出、耗用积分与时间；更细的聚合报表保留给 sidecar 数据层
    - 租户管理员底部入口已进一步收紧为仅保留版本块，不再显示文档、知识图谱、租户登录等平台入口
    - 租户管理员原生壳层当前会额外挂一个角色上下文标记，并用全局注入样式强制隐藏所有非 `管理` / `统计` 的原生侧边导航分组（依赖 `data-oc-role-nav` 白名单），避免原生控制台延迟重渲染后又把平台菜单露出来
@@ -1395,7 +1395,7 @@
      - 支持搜索成员、Agent 或模型
      - 支持服务端分页查看成员、Agent、总 token、输入、输出、耗用积分与时间
    - 租户 sidecar 已新增成员聊天耗量明细落库：
-     - 成员聊天页会从现有 `chat.history` 提取 assistant usage，并兼容 `input_tokens` / `output_tokens` / `prompt_tokens` / `completion_tokens` 等常见命名
+     - 成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage；旧环境或异常情况下回退 `chat.history`，并兼容 `input_tokens` / `output_tokens` / `prompt_tokens` / `completion_tokens` 等常见命名
      - sidecar 会按 `session + message fingerprint` 幂等写入，避免重复统计
    - 当平台管理员会话与租户管理员会话同时存在时，租户管理员视图优先使用租户会话，不再被平台管理员侧边栏覆盖
    - 原生壳层即使延迟重渲染，租户入口仍会重新接管顶栏与侧边栏角色裁剪
