@@ -28,7 +28,9 @@ function delay(ms) {
 }
 
 function shouldRetryTransportError(error) {
-  const message = String(error?.message || error || "").trim().toLowerCase();
+  const message = String(error?.message || error || "")
+    .trim()
+    .toLowerCase();
   return (
     error instanceof TypeError ||
     message.includes("failed to fetch") ||
@@ -42,17 +44,14 @@ async function requestJson(path, options = {}) {
   const session = options.session || readSessionForCurrentView();
   const headers = {
     "content-type": "application/json",
-    ...(options.headers || {}),
+    ...options.headers,
   };
   if (session?.token) {
     headers.authorization = `Bearer ${session.token}`;
   }
 
   const maxAttempts = Math.max(1, Number.parseInt(String(options.maxAttempts || "1"), 10) || 1);
-  const retryDelayMs = Math.max(
-    0,
-    Number.parseInt(String(options.retryDelayMs || "0"), 10) || 0,
-  );
+  const retryDelayMs = Math.max(0, Number.parseInt(String(options.retryDelayMs || "0"), 10) || 0);
   let lastError = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -91,7 +90,7 @@ async function requestJson(path, options = {}) {
       await delay(retryDelayMs);
     }
   }
-  throw (lastError instanceof Error ? lastError : new Error(String(lastError || "request_failed")));
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || "request_failed"));
 }
 
 export function createTenantApiClient() {
@@ -174,8 +173,14 @@ export function createTenantApiClient() {
     assignTenantAgent(body) {
       return requestJson("/tenant/admin/assign-agent", { method: "POST", body });
     },
+    getTenantUsageStats(startDate, endDate) {
+      return requestJson(withQuery("/tenant/admin/usage-stats", { startDate, endDate }));
+    },
     listMemberAgents() {
       return requestJson("/member/agents");
+    },
+    syncMemberUsageRecords(body) {
+      return requestJson("/member/usage-records/sync", { method: "POST", body });
     },
     listMemberSessions(tenantAgentId) {
       return requestJson(withQuery("/member/sessions", { tenantAgentId }));

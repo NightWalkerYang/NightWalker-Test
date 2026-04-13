@@ -1,3 +1,6 @@
+import { isLufengPublicPath } from "../lufeng/context.js";
+import { createTenantApiClient } from "./api-client.js";
+import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
 import {
   LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
@@ -10,6 +13,8 @@ import {
   TENANT_AGENT_SELECTOR_VIEW,
   TENANT_MEMBER_MANAGEMENT_ROUTE,
   TENANT_MEMBERS_VIEW,
+  TENANT_USAGE_STATS_ROUTE,
+  TENANT_USAGE_STATS_VIEW,
   isTenantLoginView,
   clearPlatformSession,
   clearTenantSession,
@@ -19,13 +24,6 @@ import {
   readSessionForCurrentView,
   readTenantView,
 } from "./tenant-context.js";
-import { createTenantApiClient } from "./api-client.js";
-import { isLufengPublicPath } from "../lufeng/context.js";
-import {
-  bootTenantRouteSync,
-  navigateTenantRoute,
-  onTenantRouteChange,
-} from "./route-sync.js";
 
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
@@ -33,7 +31,6 @@ const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
 const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
 const TOPBAR_META_MODE_ATTR = "data-oc-platform-search-mode";
-const TOPBAR_META_ORIGINAL_ATTR = "data-oc-platform-search-original";
 const TOPBAR_META_ROLE_ATTR = "data-oc-platform-role";
 const TOPBAR_META_USER_ATTR = "data-oc-platform-user";
 const TOPBAR_HIDDEN_ATTR = "data-oc-platform-search-hidden";
@@ -142,6 +139,14 @@ function getSectionConfigForSession(session) {
           icon: ICONS.agentAllocation,
           activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
         },
+        {
+          className: "oc-tenant-usage-link",
+          href: TENANT_USAGE_STATS_ROUTE,
+          title: "耗量统计",
+          text: "耗量统计",
+          icon: ICONS.tenants,
+          activeView: TENANT_USAGE_STATS_VIEW,
+        },
       ],
     };
   }
@@ -215,6 +220,7 @@ function isManagementViewActive() {
     activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
     activeView === TENANT_MEMBERS_VIEW ||
     activeView === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    activeView === TENANT_USAGE_STATS_VIEW ||
     activeView === TENANT_AGENT_SELECTOR_VIEW
   );
 }
@@ -305,12 +311,8 @@ function ensureManagementSection(container) {
     return;
   }
   if (existing instanceof HTMLElement) {
-    const labelText =
-      existing.querySelector(".nav-section__label-text")?.textContent?.trim() || "";
-    if (
-      existing.getAttribute("data-oc-management-role") !== role ||
-      labelText !== config.label
-    ) {
+    const labelText = existing.querySelector(".nav-section__label-text")?.textContent?.trim() || "";
+    if (existing.getAttribute("data-oc-management-role") !== role || labelText !== config.label) {
       existing.remove();
     } else {
       updateManagementSectionState(existing);
@@ -374,11 +376,9 @@ function shouldHideUtilityItem(item, role) {
   }
   const text = normalizeText(item.textContent);
   const isTenantLogin =
-    item.querySelector(".oc-tenant-user-link") instanceof Element ||
-    text.includes("租户登录");
+    item.querySelector(".oc-tenant-user-link") instanceof Element || text.includes("租户登录");
   const isKnowledgeGraph =
-    item.querySelector(".oc-knowledge-graph-link") instanceof Element ||
-    text.includes("知识图谱");
+    item.querySelector(".oc-knowledge-graph-link") instanceof Element || text.includes("知识图谱");
   const isDocs = text.includes("文档");
   const isVersion = text.includes("版本");
 

@@ -14,6 +14,7 @@ export const PLATFORM_TENANT_MANAGEMENT_VIEW = PLATFORM_TENANTS_VIEW;
 export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
+export const TENANT_USAGE_STATS_VIEW = "tenant-usage-stats";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
 export const LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`;
 export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
@@ -22,6 +23,7 @@ export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${P
 export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
 export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
 export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
+export const TENANT_USAGE_STATS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_USAGE_STATS_VIEW}`;
 export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
 
 function normalizeTenantSessionValue(value) {
@@ -55,27 +57,6 @@ function clearStoredSession(key) {
   safeStorage()?.removeItem(key);
 }
 
-function readStoredObject(key) {
-  try {
-    const raw = safeStorage()?.getItem(key);
-    if (!raw) {
-      return {};
-    }
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeStoredObject(key, value) {
-  try {
-    safeStorage()?.setItem(key, JSON.stringify(value));
-  } catch {
-    // Ignore storage write failures and fall back to in-memory UI behavior.
-  }
-}
-
 export function readPlatformSession() {
   return readStoredSession(PLATFORM_SESSION_STORAGE_KEY);
 }
@@ -84,7 +65,7 @@ export function readTenantSession() {
   return readStoredSession(TENANT_SESSION_STORAGE_KEY);
 }
 
-export function readSessionForCurrentView(pathname = window.location.pathname) {
+export function readSessionForCurrentView() {
   const view = readTenantView();
   if (view === LOGIN_VIEW) {
     return readPlatformSession() || readTenantSession();
@@ -102,6 +83,7 @@ export function readSessionForCurrentView(pathname = window.location.pathname) {
   if (
     view === TENANT_MEMBERS_VIEW ||
     view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    view === TENANT_USAGE_STATS_VIEW ||
     view === TENANT_AGENT_SELECTOR_VIEW
   ) {
     return readTenantSession();
@@ -146,7 +128,9 @@ export function resolveTenantApiBaseCandidates() {
   const candidates = [];
   const seen = new Set();
   const pushCandidate = (value) => {
-    const normalized = String(value || "").trim().replace(/\/$/, "");
+    const normalized = String(value || "")
+      .trim()
+      .replace(/\/$/, "");
     if (!normalized || seen.has(normalized)) {
       return;
     }
@@ -166,7 +150,9 @@ export function resolveTenantApiBaseCandidates() {
   }
 
   if (window.location.protocol === "http:" && window.location.port === "18789") {
-    pushCandidate(`${window.location.protocol}//${window.location.hostname}:18801/tenant-platform-api/v1`);
+    pushCandidate(
+      `${window.location.protocol}//${window.location.hostname}:18801/tenant-platform-api/v1`,
+    );
     pushCandidate(`${window.location.protocol}//127.0.0.1:18801/tenant-platform-api/v1`);
     pushCandidate(`${window.location.protocol}//localhost:18801/tenant-platform-api/v1`);
   }
@@ -295,7 +281,8 @@ function resolveTenantSessionAgentIds(selectedAgent) {
 }
 
 export function buildTenantMemberSessionPrefix(session, selectedAgent, explicitAgentId = "") {
-  const agentId = normalizeTenantSessionValue(explicitAgentId) || resolveTenantSessionAgentIds(selectedAgent)[0];
+  const agentId =
+    normalizeTenantSessionValue(explicitAgentId) || resolveTenantSessionAgentIds(selectedAgent)[0];
   const tenantId = normalizeTenantSessionValue(session?.session?.tenantId);
   const userId = normalizeTenantSessionValue(session?.session?.userId);
   const tenantAgentId = normalizeTenantSessionValue(selectedAgent?.id);
@@ -354,7 +341,8 @@ export function requireTenantSession(allowedRoles, options = {}) {
     allowedRoles.length === 1 &&
     allowedRoles[0] === "platform_admin";
   const session = expectPlatformOnly ? readPlatformSession() : readTenantSession();
-  const loginHref = options.loginHref || (expectPlatformOnly ? PLATFORM_LOGIN_ROUTE : TENANT_LOGIN_ROUTE);
+  const loginHref =
+    options.loginHref || (expectPlatformOnly ? PLATFORM_LOGIN_ROUTE : TENANT_LOGIN_ROUTE);
   if (!session?.token || !session?.session?.role) {
     window.location.href = loginHref;
     return null;

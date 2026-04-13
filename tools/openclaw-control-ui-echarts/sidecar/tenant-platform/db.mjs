@@ -1,11 +1,11 @@
-import fs from "node:fs";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import JSON5 from "json5";
 import { DatabaseSync } from "node:sqlite";
-import { ensureTenantPlatformDirs } from "./config.mjs";
+import JSON5 from "json5";
 import { hashPassword } from "./auth.mjs";
+import { ensureTenantPlatformDirs } from "./config.mjs";
 
 const MIGRATION_PATH = new URL("./migrations/001_init.sql", import.meta.url);
 const LOCAL_BOOTSTRAP_TENANT_CODE = "local";
@@ -29,6 +29,35 @@ function nowIso() {
 
 function createId(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeUsageDay(value) {
+  const normalized = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized;
+  }
+  const parsed = Date.parse(normalized);
+  if (Number.isNaN(parsed)) {
+    return "";
+  }
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+function normalizeIsoTimestamp(value, fallback = nowIso()) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  const parsed = Date.parse(normalized);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+  return new Date(parsed).toISOString();
 }
 
 function getScalar(db, sql, params = {}) {
@@ -83,7 +112,11 @@ function normalizeSegment(value, fallback = "x", maxLength = 24) {
 }
 
 function shortStableHash(input) {
-  return crypto.createHash("sha1").update(String(input || "")).digest("hex").slice(0, 12);
+  return crypto
+    .createHash("sha1")
+    .update(String(input || ""))
+    .digest("hex")
+    .slice(0, 12);
 }
 
 function deriveTenantMemberAgentId(params) {
@@ -160,13 +193,18 @@ function resolveDefaultAgentIdFromConfig(configPayload) {
 }
 
 function resolveAgentEntryFromConfig(configPayload, agentId) {
-  const normalized = String(agentId || "").trim().toLowerCase();
+  const normalized = String(agentId || "")
+    .trim()
+    .toLowerCase();
   if (!normalized) {
     return null;
   }
   return (
     listConfigAgents(configPayload).find(
-      (entry) => String(entry?.id || "").trim().toLowerCase() === normalized,
+      (entry) =>
+        String(entry?.id || "")
+          .trim()
+          .toLowerCase() === normalized,
     ) ?? null
   );
 }
@@ -188,7 +226,10 @@ function resolveBaseWorkspaceDir(params) {
   candidates.push(explicitAgentWorkspace);
 
   if (baseAgentId && baseAgentId === defaultAgentId) {
-    const defaultsWorkspace = resolveHomePath(configPayload?.agents?.defaults?.workspace, configDir);
+    const defaultsWorkspace = resolveHomePath(
+      configPayload?.agents?.defaults?.workspace,
+      configDir,
+    );
     if (defaultsWorkspace) {
       candidates.push(defaultsWorkspace);
     }
@@ -348,7 +389,9 @@ export function closeTenantPlatformDb(db) {
 }
 
 export function getBootstrapStatus(db, edition = "cloud") {
-  const normalizedEdition = String(edition || "cloud").trim().toLowerCase();
+  const normalizedEdition = String(edition || "cloud")
+    .trim()
+    .toLowerCase();
   const platformAdminCount = Number(
     getScalar(db, "SELECT COUNT(*) AS value FROM users WHERE role = 'platform_admin'") || 0,
   );
@@ -406,8 +449,9 @@ export function createBootstrapLocalTenantAdmin(db, params) {
 
 export function getTenantContextForUser(db, userId) {
   return (
-    db.prepare(
-      `SELECT t.id AS tenantId, t.name AS tenantName, t.code AS tenantCode, t.status AS tenantStatus,
+    db
+      .prepare(
+        `SELECT t.id AS tenantId, t.name AS tenantName, t.code AS tenantCode, t.status AS tenantStatus,
               t.deployment_mode AS deploymentMode, tm.role AS membershipRole, tm.status AS membershipStatus,
               tq.member_limit AS memberLimit, tq.license_expires_at AS licenseExpiresAt,
               tw.balance_points AS walletBalance
@@ -418,7 +462,8 @@ export function getTenantContextForUser(db, userId) {
        WHERE tm.user_id = ?
        ORDER BY tm.created_at ASC
        LIMIT 1`,
-    ).get(userId) ?? null
+      )
+      .get(userId) ?? null
   );
 }
 
@@ -444,8 +489,9 @@ export function getUserByUsername(db, username) {
 
 export function getTenantSummary(db, tenantId) {
   return (
-    db.prepare(
-      `SELECT t.id, t.code, t.name, t.status, t.deployment_mode AS deploymentMode,
+    db
+      .prepare(
+        `SELECT t.id, t.code, t.name, t.status, t.deployment_mode AS deploymentMode,
               tq.member_limit AS memberLimit, tq.license_expires_at AS licenseExpiresAt,
               tw.balance_points AS walletBalance,
               COUNT(DISTINCT CASE WHEN tm.role = 'member' AND tm.status = 'active' THEN tm.user_id END) AS memberCount,
@@ -457,7 +503,8 @@ export function getTenantSummary(db, tenantId) {
        LEFT JOIN tenant_agents ta ON ta.tenant_id = t.id
        WHERE t.id = ?
        GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points`,
-    ).get(tenantId) ?? null
+      )
+      .get(tenantId) ?? null
   );
 }
 
@@ -629,12 +676,14 @@ export function createTenantMember(db, params) {
   });
 
   return (
-    db.prepare(
-      `SELECT u.id, u.username, u.status, tm.role, tm.created_at AS createdAt
+    db
+      .prepare(
+        `SELECT u.id, u.username, u.status, tm.role, tm.created_at AS createdAt
        FROM users u
        JOIN tenant_memberships tm ON tm.user_id = u.id
        WHERE u.id = ?`,
-    ).get(userId) ?? null
+      )
+      .get(userId) ?? null
   );
 }
 
@@ -873,6 +922,299 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
     });
 }
 
+export function syncTenantUsageRecords(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const openclawSessionKey = String(params.openclawSessionKey || "").trim();
+  const records = Array.isArray(params.records) ? params.records : [];
+
+  if (!tenantId || !userId || !tenantAgentId || !openclawSessionKey) {
+    throw new Error("missing_fields");
+  }
+
+  const tenantAgent = db
+    .prepare(
+      `SELECT ta.id
+       FROM tenant_agents ta
+       JOIN tenant_memberships tm ON tm.tenant_id = ta.tenant_id
+       WHERE ta.id = @tenantAgentId
+         AND ta.tenant_id = @tenantId
+         AND tm.user_id = @userId
+         AND tm.role = 'member'
+         AND tm.status = 'active'
+       LIMIT 1`,
+    )
+    .get({
+      tenantAgentId,
+      tenantId,
+      userId,
+    });
+  if (!tenantAgent) {
+    throw new Error("tenant_agent_not_found");
+  }
+
+  return runInTransaction(db, () => {
+    const selectExisting = db.prepare(
+      `SELECT id
+       FROM tenant_usage_records
+       WHERE openclaw_session_key = @openclawSessionKey
+         AND source_fingerprint = @sourceFingerprint`,
+    );
+    const upsert = db.prepare(
+      `INSERT INTO tenant_usage_records (
+         id,
+         tenant_id,
+         user_id,
+         tenant_agent_id,
+         openclaw_session_key,
+         source_fingerprint,
+         message_timestamp,
+         usage_day,
+         provider,
+         model,
+         input_tokens,
+         output_tokens,
+         cache_read_tokens,
+         cache_write_tokens,
+         total_tokens,
+         total_cost,
+         created_at,
+         updated_at
+       ) VALUES (
+         @id,
+         @tenantId,
+         @userId,
+         @tenantAgentId,
+         @openclawSessionKey,
+         @sourceFingerprint,
+         @messageTimestamp,
+         @usageDay,
+         @provider,
+         @model,
+         @inputTokens,
+         @outputTokens,
+         @cacheReadTokens,
+         @cacheWriteTokens,
+         @totalTokens,
+         @totalCost,
+         @createdAt,
+         @updatedAt
+       )
+       ON CONFLICT(openclaw_session_key, source_fingerprint) DO UPDATE SET
+         tenant_agent_id = excluded.tenant_agent_id,
+         message_timestamp = excluded.message_timestamp,
+         usage_day = excluded.usage_day,
+         provider = excluded.provider,
+         model = excluded.model,
+         input_tokens = excluded.input_tokens,
+         output_tokens = excluded.output_tokens,
+         cache_read_tokens = excluded.cache_read_tokens,
+         cache_write_tokens = excluded.cache_write_tokens,
+         total_tokens = excluded.total_tokens,
+         total_cost = excluded.total_cost,
+         updated_at = excluded.updated_at`,
+    );
+
+    let inserted = 0;
+    let updated = 0;
+    const now = nowIso();
+
+    for (const record of records) {
+      const sourceFingerprint = String(record?.sourceFingerprint || "").trim();
+      if (!sourceFingerprint) {
+        continue;
+      }
+      const messageTimestamp = normalizeIsoTimestamp(record?.messageTimestamp, now);
+      const usageDay = normalizeUsageDay(record?.usageDay || messageTimestamp) || now.slice(0, 10);
+      const inputTokens = Math.max(0, Math.round(toFiniteNumber(record?.inputTokens)));
+      const outputTokens = Math.max(0, Math.round(toFiniteNumber(record?.outputTokens)));
+      const cacheReadTokens = Math.max(0, Math.round(toFiniteNumber(record?.cacheReadTokens)));
+      const cacheWriteTokens = Math.max(0, Math.round(toFiniteNumber(record?.cacheWriteTokens)));
+      const totalTokensRaw = Math.round(toFiniteNumber(record?.totalTokens));
+      const totalTokens =
+        totalTokensRaw > 0
+          ? totalTokensRaw
+          : inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+      if (totalTokens <= 0 && toFiniteNumber(record?.totalCost, 0) <= 0) {
+        continue;
+      }
+
+      const existing = selectExisting.get({
+        openclawSessionKey,
+        sourceFingerprint,
+      });
+      upsert.run({
+        id: existing?.id || createId("usage"),
+        tenantId,
+        userId,
+        tenantAgentId,
+        openclawSessionKey,
+        sourceFingerprint,
+        messageTimestamp,
+        usageDay,
+        provider: String(record?.provider || "").trim() || null,
+        model: String(record?.model || "").trim() || null,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        totalTokens,
+        totalCost:
+          toFiniteNumber(record?.totalCost, 0) > 0 ? toFiniteNumber(record?.totalCost, 0) : null,
+        createdAt: existing?.id ? now : now,
+        updatedAt: now,
+      });
+      if (existing?.id) {
+        updated += 1;
+      } else {
+        inserted += 1;
+      }
+    }
+
+    return {
+      inserted,
+      updated,
+      total: inserted + updated,
+    };
+  });
+}
+
+export function listTenantUsageStats(db, params, configAgents = []) {
+  const tenantId = String(params.tenantId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+
+  const today = nowIso().slice(0, 10);
+  const requestedStart = normalizeUsageDay(params.startDate) || today;
+  const requestedEnd = normalizeUsageDay(params.endDate) || requestedStart;
+  const startDate = requestedStart <= requestedEnd ? requestedStart : requestedEnd;
+  const endDate = requestedStart <= requestedEnd ? requestedEnd : requestedStart;
+  const queryParams = {
+    tenantId,
+    startDate,
+    endDate,
+  };
+  const configMap = new Map(configAgents.map((entry) => [entry.id, entry]));
+
+  const totalsRow =
+    db
+      .prepare(
+        `SELECT COUNT(*) AS responseCount,
+              COUNT(DISTINCT user_id) AS memberCount,
+              COUNT(DISTINCT tenant_agent_id) AS agentCount,
+              COALESCE(SUM(input_tokens), 0) AS inputTokens,
+              COALESCE(SUM(output_tokens), 0) AS outputTokens,
+              COALESCE(SUM(cache_read_tokens), 0) AS cacheReadTokens,
+              COALESCE(SUM(cache_write_tokens), 0) AS cacheWriteTokens,
+              COALESCE(SUM(total_tokens), 0) AS totalTokens,
+              COALESCE(SUM(total_cost), 0) AS totalCost,
+              MAX(message_timestamp) AS lastUsedAt
+       FROM tenant_usage_records
+       WHERE tenant_id = @tenantId
+         AND usage_day >= @startDate
+         AND usage_day <= @endDate`,
+      )
+      .get(queryParams) ?? {};
+
+  const byMember = db
+    .prepare(
+      `SELECT r.user_id AS userId,
+              u.username,
+              COUNT(*) AS responseCount,
+              COALESCE(SUM(r.input_tokens), 0) AS inputTokens,
+              COALESCE(SUM(r.output_tokens), 0) AS outputTokens,
+              COALESCE(SUM(r.cache_read_tokens), 0) AS cacheReadTokens,
+              COALESCE(SUM(r.cache_write_tokens), 0) AS cacheWriteTokens,
+              COALESCE(SUM(r.total_tokens), 0) AS totalTokens,
+              COALESCE(SUM(r.total_cost), 0) AS totalCost,
+              MAX(r.message_timestamp) AS lastUsedAt
+       FROM tenant_usage_records r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.tenant_id = @tenantId
+         AND r.usage_day >= @startDate
+         AND r.usage_day <= @endDate
+       GROUP BY r.user_id, u.username
+       ORDER BY totalTokens DESC, responseCount DESC, lastUsedAt DESC`,
+    )
+    .all(queryParams);
+
+  const byAgent = db
+    .prepare(
+      `SELECT r.tenant_agent_id AS tenantAgentId,
+              ta.agent_id AS agentId,
+              ta.description,
+              COUNT(*) AS responseCount,
+              COALESCE(SUM(r.input_tokens), 0) AS inputTokens,
+              COALESCE(SUM(r.output_tokens), 0) AS outputTokens,
+              COALESCE(SUM(r.cache_read_tokens), 0) AS cacheReadTokens,
+              COALESCE(SUM(r.cache_write_tokens), 0) AS cacheWriteTokens,
+              COALESCE(SUM(r.total_tokens), 0) AS totalTokens,
+              COALESCE(SUM(r.total_cost), 0) AS totalCost,
+              MAX(r.message_timestamp) AS lastUsedAt
+       FROM tenant_usage_records r
+       JOIN tenant_agents ta ON ta.id = r.tenant_agent_id
+       WHERE r.tenant_id = @tenantId
+         AND r.usage_day >= @startDate
+         AND r.usage_day <= @endDate
+       GROUP BY r.tenant_agent_id, ta.agent_id, ta.description
+       ORDER BY totalTokens DESC, responseCount DESC, lastUsedAt DESC`,
+    )
+    .all(queryParams)
+    .map((row) => {
+      const configEntry = configMap.get(row.agentId) ?? null;
+      return {
+        ...row,
+        agentName: configEntry?.name ?? row.agentId,
+        emoji: configEntry?.emoji ?? null,
+        avatar: configEntry?.avatar ?? null,
+      };
+    });
+
+  const byDay = db
+    .prepare(
+      `SELECT usage_day AS usageDay,
+              COUNT(*) AS responseCount,
+              COALESCE(SUM(input_tokens), 0) AS inputTokens,
+              COALESCE(SUM(output_tokens), 0) AS outputTokens,
+              COALESCE(SUM(cache_read_tokens), 0) AS cacheReadTokens,
+              COALESCE(SUM(cache_write_tokens), 0) AS cacheWriteTokens,
+              COALESCE(SUM(total_tokens), 0) AS totalTokens,
+              COALESCE(SUM(total_cost), 0) AS totalCost,
+              MAX(message_timestamp) AS lastUsedAt
+       FROM tenant_usage_records
+       WHERE tenant_id = @tenantId
+         AND usage_day >= @startDate
+         AND usage_day <= @endDate
+       GROUP BY usage_day
+       ORDER BY usage_day DESC`,
+    )
+    .all(queryParams);
+
+  return {
+    range: {
+      startDate,
+      endDate,
+    },
+    totals: {
+      responseCount: Math.max(0, Math.round(toFiniteNumber(totalsRow.responseCount))),
+      memberCount: Math.max(0, Math.round(toFiniteNumber(totalsRow.memberCount))),
+      agentCount: Math.max(0, Math.round(toFiniteNumber(totalsRow.agentCount))),
+      inputTokens: Math.max(0, Math.round(toFiniteNumber(totalsRow.inputTokens))),
+      outputTokens: Math.max(0, Math.round(toFiniteNumber(totalsRow.outputTokens))),
+      cacheReadTokens: Math.max(0, Math.round(toFiniteNumber(totalsRow.cacheReadTokens))),
+      cacheWriteTokens: Math.max(0, Math.round(toFiniteNumber(totalsRow.cacheWriteTokens))),
+      totalTokens: Math.max(0, Math.round(toFiniteNumber(totalsRow.totalTokens))),
+      totalCost: toFiniteNumber(totalsRow.totalCost, 0),
+      lastUsedAt: totalsRow.lastUsedAt || null,
+    },
+    byMember,
+    byAgent,
+    byDay,
+  };
+}
+
 export function logAudit(db, params) {
   db.prepare(
     `INSERT INTO audit_logs (id, tenant_id, user_id, action, resource_type, resource_id, payload_json, created_at)
@@ -901,7 +1243,7 @@ export function registerTenantAgentSession(db, params) {
        SET title = @title,
            updated_at = @updatedAt,
            hidden_at = NULL
-       WHERE id = @id`
+       WHERE id = @id`,
     ).run({
       id: existing.id,
       title: params.title || "新会话",
@@ -913,7 +1255,7 @@ export function registerTenantAgentSession(db, params) {
   const sessionId = createId("session");
   db.prepare(
     `INSERT INTO tenant_agent_sessions (id, tenant_id, user_id, tenant_agent_id, openclaw_session_key, title, created_at, updated_at)
-     VALUES (@id, @tenantId, @userId, @tenantAgentId, @openclawSessionKey, @title, @createdAt, @updatedAt)`
+     VALUES (@id, @tenantId, @userId, @tenantAgentId, @openclawSessionKey, @title, @createdAt, @updatedAt)`,
   ).run({
     id: sessionId,
     tenantId: params.tenantId,
@@ -932,7 +1274,7 @@ export function hideTenantAgentSession(db, params) {
     `UPDATE tenant_agent_sessions
      SET hidden_at = @hiddenAt,
          updated_at = @updatedAt
-     WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`
+     WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`,
   ).run({
     userId: params.userId,
     openclawSessionKey: params.openclawSessionKey,
@@ -944,7 +1286,7 @@ export function hideTenantAgentSession(db, params) {
 export function deleteTenantAgentSession(db, params) {
   db.prepare(
     `DELETE FROM tenant_agent_sessions
-     WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`
+     WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`,
   ).run({
     userId: params.userId,
     openclawSessionKey: params.openclawSessionKey,
@@ -959,7 +1301,7 @@ export function listTenantAgentSessions(db, params) {
               title, hidden_at AS hiddenAt, created_at AS createdAt, updated_at AS updatedAt
        FROM tenant_agent_sessions
        WHERE user_id = ? AND tenant_agent_id = ?
-       ORDER BY updated_at DESC`
+       ORDER BY updated_at DESC`,
     )
     .all(params.userId, params.tenantAgentId);
 }

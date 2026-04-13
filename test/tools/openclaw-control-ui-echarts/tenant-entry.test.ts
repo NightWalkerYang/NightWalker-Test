@@ -58,12 +58,24 @@ describe("zero-intrusive tenant entry", () => {
 
     const chatGroup = document.querySelector('[data-native-group="chat"]');
     expect(managementSection?.nextElementSibling).toBe(chatGroup);
-    expect(document.querySelector(".topbar-search")?.getAttribute("data-oc-platform-search-hidden")).toBe("true");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("当前角色");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("platform_admin");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("当前登录");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("platform-root");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("退出登录");
+    expect(
+      document.querySelector(".topbar-search")?.getAttribute("data-oc-platform-search-hidden"),
+    ).toBe("true");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "当前角色",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "platform_admin",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "当前登录",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "platform-root",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "退出登录",
+    );
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(false);
     const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
     expect(utilityItems.map((item) => item.textContent?.trim())).toEqual(["文档", "知识图谱"]);
@@ -109,14 +121,22 @@ describe("zero-intrusive tenant entry", () => {
     const managementSection = document.querySelector(".oc-platform-management-section");
     const items = managementSection?.querySelectorAll(".nav-item") ?? [];
     expect(managementSection).not.toBeNull();
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]?.textContent).toContain("成员管理");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=tenant-members");
     expect(items[1]?.textContent).toContain("Agent 分配");
     expect(items[1]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-assignment");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant_admin");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant-admin");
-    expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe("tenant_admin");
+    expect(items[2]?.textContent).toContain("耗量统计");
+    expect(items[2]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "tenant_admin",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "tenant-admin",
+    );
+    expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe(
+      "tenant_admin",
+    );
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
     const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
@@ -157,8 +177,12 @@ describe("zero-intrusive tenant entry", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.textContent).toContain("Agent选择");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-selector");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("member");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("member-user");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "member",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "member-user",
+    );
     expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe("member");
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
@@ -231,11 +255,16 @@ describe("zero-intrusive tenant entry", () => {
 
     const managementSection = document.querySelector(".oc-platform-management-section");
     const items = managementSection?.querySelectorAll(".nav-item") ?? [];
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]?.textContent).toContain("成员管理");
     expect(items[1]?.textContent).toContain("Agent 分配");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("tenant_admin");
-    expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe("tenant_admin");
+    expect(items[2]?.textContent).toContain("耗量统计");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "tenant_admin",
+    );
+    expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe(
+      "tenant_admin",
+    );
   });
 
   it("skips tenant sidebar injection on the public lufeng route", () => {
@@ -313,8 +342,12 @@ describe("zero-intrusive tenant entry", () => {
 
     expect(window.location.pathname).toBe("/chat");
     expect(window.location.search).not.toContain("ocTenantView");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("当前角色");
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain("退出登录");
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "当前角色",
+    );
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "退出登录",
+    );
   });
 
   it("opens the platform profile dialog from the global topbar meta", () => {
@@ -415,7 +448,9 @@ describe("zero-intrusive tenant entry", () => {
     const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
     expect(utilityItems).toHaveLength(4);
     expect(utilityItems[0] instanceof HTMLElement ? utilityItems[0].hidden : true).toBe(false);
-    expect(utilityItems.slice(1).every((item) => item instanceof HTMLElement && item.hidden)).toBe(true);
+    expect(utilityItems.slice(1).every((item) => item instanceof HTMLElement && item.hidden)).toBe(
+      true,
+    );
   });
 
   it("applies tenant-admin topbar meta when the topbar search is added after boot", async () => {

@@ -1,14 +1,12 @@
+import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
 import { mountTenantConsolePage } from "./tenant-console-page.js";
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_MEMBERS_VIEW,
+  TENANT_USAGE_STATS_VIEW,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
-import {
-  bootTenantRouteSync,
-  onTenantRouteChange,
-} from "./route-sync.js";
 
 const ROOT_ATTR = "data-oc-tenant-surface-root";
 const STYLE_ATTR = "data-oc-tenant-surface-style";
@@ -16,7 +14,11 @@ const ACTIVE_ATTR = "data-oc-tenant-surface-active";
 const SECTION_ATTR = "data-oc-tenant-section";
 
 function isTenantManagementView(view) {
-  return view === TENANT_MEMBERS_VIEW || view === TENANT_AGENT_ASSIGNMENT_VIEW;
+  return (
+    view === TENANT_MEMBERS_VIEW ||
+    view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    view === TENANT_USAGE_STATS_VIEW
+  );
 }
 
 function isRootControlPath(pathname = window.location.pathname) {
@@ -29,7 +31,13 @@ function isTenantManagementRoute() {
 }
 
 function sectionForView(view) {
-  return view === TENANT_AGENT_ASSIGNMENT_VIEW ? "agent-assignment" : "members";
+  if (view === TENANT_AGENT_ASSIGNMENT_VIEW) {
+    return "agent-assignment";
+  }
+  if (view === TENANT_USAGE_STATS_VIEW) {
+    return "usage-stats";
+  }
+  return "members";
 }
 
 function ensureStyle() {

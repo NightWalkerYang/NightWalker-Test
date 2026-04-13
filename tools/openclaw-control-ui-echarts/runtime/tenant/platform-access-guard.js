@@ -1,8 +1,11 @@
+import { isLufengPublicPath } from "../lufeng/context.js";
+import { createTenantApiClient } from "./api-client.js";
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_AGENT_SELECTOR_VIEW,
   LOGIN_ROUTE,
   TENANT_MEMBERS_VIEW,
+  TENANT_USAGE_STATS_VIEW,
   clearPlatformSession,
   isTenantLoginView,
   readSelectedTenantAgentId,
@@ -11,8 +14,6 @@ import {
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
-import { isLufengPublicPath } from "../lufeng/context.js";
-import { createTenantApiClient } from "./api-client.js";
 
 export function isNativeControlUiPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
@@ -46,7 +47,9 @@ export function resolvePlatformAccessDecision({
   if (
     tenantSession?.token &&
     tenantSession?.session?.role === "tenant_admin" &&
-    (view === TENANT_MEMBERS_VIEW || view === TENANT_AGENT_ASSIGNMENT_VIEW)
+    (view === TENANT_MEMBERS_VIEW ||
+      view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+      view === TENANT_USAGE_STATS_VIEW)
   ) {
     return "allow";
   }
@@ -80,7 +83,12 @@ async function readTenantPlatformEdition() {
   if (!bootstrapPromise) {
     bootstrapPromise = createTenantApiClient()
       .bootstrap()
-      .then((bootstrap) => String(bootstrap?.edition || "cloud").trim().toLowerCase() || "cloud")
+      .then(
+        (bootstrap) =>
+          String(bootstrap?.edition || "cloud")
+            .trim()
+            .toLowerCase() || "cloud",
+      )
       .catch(() => "cloud");
   }
   return bootstrapPromise;
@@ -100,7 +108,10 @@ export async function bootPlatformAccessGuard() {
   if (isTenantLoginView(view)) {
     return;
   }
-  if (isLufengPublicPath(window.location.pathname) || !isNativeControlUiPath(window.location.pathname)) {
+  if (
+    isLufengPublicPath(window.location.pathname) ||
+    !isNativeControlUiPath(window.location.pathname)
+  ) {
     return;
   }
 

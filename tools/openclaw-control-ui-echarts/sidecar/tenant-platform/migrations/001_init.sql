@@ -137,6 +137,31 @@ CREATE TABLE IF NOT EXISTS tenant_agent_sessions (
   FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS tenant_usage_records (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  tenant_agent_id TEXT NOT NULL,
+  openclaw_session_key TEXT NOT NULL,
+  source_fingerprint TEXT NOT NULL,
+  message_timestamp TEXT NOT NULL,
+  usage_day TEXT NOT NULL,
+  provider TEXT,
+  model TEXT,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  total_cost REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(openclaw_session_key, source_fingerprint),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
   tenant_id TEXT,
@@ -158,6 +183,15 @@ CREATE INDEX IF NOT EXISTS idx_user_agent_assignments_user
 
 CREATE INDEX IF NOT EXISTS idx_tenant_agent_sessions_user_agent
   ON tenant_agent_sessions (user_id, tenant_agent_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_tenant_day
+  ON tenant_usage_records (tenant_id, usage_day, message_timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_user_day
+  ON tenant_usage_records (user_id, usage_day, message_timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_agent_day
+  ON tenant_usage_records (tenant_agent_id, usage_day, message_timestamp DESC);
 
 CREATE INDEX IF NOT EXISTS idx_payment_orders_tenant_status
   ON payment_orders (tenant_id, status, created_at DESC);

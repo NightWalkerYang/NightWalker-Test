@@ -1011,9 +1011,10 @@
    - 客户公司自行管理大模型厂商 API Key 或 coding plan
    - 我们不介入客户本地模型凭证管理
    - 页面上要与公有云模式显式区分
-  - 本地租户管理员只能在 License 允许范围内管理系统
-   - 不做积分扣费，只做用量统计
-   - 核心控制目标是系统可用性与到期时间
+
+- 本地租户管理员只能在 License 允许范围内管理系统
+- 不做积分扣费，只做用量统计
+- 核心控制目标是系统可用性与到期时间
 
 6. 租户会话默认命名
    - 自动摘要生成标题
@@ -1033,90 +1034,111 @@
    - 历史统计完全保留
 
 10. 本地部署到期后的系统表现
-   - 允许只读查看历史和统计
-   - 禁止继续发送消息
+
+- 允许只读查看历史和统计
+- 禁止继续发送消息
 
 11. 公有云模式下模型凭证管理
-   - 租户管理员完全不允许自行配置模型凭证
+
+- 租户管理员完全不允许自行配置模型凭证
 
 12. 本地部署下 License 展示方式
-   - 同时显示到期日期和剩余天数
+
+- 同时显示到期日期和剩余天数
 
 13. 本地部署下到期预警
-   - 提前 7 天开始预警
-   - 在最后 7 天内按天提醒
-   - 不是每次打开页面都提醒
-   - 更合理的方式是“每天首次登录或首次进入管理页时提醒一次”
+
+- 提前 7 天开始预警
+- 在最后 7 天内按天提醒
+- 不是每次打开页面都提醒
+- 更合理的方式是“每天首次登录或首次进入管理页时提醒一次”
 
 14. 平台管理员账号
-   - 支持多个平台管理员账号
+
+- 支持多个平台管理员账号
 
 15. 租户成员账号字段
-   - 第一阶段只保留账号和密码
+
+- 第一阶段只保留账号和密码
 
 16. 成员停用处理
-   - 禁止登录
-   - 保留历史
+
+- 禁止登录
+- 保留历史
 
 17. Agent 分配取消后的历史可见性
-   - 取消分配后不能再看到该 Agent 下的历史
+
+- 取消分配后不能再看到该 Agent 下的历史
 
 18. 公有云扣费时机
-   - 每次模型回复完成后扣积分
+
+- 每次模型回复完成后扣积分
 
 19. 公有云支付到账方式
-   - 支付成功后先进入待确认订单
-   - 订单确认后再入账
+
+- 支付成功后先进入待确认订单
+- 订单确认后再入账
 
 20. 本地部署续期方式
-   - 续期码和重新部署导入新的授权文件可以共存
-   - 日常续期优先走续期码
-   - 重新部署并导入新的授权文件用于补救、替换或较大版本更新
-   - 两者不冲突，关键是要定义清楚优先级
+
+- 续期码和重新部署导入新的授权文件可以共存
+- 日常续期优先走续期码
+- 重新部署并导入新的授权文件用于补救、替换或较大版本更新
+- 两者不冲突，关键是要定义清楚优先级
 
 21. 公有云订单确认方式
-   - 支付回调自动确认
-   - 系统需要提供确认接口供支付回调调用
+
+- 支付回调自动确认
+- 系统需要提供确认接口供支付回调调用
 
 22. 租户成员页面范围
-   - 只保留 Agent 选择页
-   - 只保留某个 Agent 对应的聊天页
-   - 不再单独提供成员最近使用记录页面
+
+- 只保留 Agent 选择页
+- 只保留某个 Agent 对应的聊天页
+- 不再单独提供成员最近使用记录页面
 
 23. 平台管理员代操作能力
-   - 不允许进入租户执行代操作
-   - 平台管理员只保留平台级管理和统计查看权限
+
+- 不允许进入租户执行代操作
+- 平台管理员只保留平台级管理和统计查看权限
 
 24. 平台管理员撤销租户 Agent 时的处理
-   - 该租户下所有成员立即看不到这个 Agent
-   - 该 Agent 剩余积分退回租户钱包
-   - 该 Agent 历史会话保留
+
+- 该租户下所有成员立即看不到这个 Agent
+- 该 Agent 剩余积分退回租户钱包
+- 该 Agent 历史会话保留
 
 25. 成员停用后的 Agent 预算处理
-   - 原地保留在 Agent 上
+
+- 原地保留在 Agent 上
 
 26. 成员会话数量
-   - 第一阶段不限制
+
+- 第一阶段不限制
 
 27. 租户钱包余额不足
-   - 不做额外预警
+
+- 不做额外预警
 
 28. 租户管理员报表范围
-   - 可以看按成员、按 Agent、按天的统计报表
+
+- 可以看按成员、按 Agent、按天的统计报表
 
 29. 租户管理员统计报表默认时间范围
-   - 今天
+
+- 今天
 
 30. Agent 选择页卡片展示项
-   - Agent 头像或 emoji
-   - Agent 名称
-   - Agent 简短描述
-   - 当前剩余积分
-   - 状态标签
-   - 其中：
-     - 头像 / emoji / 名称复用 OpenClaw 原生 identity
-     - 简短描述由租户平台单独维护
-     - 状态标签第一阶段使用：正常 / 预算不足 / 已停用
+
+- Agent 头像或 emoji
+- Agent 名称
+- Agent 简短描述
+- 当前剩余积分
+- 状态标签
+- 其中：
+  - 头像 / emoji / 名称复用 OpenClaw 原生 identity
+  - 简短描述由租户平台单独维护
+  - 状态标签第一阶段使用：正常 / 预算不足 / 已停用
 
 ## 十、第一阶段实施清单（压缩版）
 
@@ -1200,76 +1222,82 @@
    - 不允许继续发送消息
 
 10. 本地部署授权页第一阶段要做到
-   - 显示到期日期
-   - 显示剩余天数
-   - 提前 7 天开始提醒
-   - 7 天内按天提醒一次
-   - 支持续期码
-   - 支持重新部署并导入新的授权文件
+
+- 显示到期日期
+- 显示剩余天数
+- 提前 7 天开始提醒
+- 7 天内按天提醒一次
+- 支持续期码
+- 支持重新部署并导入新的授权文件
 
 11. 第一阶段必须新增的零侵入页面与入口
-   - 原生单入口统一登录视图：`./?ocTenantView=login`
-   - 原生根控制台平台管理员守卫：`./`
-   - 原生侧边栏“管理”分组
-   - 原生单入口平台管理视图：`./?ocTenantView=platform-tenants`
-   - 原生单入口平台管理视图：`./?ocTenantView=platform-agent-assignment`
-   - 成员原生单入口 Agent 选择视图：`./?ocTenantView=tenant-agent-selector`
+
+- 原生单入口统一登录视图：`./?ocTenantView=login`
+- 原生根控制台平台管理员守卫：`./`
+- 原生侧边栏“管理”分组
+- 原生单入口平台管理视图：`./?ocTenantView=platform-tenants`
+- 原生单入口平台管理视图：`./?ocTenantView=platform-agent-assignment`
+- 成员原生单入口 Agent 选择视图：`./?ocTenantView=tenant-agent-selector`
 
 12. 第一阶段必须新增的零侵入运行时文件
-   - `runtime/tenant/tenant-context.js`
-   - `runtime/tenant/api-client.js`
-   - `runtime/tenant/auth-surface.css`
-   - `runtime/tenant/auth-surface.js`
-   - `runtime/tenant/topbar-meta.css`
-   - `runtime/tenant/platform-access-guard.js`
-   - `runtime/tenant/entry.js`
-   - `runtime/tenant/platform-surface.css`
-   - `runtime/tenant/platform-surface.js`
-   - `runtime/tenant/platform-login-page.js`
-   - `runtime/tenant/login-page.js`
-   - `runtime/tenant/member-console-page.js`
-   - `runtime/tenant/member-surface.js`
-   - `runtime/tenant/member-surface.css`
-   - `runtime/tenant/member-chat-surface.js`
-   - `runtime/tenant/tenant-console-page.js`
-   - `runtime/tenant/platform-console-page.js`
+
+- `runtime/tenant/tenant-context.js`
+- `runtime/tenant/api-client.js`
+- `runtime/tenant/auth-surface.css`
+- `runtime/tenant/auth-surface.js`
+- `runtime/tenant/topbar-meta.css`
+- `runtime/tenant/platform-access-guard.js`
+- `runtime/tenant/entry.js`
+- `runtime/tenant/platform-surface.css`
+- `runtime/tenant/platform-surface.js`
+- `runtime/tenant/platform-login-page.js`
+- `runtime/tenant/login-page.js`
+- `runtime/tenant/member-console-page.js`
+- `runtime/tenant/member-surface.js`
+- `runtime/tenant/member-surface.css`
+- `runtime/tenant/member-chat-surface.js`
+- `runtime/tenant/tenant-console-page.js`
+- `runtime/tenant/platform-console-page.js`
 
 13. 第一阶段必须新增的 sidecar 文件
-   - `sidecar/tenant-platform/server.mjs`
-   - `sidecar/tenant-platform/config.mjs`
-   - `sidecar/tenant-platform/db.mjs`
-   - `sidecar/tenant-platform/auth.mjs`
-   - `sidecar/tenant-platform/license.mjs`
-   - `sidecar/tenant-platform/membership.mjs`
-   - `sidecar/tenant-platform/wallet.mjs`
-   - `sidecar/tenant-platform/billing.mjs`
-   - `sidecar/tenant-platform/payments.mjs`
-   - `sidecar/tenant-platform/agent-assignment.mjs`
-   - `sidecar/tenant-platform/sessions.mjs`
-   - `sidecar/tenant-platform/audit.mjs`
-   - `sidecar/tenant-platform/routes.mjs`
-   - `sidecar/tenant-platform/migrations/001_init.sql`
+
+- `sidecar/tenant-platform/server.mjs`
+- `sidecar/tenant-platform/config.mjs`
+- `sidecar/tenant-platform/db.mjs`
+- `sidecar/tenant-platform/auth.mjs`
+- `sidecar/tenant-platform/license.mjs`
+- `sidecar/tenant-platform/membership.mjs`
+- `sidecar/tenant-platform/wallet.mjs`
+- `sidecar/tenant-platform/billing.mjs`
+- `sidecar/tenant-platform/payments.mjs`
+- `sidecar/tenant-platform/agent-assignment.mjs`
+- `sidecar/tenant-platform/sessions.mjs`
+- `sidecar/tenant-platform/audit.mjs`
+- `sidecar/tenant-platform/routes.mjs`
+- `sidecar/tenant-platform/migrations/001_init.sql`
 
 14. 第一阶段上线后的页面结果
-   - 平台管理员：
-     - OpenClaw 内嵌“租户管理页”
-   - 租户管理员：
-     - 成员管理页
-     - Agent 分配页
-     - 原生控制台内嵌管理视图
-   - 租户成员：
-     - 登录页
-     - Agent 选择页
-     - 聊天页
+
+- 平台管理员：
+  - OpenClaw 内嵌“租户管理页”
+- 租户管理员：
+  - 成员管理页
+  - Agent 分配页
+  - 原生控制台内嵌管理视图
+- 租户成员：
+  - 登录页
+  - Agent 选择页
+  - 聊天页
 
 15. 第一阶段验收标准
-   - 不改 OpenClaw 原有源码文件
-   - 租户、用户、Agent 分配、钱包、订单、会话映射都能落库
-   - 平台管理员能创建租户并分配 Agent
-   - 租户管理员能添加成员并划转积分
-   - 成员只能看到被分配的 Agent
-   - 积分不足时消息被拦截
-   - 本地部署模式与公有云模式页面表现明确区分
+
+- 不改 OpenClaw 原有源码文件
+- 租户、用户、Agent 分配、钱包、订单、会话映射都能落库
+- 平台管理员能创建租户并分配 Agent
+- 租户管理员能添加成员并划转积分
+- 成员只能看到被分配的 Agent
+- 积分不足时消息被拦截
+- 本地部署模式与公有云模式页面表现明确区分
 
 ## 十一、当前已完成进度
 
@@ -1332,10 +1360,12 @@
    - 原生侧边栏当前子项为：
      - `成员管理`
      - `Agent 分配`
+     - `耗量统计`
    - 原生侧边栏会按租户管理员角色裁剪，只保留：
      - `管理`
      - `成员管理`
      - `Agent 分配`
+     - `耗量统计`
      - 版本信息
    - 租户管理员底部入口已进一步收紧为仅保留版本块，不再显示文档、知识图谱、租户登录等平台入口
    - 租户管理员原生壳层当前会额外挂一个角色上下文标记，并用全局注入样式强制隐藏所有非 `管理` 的原生侧边导航分组，避免原生控制台延迟重渲染后又把平台菜单露出来
@@ -1345,6 +1375,13 @@
      - 退出登录
    - 租户成员创建
    - 租户管理员给成员分配已下发到本租户的 Agent
+   - 租户管理员原生壳层已补齐 `耗量统计` 视图：
+     - 默认按今天展示
+     - 支持切换时间范围刷新
+     - 支持按成员、按 Agent、按天聚合查看
+   - 租户 sidecar 已新增成员聊天耗量明细落库：
+     - 成员聊天页会从现有 `chat.history` 提取 assistant usage
+     - sidecar 会按 `session + message fingerprint` 幂等写入，避免重复统计
    - 当平台管理员会话与租户管理员会话同时存在时，租户管理员视图优先使用租户会话，不再被平台管理员侧边栏覆盖
    - 原生壳层即使延迟重渲染，租户入口仍会重新接管顶栏与侧边栏角色裁剪
 
@@ -1377,91 +1414,95 @@
    - 服务器侧 `openclaw-tenant-platform` 已并入部署链路
 
 10. 当前暂时保留但不再作为主路线的兼容页面
-   - 原生控制台内嵌“租户管理页”
-   - 这些兼容页后续可以逐步降级或移除，但当前主入口已经切换到原生单入口视图
+
+- 原生控制台内嵌“租户管理页”
+- 这些兼容页后续可以逐步降级或移除，但当前主入口已经切换到原生单入口视图
 
 11. 本地部署授权版第一阶段关键闭环已落地
-   - tenant sidecar 已支持通过环境变量切换 `cloud` / `local` 版型
-   - 本地版已新增签名 License 文件校验
-   - 本地版已支持导入授权文件
-   - 本地版已支持输入续期码
-   - 本地版已把授权状态透出到：
-     - 租户登录页
-     - 本地授权相关管理入口
-   - 本地版根入口守卫已切换到租户链路：
-     - 未登录访问根入口时，会进入租户登录视图
-     - 不再要求平台管理员登录
-   - 本地版登录策略已收紧为：
-     - 本地版不再要求平台管理员
-     - 当前本地版初始化入口改为租户管理员初始化
-     - 租户管理员在授权缺失或无效时仍可登录，以便导入授权或输入续期码
-     - 成员在授权缺失或无效时禁止登录
-     - 租户管理员和成员在授权过期时允许只读登录
-   - 本地版写操作已增加统一拦截：
-     - 创建租户
-     - 调整人数上限
-     - 平台下发 Agent
-     - 租户新增成员
-     - 租户给成员分配 Agent
-     - 授权过期后统一返回只读错误
-   - 本地版页面已去除积分/倍率主逻辑：
-     - 平台下发 Agent 时不再要求初始积分和倍率
-     - 成员 Agent 选择页不再显示剩余积分
-     - 本地聊天页只显示授权只读提示，不走积分扣费语义
+
+- tenant sidecar 已支持通过环境变量切换 `cloud` / `local` 版型
+- 本地版已新增签名 License 文件校验
+- 本地版已支持导入授权文件
+- 本地版已支持输入续期码
+- 本地版已把授权状态透出到：
+  - 租户登录页
+  - 本地授权相关管理入口
+- 本地版根入口守卫已切换到租户链路：
+  - 未登录访问根入口时，会进入租户登录视图
+  - 不再要求平台管理员登录
+- 本地版登录策略已收紧为：
+  - 本地版不再要求平台管理员
+  - 当前本地版初始化入口改为租户管理员初始化
+  - 租户管理员在授权缺失或无效时仍可登录，以便导入授权或输入续期码
+  - 成员在授权缺失或无效时禁止登录
+  - 租户管理员和成员在授权过期时允许只读登录
+- 本地版写操作已增加统一拦截：
+  - 创建租户
+  - 调整人数上限
+  - 平台下发 Agent
+  - 租户新增成员
+  - 租户给成员分配 Agent
+  - 授权过期后统一返回只读错误
+- 本地版页面已去除积分/倍率主逻辑：
+  - 平台下发 Agent 时不再要求初始积分和倍率
+  - 成员 Agent 选择页不再显示剩余积分
+  - 本地聊天页只显示授权只读提示，不走积分扣费语义
 
 12. 非 Docker 本地运行包路径已落地
-   - 新增本地运行包脚本：`tools/openclaw-control-ui-echarts/package-local-runtime.mjs`
-   - 当前可以把本地部署版打包成“预装运行时 + tenant sidecar + 零侵入 Control UI + 本地授权模板”的交付目录
-   - 运行包内已提供：
-     - `runtime.env.example`
-     - `openclaw.local.example.json5`
-     - `start-gateway`
-     - `start-tenant-platform`
-     - `start-local-runtime`
-   - 运行包启动前会自动：
-     - 把 Gateway token 同步写入 Control UI 预启动脚本
-     - 建立 `workspace-downloads` 和 `workspace-agent-downloads` 指向本地数据目录
-     - 强制本地版 sidecar 使用 `local` 版型
-   - 本地版 tenant API 启动链路已增加：
-     - bootstrap 重试
-     - `localhost / 127.0.0.1 / 当前主机名` 多基址回退
-     - 用于降低本机启动初期出现 `API 暂不可用：Failed to fetch` 的概率
-   - 这条路径的目标不是交付源码仓库，而是交付可运行目录
-   - 当前交付形态默认面向：
-     - 不允许 Docker 的客户机器
-     - 只需要运行、不参与构建的客户环境
-   - 当前本地运行包前提：
-     - 客户机器安装 Node.js `22.12+`
-     - 客户自行提供模型 API Key 或 coding plan
-     - 客户导入本地授权文件或输入续期码
-   - 当前已补充面向客户交付的部署说明文档：
-     - 运行包内会附带客户部署说明
-     - 说明文件覆盖启动、授权、公钥放置、续期与到期行为
-   - 当前已补充可直接填写的本地模板：
-     - `runtime.env.example` 已补充模型凭证占位项
-     - `openclaw.local.example.json5` 已补充最小默认模型结构
-     - 客户现场人员可以直接按模板替换实际 provider 和 model
-   - 当前运行包默认已直接附带：
-     - `runtime.env`
-     - `data/.openclaw/openclaw.json`
-   - 当前默认 `OPENCLAW_GATEWAY_BIND=loopback`，本机开箱即可启动，不需要额外配置 Control UI origin
-   - 即使客户误删 `data/.openclaw/openclaw.json`，启动准备层也会按包内模板自动补回
-   - 当前已补齐非 Docker 运行包兼容层：
-     - 打包脚本会额外把运行时缺失的依赖一起装进运行包
-     - 运行包内会为 `file-type/core.js` 自动生成兼容入口
-     - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `loopback`
-     - 目标是避免 Windows 测试机出现缺包启动失败和非法 bind 值启动失败
+
+- 新增本地运行包脚本：`tools/openclaw-control-ui-echarts/package-local-runtime.mjs`
+- 当前可以把本地部署版打包成“预装运行时 + tenant sidecar + 零侵入 Control UI + 本地授权模板”的交付目录
+- 运行包内已提供：
+  - `runtime.env.example`
+  - `openclaw.local.example.json5`
+  - `start-gateway`
+  - `start-tenant-platform`
+  - `start-local-runtime`
+- 运行包启动前会自动：
+  - 把 Gateway token 同步写入 Control UI 预启动脚本
+  - 建立 `workspace-downloads` 和 `workspace-agent-downloads` 指向本地数据目录
+  - 强制本地版 sidecar 使用 `local` 版型
+- 本地版 tenant API 启动链路已增加：
+  - bootstrap 重试
+  - `localhost / 127.0.0.1 / 当前主机名` 多基址回退
+  - 用于降低本机启动初期出现 `API 暂不可用：Failed to fetch` 的概率
+- 这条路径的目标不是交付源码仓库，而是交付可运行目录
+- 当前交付形态默认面向：
+  - 不允许 Docker 的客户机器
+  - 只需要运行、不参与构建的客户环境
+- 当前本地运行包前提：
+  - 客户机器安装 Node.js `22.12+`
+  - 客户自行提供模型 API Key 或 coding plan
+  - 客户导入本地授权文件或输入续期码
+- 当前已补充面向客户交付的部署说明文档：
+  - 运行包内会附带客户部署说明
+  - 说明文件覆盖启动、授权、公钥放置、续期与到期行为
+- 当前已补充可直接填写的本地模板：
+  - `runtime.env.example` 已补充模型凭证占位项
+  - `openclaw.local.example.json5` 已补充最小默认模型结构
+  - 客户现场人员可以直接按模板替换实际 provider 和 model
+- 当前运行包默认已直接附带：
+  - `runtime.env`
+  - `data/.openclaw/openclaw.json`
+- 当前默认 `OPENCLAW_GATEWAY_BIND=loopback`，本机开箱即可启动，不需要额外配置 Control UI origin
+- 即使客户误删 `data/.openclaw/openclaw.json`，启动准备层也会按包内模板自动补回
+- 当前已补齐非 Docker 运行包兼容层：
+  - 打包脚本会额外把运行时缺失的依赖一起装进运行包
+  - 运行包内会为 `file-type/core.js` 自动生成兼容入口
+  - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `loopback`
+  - 目标是避免 Windows 测试机出现缺包启动失败和非法 bind 值启动失败
 
 13. 成员级 Agent 隔离（方案 A + 部分模板继承）已落地
-   - 租户管理员执行“成员分配 Agent”时，sidecar 会为该 `成员-租户Agent` 生成稳定的派生 `agentId`
-   - 该派生 `agentId` 会写入 `user_agent_assignments.derived_agent_id`，并通过列表接口返回给租户成员聊天页
-   - sidecar 会为派生 `agentId` 初始化独立工作区：
-     - 目标目录：`workspace-agents/<derived-agent-id>`
-     - 运行时别名：`workspace-<derived-agent-id>`
-   - 工作区初始化采用“部分模板继承”：
-     - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / skills`
-     - 仅在派生工作区缺失时复制，不覆盖成员后续个性化修改
-   - 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态
+
+- 租户管理员执行“成员分配 Agent”时，sidecar 会为该 `成员-租户Agent` 生成稳定的派生 `agentId`
+- 该派生 `agentId` 会写入 `user_agent_assignments.derived_agent_id`，并通过列表接口返回给租户成员聊天页
+- sidecar 会为派生 `agentId` 初始化独立工作区：
+  - 目标目录：`workspace-agents/<derived-agent-id>`
+  - 运行时别名：`workspace-<derived-agent-id>`
+- 工作区初始化采用“部分模板继承”：
+  - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / skills`
+  - 仅在派生工作区缺失时复制，不覆盖成员后续个性化修改
+- 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态
 
 ## 十二、当前还需要继续确认的事项
 

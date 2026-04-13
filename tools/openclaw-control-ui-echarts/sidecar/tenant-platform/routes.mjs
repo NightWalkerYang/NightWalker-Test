@@ -12,19 +12,17 @@ import {
   listTenants,
   listTenantAgents,
   listTenantMembers,
+  listTenantUsageStats,
   logAudit,
   readOpenClawAgentCatalog,
+  registerTenantAgentSession,
+  syncTenantUsageRecords,
   updateTenantMemberLimit,
   upsertTenantAgent,
-  registerTenantAgentSession,
   hideTenantAgentSession,
   listTenantAgentSessions,
 } from "./db.mjs";
-import {
-  applyLocalRenewalCode,
-  importLocalLicense,
-  readLocalLicenseState,
-} from "./license.mjs";
+import { applyLocalRenewalCode, importLocalLicense, readLocalLicenseState } from "./license.mjs";
 
 function sendJson(request, response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -61,8 +59,7 @@ function buildSessionPayload(user, tenantContext, config, localLicenseState) {
     role: user.role,
     tenantId: tenantContext?.tenantId ?? null,
     tenantName: tenantContext?.tenantName ?? null,
-    deploymentMode:
-      config.edition === "local" ? "local" : (tenantContext?.deploymentMode ?? null),
+    deploymentMode: config.edition === "local" ? "local" : (tenantContext?.deploymentMode ?? null),
     readonly: localReadonly,
     edition: config.edition,
     licenseStatus: localLicenseState?.status ?? null,
@@ -300,7 +297,10 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "GET" && relativePath === "/platform/local-license") {
       const session = requireSession(request, response, deps);
-      if (!session || !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])) {
+      if (
+        !session ||
+        !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])
+      ) {
         return;
       }
       sendJson(request, response, 200, { ok: true, data: localLicense });
@@ -309,7 +309,10 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "POST" && relativePath === "/platform/local-license/import") {
       const session = requireSession(request, response, deps);
-      if (!session || !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])) {
+      if (
+        !session ||
+        !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])
+      ) {
         return;
       }
       if (deps.config.edition !== "local") {
@@ -331,7 +334,10 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "POST" && relativePath === "/platform/local-license/renew") {
       const session = requireSession(request, response, deps);
-      if (!session || !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])) {
+      if (
+        !session ||
+        !requireEditionRole(request, response, session, deps, ["platform_admin"], ["tenant_admin"])
+      ) {
         return;
       }
       if (deps.config.edition !== "local") {
@@ -376,11 +382,18 @@ export function createTenantPlatformRouter(deps) {
           adminUsername: String(body.adminUsername || "").trim(),
           adminPassword: String(body.adminPassword || ""),
           memberLimit: Number.parseInt(String(body.memberLimit || "5"), 10),
-          deploymentMode: deps.config.edition === "local" ? "local" : (body.deploymentMode === "local" ? "local" : "cloud"),
+          deploymentMode:
+            deps.config.edition === "local"
+              ? "local"
+              : body.deploymentMode === "local"
+                ? "local"
+                : "cloud",
           licenseExpiresAt:
-            deps.config.edition === "local" ? null : (String(body.licenseExpiresAt || "").trim() || null),
+            deps.config.edition === "local"
+              ? null
+              : String(body.licenseExpiresAt || "").trim() || null,
           renewalCode:
-            deps.config.edition === "local" ? null : (String(body.renewalCode || "").trim() || null),
+            deps.config.edition === "local" ? null : String(body.renewalCode || "").trim() || null,
         });
         logAudit(deps.db, {
           userId: session.userId,
@@ -495,11 +508,11 @@ export function createTenantPlatformRouter(deps) {
           rateMultiplier:
             deps.config.edition === "local"
               ? 1
-              : (Number.parseFloat(String(body.rateMultiplier || "1")) || 1),
+              : Number.parseFloat(String(body.rateMultiplier || "1")) || 1,
           balancePoints:
             deps.config.edition === "local"
               ? 0
-              : (Number.parseFloat(String(body.balancePoints || "0")) || 0),
+              : Number.parseFloat(String(body.balancePoints || "0")) || 0,
           status: "active",
         });
         const agent = listTenantAgents(deps.db, tenantId, configAgents).find(
@@ -520,7 +533,10 @@ export function createTenantPlatformRouter(deps) {
       if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
         return;
       }
-      sendJson(request, response, 200, { ok: true, data: listTenantMembers(deps.db, session.tenantId) });
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantMembers(deps.db, session.tenantId),
+      });
       return;
     }
 
@@ -584,6 +600,33 @@ export function createTenantPlatformRouter(deps) {
             assignmentId: assignment.assignmentId,
             derivedAgentId: assignment.derivedAgentId,
           },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/usage-stats") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        sendJson(request, response, 200, {
+          ok: true,
+          data: listTenantUsageStats(
+            deps.db,
+            {
+              tenantId: session.tenantId,
+              startDate: url.searchParams.get("startDate"),
+              endDate: url.searchParams.get("endDate"),
+            },
+            configAgents,
+          ),
         });
       } catch (error) {
         sendJson(request, response, 400, {
@@ -661,6 +704,36 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "POST" && relativePath === "/member/usage-records/sync") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenantAgentId = String(body.tenantAgentId || "").trim();
+        const openclawSessionKey = String(body.openclawSessionKey || "").trim();
+        if (!tenantAgentId || !openclawSessionKey) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        const result = syncTenantUsageRecords(deps.db, {
+          tenantId: session.tenantId,
+          userId: session.userId,
+          tenantAgentId,
+          openclawSessionKey,
+          records: Array.isArray(body.records) ? body.records : [],
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     if (request.method === "POST" && relativePath === "/member/sessions/hide") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["member"])) {
@@ -701,13 +774,15 @@ export function createTenantPlatformRouter(deps) {
         }
         deps.db.exec("BEGIN TRANSACTION");
         try {
-          deps.db.prepare(
-            `DELETE FROM tenant_agent_sessions
-             WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`
-          ).run({
-            userId: session.userId,
-            openclawSessionKey,
-          });
+          deps.db
+            .prepare(
+              `DELETE FROM tenant_agent_sessions
+             WHERE user_id = @userId AND openclaw_session_key = @openclawSessionKey`,
+            )
+            .run({
+              userId: session.userId,
+              openclawSessionKey,
+            });
           deps.db.exec("COMMIT");
           sendJson(request, response, 200, { ok: true });
         } catch (err) {

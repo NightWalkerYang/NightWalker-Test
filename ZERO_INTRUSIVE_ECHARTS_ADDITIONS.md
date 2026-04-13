@@ -196,8 +196,10 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
+- Tenant-admin management now also includes a native-shell `耗量统计` view with today-by-default range filtering and by-member, by-Agent, and by-day aggregates sourced from sidecar usage records.
 - Tenant-member login now also lands inside the native Control UI shell, with only the injected `Agent` dropdown and an embedded `Agent选择` card view for assigned Agents.
 - Tenant members now click assigned Agent cards into the native `/chat` page, where a zero-intrusive sidebar adds `新建会话`, a per-Agent session list, and front-end-only session hiding with a reusable confirm dialog matching the standard topbar modal style, while `Agent选择` moves into the native top breadcrumb area and the native chat content and features remain intact.
+- Tenant member chat now syncs assistant usage snapshots from existing `chat.history` results into the tenant platform sidecar with idempotent message fingerprints, so tenant-admin usage statistics stay aligned with what the chat page already shows.
 - Tenant member session titles now prefer the first member message truncated to 20 characters, and legacy timestamp-style placeholder titles are backfilled from `chat.history` instead of persisting as the final session label.
 - Tenant members now get a short `已经是新的会话了` toast instead of generating another unsent draft session when they click `新建会话` while already in a brand-new draft chat.
 - Platform-admin identity and logout status now occupy the native topbar search slot globally across the root control UI.

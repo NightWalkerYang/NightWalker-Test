@@ -4,7 +4,12 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { openTenantPlatformDb, closeTenantPlatformDb } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
+import {
+  assignTenantAgentToUser,
+  closeTenantPlatformDb,
+  openTenantPlatformDb,
+  upsertTenantAgent,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 import { createTenantPlatformRouter } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 
 const cleanupRoots = new Set();
@@ -19,17 +24,13 @@ function stableStringify(value) {
   }
   return `{${Object.entries(value)
     .filter(([, entry]) => entry !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right))
+    .toSorted(([left], [right]) => left.localeCompare(right))
     .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`)
     .join(",")}}`;
 }
 
 function encodeBase64Url(buffer) {
-  return buffer
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function signLicense(privateKey, overrides = {}) {
@@ -100,7 +101,12 @@ async function startSandboxServer(sandbox) {
   const server = http.createServer((request, response) => {
     Promise.resolve(router(request, response)).catch((error) => {
       response.writeHead(500, { "content-type": "application/json; charset=utf-8" });
-      response.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+      response.end(
+        JSON.stringify({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -319,5 +325,146 @@ describe("tenant platform local edition", () => {
     });
     expect(adminLogin.status).toBe(200);
     expect(adminLogin.payload.data.session.role).toBe("tenant_admin");
+  });
+
+  it("syncs member usage records and exposes tenant usage stats for tenant admins", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(createMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 0,
+      status: "active",
+    });
+    assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:usage";
+    const firstSync = await requestJson(baseUrl, "/member/usage-records/sync", {
+      method: "POST",
+      token: memberLogin.payload.data.token,
+      body: {
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "assistant-1",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "openai",
+            model: "openai/gpt-5.4",
+            inputTokens: 120,
+            outputTokens: 45,
+            totalTokens: 165,
+            totalCost: 0.12,
+          },
+        ],
+      },
+    });
+    expect(firstSync.status).toBe(200);
+    expect(firstSync.payload.data.inserted).toBe(1);
+
+    const secondSync = await requestJson(baseUrl, "/member/usage-records/sync", {
+      method: "POST",
+      token: memberLogin.payload.data.token,
+      body: {
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "assistant-1",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "openai",
+            model: "openai/gpt-5.4",
+            inputTokens: 120,
+            outputTokens: 45,
+            totalTokens: 165,
+            totalCost: 0.12,
+          },
+        ],
+      },
+    });
+    expect(secondSync.status).toBe(200);
+    expect(secondSync.payload.data.updated).toBe(1);
+
+    const stats = await requestJson(
+      baseUrl,
+      "/tenant/admin/usage-stats?startDate=2026-04-13&endDate=2026-04-13",
+      {
+        token: tenantAdminToken,
+      },
+    );
+    expect(stats.status).toBe(200);
+    expect(stats.payload.data.totals.totalTokens).toBe(165);
+    expect(stats.payload.data.totals.responseCount).toBe(1);
+    expect(stats.payload.data.byMember).toEqual([
+      expect.objectContaining({
+        username: "member-a",
+        totalTokens: 165,
+      }),
+    ]);
+    expect(stats.payload.data.byAgent).toEqual([
+      expect.objectContaining({
+        tenantAgentId,
+        agentId: "subotech-finance",
+        agentName: "苏博泰克财务分析助手",
+        totalTokens: 165,
+      }),
+    ]);
+    expect(stats.payload.data.byDay).toEqual([
+      expect.objectContaining({
+        usageDay: "2026-04-13",
+        totalTokens: 165,
+      }),
+    ]);
   });
 });

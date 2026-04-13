@@ -1,3 +1,5 @@
+import { createTenantApiClient } from "./api-client.js";
+import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
 import {
   TENANT_AGENT_SELECTOR_ROUTE,
   buildTenantMemberChatRoute,
@@ -7,12 +9,6 @@ import {
   readSelectedTenantAgent,
   readTenantSession,
 } from "./tenant-context.js";
-import { createTenantApiClient } from "./api-client.js";
-import {
-  bootTenantRouteSync,
-  navigateTenantRoute,
-  onTenantRouteChange,
-} from "./route-sync.js";
 
 const DOC_ATTR = "data-oc-member-chat-route";
 const STYLE_ATTR = "data-oc-member-chat-surface-style";
@@ -168,6 +164,167 @@ function buildSessionTitleFromText(value) {
   return text.length > 20 ? `${text.slice(0, 20)}...` : text;
 }
 
+function normalizeUsageMetric(value) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function extractUsageSnapshot(message) {
+  const usage = message?.usage;
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+  const inputTokens = normalizeUsageMetric(usage.input ?? usage.inputTokens);
+  const outputTokens = normalizeUsageMetric(usage.output ?? usage.outputTokens);
+  const cacheReadTokens = normalizeUsageMetric(usage.cacheRead ?? usage.cache_read_input_tokens);
+  const cacheWriteTokens = normalizeUsageMetric(
+    usage.cacheWrite ?? usage.cache_creation_input_tokens,
+  );
+  const totalTokensRaw = normalizeUsageMetric(usage.total ?? usage.totalTokens);
+  const totalTokens =
+    totalTokensRaw || inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+  const totalCost = normalizeUsageMetric(message?.cost?.total ?? usage?.cost?.total);
+  if (!totalTokens && !totalCost) {
+    return null;
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    totalTokens,
+    totalCost,
+  };
+}
+
+function extractMessageTimestampIso(message) {
+  const raw = message?.timestamp;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return new Date(raw).toISOString();
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+  }
+  return "";
+}
+
+function formatUsageDay(timestampIso) {
+  const parsed = Date.parse(String(timestampIso || "").trim());
+  const date = Number.isNaN(parsed) ? new Date() : new Date(parsed);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+function buildUsageFingerprint(message, index, usageSnapshot, messageTimestamp) {
+  const messageId = String(message?.id || message?.messageId || message?.message_id || "").trim();
+  if (messageId) {
+    return `message:${messageId}`;
+  }
+  return [
+    "idx",
+    String(index),
+    "ts",
+    String(messageTimestamp || ""),
+    "model",
+    String(message?.model || ""),
+    "provider",
+    String(message?.provider || ""),
+    "in",
+    String(usageSnapshot.inputTokens),
+    "out",
+    String(usageSnapshot.outputTokens),
+    "cr",
+    String(usageSnapshot.cacheReadTokens),
+    "cw",
+    String(usageSnapshot.cacheWriteTokens),
+    "total",
+    String(usageSnapshot.totalTokens),
+  ].join("|");
+}
+
+function buildUsageRecords(messages) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+  return messages.flatMap((message, index) => {
+    if (String(message?.role || "").trim() !== "assistant") {
+      return [];
+    }
+    const usageSnapshot = extractUsageSnapshot(message);
+    if (!usageSnapshot) {
+      return [];
+    }
+    const messageTimestamp = extractMessageTimestampIso(message) || new Date().toISOString();
+    return [
+      {
+        sourceFingerprint: buildUsageFingerprint(message, index, usageSnapshot, messageTimestamp),
+        messageTimestamp,
+        usageDay: formatUsageDay(messageTimestamp),
+        provider: String(message?.provider || "").trim(),
+        model: String(message?.model || "").trim(),
+        inputTokens: usageSnapshot.inputTokens,
+        outputTokens: usageSnapshot.outputTokens,
+        cacheReadTokens: usageSnapshot.cacheReadTokens,
+        cacheWriteTokens: usageSnapshot.cacheWriteTokens,
+        totalTokens: usageSnapshot.totalTokens,
+        totalCost: usageSnapshot.totalCost,
+      },
+    ];
+  });
+}
+
+async function syncMemberUsageRecords(controller, sessionKey, messages) {
+  if (!controller?.selectedAgent?.id || !sessionKey) {
+    return;
+  }
+  const records = buildUsageRecords(messages);
+  if (records.length === 0) {
+    return;
+  }
+  try {
+    await createTenantApiClient().syncMemberUsageRecords({
+      tenantAgentId: controller.selectedAgent.id,
+      openclawSessionKey: sessionKey,
+      records,
+    });
+  } catch (error) {
+    console.warn("Failed to sync member usage records", error);
+  }
+}
+
+function scheduleMemberUsageSync(controller, sessionKey, attempt = 0) {
+  if (!controller?.app?.client || !sessionKey) {
+    return;
+  }
+  const maxAttempts = 12;
+  const delayMs = attempt === 0 ? 1200 : 1800;
+  window.setTimeout(async () => {
+    const activeController = window._ocMemberChatSurfaceController;
+    if (!activeController || activeController.currentSessionKey !== sessionKey) {
+      return;
+    }
+    if (activeController.app?.chatSending || activeController.app?.chatRunId) {
+      if (attempt < maxAttempts) {
+        scheduleMemberUsageSync(activeController, sessionKey, attempt + 1);
+      }
+      return;
+    }
+    try {
+      const historyResp = await activeController.app.client.request("chat.history", {
+        sessionKey,
+        limit: 200,
+      });
+      await syncMemberUsageRecords(activeController, sessionKey, historyResp?.messages);
+    } catch (error) {
+      console.warn("Failed to refresh member usage records from history", error);
+    }
+  }, delayMs);
+}
+
 function resolveSessionLabel(row, index) {
   const label = String(row?.label || "").trim();
   if (label) {
@@ -255,11 +412,20 @@ function buildTopActionMarkup(selectedAgent) {
 }
 
 function ensureVisibleCurrentSession(sessions, currentSessionKey) {
-  const normalizedCurrent = String(currentSessionKey || "").trim().toLowerCase();
+  const normalizedCurrent = String(currentSessionKey || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedCurrent) {
     return sessions;
   }
-  if (sessions.some((row) => String(row?.key || "").trim().toLowerCase() === normalizedCurrent)) {
+  if (
+    sessions.some(
+      (row) =>
+        String(row?.key || "")
+          .trim()
+          .toLowerCase() === normalizedCurrent,
+    )
+  ) {
     return sessions;
   }
   return [{ key: normalizedCurrent, label: "新会话", updatedAt: Date.now() }, ...sessions];
@@ -277,7 +443,12 @@ function findTargetSessionKey(selectedAgent, session, href, sessions) {
   }
   const legacy = buildTenantMemberLegacySessionKey(selectedAgent);
   if (legacy) {
-    const legacyRow = sessions.find((row) => String(row.key || "").trim().toLowerCase() === legacy);
+    const legacyRow = sessions.find(
+      (row) =>
+        String(row.key || "")
+          .trim()
+          .toLowerCase() === legacy,
+    );
     if (legacyRow?.key) {
       return legacyRow.key.trim().toLowerCase();
     }
@@ -294,11 +465,13 @@ async function loadMemberSessions(app, selectedAgent, session) {
     console.error("Failed to list member sessions from platform", error);
   }
   const registeredMap = new Map(
-    registeredSessions.map((r) => [String(r.openclawSessionKey).trim().toLowerCase(), r])
+    registeredSessions.map((r) => [String(r.openclawSessionKey).trim().toLowerCase(), r]),
   );
 
   const rows = normalizeSessionRows(await app.client.request("sessions.list", {}));
-  const filteredFromGateway = rows.filter((row) => isTenantMemberSessionKey(row.key, session, selectedAgent));
+  const filteredFromGateway = rows.filter((row) =>
+    isTenantMemberSessionKey(row.key, session, selectedAgent),
+  );
   const result = [];
 
   const keysToHydrateFromHistory = [];
@@ -317,7 +490,10 @@ async function loadMemberSessions(app, selectedAgent, session) {
     await Promise.all(
       keysToHydrateFromHistory.map(async (key) => {
         try {
-          const historyResp = await app.client.request("chat.history", { sessionKey: key, limit: 200 });
+          const historyResp = await app.client.request("chat.history", {
+            sessionKey: key,
+            limit: 200,
+          });
           const nextTitle = findFirstUserMessageTitle(historyResp?.messages);
           if (nextTitle) {
             hydratedTitleMap.set(key, nextTitle);
@@ -356,8 +532,10 @@ async function loadMemberSessions(app, selectedAgent, session) {
           openclawSessionKey: key,
           title: nextTitle,
         });
-        if (dbRow) dbRow.title = nextTitle;
-      } catch (err) {}
+        if (dbRow) {
+          dbRow.title = nextTitle;
+        }
+      } catch {}
     }
 
     result.push({
@@ -369,7 +547,9 @@ async function loadMemberSessions(app, selectedAgent, session) {
 
   for (const dbRow of registeredSessions) {
     const key = String(dbRow.openclawSessionKey).trim().toLowerCase();
-    if (dbRow.hiddenAt) continue;
+    if (dbRow.hiddenAt) {
+      continue;
+    }
     if (!result.some((r) => String(r.key).toLowerCase() === key)) {
       result.push({
         key: dbRow.openclawSessionKey,
@@ -379,11 +559,15 @@ async function loadMemberSessions(app, selectedAgent, session) {
     }
   }
 
-  return result.toSorted((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+  return result.toSorted(
+    (left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0),
+  );
 }
 
 async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) {
-  const normalizedSessionKey = String(sessionKey || "").trim().toLowerCase();
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedSessionKey) {
     return;
   }
@@ -392,7 +576,10 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
     return;
   }
   const currentRow = controller.sessions.find(
-    (row) => String(row?.key || "").trim().toLowerCase() === normalizedSessionKey,
+    (row) =>
+      String(row?.key || "")
+        .trim()
+        .toLowerCase() === normalizedSessionKey,
   );
   const currentTitle = normalizeSessionTitleValue(currentRow?.title || currentRow?.label);
   if (!isProvisionalSessionTitle(currentTitle)) {
@@ -410,13 +597,21 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
   }
 
   for (const row of controller.sessions) {
-    if (String(row?.key || "").trim().toLowerCase() === normalizedSessionKey) {
+    if (
+      String(row?.key || "")
+        .trim()
+        .toLowerCase() === normalizedSessionKey
+    ) {
       row.title = nextTitle;
       row.label = nextTitle;
     }
   }
   for (const row of controller.sessionsFromGateway) {
-    if (String(row?.key || "").trim().toLowerCase() === normalizedSessionKey) {
+    if (
+      String(row?.key || "")
+        .trim()
+        .toLowerCase() === normalizedSessionKey
+    ) {
       row.title = nextTitle;
       row.label = nextTitle;
     }
@@ -433,7 +628,9 @@ function ensureSection(sidebar) {
   section.className = SECTION_CLASS;
   section.setAttribute(SECTION_ATTR, "true");
   section.setAttribute("data-oc-role-nav", "true");
-  const firstNativeSection = sidebar.querySelector(":scope > .nav-section:not(.oc-platform-management-section)");
+  const firstNativeSection = sidebar.querySelector(
+    ":scope > .nav-section:not(.oc-platform-management-section)",
+  );
   sidebar.insertBefore(section, firstNativeSection);
   return section;
 }
@@ -479,12 +676,15 @@ function closeDialog(dialog) {
 async function applyHiddenDelete(controller, nextHiddenKey) {
   try {
     await createTenantApiClient().hideMemberSession({ openclawSessionKey: nextHiddenKey });
-  } catch (error) {
+  } catch {
     showTransientToast(controller, "删除会话失败");
     return;
   }
   controller.sessions = controller.sessions.filter(
-    (row) => String(row?.key || "").trim().toLowerCase() !== nextHiddenKey,
+    (row) =>
+      String(row?.key || "")
+        .trim()
+        .toLowerCase() !== nextHiddenKey,
   );
   if (controller.currentSessionKey === nextHiddenKey) {
     const fallbackSessionKey =
@@ -493,7 +693,10 @@ async function applyHiddenDelete(controller, nextHiddenKey) {
     controller.currentSessionKey = fallbackSessionKey;
     controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
     controller.hasDraftSession = !controller.sessionsFromGateway.some(
-      (row) => String(row?.key || "").trim().toLowerCase() === fallbackSessionKey,
+      (row) =>
+        String(row?.key || "")
+          .trim()
+          .toLowerCase() === fallbackSessionKey,
     );
     syncRouteForSession(controller.selectedAgent, fallbackSessionKey, { replace: true });
     pinMemberChatSession(controller.app, fallbackSessionKey);
@@ -610,7 +813,9 @@ function pinMemberChatSession(app, sessionKey) {
     app.chatStreamStartedAt = null;
     app.chatStream = null;
     app.chatLoading = true;
-    if (typeof app.resetToolStream === "function") app.resetToolStream();
+    if (typeof app.resetToolStream === "function") {
+      app.resetToolStream();
+    }
     app.requestUpdate?.();
 
     // Set the new session key directly (bypass overridden applySettings for this)
@@ -622,23 +827,33 @@ function pinMemberChatSession(app, sessionKey) {
 
     // Load chat history for the new session directly via the client
     const targetKey = sessionKey;
-    app.client.request("chat.history", { sessionKey: targetKey, limit: 200 })
-      .then(res => {
+    app.client
+      .request("chat.history", { sessionKey: targetKey, limit: 200 })
+      .then((res) => {
         if (app.__ocPinnedSessionKey === targetKey) {
           const msgs = Array.isArray(res?.messages) ? res.messages : [];
-          app.chatMessages = msgs.filter(m => {
+          app.chatMessages = msgs.filter((m) => {
             // Filter out silent replies (openclaw internal)
-            if (m?.role !== "assistant") return true;
+            if (m?.role !== "assistant") {
+              return true;
+            }
             const text = typeof m?.text === "string" ? m.text : "";
             return !text.startsWith("<|openclaw-silent|");
           });
           app.chatThinkingLevel = res?.thinkingLevel ?? null;
           app.chatStream = null;
           app.chatStreamStartedAt = null;
-          if (typeof app.resetToolStream === "function") app.resetToolStream();
-          if (typeof app.resetChatScroll === "function") app.resetChatScroll();
+          if (typeof app.resetToolStream === "function") {
+            app.resetToolStream();
+          }
+          if (typeof app.resetChatScroll === "function") {
+            app.resetChatScroll();
+          }
           app.chatLoading = false;
           app.requestUpdate?.();
+          if (window._ocMemberChatSurfaceController?.currentSessionKey === targetKey) {
+            void syncMemberUsageRecords(window._ocMemberChatSurfaceController, targetKey, msgs);
+          }
         }
       })
       .catch(() => {
@@ -661,6 +876,10 @@ function pinMemberChatSession(app, sessionKey) {
             window._ocMemberChatSurfaceController,
             window._ocMemberChatSurfaceController.currentSessionKey,
             params?.message,
+          );
+          scheduleMemberUsageSync(
+            window._ocMemberChatSurfaceController,
+            window._ocMemberChatSurfaceController.currentSessionKey,
           );
         }
         setTimeout(() => {
@@ -701,12 +920,14 @@ function attachSectionHandlers(section, controller) {
         return;
       }
       const nextSessionKey = createTenantMemberSessionKey(ctrl.session, ctrl.selectedAgent);
-      
-      createTenantApiClient().registerMemberSession({
-        tenantAgentId: ctrl.selectedAgent.id,
-        openclawSessionKey: nextSessionKey,
-        title: "新会话"
-      }).catch(() => {});
+
+      createTenantApiClient()
+        .registerMemberSession({
+          tenantAgentId: ctrl.selectedAgent.id,
+          openclawSessionKey: nextSessionKey,
+          title: "新会话",
+        })
+        .catch(() => {});
 
       ctrl.currentSessionKey = nextSessionKey;
       ctrl.sessions = ensureVisibleCurrentSession(ctrl.sessions, nextSessionKey);
@@ -719,24 +940,32 @@ function attachSectionHandlers(section, controller) {
     const sessionButton = target.closest("[data-member-chat-session]");
     if (sessionButton instanceof HTMLElement) {
       event.preventDefault();
-      const nextSessionKey = String(sessionButton.dataset.memberChatSession || "").trim().toLowerCase();
+      const nextSessionKey = String(sessionButton.dataset.memberChatSession || "")
+        .trim()
+        .toLowerCase();
       if (!nextSessionKey || nextSessionKey === ctrl.currentSessionKey) {
         return;
       }
-      
+
       if (ctrl.hasDraftSession) {
-        try {
-          createTenantApiClient().deleteMemberSession({ openclawSessionKey: ctrl.currentSessionKey });
-        } catch (e) {}
+        void createTenantApiClient()
+          .deleteMemberSession({ openclawSessionKey: ctrl.currentSessionKey })
+          .catch(() => {});
         ctrl.sessions = ctrl.sessions.filter(
-          (row) => String(row?.key || "").trim().toLowerCase() !== ctrl.currentSessionKey
+          (row) =>
+            String(row?.key || "")
+              .trim()
+              .toLowerCase() !== ctrl.currentSessionKey,
         );
         ctrl.hasDraftSession = false;
       }
-      
+
       ctrl.currentSessionKey = nextSessionKey;
       ctrl.hasDraftSession = !ctrl.sessionsFromGateway.some(
-        (row) => String(row?.key || "").trim().toLowerCase() === nextSessionKey,
+        (row) =>
+          String(row?.key || "")
+            .trim()
+            .toLowerCase() === nextSessionKey,
       );
       syncRouteForSession(ctrl.selectedAgent, nextSessionKey, { replace: false });
       pinMemberChatSession(ctrl.app, nextSessionKey);
@@ -747,7 +976,9 @@ function attachSectionHandlers(section, controller) {
     if (deleteButton instanceof HTMLElement) {
       event.preventDefault();
       event.stopPropagation();
-      const nextHiddenKey = String(deleteButton.getAttribute(DELETE_ATTR) || "").trim().toLowerCase();
+      const nextHiddenKey = String(deleteButton.getAttribute(DELETE_ATTR) || "")
+        .trim()
+        .toLowerCase();
       if (!nextHiddenKey) {
         return;
       }
@@ -777,9 +1008,11 @@ function attachTopActionHandlers(root) {
     }
     event.preventDefault();
     if (window._ocMemberChatSurfaceController?.hasDraftSession) {
-      try {
-        createTenantApiClient().deleteMemberSession({ openclawSessionKey: window._ocMemberChatSurfaceController.currentSessionKey });
-      } catch (e) {}
+      void createTenantApiClient()
+        .deleteMemberSession({
+          openclawSessionKey: window._ocMemberChatSurfaceController.currentSessionKey,
+        })
+        .catch(() => {});
     }
     navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE);
   });
@@ -853,7 +1086,10 @@ async function syncMemberChatSurface() {
     sessions: ensureVisibleCurrentSession(sessionsFromGateway, currentSessionKey),
     currentSessionKey,
     hasDraftSession: !sessionsFromGateway.some(
-      (row) => String(row?.key || "").trim().toLowerCase() === currentSessionKey,
+      (row) =>
+        String(row?.key || "")
+          .trim()
+          .toLowerCase() === currentSessionKey,
     ),
     pendingDeleteSessionKey: "",
     toastTimer: 0,
@@ -865,6 +1101,11 @@ async function syncMemberChatSurface() {
   syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
   pinMemberChatSession(app, currentSessionKey);
   window._ocMemberChatSurfaceController = controller;
+  void syncMemberUsageRecords(
+    controller,
+    currentSessionKey,
+    Array.isArray(app.chatMessages) ? app.chatMessages : [],
+  );
 }
 window.syncMemberChatSurface = syncMemberChatSurface;
 
