@@ -1395,7 +1395,7 @@
      - 支持搜索成员、Agent 或模型
      - 支持服务端分页查看成员、Agent、总 token、输入、输出、耗用积分与时间
    - 租户 sidecar 已新增成员聊天耗量明细落库：
-     - 成员聊天页会从现有 `chat.history` 提取 assistant usage
+     - 成员聊天页会从现有 `chat.history` 提取 assistant usage，并兼容 `input_tokens` / `output_tokens` / `prompt_tokens` / `completion_tokens` 等常见命名
      - sidecar 会按 `session + message fingerprint` 幂等写入，避免重复统计
    - 当平台管理员会话与租户管理员会话同时存在时，租户管理员视图优先使用租户会话，不再被平台管理员侧边栏覆盖
    - 原生壳层即使延迟重渲染，租户入口仍会重新接管顶栏与侧边栏角色裁剪

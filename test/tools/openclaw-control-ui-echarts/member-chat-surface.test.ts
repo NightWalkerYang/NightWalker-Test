@@ -463,9 +463,9 @@ describe("member chat surface", () => {
                 provider: "openai",
                 model: "openai/gpt-5.4",
                 usage: {
-                  input: 120,
-                  output: 45,
-                  total: 165,
+                  input_tokens: 120,
+                  output_tokens: 45,
+                  total_tokens: 165,
                 },
                 cost: {
                   total: 0.12,
@@ -498,6 +498,98 @@ describe("member chat surface", () => {
         inputTokens: 120,
         outputTokens: 45,
         totalTokens: 165,
+        totalCost: 0.12,
+      }),
+    ]);
+  });
+
+  it("syncs prompt and completion token aliases from chat history", async () => {
+    const apiState = installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    const app = createAppStub({
+      request: async (method, params) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: sessionKey,
+                label: "本周分析",
+                updatedAt: Date.now(),
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          expect(params).toEqual({
+            sessionKey,
+            limit: 200,
+          });
+          return {
+            messages: [
+              {
+                role: "assistant",
+                timestamp: "2026-04-13T09:30:00.000Z",
+                provider: "openai",
+                model: "openai/gpt-5.4",
+                usage: {
+                  prompt_tokens: 140,
+                  completion_tokens: 45,
+                  cached_tokens: 20,
+                  total_tokens: 185,
+                },
+                cost: {
+                  total: 0.12,
+                },
+                text: "已生成统计结论",
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+    await flush();
+
+    const syncPayload = apiState.usageSyncPayloads.find(
+      (payload) => payload.openclawSessionKey === sessionKey,
+    );
+    expect(syncPayload).toBeTruthy();
+    expect(syncPayload.records).toEqual([
+      expect.objectContaining({
+        inputTokens: 140,
+        outputTokens: 45,
+        cacheReadTokens: 20,
+        totalTokens: 185,
         totalCost: 0.12,
       }),
     ]);

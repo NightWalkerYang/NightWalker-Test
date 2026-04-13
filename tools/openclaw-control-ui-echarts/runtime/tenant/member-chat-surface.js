@@ -170,18 +170,53 @@ function normalizeUsageMetric(value) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
 }
 
+function pickUsageMetric(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 function extractUsageSnapshot(message) {
   const usage = message?.usage;
   if (!usage || typeof usage !== "object") {
     return null;
   }
-  const inputTokens = normalizeUsageMetric(usage.input ?? usage.inputTokens);
-  const outputTokens = normalizeUsageMetric(usage.output ?? usage.outputTokens);
-  const cacheReadTokens = normalizeUsageMetric(usage.cacheRead ?? usage.cache_read_input_tokens);
-  const cacheWriteTokens = normalizeUsageMetric(
-    usage.cacheWrite ?? usage.cache_creation_input_tokens,
+  const inputTokens = normalizeUsageMetric(
+    pickUsageMetric(
+      usage.input,
+      usage.inputTokens,
+      usage.input_tokens,
+      usage.promptTokens,
+      usage.prompt_tokens,
+    ),
   );
-  const totalTokensRaw = normalizeUsageMetric(usage.total ?? usage.totalTokens);
+  const outputTokens = normalizeUsageMetric(
+    pickUsageMetric(
+      usage.output,
+      usage.outputTokens,
+      usage.output_tokens,
+      usage.completionTokens,
+      usage.completion_tokens,
+    ),
+  );
+  const cacheReadTokens = normalizeUsageMetric(
+    pickUsageMetric(
+      usage.cacheRead,
+      usage.cache_read,
+      usage.cache_read_input_tokens,
+      usage.cached_tokens,
+      usage.prompt_tokens_details?.cached_tokens,
+    ),
+  );
+  const cacheWriteTokens = normalizeUsageMetric(
+    pickUsageMetric(usage.cacheWrite, usage.cache_write, usage.cache_creation_input_tokens),
+  );
+  const totalTokensRaw = normalizeUsageMetric(
+    pickUsageMetric(usage.total, usage.totalTokens, usage.total_tokens),
+  );
   const totalTokens =
     totalTokensRaw || inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
   const totalCost = normalizeUsageMetric(message?.cost?.total ?? usage?.cost?.total);
