@@ -36,6 +36,28 @@ function toFiniteNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function roundPoints(value) {
+  const numeric = toFiniteNumber(value, 0);
+  return Math.round(numeric * 1_000_000) / 1_000_000;
+}
+
+function normalizeNonNegativePoints(value) {
+  return Math.max(0, roundPoints(value));
+}
+
+function buildUsageLedgerNote(openclawSessionKey, sourceFingerprint) {
+  return `usage:${String(openclawSessionKey || "").trim()}:${String(sourceFingerprint || "").trim()}`;
+}
+
+function resolveUsageChargePoints(totalCost, rateMultiplier) {
+  const cost = Math.max(0, toFiniteNumber(totalCost, 0));
+  const multiplier = Math.max(0, toFiniteNumber(rateMultiplier, 1));
+  if (cost <= 0 || multiplier <= 0) {
+    return 0;
+  }
+  return roundPoints(cost * multiplier);
+}
+
 function normalizeUsageDay(value) {
   const normalized = String(value || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
@@ -804,8 +826,13 @@ export function listTenantUsageRecords(db, params) {
       .prepare(
         `SELECT COUNT(*) AS total
          FROM tenant_usage_records r
+         JOIN tenants t ON t.id = r.tenant_id
          LEFT JOIN users u ON u.id = r.user_id
          LEFT JOIN tenant_agents ta ON ta.id = r.tenant_agent_id
+         LEFT JOIN tenant_wallet_ledger l
+           ON l.tenant_id = r.tenant_id
+          AND l.category = 'usage_charge'
+          AND l.note = 'usage:' || r.openclaw_session_key || ':' || r.source_fingerprint
          WHERE ${whereSql}`,
       )
       .get(bindings)?.total || 0,
@@ -815,7 +842,11 @@ export function listTenantUsageRecords(db, params) {
     .prepare(
       `SELECT r.id AS id,
               r.message_timestamp AS createdAt,
-              r.total_cost AS creditsUsed,
+              CASE
+                WHEN l.amount_points IS NOT NULL THEN l.amount_points
+                WHEN t.deployment_mode = 'local' THEN 0
+                ELSE COALESCE(r.total_cost, 0) * COALESCE(ta.rate_multiplier, 1)
+              END AS creditsUsed,
               r.source_fingerprint AS note,
               r.user_id AS memberId,
               u.username AS memberUsername,
@@ -825,8 +856,13 @@ export function listTenantUsageRecords(db, params) {
               r.model AS model,
               r.openclaw_session_key AS sessionKey
          FROM tenant_usage_records r
+         JOIN tenants t ON t.id = r.tenant_id
          LEFT JOIN users u ON u.id = r.user_id
          LEFT JOIN tenant_agents ta ON ta.id = r.tenant_agent_id
+         LEFT JOIN tenant_wallet_ledger l
+           ON l.tenant_id = r.tenant_id
+          AND l.category = 'usage_charge'
+          AND l.note = 'usage:' || r.openclaw_session_key || ':' || r.source_fingerprint
          WHERE ${whereSql}
          ORDER BY r.message_timestamp DESC, r.created_at DESC
          LIMIT @limit OFFSET @offset`,
@@ -1000,8 +1036,12 @@ export function syncTenantUsageRecords(db, params) {
 
   const tenantAgent = db
     .prepare(
-      `SELECT ta.id
+      `SELECT ta.id,
+              ta.balance_points AS balancePoints,
+              ta.rate_multiplier AS rateMultiplier,
+              t.deployment_mode AS deploymentMode
        FROM tenant_agents ta
+       JOIN tenants t ON t.id = ta.tenant_id
        JOIN tenant_memberships tm ON tm.tenant_id = ta.tenant_id
        WHERE ta.id = @tenantAgentId
          AND ta.tenant_id = @tenantId
@@ -1025,6 +1065,14 @@ export function syncTenantUsageRecords(db, params) {
        FROM tenant_usage_records
        WHERE openclaw_session_key = @openclawSessionKey
          AND source_fingerprint = @sourceFingerprint`,
+    );
+    const selectUsageLedger = db.prepare(
+      `SELECT id, amount_points AS amountPoints
+       FROM tenant_wallet_ledger
+       WHERE tenant_id = @tenantId
+         AND category = 'usage_charge'
+         AND note = @note
+       LIMIT 1`,
     );
     const upsert = db.prepare(
       `INSERT INTO tenant_usage_records (
@@ -1080,10 +1128,59 @@ export function syncTenantUsageRecords(db, params) {
          total_cost = excluded.total_cost,
          updated_at = excluded.updated_at`,
     );
+    const updateTenantAgentBalance = db.prepare(
+      `UPDATE tenant_agents
+       SET balance_points = @balancePoints,
+           updated_at = @updatedAt
+       WHERE id = @tenantAgentId`,
+    );
+    const insertUsageLedger = db.prepare(
+      `INSERT INTO tenant_wallet_ledger (
+         id,
+         tenant_id,
+         direction,
+         category,
+         amount_points,
+         balance_after,
+         tenant_agent_id,
+         actor_user_id,
+         note,
+         created_at
+       ) VALUES (
+         @id,
+         @tenantId,
+         'debit',
+         'usage_charge',
+         @amountPoints,
+         @balanceAfter,
+         @tenantAgentId,
+         @actorUserId,
+         @note,
+         @createdAt
+       )`,
+    );
+    const updateUsageLedger = db.prepare(
+      `UPDATE tenant_wallet_ledger
+       SET direction = 'debit',
+           amount_points = @amountPoints,
+           balance_after = @balanceAfter,
+           tenant_agent_id = @tenantAgentId,
+           actor_user_id = @actorUserId,
+           note = @note
+       WHERE id = @id`,
+    );
+    const deleteUsageLedger = db.prepare(
+      `DELETE FROM tenant_wallet_ledger
+       WHERE id = @id`,
+    );
 
     let inserted = 0;
     let updated = 0;
+    let pointsDelta = 0;
     const now = nowIso();
+    const billingEnabled = String(tenantAgent.deploymentMode || "").trim().toLowerCase() !== "local";
+    const rateMultiplier = Math.max(0, toFiniteNumber(tenantAgent.rateMultiplier, 1));
+    let currentAgentBalance = normalizeNonNegativePoints(tenantAgent.balancePoints);
 
     for (const record of records) {
       const sourceFingerprint = String(record?.sourceFingerprint || "").trim();
@@ -1109,6 +1206,8 @@ export function syncTenantUsageRecords(db, params) {
         openclawSessionKey,
         sourceFingerprint,
       });
+      const totalCost =
+        toFiniteNumber(record?.totalCost, 0) > 0 ? toFiniteNumber(record?.totalCost, 0) : null;
       upsert.run({
         id: existing?.id || createId("usage"),
         tenantId,
@@ -1125,11 +1224,50 @@ export function syncTenantUsageRecords(db, params) {
         cacheReadTokens,
         cacheWriteTokens,
         totalTokens,
-        totalCost:
-          toFiniteNumber(record?.totalCost, 0) > 0 ? toFiniteNumber(record?.totalCost, 0) : null,
+        totalCost,
         createdAt: existing?.id ? now : now,
         updatedAt: now,
       });
+
+      const usageLedgerNote = buildUsageLedgerNote(openclawSessionKey, sourceFingerprint);
+      const existingLedger = selectUsageLedger.get({
+        tenantId,
+        note: usageLedgerNote,
+      });
+      const previousPoints = normalizeNonNegativePoints(existingLedger?.amountPoints);
+      const nextPoints = billingEnabled ? resolveUsageChargePoints(totalCost, rateMultiplier) : 0;
+      const deltaPoints = roundPoints(nextPoints - previousPoints);
+      if (deltaPoints !== 0) {
+        currentAgentBalance = normalizeNonNegativePoints(currentAgentBalance - deltaPoints);
+        pointsDelta = roundPoints(pointsDelta + deltaPoints);
+      }
+
+      if (existingLedger?.id && nextPoints <= 0) {
+        deleteUsageLedger.run({ id: existingLedger.id });
+      } else if (nextPoints > 0) {
+        if (existingLedger?.id) {
+          updateUsageLedger.run({
+            id: existingLedger.id,
+            amountPoints: nextPoints,
+            balanceAfter: currentAgentBalance,
+            tenantAgentId,
+            actorUserId: userId,
+            note: usageLedgerNote,
+          });
+        } else {
+          insertUsageLedger.run({
+            id: createId("ledger"),
+            tenantId,
+            amountPoints: nextPoints,
+            balanceAfter: currentAgentBalance,
+            tenantAgentId,
+            actorUserId: userId,
+            note: usageLedgerNote,
+            createdAt: now,
+          });
+        }
+      }
+
       if (existing?.id) {
         updated += 1;
       } else {
@@ -1137,10 +1275,22 @@ export function syncTenantUsageRecords(db, params) {
       }
     }
 
+    if (billingEnabled && pointsDelta !== 0) {
+      updateTenantAgentBalance.run({
+        tenantAgentId,
+        balancePoints: currentAgentBalance,
+        updatedAt: now,
+      });
+    }
+
     return {
       inserted,
       updated,
       total: inserted + updated,
+      billingEnabled,
+      rateMultiplier,
+      agentBalancePoints: currentAgentBalance,
+      pointsDelta,
     };
   });
 }

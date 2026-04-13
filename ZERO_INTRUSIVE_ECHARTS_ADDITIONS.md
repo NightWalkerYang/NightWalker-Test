@@ -222,7 +222,8 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.
 - The custom Control UI build chain now generates stable `/login` aliases (`login/index.html` and `login.html`) without the previous directory/file collision, so zero-intrusive redeploys no longer fail or regress into `Not Found` because of broken login entry artifacts.
 - The Control UI rebuild scripts now preserve the `generated/control-ui` root directory itself and only replace its contents, preventing Docker bind mounts from sticking to a deleted empty directory and causing post-redeploy `Not Found` pages.
-- The tenant-admin sidebar now injects a sibling `统计` dropdown alongside `管理`, with a `耗量统计` entry that renders a server-paginated list of Agent × member × credit usage records (pulled from `tenant_wallet_ledger`, debit-direction usage rows only) with top-bar search and bottom pagination, reusing the existing `data-table` layout from the 成员管理 / Agent 分配 pages.
+- The tenant-admin sidebar now injects a sibling `统计` dropdown alongside `管理`, with a `耗量统计` entry that renders server-paginated Agent × member × credit usage rows. The page now prefers debit-direction `tenant_wallet_ledger` usage charges for `消耗积分`, falls back to synced `tenant_usage_records` for older rows, and keeps the existing `data-table` layout from 成员管理 / Agent 分配 pages.
+- Member chat usage sync now writes both `tenant_usage_records` and, for cloud tenants, idempotent `tenant_wallet_ledger` usage-charge rows keyed by `openclaw_session_key + source_fingerprint`, then deducts the matching `tenant_agents.balance_points` inside the same sidecar transaction.
 
 ## Important Notes
 

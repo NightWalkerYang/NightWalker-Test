@@ -366,7 +366,7 @@ describe("tenant platform local edition", () => {
       agentId: "subotech-finance",
       description: "财务分析",
       rateMultiplier: 1,
-      balancePoints: 0,
+      balancePoints: 10,
       status: "active",
     });
     assignTenantAgentToUser(db, {
@@ -435,6 +435,8 @@ describe("tenant platform local edition", () => {
     });
     expect(secondSync.status).toBe(200);
     expect(secondSync.payload.data.updated).toBe(1);
+    expect(secondSync.payload.data.billingEnabled).toBe(false);
+    expect(secondSync.payload.data.agentBalancePoints).toBe(10);
 
     const stats = await requestJson(
       baseUrl,
@@ -466,5 +468,14 @@ describe("tenant platform local edition", () => {
         totalTokens: 165,
       }),
     ]);
+
+    const storedBalance = db
+      .prepare("SELECT balance_points AS balancePoints FROM tenant_agents WHERE id = ?")
+      .get(tenantAgentId);
+    expect(storedBalance?.balancePoints).toBe(10);
+    const ledgerCount = db
+      .prepare("SELECT COUNT(*) AS total FROM tenant_wallet_ledger WHERE tenant_id = ?")
+      .get(tenantId);
+    expect(ledgerCount?.total).toBe(0);
   });
 });

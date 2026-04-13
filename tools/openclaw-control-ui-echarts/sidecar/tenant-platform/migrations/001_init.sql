@@ -193,5 +193,8 @@ CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_user_day
 CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_agent_day
   ON tenant_usage_records (tenant_agent_id, usage_day, message_timestamp DESC);
 
+CREATE INDEX IF NOT EXISTS idx_tenant_wallet_ledger_usage_note
+  ON tenant_wallet_ledger (tenant_id, category, note);
+
 CREATE INDEX IF NOT EXISTS idx_payment_orders_tenant_status
   ON payment_orders (tenant_id, status, created_at DESC);

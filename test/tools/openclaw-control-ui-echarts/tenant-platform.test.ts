@@ -2,7 +2,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { openTenantPlatformDb, closeTenantPlatformDb, createBootstrapPlatformAdmin, createTenantWithAdmin, createTenantMember, listTenantMembers, readOpenClawAgentCatalog, upsertTenantAgent, assignTenantAgentToUser, listAssignedAgentsForUser, updateTenantMemberLimit } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
+import {
+  openTenantPlatformDb,
+  closeTenantPlatformDb,
+  createBootstrapPlatformAdmin,
+  createTenantWithAdmin,
+  createTenantMember,
+  listTenantMembers,
+  readOpenClawAgentCatalog,
+  upsertTenantAgent,
+  assignTenantAgentToUser,
+  listAssignedAgentsForUser,
+  listTenantUsageRecords,
+  syncTenantUsageRecords,
+  updateTenantMemberLimit,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 
 const cleanupRoots = new Set();
 
@@ -181,6 +195,153 @@ describe("tenant platform database foundation", () => {
           memberLimit: 0,
         }),
       ).toThrow("member_limit_invalid");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("deducts agent points from synced usage records without double-charging repeats", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "delta",
+        name: "租户 Delta",
+        adminUsername: "delta-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 10,
+        status: "active",
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const sessionKey = "agent:finance:tenant:delta:user:member-a:chat:latest";
+      const firstSync = syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "assistant-1",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "openai",
+            model: "openai/gpt-5.4",
+            inputTokens: 120,
+            outputTokens: 45,
+            totalTokens: 165,
+            totalCost: 0.12,
+          },
+        ],
+      });
+      expect(firstSync.inserted).toBe(1);
+      expect(firstSync.billingEnabled).toBe(true);
+      expect(firstSync.pointsDelta).toBeCloseTo(0.12, 8);
+      expect(firstSync.agentBalancePoints).toBeCloseTo(9.88, 8);
+
+      const repeatedSync = syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "assistant-1",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "openai",
+            model: "openai/gpt-5.4",
+            inputTokens: 120,
+            outputTokens: 45,
+            totalTokens: 165,
+            totalCost: 0.12,
+          },
+        ],
+      });
+      expect(repeatedSync.updated).toBe(1);
+      expect(repeatedSync.pointsDelta).toBe(0);
+      expect(repeatedSync.agentBalancePoints).toBeCloseTo(9.88, 8);
+
+      const adjustedSync = syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "assistant-1",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "openai",
+            model: "openai/gpt-5.4",
+            inputTokens: 120,
+            outputTokens: 45,
+            totalTokens: 165,
+            totalCost: 0.2,
+          },
+        ],
+      });
+      expect(adjustedSync.updated).toBe(1);
+      expect(adjustedSync.pointsDelta).toBeCloseTo(0.08, 8);
+      expect(adjustedSync.agentBalancePoints).toBeCloseTo(9.8, 8);
+
+      const assignedAgents = listAssignedAgentsForUser(
+        db,
+        { tenantId: tenant.id, userId: member.id },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(assignedAgents[0]?.balancePoints).toBeCloseTo(9.8, 8);
+      expect(
+        listTenantUsageRecords(db, {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 8,
+          search: "",
+        }).items[0]?.creditsUsed,
+      ).toBeCloseTo(0.2, 8);
+
+      const ledgerRows = db
+        .prepare(
+          `SELECT category, amount_points AS amountPoints, balance_after AS balanceAfter, note
+           FROM tenant_wallet_ledger
+           WHERE tenant_id = ?
+           ORDER BY created_at ASC`,
+        )
+        .all(tenant.id);
+      expect(ledgerRows).toHaveLength(1);
+      expect(ledgerRows[0]).toMatchObject({
+        category: "usage_charge",
+        amountPoints: 0.2,
+        balanceAfter: 9.8,
+      });
+      expect(String(ledgerRows[0]?.note || "")).toContain(sessionKey);
     } finally {
       closeTenantPlatformDb(db);
     }

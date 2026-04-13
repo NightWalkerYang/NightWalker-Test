@@ -8,6 +8,7 @@ import {
   isTenantMemberSessionKey,
   readSelectedTenantAgent,
   readTenantSession,
+  writeSelectedTenantAgent,
 } from "./tenant-context.js";
 
 const DOC_ATTR = "data-oc-member-chat-route";
@@ -286,11 +287,16 @@ async function syncMemberUsageRecords(controller, sessionKey, messages) {
     return;
   }
   try {
-    await createTenantApiClient().syncMemberUsageRecords({
+    const result = await createTenantApiClient().syncMemberUsageRecords({
       tenantAgentId: controller.selectedAgent.id,
       openclawSessionKey: sessionKey,
       records,
     });
+    const nextBalance = Number(result?.agentBalancePoints);
+    if (Number.isFinite(nextBalance)) {
+      controller.selectedAgent.balancePoints = nextBalance;
+      writeSelectedTenantAgent(controller.selectedAgent);
+    }
   } catch (error) {
     console.warn("Failed to sync member usage records", error);
   }
