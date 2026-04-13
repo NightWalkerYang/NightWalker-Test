@@ -145,12 +145,12 @@ function renderTable(rows) {
                   .map(
                     (row) => `
                       <tr>
-                        <td>${escapeHtml(row.memberUsername || "-")}</td>
-                        <td>${escapeHtml(row.agentName || row.agentId || "-")}</td>
-                        <td>${escapeHtml(formatTokens(row.totalTokens ?? row.tokens))}</td>
-                        <td>${escapeHtml(formatTokens(row.inputTokens))}</td>
-                        <td>${escapeHtml(formatTokens(row.outputTokens))}</td>
-                        <td>${escapeHtml(formatCredits(row.creditsUsed))}</td>
+                        <td>${escapeHtml(row.memberUsername ?? row.member_username ?? "-")}</td>
+                        <td>${escapeHtml(row.agentName ?? row.agent_name ?? row.agentId ?? row.agent_id ?? "-")}</td>
+                        <td>${escapeHtml(formatTokens(row.totalTokens ?? row.total_tokens ?? row.tokens))}</td>
+                        <td>${escapeHtml(formatTokens(row.inputTokens ?? row.input_tokens))}</td>
+                        <td>${escapeHtml(formatTokens(row.outputTokens ?? row.output_tokens))}</td>
+                        <td>${escapeHtml(formatCredits(row.creditsUsed ?? row.credits_used))}</td>
                         <td>${escapeHtml(formatDateTime(row.createdAt))}</td>
                       </tr>
                     `,

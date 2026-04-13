@@ -853,9 +853,12 @@ export function listTenantUsageRecords(db, params) {
               r.tenant_agent_id AS tenantAgentId,
               ta.agent_id AS agentId,
               r.input_tokens AS inputTokens,
+              r.input_tokens AS input_tokens,
               r.output_tokens AS outputTokens,
+              r.output_tokens AS output_tokens,
               r.total_tokens AS tokens,
               r.total_tokens AS totalTokens,
+              r.total_tokens AS total_tokens,
               r.model AS model,
               r.openclaw_session_key AS sessionKey
          FROM tenant_usage_records r

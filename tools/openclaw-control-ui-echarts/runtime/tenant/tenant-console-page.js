@@ -381,12 +381,12 @@ function renderUsageTable(rows) {
                   .map(
                     (row) => `
                       <tr>
-                        <td>${escapeHtml(row.memberUsername || "-")}</td>
-                        <td>${escapeHtml(row.agentName || row.agentId || "-")}</td>
-                        <td>${formatNumber(row.totalTokens ?? row.tokens)}</td>
-                        <td>${formatNumber(row.inputTokens)}</td>
-                        <td>${formatNumber(row.outputTokens)}</td>
-                        <td>${escapeHtml(formatCredits(row.creditsUsed))}</td>
+                        <td>${escapeHtml(row.memberUsername ?? row.member_username ?? "-")}</td>
+                        <td>${escapeHtml(row.agentName ?? row.agent_name ?? row.agentId ?? row.agent_id ?? "-")}</td>
+                        <td>${formatNumber(row.totalTokens ?? row.total_tokens ?? row.tokens)}</td>
+                        <td>${formatNumber(row.inputTokens ?? row.input_tokens)}</td>
+                        <td>${formatNumber(row.outputTokens ?? row.output_tokens)}</td>
+                        <td>${escapeHtml(formatCredits(row.creditsUsed ?? row.credits_used))}</td>
                         <td>${escapeHtml(formatDateTime(row.createdAt))}</td>
                       </tr>
                     `,

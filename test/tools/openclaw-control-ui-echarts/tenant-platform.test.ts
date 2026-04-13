@@ -328,9 +328,12 @@ describe("tenant platform database foundation", () => {
       ).toMatchObject({
         creditsUsed: 0.2,
         totalTokens: 165,
+        total_tokens: 165,
         tokens: 165,
         inputTokens: 120,
+        input_tokens: 120,
         outputTokens: 45,
+        output_tokens: 45,
         memberUsername: member.username,
         agentId: "finance",
       });
