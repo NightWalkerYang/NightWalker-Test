@@ -243,6 +243,7 @@ describe("tenant surface", () => {
     await bootTenantSurface();
 
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.querySelector(".oc-tenant-list-view--scrollable")).not.toBeNull();
     expect(surfaceRoot?.textContent).toContain("统计区间");
     expect(surfaceRoot?.textContent).toContain("总 Tokens");
     expect(surfaceRoot?.textContent).toContain("苏博泰克财务分析助手");

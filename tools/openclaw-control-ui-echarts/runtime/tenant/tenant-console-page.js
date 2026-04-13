@@ -680,7 +680,7 @@ function render(root, controller) {
 
   root.dataset.ocTenantEmbedded = "true";
   root.innerHTML = `
-    <section class="oc-tenant-list-view">
+    <section class="oc-tenant-list-view ${controller.section === "usage-stats" ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
       <div class="callout info oc-tenant-surface-feedback" data-tenant-feedback hidden></div>

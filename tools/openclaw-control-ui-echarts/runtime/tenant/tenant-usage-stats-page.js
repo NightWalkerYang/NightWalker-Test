@@ -181,7 +181,7 @@ function render(root, controller) {
   const focusState = captureFocusState(root);
   root.dataset.ocTenantEmbedded = "true";
   root.innerHTML = `
-    <section class="oc-tenant-list-view">
+    <section class="oc-tenant-list-view oc-tenant-list-view--scrollable">
       ${renderToolbar(controller)}
       <div class="data-table-wrapper">
         ${renderTable(controller.items)}

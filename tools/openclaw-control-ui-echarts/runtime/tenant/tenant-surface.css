@@ -11,6 +11,13 @@
   gap: 16px;
 }
 
+.oc-tenant-list-view--scrollable {
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
 .oc-tenant-surface-feedback {
   margin-top: 0;
 }
@@ -185,6 +192,11 @@
 
   .oc-tenant-table-toolbar .data-table-search {
     min-width: 0;
+  }
+
+  .oc-tenant-list-view--scrollable {
+    max-height: calc(100vh - 180px);
+    padding-right: 0;
   }
 
   .oc-tenant-modal {
