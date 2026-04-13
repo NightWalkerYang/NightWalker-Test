@@ -1142,5 +1142,8 @@ export function getFrameworkStyles() {
         transform: translateY(-1px);
       }
     }
+    .update-banner {
+      display: none !important;
+    }
   `;
 }
