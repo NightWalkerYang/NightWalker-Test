@@ -27,88 +27,8 @@
   gap: 12px;
 }
 
-.oc-tenant-usage-toolbar {
-  align-items: flex-end;
-}
-
-.oc-tenant-usage-toolbar__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.oc-tenant-usage-toolbar__hint {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
 .oc-tenant-table-toolbar .data-table-search {
   min-width: min(420px, 100%);
-}
-
-.oc-tenant-usage-field {
-  min-width: 160px;
-}
-
-.oc-tenant-usage-grid {
-  display: grid;
-  gap: 16px;
-}
-
-.oc-tenant-usage-range {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.oc-tenant-usage-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
-.oc-tenant-usage-card {
-  display: grid;
-  gap: 8px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.oc-tenant-usage-card__label {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.oc-tenant-usage-card__value {
-  font-size: 28px;
-  line-height: 1.1;
-}
-
-.oc-tenant-usage-card__hint {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.oc-tenant-usage-section {
-  display: grid;
-  gap: 12px;
-}
-
-.oc-tenant-usage-section__head h3 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.oc-tenant-usage-section__head p {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
 }
 
 .oc-tenant-table-actions {
@@ -179,15 +99,6 @@
   .oc-tenant-table-toolbar {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .oc-tenant-usage-toolbar__filters {
-    width: 100%;
-  }
-
-  .oc-tenant-usage-field {
-    min-width: 0;
-    width: 100%;
   }
 
   .oc-tenant-table-toolbar .data-table-search {

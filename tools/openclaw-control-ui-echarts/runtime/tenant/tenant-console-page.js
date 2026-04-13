@@ -2,6 +2,7 @@ import { createTenantApiClient } from "./api-client.js";
 import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
 
 const PAGE_SIZE = 8;
+const USAGE_SEARCH_DEBOUNCE_MS = 250;
 
 function isLocalEdition(controller) {
   return controller?.session?.session?.edition === "local";
@@ -36,65 +37,14 @@ function formatNumber(value) {
   return Number.isFinite(numeric) ? new Intl.NumberFormat("zh-CN").format(numeric) : "0";
 }
 
-function formatDecimal(value, maximumFractionDigits = 4) {
+function formatCredits(value) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) {
     return "0";
   }
   return new Intl.NumberFormat("zh-CN", {
-    minimumFractionDigits: numeric > 0 && numeric < 1 ? 4 : 0,
-    maximumFractionDigits,
+    maximumFractionDigits: 2,
   }).format(numeric);
-}
-
-function formatLocalDateInput(value = new Date()) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.valueOf())) {
-    const fallback = new Date();
-    return `${fallback.getFullYear()}-${String(fallback.getMonth() + 1).padStart(2, "0")}-${String(
-      fallback.getDate(),
-    ).padStart(2, "0")}`;
-  }
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`;
-}
-
-function normalizeUsageDateRange(startDate, endDate) {
-  const safeStart = /^\d{4}-\d{2}-\d{2}$/.test(String(startDate || "").trim())
-    ? String(startDate).trim()
-    : formatLocalDateInput();
-  const safeEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(endDate || "").trim())
-    ? String(endDate).trim()
-    : safeStart;
-  if (safeStart <= safeEnd) {
-    return { startDate: safeStart, endDate: safeEnd };
-  }
-  return { startDate: safeEnd, endDate: safeStart };
-}
-
-function createEmptyUsageStats(startDate, endDate) {
-  return {
-    range: {
-      startDate,
-      endDate,
-    },
-    totals: {
-      responseCount: 0,
-      memberCount: 0,
-      agentCount: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      totalTokens: 0,
-      totalCost: 0,
-      lastUsedAt: null,
-    },
-    byMember: [],
-    byAgent: [],
-    byDay: [],
-  };
 }
 
 function setFeedback(root, text, isError = false) {
@@ -128,7 +78,6 @@ function ensureController(root, session, apiClient) {
     return root.__ocTenantConsoleController;
   }
 
-  const today = formatLocalDateInput();
   const controller = {
     apiClient,
     session,
@@ -136,19 +85,20 @@ function ensureController(root, session, apiClient) {
     searchBySection: {
       members: "",
       "agent-assignment": "",
+      "usage-stats": "",
     },
     pageBySection: {
       members: 1,
       "agent-assignment": 1,
+      "usage-stats": 1,
     },
     members: [],
     tenantAgents: [],
     activeMember: null,
-    usageFilters: {
-      startDate: today,
-      endDate: today,
-    },
-    usageStats: createEmptyUsageStats(today, today),
+    usageItems: [],
+    usageTotal: 0,
+    usagePageSize: PAGE_SIZE,
+    usageSearchTimer: null,
     dialogs: {
       createMemberOpen: false,
       assignOpen: false,
@@ -219,29 +169,15 @@ function paginate(items, page) {
 function renderToolbar(controller) {
   if (controller.section === "usage-stats") {
     return `
-      <div class="data-table-toolbar oc-tenant-table-toolbar oc-tenant-usage-toolbar">
-        <div class="oc-tenant-usage-toolbar__filters">
-          <label class="field oc-tenant-usage-field">
-            <span>开始日期</span>
-            <input
-              type="date"
-              value="${escapeHtml(controller.usageFilters.startDate)}"
-              data-tenant-usage-start
-            />
-          </label>
-          <label class="field oc-tenant-usage-field">
-            <span>结束日期</span>
-            <input
-              type="date"
-              value="${escapeHtml(controller.usageFilters.endDate)}"
-              data-tenant-usage-end
-            />
-          </label>
-          <button class="btn primary" type="button" data-tenant-usage-refresh>刷新统计</button>
-        </div>
-        <div class="oc-tenant-usage-toolbar__hint">
-          默认按当天统计，可切换时间范围查看按成员、按 Agent、按天聚合结果。
-        </div>
+      <div class="data-table-toolbar oc-tenant-table-toolbar">
+        <label class="data-table-search">
+          <input
+            type="search"
+            placeholder="搜索成员、Agent 或模型"
+            value="${escapeHtml(getSearchValue(controller))}"
+            data-tenant-search
+          />
+        </label>
       </div>
     `;
   }
@@ -419,97 +355,23 @@ function renderAssignDialog(controller) {
   `;
 }
 
-function renderUsageCard(label, value, hint) {
-  return `
-    <div class="oc-tenant-usage-card">
-      <span class="oc-tenant-usage-card__label">${escapeHtml(label)}</span>
-      <strong class="oc-tenant-usage-card__value">${escapeHtml(value)}</strong>
-      <span class="oc-tenant-usage-card__hint">${escapeHtml(hint)}</span>
-    </div>
-  `;
+function totalUsagePages(controller) {
+  return Math.max(1, Math.ceil((Number(controller.usageTotal || 0) || 0) / (controller.usagePageSize || PAGE_SIZE)));
 }
 
-function renderUsageSummary(stats) {
-  const totals = stats?.totals ?? createEmptyUsageStats("", "").totals;
-  return `
-    <div class="oc-tenant-usage-summary">
-      ${renderUsageCard(
-        "助手回复数",
-        formatNumber(totals.responseCount),
-        totals.lastUsedAt
-          ? `最近记录：${formatDateTime(totals.lastUsedAt)}`
-          : "当前范围内暂无回复记录",
-      )}
-      ${renderUsageCard(
-        "总 Tokens",
-        formatNumber(totals.totalTokens),
-        `输入 ${formatNumber(totals.inputTokens)} / 输出 ${formatNumber(totals.outputTokens)}`,
-      )}
-      ${renderUsageCard(
-        "活跃成员",
-        formatNumber(totals.memberCount),
-        `涉及 ${formatNumber(totals.agentCount)} 个 Agent`,
-      )}
-      ${renderUsageCard(
-        "缓存读写",
-        `${formatNumber(totals.cacheReadTokens)} / ${formatNumber(totals.cacheWriteTokens)}`,
-        totals.totalCost > 0 ? `估算费用 ${formatDecimal(totals.totalCost)}` : "当前以耗量统计为主",
-      )}
-    </div>
-  `;
-}
-
-function renderUsageMemberTable(rows) {
+function renderUsageTable(rows) {
   return `
     <div class="data-table-container">
       <table class="data-table">
         <thead>
           <tr>
-            <th>成员账号</th>
-            <th>助手回复</th>
-            <th>总 Tokens</th>
-            <th>输入</th>
-            <th>输出</th>
-            <th>最近记录</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            rows.length
-              ? rows
-                  .map(
-                    (row) => `
-                      <tr>
-                        <td>${escapeHtml(row.username || "-")}</td>
-                        <td>${formatNumber(row.responseCount)}</td>
-                        <td>${formatNumber(row.totalTokens)}</td>
-                        <td>${formatNumber(row.inputTokens)}</td>
-                        <td>${formatNumber(row.outputTokens)}</td>
-                        <td>${escapeHtml(formatDateTime(row.lastUsedAt))}</td>
-                      </tr>
-                    `,
-                  )
-                  .join("")
-              : `<tr><td colspan="6" class="oc-tenant-table-empty">当前范围内暂无成员耗量记录</td></tr>`
-          }
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderUsageAgentTable(rows) {
-  return `
-    <div class="data-table-container">
-      <table class="data-table">
-        <thead>
-          <tr>
+            <th>成员</th>
             <th>Agent</th>
-            <th>助手回复</th>
-            <th>总 Tokens</th>
+            <th>耗用总token</th>
             <th>输入</th>
             <th>输出</th>
-            <th>最近记录</th>
+            <th>耗用积分</th>
+            <th>时间</th>
           </tr>
         </thead>
         <tbody>
@@ -519,20 +381,18 @@ function renderUsageAgentTable(rows) {
                   .map(
                     (row) => `
                       <tr>
-                        <td>
-                          <strong>${escapeHtml(row.agentName || row.agentId || "-")}</strong>
-                          <small>${escapeHtml(row.agentId || "-")}</small>
-                        </td>
-                        <td>${formatNumber(row.responseCount)}</td>
-                        <td>${formatNumber(row.totalTokens)}</td>
+                        <td>${escapeHtml(row.memberUsername || "-")}</td>
+                        <td>${escapeHtml(row.agentName || row.agentId || "-")}</td>
+                        <td>${formatNumber(row.totalTokens ?? row.tokens)}</td>
                         <td>${formatNumber(row.inputTokens)}</td>
                         <td>${formatNumber(row.outputTokens)}</td>
-                        <td>${escapeHtml(formatDateTime(row.lastUsedAt))}</td>
+                        <td>${escapeHtml(formatCredits(row.creditsUsed))}</td>
+                        <td>${escapeHtml(formatDateTime(row.createdAt))}</td>
                       </tr>
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="6" class="oc-tenant-table-empty">当前范围内暂无 Agent 耗量记录</td></tr>`
+              : `<tr><td colspan="7" class="oc-tenant-table-empty">暂无耗量记录</td></tr>`
           }
         </tbody>
       </table>
@@ -540,87 +400,20 @@ function renderUsageAgentTable(rows) {
   `;
 }
 
-function renderUsageDayTable(rows) {
+function renderUsagePagination(controller) {
+  return renderPagination({
+    totalItems: controller.usageTotal,
+    page: getPageValue(controller),
+    totalPages: totalUsagePages(controller),
+  });
+}
+
+function renderUsageList(controller) {
   return `
-    <div class="data-table-container">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>助手回复</th>
-            <th>总 Tokens</th>
-            <th>输入</th>
-            <th>输出</th>
-            <th>最近记录</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            rows.length
-              ? rows
-                  .map(
-                    (row) => `
-                      <tr>
-                        <td>${escapeHtml(row.usageDay || "-")}</td>
-                        <td>${formatNumber(row.responseCount)}</td>
-                        <td>${formatNumber(row.totalTokens)}</td>
-                        <td>${formatNumber(row.inputTokens)}</td>
-                        <td>${formatNumber(row.outputTokens)}</td>
-                        <td>${escapeHtml(formatDateTime(row.lastUsedAt))}</td>
-                      </tr>
-                    `,
-                  )
-                  .join("")
-              : `<tr><td colspan="6" class="oc-tenant-table-empty">当前范围内暂无按天统计记录</td></tr>`
-          }
-        </tbody>
-      </table>
+    <div class="data-table-wrapper">
+      ${renderUsageTable(controller.usageItems)}
+      ${renderUsagePagination(controller)}
     </div>
-  `;
-}
-
-function renderUsageSection(title, subtitle, body) {
-  return `
-    <section class="oc-tenant-usage-section">
-      <div class="oc-tenant-usage-section__head">
-        <div>
-          <h3>${escapeHtml(title)}</h3>
-          <p>${escapeHtml(subtitle)}</p>
-        </div>
-      </div>
-      ${body}
-    </section>
-  `;
-}
-
-function renderUsageStats(controller) {
-  const stats =
-    controller.usageStats ||
-    createEmptyUsageStats(controller.usageFilters.startDate, controller.usageFilters.endDate);
-  return `
-    <section class="oc-tenant-usage-grid">
-      <div class="oc-tenant-usage-range">
-        统计区间：${escapeHtml(stats.range?.startDate || controller.usageFilters.startDate)} 至 ${escapeHtml(
-          stats.range?.endDate || controller.usageFilters.endDate,
-        )}
-      </div>
-      ${renderUsageSummary(stats)}
-      ${renderUsageSection(
-        "按成员",
-        "查看每个租户成员的累计耗量与最近使用时间。",
-        renderUsageMemberTable(Array.isArray(stats.byMember) ? stats.byMember : []),
-      )}
-      ${renderUsageSection(
-        "按 Agent",
-        "查看被租户成员实际使用到的 Agent 耗量聚合。",
-        renderUsageAgentTable(Array.isArray(stats.byAgent) ? stats.byAgent : []),
-      )}
-      ${renderUsageSection(
-        "按天",
-        "查看当前时间范围内逐日汇总的耗量变化。",
-        renderUsageDayTable(Array.isArray(stats.byDay) ? stats.byDay : []),
-      )}
-    </section>
   `;
 }
 
@@ -660,13 +453,15 @@ function restoreRenderFocusState(root, state) {
 
 function render(root, controller) {
   const focusState = captureRenderFocusState(root);
-  const filtered = filterMembers(controller);
-  const pagination = paginate(filtered, getPageValue(controller));
-  setPageValue(controller, pagination.page);
+  const isUsageStats = controller.section === "usage-stats";
+  const pagination = isUsageStats ? null : paginate(filterMembers(controller), getPageValue(controller));
+  if (pagination) {
+    setPageValue(controller, pagination.page);
+  }
 
   const contentMarkup =
-    controller.section === "usage-stats"
-      ? renderUsageStats(controller)
+    isUsageStats
+      ? renderUsageList(controller)
       : `
         <div class="data-table-wrapper">
           ${
@@ -680,19 +475,15 @@ function render(root, controller) {
 
   root.dataset.ocTenantEmbedded = "true";
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${controller.section === "usage-stats" ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${isUsageStats ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
       <div class="callout info oc-tenant-surface-feedback" data-tenant-feedback hidden></div>
     </section>
-    ${
-      controller.section === "usage-stats"
-        ? ""
-        : `${renderCreateMemberDialog()}${renderAssignDialog(controller)}`
-    }
+    ${isUsageStats ? "" : `${renderCreateMemberDialog()}${renderAssignDialog(controller)}`}
   `;
 
-  if (controller.section !== "usage-stats") {
+  if (!isUsageStats) {
     if (controller.dialogs.createMemberOpen) {
       openDialog(root.querySelector("[data-tenant-create-dialog]"));
     }
@@ -705,15 +496,22 @@ function render(root, controller) {
 
 async function refresh(root, controller) {
   if (controller.section === "usage-stats") {
-    const normalizedRange = normalizeUsageDateRange(
-      controller.usageFilters.startDate,
-      controller.usageFilters.endDate,
-    );
-    controller.usageFilters = normalizedRange;
-    controller.usageStats = await controller.apiClient.getTenantUsageStats(
-      normalizedRange.startDate,
-      normalizedRange.endDate,
-    );
+    const search = getSearchValue(controller).trim();
+    const page = getPageValue(controller);
+    const data = await controller.apiClient.listTenantUsageStats({
+      page,
+      pageSize: controller.usagePageSize || PAGE_SIZE,
+      search,
+    });
+    controller.usageItems = Array.isArray(data?.items) ? data.items : [];
+    controller.usageTotal = Number(data?.total || 0);
+    controller.usagePageSize = Number(data?.pageSize || controller.usagePageSize || PAGE_SIZE) || PAGE_SIZE;
+    const currentPage = Number(data?.page || page) || 1;
+    const totalPages = totalUsagePages(controller);
+    controller.pageBySection["usage-stats"] = Math.min(Math.max(1, currentPage), totalPages);
+    if (controller.pageBySection["usage-stats"] !== currentPage) {
+      return refresh(root, controller);
+    }
     render(root, controller);
     return;
   }
@@ -748,17 +546,11 @@ async function handleClick(root, controller, event) {
     const action = paginationButton.dataset.tenantPage;
     const currentPage = getPageValue(controller);
     setPageValue(controller, action === "next" ? currentPage + 1 : currentPage - 1);
-    render(root, controller);
-    return;
-  }
-
-  if (target.closest("[data-tenant-usage-refresh]")) {
-    try {
-      await refresh(root, controller);
-      setFeedback(root, "耗量统计已刷新。");
-    } catch (error) {
-      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    if (controller.section === "usage-stats") {
+      void refresh(root, controller);
+      return;
     }
+    render(root, controller);
     return;
   }
 
@@ -799,15 +591,18 @@ function handleInput(root, controller, event) {
   if (target.hasAttribute("data-tenant-search")) {
     controller.searchBySection[controller.section] = target.value;
     setPageValue(controller, 1);
+    if (controller.section === "usage-stats") {
+      if (controller.usageSearchTimer) {
+        window.clearTimeout(controller.usageSearchTimer);
+      }
+      controller.usageSearchTimer = window.setTimeout(() => {
+        controller.usageSearchTimer = null;
+        void refresh(root, controller);
+      }, USAGE_SEARCH_DEBOUNCE_MS);
+      return;
+    }
     render(root, controller);
     return;
-  }
-  if (target.hasAttribute("data-tenant-usage-start")) {
-    controller.usageFilters.startDate = target.value;
-    return;
-  }
-  if (target.hasAttribute("data-tenant-usage-end")) {
-    controller.usageFilters.endDate = target.value;
   }
 }
 
@@ -859,7 +654,12 @@ export async function mountTenantConsolePage(root, options = {}) {
 
   const apiClient = createTenantApiClient();
   const controller = ensureController(root, session, apiClient);
+  const previousSection = controller.section;
   controller.section = options.section || "members";
+  if (previousSection === "usage-stats" && controller.usageSearchTimer) {
+    window.clearTimeout(controller.usageSearchTimer);
+    controller.usageSearchTimer = null;
+  }
   if (controller.section === "usage-stats") {
     controller.dialogs.createMemberOpen = false;
     controller.dialogs.assignOpen = false;

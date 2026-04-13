@@ -324,8 +324,16 @@ describe("tenant platform database foundation", () => {
           page: 1,
           pageSize: 8,
           search: "",
-        }).items[0]?.creditsUsed,
-      ).toBeCloseTo(0.2, 8);
+        }).items[0],
+      ).toMatchObject({
+        creditsUsed: 0.2,
+        totalTokens: 165,
+        tokens: 165,
+        inputTokens: 120,
+        outputTokens: 45,
+        memberUsername: member.username,
+        agentId: "finance",
+      });
 
       const ledgerRows = db
         .prepare(

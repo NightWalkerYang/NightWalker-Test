@@ -114,7 +114,7 @@ function renderToolbar(controller) {
       <label class="data-table-search">
         <input
           type="search"
-          placeholder="搜索成员账号或Agent名称"
+          placeholder="搜索成员、Agent 或模型"
           value="${escapeHtml(controller.search)}"
           data-tenant-usage-search
         />
@@ -129,12 +129,13 @@ function renderTable(rows) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>时间</th>
-            <th>成员账号</th>
+            <th>成员</th>
             <th>Agent</th>
-            <th>消耗积分</th>
-            <th>Tokens</th>
-            <th>备注</th>
+            <th>耗用总token</th>
+            <th>输入</th>
+            <th>输出</th>
+            <th>耗用积分</th>
+            <th>时间</th>
           </tr>
         </thead>
         <tbody>
@@ -144,17 +145,18 @@ function renderTable(rows) {
                   .map(
                     (row) => `
                       <tr>
-                        <td>${escapeHtml(formatDateTime(row.createdAt))}</td>
                         <td>${escapeHtml(row.memberUsername || "-")}</td>
                         <td>${escapeHtml(row.agentName || row.agentId || "-")}</td>
+                        <td>${escapeHtml(formatTokens(row.totalTokens ?? row.tokens))}</td>
+                        <td>${escapeHtml(formatTokens(row.inputTokens))}</td>
+                        <td>${escapeHtml(formatTokens(row.outputTokens))}</td>
                         <td>${escapeHtml(formatCredits(row.creditsUsed))}</td>
-                        <td>${escapeHtml(formatTokens(row.tokens))}</td>
-                        <td>${escapeHtml(row.model || "-")}</td>
+                        <td>${escapeHtml(formatDateTime(row.createdAt))}</td>
                       </tr>
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="6" class="oc-tenant-table-empty">暂无消耗记录</td></tr>`
+              : `<tr><td colspan="7" class="oc-tenant-table-empty">暂无耗量记录</td></tr>`
           }
         </tbody>
       </table>
@@ -208,6 +210,7 @@ async function refresh(root, controller) {
     const totalPages = totalPagesFor(controller);
     if (controller.page > totalPages) {
       controller.page = totalPages;
+      return refresh(root, controller);
     }
     render(root, controller);
   } catch (error) {
