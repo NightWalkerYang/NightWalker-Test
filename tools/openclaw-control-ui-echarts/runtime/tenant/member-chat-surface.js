@@ -770,7 +770,7 @@ function ensureDeleteDialog(controller) {
 function closeAllDialogs() {
   for (const dialog of document.querySelectorAll("dialog[open]")) {
     if (dialog instanceof HTMLDialogElement) {
-      dialog.close();
+      closeDialog(dialog);
     }
   }
 }

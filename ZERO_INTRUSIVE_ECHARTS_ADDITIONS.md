@@ -118,6 +118,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-usage-stats-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js`
@@ -221,6 +222,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.
 - The custom Control UI build chain now generates stable `/login` aliases (`login/index.html` and `login.html`) without the previous directory/file collision, so zero-intrusive redeploys no longer fail or regress into `Not Found` because of broken login entry artifacts.
 - The Control UI rebuild scripts now preserve the `generated/control-ui` root directory itself and only replace its contents, preventing Docker bind mounts from sticking to a deleted empty directory and causing post-redeploy `Not Found` pages.
+- The tenant-admin sidebar now injects a sibling `统计` dropdown alongside `管理`, with a `耗量统计` entry that renders a server-paginated list of Agent × member × credit usage records (pulled from `tenant_wallet_ledger`, debit-direction usage rows only) with top-bar search and bottom pagination, reusing the existing `data-table` layout from the 成员管理 / Agent 分配 pages.
 
 ## Important Notes
 

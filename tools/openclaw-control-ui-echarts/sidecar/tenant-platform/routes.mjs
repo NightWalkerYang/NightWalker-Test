@@ -13,6 +13,7 @@ import {
   listTenantAgents,
   listTenantMembers,
   listTenantUsageStats,
+  listTenantUsageRecords,
   logAudit,
   readOpenClawAgentCatalog,
   registerTenantAgentSession,
@@ -616,6 +617,37 @@ export function createTenantPlatformRouter(deps) {
         return;
       }
       try {
+        const hasPagedRecordQuery =
+          url.searchParams.has("page") ||
+          url.searchParams.has("pageSize") ||
+          url.searchParams.has("search");
+        if (hasPagedRecordQuery) {
+          const result = listTenantUsageRecords(deps.db, {
+            tenantId: session.tenantId,
+            search: url.searchParams.get("search") || "",
+            page: url.searchParams.get("page"),
+            pageSize: url.searchParams.get("pageSize"),
+          });
+          const configMap = new Map((configAgents || []).map((entry) => [entry.id, entry]));
+          const items = result.items.map((row) => {
+            const configEntry = configMap.get(row.agentId) ?? null;
+            return {
+              ...row,
+              agentName: configEntry?.name ?? row.agentId ?? "-",
+              agentEmoji: configEntry?.emoji ?? null,
+            };
+          });
+          sendJson(request, response, 200, {
+            ok: true,
+            data: {
+              items,
+              total: result.total,
+              page: result.page,
+              pageSize: result.pageSize,
+            },
+          });
+          return;
+        }
         sendJson(request, response, 200, {
           ok: true,
           data: listTenantUsageStats(

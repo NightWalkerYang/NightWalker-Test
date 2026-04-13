@@ -28,6 +28,9 @@ import {
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
+const STATS_SECTION_CLASS = "oc-tenant-stats-section";
+const NAV_SECTION_CLASSES = [MANAGEMENT_SECTION_CLASS, STATS_SECTION_CLASS];
+const NAV_SECTION_SELECTOR = NAV_SECTION_CLASSES.map((name) => `.${name}`).join(", ");
 const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
 const TOPBAR_META_MODE_ATTR = "data-oc-platform-search-mode";
@@ -69,6 +72,11 @@ const ICONS = {
       <path d="M8 6.1a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Zm8 0a2.3 2.3 0 1 1 0 4.6 2.3 2.3 0 0 1 0-4.6ZM4.5 17.9c0-2.4 2-4.1 4.9-4.1s4.9 1.7 4.9 4.1V19H4.5Zm10.6 1.1v-1.1c0-1.1-.3-2.1-.9-2.9 2.1.1 4 .9 4 2.9V19Z"></path>
     </svg>
   `,
+  stats: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 20V4h2v16Zm4-3V9h2v8Zm4 3V12h2v8Zm4-3V6h2v11Zm4 3v-7h2v7Z"></path>
+    </svg>
+  `,
 };
 
 function createSectionLabel(text = "管理") {
@@ -98,54 +106,70 @@ function getSectionConfigForSession(session) {
   const role = session?.session?.role || "";
   if (role === "platform_admin") {
     return {
-      label: "管理",
-      links: [
+      sections: [
         {
-          className: "oc-tenant-management-link",
-          href: PLATFORM_TENANT_MANAGEMENT_ROUTE,
-          title: "租户管理",
-          text: "租户管理",
-          icon: ICONS.tenants,
-          activeView: PLATFORM_TENANT_MANAGEMENT_VIEW,
-        },
-        {
-          className: "oc-platform-agent-link",
-          href: PLATFORM_AGENT_ASSIGNMENT_ROUTE,
-          title: "Agent 分配",
-          text: "Agent 分配",
-          icon: ICONS.agentAllocation,
-          activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
+          className: MANAGEMENT_SECTION_CLASS,
+          label: "管理",
+          links: [
+            {
+              className: "oc-tenant-management-link",
+              href: PLATFORM_TENANT_MANAGEMENT_ROUTE,
+              title: "租户管理",
+              text: "租户管理",
+              icon: ICONS.tenants,
+              activeView: PLATFORM_TENANT_MANAGEMENT_VIEW,
+            },
+            {
+              className: "oc-platform-agent-link",
+              href: PLATFORM_AGENT_ASSIGNMENT_ROUTE,
+              title: "Agent 分配",
+              text: "Agent 分配",
+              icon: ICONS.agentAllocation,
+              activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
+            },
+          ],
         },
       ],
     };
   }
   if (role === "tenant_admin") {
     return {
-      label: "管理",
-      links: [
+      sections: [
         {
-          className: "oc-tenant-members-link",
-          href: TENANT_MEMBER_MANAGEMENT_ROUTE,
-          title: "成员管理",
-          text: "成员管理",
-          icon: ICONS.members,
-          activeView: TENANT_MEMBERS_VIEW,
+          className: MANAGEMENT_SECTION_CLASS,
+          label: "管理",
+          links: [
+            {
+              className: "oc-tenant-members-link",
+              href: TENANT_MEMBER_MANAGEMENT_ROUTE,
+              title: "成员管理",
+              text: "成员管理",
+              icon: ICONS.members,
+              activeView: TENANT_MEMBERS_VIEW,
+            },
+            {
+              className: "oc-tenant-agent-link",
+              href: TENANT_AGENT_ASSIGNMENT_ROUTE,
+              title: "Agent 分配",
+              text: "Agent 分配",
+              icon: ICONS.agentAllocation,
+              activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
+            },
+          ],
         },
         {
-          className: "oc-tenant-agent-link",
-          href: TENANT_AGENT_ASSIGNMENT_ROUTE,
-          title: "Agent 分配",
-          text: "Agent 分配",
-          icon: ICONS.agentAllocation,
-          activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
-        },
-        {
-          className: "oc-tenant-usage-link",
-          href: TENANT_USAGE_STATS_ROUTE,
-          title: "耗量统计",
-          text: "耗量统计",
-          icon: ICONS.tenants,
-          activeView: TENANT_USAGE_STATS_VIEW,
+          className: STATS_SECTION_CLASS,
+          label: "统计",
+          links: [
+            {
+              className: "oc-tenant-usage-stats-link",
+              href: TENANT_USAGE_STATS_ROUTE,
+              title: "耗量统计",
+              text: "耗量统计",
+              icon: ICONS.stats,
+              activeView: TENANT_USAGE_STATS_VIEW,
+            },
+          ],
         },
       ],
     };
@@ -155,25 +179,31 @@ function getSectionConfigForSession(session) {
     const selectedAgent = readSelectedTenantAgent();
     if (currentPath === "/chat" && selectedAgent?.id && selectedAgent?.agentId) {
       return {
-        label: "Agent",
-        links: [],
+        sections: [{ className: MANAGEMENT_SECTION_CLASS, label: "Agent", links: [] }],
       };
     }
     return {
-      label: "Agent",
-      links: [
+      sections: [
         {
-          className: "oc-member-agent-selector-link",
-          href: TENANT_AGENT_SELECTOR_ROUTE,
-          title: "Agent 选择",
-          text: "Agent选择",
-          icon: ICONS.agentAllocation,
-          activeView: TENANT_AGENT_SELECTOR_VIEW,
+          className: MANAGEMENT_SECTION_CLASS,
+          label: "Agent",
+          links: [
+            {
+              className: "oc-member-agent-selector-link",
+              href: TENANT_AGENT_SELECTOR_ROUTE,
+              title: "Agent 选择",
+              text: "Agent选择",
+              icon: ICONS.agentAllocation,
+              activeView: TENANT_AGENT_SELECTOR_VIEW,
+            },
+          ],
         },
       ],
     };
   }
-  return { label: "管理", links: [] };
+  return {
+    sections: [{ className: MANAGEMENT_SECTION_CLASS, label: "管理", links: [] }],
+  };
 }
 
 function updateManagementSectionState(section) {
@@ -205,7 +235,7 @@ function ensureManagementSectionHandlers(section) {
     if (!(link instanceof HTMLAnchorElement)) {
       return;
     }
-    if (!link.closest(`.${MANAGEMENT_SECTION_CLASS}`)) {
+    if (!link.closest(NAV_SECTION_SELECTOR)) {
       return;
     }
     event.preventDefault();
@@ -244,7 +274,7 @@ function ensureSidebarRouteHandlers(container) {
       if (!(link instanceof HTMLAnchorElement)) {
         return;
       }
-      if (link.closest(`.${MANAGEMENT_SECTION_CLASS}`)) {
+      if (link.closest(NAV_SECTION_SELECTOR)) {
         return;
       }
       const destination = new URL(link.href, document.baseURI);
@@ -258,19 +288,17 @@ function ensureSidebarRouteHandlers(container) {
   );
 }
 
-function createManagementSection(session) {
+function createNavSection(session, spec) {
   const section = document.createElement("section");
-  section.className = `nav-section ${MANAGEMENT_SECTION_CLASS}`;
+  section.className = `nav-section ${spec.className}`;
   section.setAttribute("data-oc-management-role", String(session?.session?.role || ""));
   section.setAttribute("data-oc-role-nav", "true");
 
-  const config = getSectionConfigForSession(session);
-  const label = createSectionLabel(config.label);
+  const label = createSectionLabel(spec.label);
   const items = document.createElement("div");
   items.className = "nav-section__items";
-  const links = config.links;
   const activeView = readTenantView();
-  for (const link of links) {
+  for (const link of spec.links) {
     const item = createNavItem({
       className: link.className,
       href: new URL(link.href, document.baseURI).href,
@@ -304,26 +332,49 @@ function ensureManagementSection(container) {
   const session = readSessionForCurrentView();
   const role = String(session?.session?.role || "");
   const config = getSectionConfigForSession(session);
-  const links = config.links;
-  const existing = container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`);
-  if (!links.length) {
-    existing?.remove();
-    return;
-  }
-  if (existing instanceof HTMLElement) {
-    const labelText = existing.querySelector(".nav-section__label-text")?.textContent?.trim() || "";
-    if (existing.getAttribute("data-oc-management-role") !== role || labelText !== config.label) {
-      existing.remove();
-    } else {
-      updateManagementSectionState(existing);
-      return;
+  const specs = Array.isArray(config.sections) ? config.sections : [];
+  const specClassSet = new Set(specs.map((spec) => spec.className));
+
+  for (const className of NAV_SECTION_CLASSES) {
+    if (specClassSet.has(className)) {
+      continue;
     }
+    const stale = container.querySelector(`:scope > .${className}`);
+    stale?.remove();
   }
 
-  const section = createManagementSection(session);
-  const siblings = [...container.querySelectorAll(":scope > .nav-section")];
-  const insertBefore = siblings[0] ?? null;
-  container.insertBefore(section, insertBefore);
+  let anchor = null;
+  for (let index = 0; index < specs.length; index += 1) {
+    const spec = specs[index];
+    const existing = container.querySelector(`:scope > .${spec.className}`);
+    if (!spec.links.length) {
+      existing?.remove();
+      continue;
+    }
+    if (existing instanceof HTMLElement) {
+      const labelText =
+        existing.querySelector(".nav-section__label-text")?.textContent?.trim() || "";
+      if (existing.getAttribute("data-oc-management-role") !== role || labelText !== spec.label) {
+        existing.remove();
+      } else {
+        updateManagementSectionState(existing);
+        anchor = existing;
+        continue;
+      }
+    }
+
+    const section = createNavSection(session, spec);
+    if (anchor && anchor.nextSibling) {
+      container.insertBefore(section, anchor.nextSibling);
+    } else if (anchor) {
+      container.append(section);
+    } else {
+      const siblings = [...container.querySelectorAll(":scope > .nav-section")];
+      const insertBefore = siblings[0] ?? null;
+      container.insertBefore(section, insertBefore);
+    }
+    anchor = section;
+  }
 }
 
 function ensureTenantUtilityLink(container) {
@@ -359,7 +410,7 @@ function syncSidebarNavForRole(container, role) {
     if (!(section instanceof HTMLElement)) {
       continue;
     }
-    if (section.classList.contains(MANAGEMENT_SECTION_CLASS)) {
+    if (NAV_SECTION_CLASSES.some((name) => section.classList.contains(name))) {
       section.hidden = false;
       continue;
     }

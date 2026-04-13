@@ -119,15 +119,21 @@ describe("zero-intrusive tenant entry", () => {
     bootTenantEntry();
 
     const managementSection = document.querySelector(".oc-platform-management-section");
-    const items = managementSection?.querySelectorAll(".nav-item") ?? [];
+    const managementItems = managementSection?.querySelectorAll(".nav-item") ?? [];
+    const statsSection = document.querySelector(".oc-tenant-stats-section");
+    const statsItems = statsSection?.querySelectorAll(".nav-item") ?? [];
     expect(managementSection).not.toBeNull();
-    expect(items).toHaveLength(3);
-    expect(items[0]?.textContent).toContain("成员管理");
-    expect(items[0]?.getAttribute("href")).toContain("ocTenantView=tenant-members");
-    expect(items[1]?.textContent).toContain("Agent 分配");
-    expect(items[1]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-assignment");
-    expect(items[2]?.textContent).toContain("耗量统计");
-    expect(items[2]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
+    expect(managementItems).toHaveLength(2);
+    expect(managementItems[0]?.textContent).toContain("成员管理");
+    expect(managementItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-members");
+    expect(managementItems[1]?.textContent).toContain("Agent 分配");
+    expect(managementItems[1]?.getAttribute("href")).toContain(
+      "ocTenantView=tenant-agent-assignment",
+    );
+    expect(statsSection).not.toBeNull();
+    expect(statsItems).toHaveLength(1);
+    expect(statsItems[0]?.textContent).toContain("耗量统计");
+    expect(statsItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant_admin",
     );
@@ -254,11 +260,15 @@ describe("zero-intrusive tenant entry", () => {
     bootTenantEntry();
 
     const managementSection = document.querySelector(".oc-platform-management-section");
-    const items = managementSection?.querySelectorAll(".nav-item") ?? [];
-    expect(items).toHaveLength(3);
-    expect(items[0]?.textContent).toContain("成员管理");
-    expect(items[1]?.textContent).toContain("Agent 分配");
-    expect(items[2]?.textContent).toContain("耗量统计");
+    const managementItems = managementSection?.querySelectorAll(".nav-item") ?? [];
+    const statsSection = document.querySelector(".oc-tenant-stats-section");
+    const statsItems = statsSection?.querySelectorAll(".nav-item") ?? [];
+    expect(managementItems).toHaveLength(2);
+    expect(managementItems[0]?.textContent).toContain("成员管理");
+    expect(managementItems[1]?.textContent).toContain("Agent 分配");
+    expect(statsSection).not.toBeNull();
+    expect(statsItems).toHaveLength(1);
+    expect(statsItems[0]?.textContent).toContain("耗量统计");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant_admin",
     );
