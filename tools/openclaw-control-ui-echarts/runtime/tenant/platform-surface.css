@@ -53,9 +53,9 @@
   display: grid;
   gap: 18px;
   padding: 22px;
-  border: 1px solid var(--border);
+  border: 2px solid #000;
   border-radius: 20px;
-  background: var(--surface);
+  background: #fff;
   box-shadow: var(--shadow-lg);
 }
 
