@@ -13,8 +13,8 @@ function escapeHtml(value) {
 
 export async function refreshTenantOverview(root, controller) {
   try {
-    const data = await controller.apiClient.getTenantOverview();
-    controller.overviewData = data;
+    const result = await controller.apiClient.getTenantOverview();
+    controller.overviewData = result?.data || null;
   } catch (error) {
     console.error("Failed to refresh tenant overview:", error);
   }
@@ -27,6 +27,9 @@ export function renderTenantOverview(controller) {
   }
 
   const { summary } = data;
+  if (!summary) {
+    return `<div class="oc-tenant-overview-loading">统计数据格式异常。</div>`;
+  }
   
   return `
     <div class="oc-tenant-overview">
