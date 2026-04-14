@@ -370,6 +370,8 @@ function renderUsageTable(rows) {
             <th>耗用总token</th>
             <th>输入</th>
             <th>输出</th>
+            <th>缓存读取</th>
+            <th>缓存写入</th>
             <th>耗用积分</th>
             <th>时间</th>
           </tr>
@@ -386,13 +388,15 @@ function renderUsageTable(rows) {
                         <td>${formatNumber(row.totalTokens ?? row.total_tokens ?? row.tokens)}</td>
                         <td>${formatNumber(row.inputTokens ?? row.input_tokens)}</td>
                         <td>${formatNumber(row.outputTokens ?? row.output_tokens)}</td>
+                        <td>${formatNumber(row.cacheReadTokens ?? row.cache_read_tokens)}</td>
+                        <td>${formatNumber(row.cacheWriteTokens ?? row.cache_write_tokens)}</td>
                         <td>${escapeHtml(formatCredits(row.creditsUsed ?? row.credits_used))}</td>
                         <td>${escapeHtml(formatDateTime(row.createdAt))}</td>
                       </tr>
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="7" class="oc-tenant-table-empty">暂无耗量记录</td></tr>`
+              : `<tr><td colspan="9" class="oc-tenant-table-empty">暂无耗量记录</td></tr>`
           }
         </tbody>
       </table>
