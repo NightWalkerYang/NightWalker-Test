@@ -84,7 +84,14 @@ function normalizeIsoTimestamp(value, fallback = nowIso()) {
 
 function getScalar(db, sql, params) {
   const stmt = db.prepare(sql);
-  const row = params !== undefined ? stmt.get(params) : stmt.get();
+  let row;
+  if (params === undefined) {
+    row = stmt.get();
+  } else if (Array.isArray(params)) {
+    row = stmt.get(...params);
+  } else {
+    row = stmt.get(params);
+  }
   if (!row) {
     return null;
   }
@@ -1752,7 +1759,7 @@ export function getTenantOverview(db, params) {
       FROM tenant_usage_records
       WHERE tenant_id = ?`,
     )
-    .get([tenantId]);
+    .get(tenantId);
 
   const wallet = db
     .prepare(
@@ -1760,7 +1767,7 @@ export function getTenantOverview(db, params) {
       FROM tenant_wallets
       WHERE tenant_id = ?`,
     )
-    .get([tenantId]);
+    .get(tenantId);
 
   const dailyUsage = db
     .prepare(
@@ -1769,7 +1776,7 @@ export function getTenantOverview(db, params) {
       WHERE tenant_id = ? AND usage_day >= ?
       GROUP BY usage_day`,
     )
-    .all([tenantId, days[0]]);
+    .all(tenantId, days[0]);
 
   const memberCount = Number(
     getScalar(
@@ -1789,7 +1796,7 @@ export function getTenantOverview(db, params) {
       ORDER BY tokens DESC
       LIMIT 10`,
     )
-    .all([tenantId]);
+    .all(tenantId);
 
   const topAgents = db
     .prepare(
@@ -1800,7 +1807,7 @@ export function getTenantOverview(db, params) {
       ORDER BY tokens DESC
       LIMIT 10`,
     )
-    .all([tenantId]);
+    .all(tenantId);
 
   return {
     summary: {
