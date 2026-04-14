@@ -63,7 +63,10 @@ async function redirectIfAuthenticated({ apiClient, isLocalEdition }) {
       await apiClient.me(tenantSession);
       redirectToRoleHome(tenantSession.session);
       return true;
-    } catch {
+    } catch (error) {
+      if (error?.message === "account_disabled") {
+        window.alert("账号未启用，请联系管理员。");
+      }
       clearTenantSession();
     }
   }
@@ -81,7 +84,10 @@ async function redirectIfAuthenticated({ apiClient, isLocalEdition }) {
       await apiClient.me(platformSession);
       redirectToRoleHome(platformSession.session);
       return true;
-    } catch {
+    } catch (error) {
+      if (error?.message === "account_disabled") {
+        window.alert("账号未启用，请联系管理员。");
+      }
       clearPlatformSession();
     }
   }
@@ -206,6 +212,10 @@ export async function mountTenantLoginPage(root) {
       apiClient.persistSession(result);
       redirectToRoleHome(result.session);
     } catch (error) {
+      if (error?.message === "account_disabled") {
+        window.alert("账号未启用，请联系管理员。");
+        return;
+      }
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }
   });

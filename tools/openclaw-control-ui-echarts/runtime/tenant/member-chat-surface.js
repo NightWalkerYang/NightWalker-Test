@@ -1048,6 +1048,14 @@ function pinMemberChatSession(app, sessionKey) {
   if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
     const originalRequest = app.client.request.bind(app.client);
     app.client.request = async (method, params) => {
+      if (method === "chat.send") {
+        const controller = window._ocMemberChatSurfaceController;
+        const isLocal = controller?.session?.session?.edition === "local";
+        if (!isLocal && !(controller?.selectedAgent?.balancePoints > 0)) {
+          window.alert("积分不足请联系管理员。");
+          return { ok: false, error: "insufficient_balance" };
+        }
+      }
       const result = await originalRequest(method, params);
       if (method === "chat.send") {
         if (window._ocMemberChatSurfaceController?.currentSessionKey) {

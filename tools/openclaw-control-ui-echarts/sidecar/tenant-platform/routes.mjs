@@ -283,6 +283,11 @@ export function createTenantPlatformRouter(deps) {
       if (!session) {
         return;
       }
+      const user = getUserByUsername(deps.db, session.username);
+      if (user?.status !== "active") {
+        sendJson(request, response, 403, { ok: false, error: "account_disabled" });
+        return;
+      }
       const tenant = session.tenantId ? getTenantContextForUser(deps.db, session.userId) : null;
       sendJson(request, response, 200, {
         ok: true,
