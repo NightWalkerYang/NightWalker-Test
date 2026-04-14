@@ -5,6 +5,7 @@ import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_MEMBERS_VIEW,
   TENANT_USAGE_STATS_VIEW,
+  TENANT_STATISTICS_OVERVIEW_VIEW,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -18,7 +19,8 @@ function isTenantManagementView(view) {
   return (
     view === TENANT_MEMBERS_VIEW ||
     view === TENANT_AGENT_ASSIGNMENT_VIEW ||
-    view === TENANT_USAGE_STATS_VIEW
+    view === TENANT_USAGE_STATS_VIEW ||
+    view === TENANT_STATISTICS_OVERVIEW_VIEW
   );
 }
 
