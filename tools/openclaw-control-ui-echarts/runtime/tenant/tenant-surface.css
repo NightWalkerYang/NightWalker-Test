@@ -9,6 +9,7 @@
 .oc-tenant-list-view {
   display: grid;
   gap: 16px;
+  align-content: start;
 }
 
 .oc-tenant-list-view--scrollable {

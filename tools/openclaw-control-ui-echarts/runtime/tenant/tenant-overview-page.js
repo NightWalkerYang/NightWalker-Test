@@ -13,10 +13,8 @@ function escapeHtml(value) {
 
 export async function refreshTenantOverview(root, controller) {
   try {
-    console.log("[StatsOverview] Refreshing data...");
     controller.overviewError = null;
     const result = await controller.apiClient.getTenantOverview();
-    console.log("[StatsOverview] API Result:", result);
     controller.overviewData = result || null;
   } catch (error) {
     console.error("Failed to refresh tenant overview:", error);
