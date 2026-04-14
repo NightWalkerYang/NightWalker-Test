@@ -63,7 +63,7 @@ function ensureStyle() {
   return link;
 }
 
-function showTransientToast(controller, message) {
+function showTransientToast(controller, message, type = "info") {
   let root = document.body.querySelector(`[${TOAST_ROOT_ATTR}]`);
   if (!(root instanceof HTMLElement)) {
     root = document.createElement("div");
@@ -71,14 +71,16 @@ function showTransientToast(controller, message) {
     root.setAttribute(TOAST_ROOT_ATTR, "true");
     document.body.append(root);
   }
-  root.innerHTML = `<div class="callout info oc-member-chat-toast" data-oc-member-chat-toast>${escapeHtml(message)}</div>`;
-  if (controller.toastTimer) {
-    window.clearTimeout(controller.toastTimer);
+  const kind = type === "danger" ? "danger" : "info";
+  root.innerHTML = `<div class="callout ${kind} oc-member-chat-toast" data-oc-member-chat-toast>${escapeHtml(message)}</div>`;
+  const timerOwner = controller || window;
+  if (timerOwner.ocToastTimer) {
+    window.clearTimeout(timerOwner.ocToastTimer);
   }
-  controller.toastTimer = window.setTimeout(() => {
+  timerOwner.ocToastTimer = window.setTimeout(() => {
     root.querySelector(TOAST_SELECTOR)?.remove();
-    controller.toastTimer = 0;
-  }, 1000);
+    timerOwner.ocToastTimer = 0;
+  }, 2500);
 }
 
 function normalizeSessionRows(result) {
@@ -1056,7 +1058,7 @@ function pinMemberChatSession(app, sessionKey) {
         if (session?.session?.role !== "platform_admin" && !isLocal && balance <= 0) {
           // Note: In most cases, the early interceptor in bootMemberChatSurface
           // will catch this before it reaches here.
-          window.alert("积分不足请联系管理员。");
+          showTransientToast(window._ocMemberChatSurfaceController, "积分不足请联系管理员。", "danger");
           return { ok: false, error: "insufficient_balance" };
         }
       }
@@ -1319,7 +1321,7 @@ export function bootMemberChatSurface() {
     }
     const balance = Number(agent?.balancePoints ?? 0);
     if (balance <= 0) {
-      window.alert("积分不足请联系管理员。");
+      showTransientToast(window._ocMemberChatSurfaceController, "积分不足请联系管理员。", "danger");
       return false;
     }
     return true;

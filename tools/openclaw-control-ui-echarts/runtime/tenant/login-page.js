@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
+import { showTransientFeedbackToast } from "./feedback-toast.js";
 import { renderTenantAuthLayout } from "./auth-layout.js";
 import {
   clearPlatformSession,
@@ -65,7 +66,7 @@ async function redirectIfAuthenticated({ apiClient, isLocalEdition }) {
       return true;
     } catch (error) {
       if (error?.message === "account_disabled") {
-        window.alert("账号未启用，请联系管理员。");
+        showTransientFeedbackToast(root, "账号未启用，请联系管理员。", true);
       }
       clearTenantSession();
     }
@@ -86,7 +87,7 @@ async function redirectIfAuthenticated({ apiClient, isLocalEdition }) {
       return true;
     } catch (error) {
       if (error?.message === "account_disabled") {
-        window.alert("账号未启用，请联系管理员。");
+        showTransientFeedbackToast(root, "账号未启用，请联系管理员。", true);
       }
       clearPlatformSession();
     }
@@ -213,7 +214,7 @@ export async function mountTenantLoginPage(root) {
       redirectToRoleHome(result.session);
     } catch (error) {
       if (error?.message === "account_disabled") {
-        window.alert("账号未启用，请联系管理员。");
+        showTransientFeedbackToast(root, "账号未启用，请联系管理员。", true);
         return;
       }
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
