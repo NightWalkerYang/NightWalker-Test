@@ -17,6 +17,43 @@
   gap: 10px;
 }
 
+/* Keep the member chat rail compact when the app sidebar is collapsed. */
+:root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section {
+  gap: 8px;
+}
+
+:root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section > .nav-section__label {
+  justify-content: center;
+  gap: 0;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0 auto;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--text) 22%);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, var(--bg) 6%);
+  color: var(--text);
+  box-shadow: 0 8px 18px rgb(15 23 42 / 8%);
+}
+
+:root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section > .nav-section__label:hover {
+  border-color: color-mix(in srgb, var(--border) 58%, var(--text) 42%);
+  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
+}
+
+:root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section > .nav-section__label .nav-section__label-text {
+  white-space: nowrap;
+}
+
+:root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section > .nav-section__label .nav-section__chevron {
+  display: none;
+}
+
+:root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section > .nav-section__items {
+  display: none;
+}
+
 .oc-member-chat-action {
   width: 100%;
   justify-content: center;
