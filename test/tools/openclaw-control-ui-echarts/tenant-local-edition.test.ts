@@ -212,6 +212,111 @@ describe("tenant platform local edition", () => {
     expect(createdMember.payload.data.username).toBe("member-after-license");
   });
 
+  it("updates member password and active status through tenant admin member routes", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(createMember.status).toBe(200);
+
+    const disabled = await requestJson(baseUrl, "/tenant/admin/members/status", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        userId: createMember.payload.data.id,
+        status: "inactive",
+      },
+    });
+    expect(disabled.status).toBe(200);
+    expect(disabled.payload.data.status).toBe("inactive");
+
+    const disabledLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(disabledLogin.status).toBe(403);
+    expect(disabledLogin.payload.error).toBe("account_disabled");
+
+    const enabled = await requestJson(baseUrl, "/tenant/admin/members/status", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        userId: createMember.payload.data.id,
+        status: "active",
+      },
+    });
+    expect(enabled.status).toBe(200);
+    expect(enabled.payload.data.status).toBe("active");
+
+    const originalLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(originalLogin.status).toBe(200);
+
+    const passwordUpdate = await requestJson(baseUrl, "/tenant/admin/members/password", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        userId: createMember.payload.data.id,
+        password: "new-secret",
+      },
+    });
+    expect(passwordUpdate.status).toBe(200);
+
+    const oldPasswordLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(oldPasswordLogin.status).toBe(401);
+    expect(oldPasswordLogin.payload.error).toBe("invalid_credentials");
+
+    const newPasswordLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "new-secret",
+      },
+    });
+    expect(newPasswordLogin.status).toBe(200);
+    expect(newPasswordLogin.payload.data.session.role).toBe("member");
+  });
+
   it("allows readonly tenant login after expiry but blocks writes", async () => {
     const sandbox = createSandbox();
     const { baseUrl } = await startSandboxServer(sandbox);

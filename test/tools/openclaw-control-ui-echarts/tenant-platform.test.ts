@@ -8,6 +8,7 @@ import {
   createBootstrapPlatformAdmin,
   createTenantWithAdmin,
   createTenantMember,
+  getUserByUsername,
   listTenantMembers,
   readOpenClawAgentCatalog,
   upsertTenantAgent,
@@ -16,7 +17,10 @@ import {
   listTenantUsageRecords,
   syncTenantUsageRecords,
   updateTenantMemberLimit,
+  updateTenantMemberPassword,
+  updateTenantMemberStatus,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
+import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 
 const cleanupRoots = new Set();
 
@@ -195,6 +199,64 @@ describe("tenant platform database foundation", () => {
           memberLimit: 0,
         }),
       ).toThrow("member_limit_invalid");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("updates tenant member status and password in the database layer", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "theta",
+        name: "租户 Theta",
+        adminUsername: "theta-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+
+      const disabled = updateTenantMemberStatus(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        status: "inactive",
+      });
+      expect(disabled?.status).toBe("inactive");
+      expect(getUserByUsername(db, "member-a")?.status).toBe("inactive");
+
+      const passwordChanged = updateTenantMemberPassword(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        password: "new-secret",
+      });
+      expect(passwordChanged?.status).toBe("inactive");
+      expect(
+        verifyPassword("secret", String(getUserByUsername(db, "member-a")?.password_hash || "")),
+      ).toBe(false);
+      expect(
+        verifyPassword("new-secret", String(getUserByUsername(db, "member-a")?.password_hash || "")),
+      ).toBe(true);
+
+      const enabled = updateTenantMemberStatus(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        status: "active",
+      });
+      expect(enabled?.status).toBe("active");
     } finally {
       closeTenantPlatformDb(db);
     }

@@ -709,6 +709,23 @@ export function createTenantMember(db, params) {
   );
 }
 
+function getTenantMemberRow(db, tenantId, userId) {
+  return (
+    db
+      .prepare(
+        `SELECT u.id, u.username, u.status,
+              tm.role, tm.created_at AS createdAt,
+              COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount
+       FROM users u
+       JOIN tenant_memberships tm ON tm.user_id = u.id
+       LEFT JOIN user_agent_assignments ua ON ua.user_id = u.id AND ua.status = 'active'
+       WHERE tm.tenant_id = ? AND tm.role = 'member' AND u.id = ?
+       GROUP BY u.id, tm.role, tm.created_at`,
+      )
+      .get(tenantId, userId) ?? null
+  );
+}
+
 export function listTenantMembers(db, tenantId) {
   return db
     .prepare(
@@ -723,6 +740,83 @@ export function listTenantMembers(db, tenantId) {
        ORDER BY tm.created_at DESC`,
     )
     .all(tenantId);
+}
+
+function normalizeMemberStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "active" || normalized === "inactive") {
+    return normalized;
+  }
+  return "";
+}
+
+export function updateTenantMemberPassword(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const password = String(params.password || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+  if (!password) {
+    throw new Error("密码不能为空");
+  }
+
+  return runInTransaction(db, () => {
+    const current = getTenantMemberRow(db, tenantId, userId);
+    if (!current) {
+      throw new Error("成员不存在");
+    }
+    db.prepare(
+      `UPDATE users
+       SET password_hash = @passwordHash,
+           updated_at = @updatedAt
+       WHERE id = @userId`,
+    ).run({
+      userId,
+      passwordHash: hashPassword(password),
+      updatedAt: nowIso(),
+    });
+    return getTenantMemberRow(db, tenantId, userId);
+  });
+}
+
+export function updateTenantMemberStatus(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const status = normalizeMemberStatus(params.status);
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+  if (!status) {
+    throw new Error("成员状态无效");
+  }
+
+  return runInTransaction(db, () => {
+    const current = getTenantMemberRow(db, tenantId, userId);
+    if (!current) {
+      throw new Error("成员不存在");
+    }
+    if (String(current.status || "").trim().toLowerCase() === status) {
+      return current;
+    }
+    db.prepare(
+      `UPDATE users
+       SET status = @status,
+           updated_at = @updatedAt
+       WHERE id = @userId`,
+    ).run({
+      userId,
+      status,
+      updatedAt: nowIso(),
+    });
+    return getTenantMemberRow(db, tenantId, userId);
+  });
 }
 
 export function upsertTenantAgent(db, params) {

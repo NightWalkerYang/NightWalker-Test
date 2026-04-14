@@ -167,6 +167,12 @@ export function createTenantApiClient() {
     createTenantMember(body) {
       return requestJson("/tenant/admin/members", { method: "POST", body });
     },
+    updateTenantMemberPassword(body) {
+      return requestJson("/tenant/admin/members/password", { method: "POST", body });
+    },
+    updateTenantMemberStatus(body) {
+      return requestJson("/tenant/admin/members/status", { method: "POST", body });
+    },
     listTenantAgents() {
       return requestJson("/tenant/admin/tenant-agents");
     },

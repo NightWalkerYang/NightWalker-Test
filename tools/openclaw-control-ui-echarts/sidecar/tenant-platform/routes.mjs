@@ -19,6 +19,8 @@ import {
   registerTenantAgentSession,
   syncTenantUsageRecords,
   updateTenantMemberLimit,
+  updateTenantMemberPassword,
+  updateTenantMemberStatus,
   upsertTenantAgent,
   hideTenantAgentSession,
   listTenantAgentSessions,
@@ -560,6 +562,78 @@ export function createTenantPlatformRouter(deps) {
           tenantId: session.tenantId,
           username: String(body.username || "").trim(),
           password: String(body.password || ""),
+        });
+        sendJson(request, response, 200, { ok: true, data: member });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/members/password") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const member = updateTenantMemberPassword(deps.db, {
+          tenantId: session.tenantId,
+          userId: String(body.userId || "").trim(),
+          password: String(body.password || ""),
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.member.password.update",
+          resourceType: "member",
+          resourceId: member?.id || String(body.userId || "").trim() || null,
+          payloadJson: {
+            userId: String(body.userId || "").trim(),
+            username: member?.username || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: member });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/members/status") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const member = updateTenantMemberStatus(deps.db, {
+          tenantId: session.tenantId,
+          userId: String(body.userId || "").trim(),
+          status: String(body.status || "").trim(),
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.member.status.update",
+          resourceType: "member",
+          resourceId: member?.id || String(body.userId || "").trim() || null,
+          payloadJson: {
+            userId: String(body.userId || "").trim(),
+            status: member?.status || String(body.status || "").trim() || null,
+          },
         });
         sendJson(request, response, 200, { ok: true, data: member });
       } catch (error) {

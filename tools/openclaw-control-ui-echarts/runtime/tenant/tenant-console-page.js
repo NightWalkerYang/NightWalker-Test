@@ -62,14 +62,30 @@ function openDialog(dialog) {
     return;
   }
   if (!dialog.open) {
-    dialog.showModal();
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+      return;
+    }
+    dialog.setAttribute("open", "");
   }
 }
 
 function closeDialog(dialog) {
   if (dialog instanceof HTMLDialogElement && dialog.open) {
-    dialog.close();
+    if (typeof dialog.close === "function") {
+      dialog.close();
+      return;
+    }
+    dialog.removeAttribute("open");
   }
+}
+
+function memberStatusLabel(status) {
+  return String(status || "").trim() === "active" ? "已启用" : "已禁用";
+}
+
+function memberStatusToggleLabel(status) {
+  return String(status || "").trim() === "active" ? "禁用成员" : "启用成员";
 }
 
 function ensureController(root, session, apiClient) {
@@ -95,6 +111,7 @@ function ensureController(root, session, apiClient) {
     members: [],
     tenantAgents: [],
     activeMember: null,
+    passwordMember: null,
     usageItems: [],
     usageTotal: 0,
     usagePageSize: PAGE_SIZE,
@@ -102,6 +119,7 @@ function ensureController(root, session, apiClient) {
     dialogs: {
       createMemberOpen: false,
       assignOpen: false,
+      changePasswordOpen: false,
     },
   };
 
@@ -124,6 +142,10 @@ function ensureController(root, session, apiClient) {
     }
     if (event.target.matches("[data-tenant-assign-dialog]")) {
       controller.dialogs.assignOpen = false;
+    }
+    if (event.target.matches("[data-tenant-member-password-dialog]")) {
+      controller.dialogs.changePasswordOpen = false;
+      controller.passwordMember = null;
     }
     render(root, controller);
   });
@@ -211,6 +233,7 @@ function renderMembersTable(rows) {
             <th>状态</th>
             <th>已分配 Agent</th>
             <th>创建时间</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -224,11 +247,29 @@ function renderMembersTable(rows) {
                         <td><span class="data-table-badge data-table-badge--${member.status === "active" ? "direct" : "unknown"}">${escapeHtml(member.status)}</span></td>
                         <td>${formatNumber(member.assignedAgentCount)}</td>
                         <td>${escapeHtml(formatDateTime(member.createdAt))}</td>
+                        <td>
+                          <div class="oc-tenant-table-actions oc-tenant-member-actions">
+                            <button class="btn" type="button" data-tenant-open-member-password="${escapeHtml(member.id)}">更改密码</button>
+                            <label class="oc-tenant-member-switch">
+                              <input
+                                type="checkbox"
+                                role="switch"
+                                data-tenant-member-status-toggle="${escapeHtml(member.id)}"
+                                ${member.status === "active" ? "checked" : ""}
+                                aria-label="${escapeHtml(memberStatusToggleLabel(member.status))}"
+                              />
+                              <span class="oc-tenant-member-switch__track" aria-hidden="true">
+                                <span class="oc-tenant-member-switch__thumb"></span>
+                              </span>
+                              <span class="oc-tenant-member-switch__label">${escapeHtml(memberStatusLabel(member.status))}</span>
+                            </label>
+                          </div>
+                        </td>
                       </tr>
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="4" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
+              : `<tr><td colspan="5" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
           }
         </tbody>
       </table>
@@ -307,6 +348,36 @@ function renderCreateMemberDialog() {
               <button class="btn primary" type="submit">创建成员</button>
             </div>
           </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderChangePasswordDialog(controller) {
+  const member = controller.passwordMember;
+  return `
+    <dialog class="oc-tenant-modal" data-tenant-member-password-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">更改密码</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="password">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
+          ${
+            member
+              ? `
+                <form class="oc-tenant-modal__form" data-tenant-member-password-form>
+                  <input type="hidden" name="userId" value="${escapeHtml(member.id)}" />
+                  <label class="field"><span>成员账号</span><input type="text" value="${escapeHtml(member.username)}" disabled /></label>
+                  <label class="field"><span>新密码</span><input name="password" type="password" autocomplete="new-password" required /></label>
+                  <div class="oc-tenant-modal__actions">
+                    <button class="btn primary" type="submit">保存密码</button>
+                  </div>
+                </form>
+              `
+              : `<div class="callout info">请选择成员后再操作。</div>`
+          }
         </div>
       </div>
     </dialog>
@@ -484,12 +555,19 @@ function render(root, controller) {
       ${contentMarkup}
       <div class="callout info oc-tenant-surface-feedback" data-tenant-feedback hidden></div>
     </section>
-    ${isUsageStats ? "" : `${renderCreateMemberDialog()}${renderAssignDialog(controller)}`}
+    ${
+      isUsageStats
+        ? ""
+        : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}`
+    }
   `;
 
   if (!isUsageStats) {
     if (controller.dialogs.createMemberOpen) {
       openDialog(root.querySelector("[data-tenant-create-dialog]"));
+    }
+    if (controller.dialogs.changePasswordOpen) {
+      openDialog(root.querySelector("[data-tenant-member-password-dialog]"));
     }
     if (controller.dialogs.assignOpen) {
       openDialog(root.querySelector("[data-tenant-assign-dialog]"));
@@ -539,6 +617,27 @@ function memberById(controller, userId) {
   return controller.members.find((member) => member.id === userId) ?? null;
 }
 
+async function updateMemberStatus(root, controller, input) {
+  const userId = String(input.dataset.tenantMemberStatusToggle || "").trim();
+  const member = memberById(controller, userId);
+  if (!userId || !member) {
+    return;
+  }
+  const nextStatus = input.checked ? "active" : "inactive";
+  input.disabled = true;
+  try {
+    await controller.apiClient.updateTenantMemberStatus({
+      userId,
+      status: nextStatus,
+    });
+    await refresh(root, controller);
+    setFeedback(root, nextStatus === "active" ? "成员已启用。" : "成员已禁用。");
+  } catch (error) {
+    render(root, controller);
+    setFeedback(root, error instanceof Error ? error.message : String(error), true);
+  }
+}
+
 async function handleClick(root, controller, event) {
   const target = event.target;
   if (!(target instanceof Element)) {
@@ -564,6 +663,20 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  const passwordTrigger = target.closest("[data-tenant-open-member-password]");
+  if (passwordTrigger instanceof HTMLElement) {
+    controller.passwordMember = memberById(
+      controller,
+      passwordTrigger.dataset.tenantOpenMemberPassword,
+    );
+    if (!controller.passwordMember) {
+      return;
+    }
+    controller.dialogs.changePasswordOpen = true;
+    render(root, controller);
+    return;
+  }
+
   const closeDialogTrigger = target.closest("[data-tenant-close-dialog]");
   if (closeDialogTrigger instanceof HTMLElement) {
     const dialogKind = closeDialogTrigger.dataset.tenantCloseDialog || "";
@@ -574,6 +687,11 @@ async function handleClick(root, controller, event) {
     if (dialogKind === "assign") {
       controller.dialogs.assignOpen = false;
       closeDialog(root.querySelector("[data-tenant-assign-dialog]"));
+    }
+    if (dialogKind === "password") {
+      controller.dialogs.changePasswordOpen = false;
+      controller.passwordMember = null;
+      closeDialog(root.querySelector("[data-tenant-member-password-dialog]"));
     }
     render(root, controller);
     return;
@@ -590,6 +708,10 @@ async function handleClick(root, controller, event) {
 function handleInput(root, controller, event) {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  if (target.hasAttribute("data-tenant-member-status-toggle")) {
+    void updateMemberStatus(root, controller, target);
     return;
   }
   if (target.hasAttribute("data-tenant-search")) {
@@ -631,6 +753,22 @@ async function handleSubmit(root, controller, event) {
     return;
   }
 
+  if (target.matches("[data-tenant-member-password-form]")) {
+    event.preventDefault();
+    try {
+      const payload = Object.fromEntries(new FormData(target).entries());
+      await controller.apiClient.updateTenantMemberPassword(payload);
+      controller.dialogs.changePasswordOpen = false;
+      controller.passwordMember = null;
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-tenant-member-password-dialog]"));
+      setFeedback(root, "成员密码已更新。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
   if (target.matches("[data-tenant-assignment-form]")) {
     event.preventDefault();
     try {
@@ -664,9 +802,19 @@ export async function mountTenantConsolePage(root, options = {}) {
     window.clearTimeout(controller.usageSearchTimer);
     controller.usageSearchTimer = null;
   }
+  if (controller.section !== "members") {
+    controller.dialogs.createMemberOpen = false;
+    controller.dialogs.changePasswordOpen = false;
+    controller.passwordMember = null;
+  }
+  if (controller.section !== "agent-assignment") {
+    controller.dialogs.assignOpen = false;
+  }
   if (controller.section === "usage-stats") {
     controller.dialogs.createMemberOpen = false;
     controller.dialogs.assignOpen = false;
+    controller.dialogs.changePasswordOpen = false;
+    controller.passwordMember = null;
   }
   await refresh(root, controller);
   return { root };

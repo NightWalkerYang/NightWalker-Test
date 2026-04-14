@@ -37,6 +37,81 @@
   gap: 8px;
 }
 
+.oc-tenant-member-actions {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+  justify-items: start;
+  min-width: 180px;
+}
+
+.oc-tenant-member-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.oc-tenant-member-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.oc-tenant-member-switch__track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--text) 18%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg) 8%);
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.oc-tenant-member-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 4px 10px rgb(15 23 42 / 18%);
+  transition: transform var(--duration-fast) ease;
+}
+
+.oc-tenant-member-switch__label {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.oc-tenant-member-switch input:checked + .oc-tenant-member-switch__track {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border) 52%);
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-elevated) 76%);
+}
+
+.oc-tenant-member-switch input:checked + .oc-tenant-member-switch__track .oc-tenant-member-switch__thumb {
+  transform: translateX(20px);
+}
+
+.oc-tenant-member-switch input:focus-visible + .oc-tenant-member-switch__track {
+  outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: 2px;
+}
+
+.oc-tenant-member-switch input:disabled + .oc-tenant-member-switch__track,
+.oc-tenant-member-switch input:disabled ~ .oc-tenant-member-switch__label {
+  opacity: 0.65;
+}
+
 .oc-tenant-table-empty {
   text-align: center;
   color: var(--muted);
@@ -102,6 +177,10 @@
   }
 
   .oc-tenant-table-toolbar .data-table-search {
+    min-width: 0;
+  }
+
+  .oc-tenant-member-actions {
     min-width: 0;
   }
 

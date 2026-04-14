@@ -16,6 +16,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function flush() {
+  await Promise.resolve();
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  await Promise.resolve();
+}
+
 describe("tenant surface", () => {
   it("mounts the native members view into the control-ui content area", async () => {
     writeTenantSession({
@@ -86,7 +92,139 @@ describe("tenant surface", () => {
     expect(surfaceRoot?.querySelector("[data-tenant-open-create]")?.textContent).toContain(
       "创建成员",
     );
+    expect(surfaceRoot?.querySelector("[data-tenant-open-member-password]")?.textContent).toContain(
+      "更改密码",
+    );
+    expect(surfaceRoot?.querySelector("[data-tenant-member-status-toggle]")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-open-assign]")).toBeNull();
+  });
+
+  it("updates member password and status from the members list actions", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 2,
+          createdAt: "2026-04-03T08:00:00.000Z",
+        },
+      ],
+      passwordUpdates: [],
+      statusUpdates: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return okJson(state.members);
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson([
+            {
+              id: "tenant-agent-1",
+              agentId: "subotech-finance",
+              agentName: "苏博泰克财务分析助手",
+              balancePoints: 100,
+            },
+          ]);
+        }
+        if (url.endsWith("/tenant/admin/members/password") && method === "POST") {
+          state.passwordUpdates.push(body);
+          return okJson({ id: body.userId, username: "alice", status: state.members[0].status });
+        }
+        if (url.endsWith("/tenant/admin/members/status") && method === "POST") {
+          state.statusUpdates.push(body);
+          const member = state.members.find((item) => item.id === body.userId);
+          if (member) {
+            member.status = body.status;
+          }
+          return okJson(member ?? null);
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.querySelector("[data-tenant-open-member-password]")).not.toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-member-status-toggle]")).not.toBeNull();
+
+    surfaceRoot
+      ?.querySelector("[data-tenant-open-member-password]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    const passwordDialog = document.querySelector("[data-tenant-member-password-dialog]");
+    expect(passwordDialog?.open).toBe(true);
+
+    const passwordInput = document.querySelector(
+      "[data-tenant-member-password-form] input[name='password']",
+    );
+    expect(passwordInput).not.toBeNull();
+    if (passwordInput instanceof HTMLInputElement) {
+      passwordInput.value = "new-secret";
+    }
+    const passwordForm = document.querySelector("[data-tenant-member-password-form]");
+    passwordForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(state.passwordUpdates).toEqual([
+      {
+        userId: "member-1",
+        password: "new-secret",
+      },
+    ]);
+    expect(document.querySelector("[data-tenant-member-password-dialog]")?.open).toBe(false);
+
+    const statusToggle = document.querySelector(
+      "[data-tenant-member-status-toggle='member-1']",
+    );
+    expect(statusToggle).not.toBeNull();
+    if (statusToggle instanceof HTMLInputElement) {
+      statusToggle.checked = false;
+      statusToggle.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    expect(state.statusUpdates).toEqual([
+      {
+        userId: "member-1",
+        status: "inactive",
+      },
+    ]);
+    expect(document.querySelector("[data-tenant-member-status-toggle='member-1']")?.checked).toBe(
+      false,
+    );
+    expect(document.querySelector("[data-tenant-member-status-toggle='member-1']")?.parentElement?.textContent).toContain(
+      "已禁用",
+    );
   });
 
   it("mounts the native tenant agent assignment view", async () => {

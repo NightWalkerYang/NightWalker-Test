@@ -227,6 +227,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Member chat usage sync now writes both `tenant_usage_records` and, for cloud tenants, idempotent `tenant_wallet_ledger` usage-charge rows keyed by `openclaw_session_key + source_fingerprint`, then deducts the matching `tenant_agents.balance_points` inside the same sidecar transaction.
 - Tenant member chat now intercepts the send action: if the selected Agent's assigned balance is not greater than 0 (for non-local editions), it blocks the message and displays a "积分不足请联系管理员。" alert.
 - Unified `/login` now validates account status during both new logins and auto-authentication; if the account is not active, it intercepts the process and displays a "账号未启用，请联系管理员。" alert.
+- Tenant-admin member management now exposes an operation column with member password changes plus an enable/disable switch, backed by zero-intrusive tenant-member update routes in the sidecar.
 - The native "Update available" notification banner is now hidden through the injected framework styles layer to maintain a clean production UI.
 
 ## Important Notes
