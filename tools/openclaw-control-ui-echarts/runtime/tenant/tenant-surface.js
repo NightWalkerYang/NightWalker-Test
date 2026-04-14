@@ -1,5 +1,6 @@
 import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
 import { mountTenantConsolePage } from "./tenant-console-page.js";
+import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_MEMBERS_VIEW,
@@ -70,7 +71,6 @@ function renderShell(root, section) {
   root.dataset.ocTenantEmbedded = "true";
   root.innerHTML = `
     <div data-tenant-section-body></div>
-    <div class="callout info oc-tenant-surface-feedback" data-tenant-feedback>租户管理页已就绪。</div>
   `;
 }
 
@@ -98,6 +98,7 @@ async function mountCurrentSurface(content) {
     embedded: true,
     section,
   });
+  showTransientFeedbackToast(root, "租户管理页已就绪。");
   return root;
 }
 

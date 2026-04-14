@@ -97,6 +97,10 @@ describe("tenant surface", () => {
     );
     expect(surfaceRoot?.querySelector("[data-tenant-member-status-toggle]")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-open-assign]")).toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "租户管理页已就绪。",
+    );
   });
 
   it("updates member password and status from the members list actions", async () => {
@@ -202,6 +206,9 @@ describe("tenant surface", () => {
       },
     ]);
     expect(document.querySelector("[data-tenant-member-password-dialog]")?.open).toBe(false);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "成员密码已更新。",
+    );
 
     const statusToggle = document.querySelector(
       "[data-tenant-member-status-toggle='member-1']",
@@ -224,6 +231,9 @@ describe("tenant surface", () => {
     );
     expect(document.querySelector("[data-tenant-member-status-toggle='member-1']")?.parentElement?.textContent).toContain(
       "已禁用",
+    );
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "成员已禁用。",
     );
   });
 

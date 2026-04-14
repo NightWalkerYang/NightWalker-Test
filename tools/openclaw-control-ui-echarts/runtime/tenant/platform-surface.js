@@ -1,4 +1,5 @@
 import { mountPlatformConsolePage } from "./platform-console-page.js";
+import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_TENANTS_VIEW,
@@ -61,8 +62,6 @@ function renderShell(root, section) {
   root.dataset.ocPlatformEmbedded = "true";
   root.innerHTML = `
     <div data-platform-section-body></div>
-
-    <div class="callout info oc-platform-surface-feedback" data-tenant-feedback>平台租户页已就绪。</div>
   `;
 }
 
@@ -91,6 +90,7 @@ async function mountCurrentSurface(content) {
     embedded: true,
     section,
   });
+  showTransientFeedbackToast(root, "平台租户页已就绪。");
   return root;
 }
 

@@ -67,5 +67,9 @@ describe("member surface", () => {
     expect(surfaceRoot).not.toBeNull();
     expect(surfaceRoot?.textContent).toContain("苏博泰克财务分析助手");
     expect(surfaceRoot?.querySelector("[data-member-open-chat]")?.textContent).toContain("进入聊天");
+    expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "请选择一个已分配的 Agent 继续使用。",
+    );
   });
 });

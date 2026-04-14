@@ -83,4 +83,30 @@ describe("tenant usage stats page", () => {
     expect(root?.textContent).toContain("0.2");
     expect(root?.textContent).toContain("2026/04/13");
   });
+
+  it("shows usage fetch errors as a floating toast", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    document.body.innerHTML = `<div id="root"></div>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("usage load failed");
+      }),
+    );
+
+    const root = document.querySelector("#root");
+    expect(root).not.toBeNull();
+    await mountTenantUsageStatsPage(root as HTMLElement);
+
+    expect(root?.querySelector("[data-tenant-feedback]")).toBeNull();
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "usage load failed",
+    );
+  });
 });

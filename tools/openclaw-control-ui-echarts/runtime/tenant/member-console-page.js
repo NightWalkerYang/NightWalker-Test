@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
+import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   TENANT_LOGIN_ROUTE,
   buildTenantMemberChatRoute,
@@ -17,13 +18,7 @@ function escapeHtml(value) {
 }
 
 function setFeedback(root, text, isError = false) {
-  const feedback = root.querySelector("[data-tenant-feedback]");
-  if (!(feedback instanceof HTMLElement)) {
-    return;
-  }
-  feedback.hidden = !text;
-  feedback.textContent = text;
-  feedback.className = `callout ${isError ? "danger" : "info"} oc-member-surface-feedback`;
+  showTransientFeedbackToast(root, text, isError);
 }
 
 function renderAvatar(agent) {
@@ -112,7 +107,6 @@ function render(root, controller) {
             : `<div class="oc-member-agent-empty">当前没有已分配的 Agent，请联系租户管理员。</div>`
         }
       </section>
-      <div class="callout info oc-member-surface-feedback" data-tenant-feedback hidden></div>
     </section>
   `;
 }

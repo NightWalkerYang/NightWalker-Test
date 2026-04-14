@@ -18,8 +18,22 @@
   scrollbar-gutter: stable;
 }
 
-.oc-tenant-surface-feedback {
-  margin-top: 0;
+.oc-tenant-feedback-toast-root {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1200;
+  pointer-events: none;
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  justify-items: end;
+}
+
+.oc-tenant-feedback-toast {
+  margin: 0;
+  min-width: 220px;
+  max-width: 100%;
+  box-shadow: 0 16px 40px rgb(15 23 42 / 12%);
 }
 
 .oc-tenant-table-toolbar {
@@ -38,11 +52,8 @@
 }
 
 .oc-tenant-member-actions {
-  display: grid;
-  gap: 10px;
-  align-items: start;
-  justify-items: start;
-  min-width: 180px;
+  align-items: center;
+  min-width: 220px;
 }
 
 .oc-tenant-member-switch {
@@ -187,6 +198,19 @@
   .oc-tenant-list-view--scrollable {
     max-height: calc(100vh - 180px);
     padding-right: 0;
+  }
+
+  .oc-tenant-feedback-toast-root {
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    width: auto;
+    justify-items: stretch;
+  }
+
+  .oc-tenant-feedback-toast {
+    min-width: 0;
+    width: 100%;
   }
 
   .oc-tenant-modal {

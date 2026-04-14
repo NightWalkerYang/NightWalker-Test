@@ -108,6 +108,10 @@ describe("platform surface", () => {
     expect(tableBody?.textContent).toContain("租户 Alpha");
     expect(tableBody?.textContent).toContain("人数调整");
     expect(tableBody?.textContent).not.toContain("分配Agent");
+    expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "平台租户页已就绪。",
+    );
   });
 
   it("mounts a dedicated agent allocation view without the tenant creation form", async () => {
@@ -199,6 +203,10 @@ describe("platform surface", () => {
     expect(tableBody?.textContent).toContain("分配Agent");
     expect(tableBody?.textContent).toContain("倍率调整");
     expect(tableBody?.textContent).not.toContain("人数调整");
+    expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "平台租户页已就绪。",
+    );
   });
 
   it("keeps the management search input focused while filtering", async () => {

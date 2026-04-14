@@ -928,6 +928,8 @@
   - 在原生控制台根入口执行平台管理员会话守卫
 - `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
   - 在原生侧边栏中注入“管理”分组和租户入口快捷项
+- `tools/openclaw-control-ui-echarts/runtime/tenant/feedback-toast.js`
+  - 共享的自动消失浮窗反馈提示 helper
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.css`
   - 原生内容区内的平台管理页布局样式
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-surface.js`
@@ -1394,6 +1396,7 @@
      - 默认按搜索空串展示分页明细列表
      - 支持搜索成员、Agent 或模型
      - 支持服务端分页查看成员、Agent、总 token、输入、输出、耗用积分与时间
+   - 列表页底部提示已统一改成自动消失的浮窗，租户管理员、平台管理员和成员 Agent 选择页的成功/错误反馈都走同一套 toast，原生壳层的“已就绪”提示也改成了相同样式
    - 租户 sidecar 已新增成员聊天耗量明细落库：
      - 成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage；旧环境或异常情况下回退 `chat.history`，并兼容 `input_tokens` / `output_tokens` / `prompt_tokens` / `completion_tokens` 等常见命名
      - sidecar 会按 `session + message fingerprint` 幂等写入，避免重复统计

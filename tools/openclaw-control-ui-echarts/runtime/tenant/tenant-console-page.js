@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
+import { showTransientFeedbackToast } from "./feedback-toast.js";
 import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
 
 const PAGE_SIZE = 8;
@@ -48,13 +49,7 @@ function formatCredits(value) {
 }
 
 function setFeedback(root, text, isError = false) {
-  const feedback = root.querySelector("[data-tenant-feedback]");
-  if (!(feedback instanceof HTMLElement)) {
-    return;
-  }
-  feedback.hidden = !text;
-  feedback.textContent = text;
-  feedback.className = `callout ${isError ? "danger" : "info"} oc-tenant-surface-feedback`;
+  showTransientFeedbackToast(root, text, isError);
 }
 
 function openDialog(dialog) {
@@ -553,7 +548,6 @@ function render(root, controller) {
     <section class="oc-tenant-list-view ${isUsageStats ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
-      <div class="callout info oc-tenant-surface-feedback" data-tenant-feedback hidden></div>
     </section>
     ${
       isUsageStats

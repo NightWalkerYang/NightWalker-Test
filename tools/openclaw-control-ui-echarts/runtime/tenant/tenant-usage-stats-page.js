@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
+import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   TENANT_LOGIN_ROUTE,
   requireTenantSession,
@@ -57,13 +58,7 @@ function formatTokens(value) {
 }
 
 function setFeedback(root, text, isError = false) {
-  const feedback = root.querySelector("[data-tenant-feedback]");
-  if (!(feedback instanceof HTMLElement)) {
-    return;
-  }
-  feedback.hidden = !text;
-  feedback.textContent = text;
-  feedback.className = `callout ${isError ? "danger" : "info"} oc-tenant-surface-feedback`;
+  showTransientFeedbackToast(root, text, isError);
 }
 
 function totalPagesFor(controller) {
@@ -189,7 +184,6 @@ function render(root, controller) {
         ${renderTable(controller.items)}
         ${renderPagination(controller)}
       </div>
-      <div class="callout info oc-tenant-surface-feedback" data-tenant-feedback hidden></div>
     </section>
   `;
   restoreFocusState(root, focusState);

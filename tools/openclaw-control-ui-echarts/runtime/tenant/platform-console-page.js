@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "./api-client.js";
+import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_LOGIN_ROUTE,
@@ -71,20 +72,8 @@ function localLicenseStatusLabel(localLicense) {
   return "授权无效";
 }
 
-function isEmbedded(root) {
-  return root?.dataset?.ocPlatformEmbedded === "true";
-}
-
 function setFeedback(root, text, isError = false) {
-  const feedback = root.querySelector("[data-tenant-feedback]");
-  if (!(feedback instanceof HTMLElement)) {
-    return;
-  }
-  feedback.hidden = !text;
-  feedback.textContent = text;
-  if (isEmbedded(root)) {
-    feedback.className = `callout ${isError ? "danger" : "info"} oc-platform-surface-feedback`;
-  }
+  showTransientFeedbackToast(root, text, isError);
 }
 
 function openDialog(dialog) {
@@ -649,7 +638,6 @@ function render(root, controller) {
         }
         ${renderPagination(controller, pagination)}
       </div>
-      <div class="callout info oc-platform-surface-feedback" data-tenant-feedback hidden></div>
     </section>
     ${renderCreateDialog(controller)}
     ${renderMemberLimitDialog(controller)}
