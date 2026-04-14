@@ -221,3 +221,102 @@
     max-width: 96vw;
   }
 }
+
+.oc-tenant-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 4px 0;
+}
+
+.oc-tenant-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.oc-tenant-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.oc-tenant-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.oc-tenant-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oc-tenant-metric-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.oc-tenant-metric-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.oc-tenant-metric-value .unit {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.oc-tenant-metric-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.oc-tenant-overview-main,
+.oc-tenant-overview-side {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 20px;
+}
+
+.oc-tenant-chart-card {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+}
+
+.oc-tenant-chart-card--hero {
+  grid-column: 1 / -1;
+}
+
+.oc-tenant-card-header {
+  margin-bottom: 20px;
+}
+
+.oc-tenant-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.oc-tenant-chart-container {
+  flex: 1;
+  min-height: 280px;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .oc-tenant-overview-main,
+  .oc-tenant-overview-side {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -1724,3 +1724,106 @@ export function listTenantAgentSessions(db, params) {
     )
     .all(params.userId, params.tenantAgentId);
 }
+export function getTenantOverview(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+
+  const now = new Date();
+  const days = [];
+  for (let i = 13; i >= 0; i -= 1) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  const summary = db
+    .prepare(
+      `SELECT
+        SUM(total_tokens) as totalTokens,
+        SUM(input_tokens) as inputTokens,
+        SUM(output_tokens) as outputTokens,
+        SUM(cache_read_tokens) as cacheReadTokens,
+        SUM(cache_write_tokens) as cacheWriteTokens,
+        COUNT(DISTINCT user_id) as activeUsers,
+        COUNT(DISTINCT tenant_agent_id) as activeAgents
+      FROM tenant_usage_records
+      WHERE tenant_id = ?`,
+    )
+    .get(tenantId);
+
+  const wallet = db
+    .prepare(
+      `SELECT balance_points as balance
+      FROM tenant_wallets
+      WHERE tenant_id = ?`,
+    )
+    .get(tenantId);
+
+  const dailyUsage = db
+    .prepare(
+      `SELECT usage_day as day, SUM(total_tokens) as tokens
+      FROM tenant_usage_records
+      WHERE tenant_id = ? AND usage_day >= ?
+      GROUP BY usage_day`,
+    )
+    .all(tenantId, days[0]);
+
+  const memberCount = Number(
+    getScalar(
+      db,
+      "SELECT COUNT(*) FROM tenant_memberships WHERE tenant_id = ? AND role = 'member' AND status = 'active'",
+      [tenantId],
+    ) || 0,
+  );
+
+  const topMembers = db
+    .prepare(
+      `SELECT u.username, SUM(r.total_tokens) as tokens
+      FROM tenant_usage_records r
+      JOIN users u ON u.id = r.user_id
+      WHERE r.tenant_id = ?
+      GROUP BY r.user_id
+      ORDER BY tokens DESC
+      LIMIT 10`,
+    )
+    .all(tenantId);
+
+  const topAgents = db
+    .prepare(
+      `SELECT tenant_agent_id as id, SUM(total_tokens) as tokens
+      FROM tenant_usage_records
+      WHERE tenant_id = ?
+      GROUP BY tenant_agent_id
+      ORDER BY tokens DESC
+      LIMIT 10`,
+    )
+    .all(tenantId);
+
+  return {
+    summary: {
+      totalTokens: Number(summary?.totalTokens || 0),
+      inputTokens: Number(summary?.inputTokens || 0),
+      outputTokens: Number(summary?.outputTokens || 0),
+      cacheReadTokens: Number(summary?.cacheReadTokens || 0),
+      cacheWriteTokens: Number(summary?.cacheWriteTokens || 0),
+      activeUsers: Number(summary?.activeUsers || 0),
+      activeAgents: Number(summary?.activeAgents || 0),
+      memberCount,
+      walletBalance: Number(wallet?.balance || 0),
+    },
+    trend: days.map((day) => ({
+      day,
+      tokens: Number(dailyUsage.find((d) => d.day === day)?.tokens || 0),
+    })),
+    topMembers: topMembers.map((m) => ({
+      username: m.username,
+      tokens: Number(m.tokens || 0),
+    })),
+    topAgents: topAgents.map((a) => ({
+      id: a.id,
+      tokens: Number(a.tokens || 0),
+    })),
+  };
+}

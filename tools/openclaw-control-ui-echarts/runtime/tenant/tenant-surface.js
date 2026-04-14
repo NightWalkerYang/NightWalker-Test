@@ -38,6 +38,9 @@ function sectionForView(view) {
   if (view === TENANT_USAGE_STATS_VIEW) {
     return "usage-stats";
   }
+  if (view === TENANT_STATISTICS_OVERVIEW_VIEW) {
+    return "statistics-overview";
+  }
   return "members";
 }
 

@@ -11,10 +11,10 @@ import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_AGENT_SELECTOR_ROUTE,
   TENANT_AGENT_SELECTOR_VIEW,
-  TENANT_MEMBER_MANAGEMENT_ROUTE,
-  TENANT_MEMBERS_VIEW,
   TENANT_USAGE_STATS_ROUTE,
   TENANT_USAGE_STATS_VIEW,
+  TENANT_STATISTICS_OVERVIEW_ROUTE,
+  TENANT_STATISTICS_OVERVIEW_VIEW,
   isTenantLoginView,
   clearPlatformSession,
   clearTenantSession,
@@ -75,6 +75,11 @@ const ICONS = {
   stats: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 20V4h2v16Zm4-3V9h2v8Zm4 3V12h2v8Zm4-3V6h2v11Zm4 3v-7h2v7Z"></path>
+    </svg>
+  `,
+  dashboard: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"></path>
     </svg>
   `,
 };
@@ -161,6 +166,14 @@ function getSectionConfigForSession(session) {
           className: STATS_SECTION_CLASS,
           label: "统计",
           links: [
+            {
+              className: "oc-tenant-statistics-overview-link",
+              href: TENANT_STATISTICS_OVERVIEW_ROUTE,
+              title: "统计总览",
+              text: "统计总览",
+              icon: ICONS.dashboard,
+              activeView: TENANT_STATISTICS_OVERVIEW_VIEW,
+            },
             {
               className: "oc-tenant-usage-stats-link",
               href: TENANT_USAGE_STATS_ROUTE,
@@ -251,6 +264,7 @@ function isManagementViewActive() {
     activeView === TENANT_MEMBERS_VIEW ||
     activeView === TENANT_AGENT_ASSIGNMENT_VIEW ||
     activeView === TENANT_USAGE_STATS_VIEW ||
+    activeView === TENANT_STATISTICS_OVERVIEW_VIEW ||
     activeView === TENANT_AGENT_SELECTOR_VIEW
   );
 }

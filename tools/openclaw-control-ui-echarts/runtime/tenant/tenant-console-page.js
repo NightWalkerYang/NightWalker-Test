@@ -1,6 +1,15 @@
 import { createTenantApiClient } from "./api-client.js";
 import { showTransientFeedbackToast } from "./feedback-toast.js";
-import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
+import {
+  TENANT_LOGIN_ROUTE,
+  TENANT_STATISTICS_OVERVIEW_VIEW,
+  requireTenantSession,
+} from "./tenant-context.js";
+import {
+  initTenantOverviewCharts,
+  refreshTenantOverview,
+  renderTenantOverview,
+} from "./tenant-overview-page.js";
 
 const PAGE_SIZE = 8;
 const USAGE_SEARCH_DEBOUNCE_MS = 250;
@@ -524,7 +533,8 @@ function restoreRenderFocusState(root, state) {
 function render(root, controller) {
   const focusState = captureRenderFocusState(root);
   const isUsageStats = controller.section === "usage-stats";
-  const pagination = isUsageStats ? null : paginate(filterMembers(controller), getPageValue(controller));
+  const isOverview = controller.section === "statistics-overview";
+  const pagination = isUsageStats || isOverview ? null : paginate(filterMembers(controller), getPageValue(controller));
   if (pagination) {
     setPageValue(controller, pagination.page);
   }
@@ -532,7 +542,9 @@ function render(root, controller) {
   const contentMarkup =
     isUsageStats
       ? renderUsageList(controller)
-      : `
+      : isOverview
+        ? renderTenantOverview(controller)
+        : `
         <div class="data-table-wrapper">
           ${
             controller.section === "agent-assignment"
@@ -545,18 +557,22 @@ function render(root, controller) {
 
   root.dataset.ocTenantEmbedded = "true";
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${isUsageStats ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${isUsageStats || isOverview ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
     </section>
     ${
-      isUsageStats
+      isUsageStats || isOverview
         ? ""
         : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}`
     }
   `;
 
-  if (!isUsageStats) {
+  if (isOverview) {
+    void initTenantOverviewCharts(root, controller);
+  }
+
+  if (!isUsageStats && !isOverview) {
     if (controller.dialogs.createMemberOpen) {
       openDialog(root.querySelector("[data-tenant-create-dialog]"));
     }
@@ -588,6 +604,12 @@ async function refresh(root, controller) {
     if (controller.pageBySection["usage-stats"] !== currentPage) {
       return refresh(root, controller);
     }
+    render(root, controller);
+    return;
+  }
+
+  if (controller.section === "statistics-overview") {
+    await refreshTenantOverview(root, controller);
     render(root, controller);
     return;
   }

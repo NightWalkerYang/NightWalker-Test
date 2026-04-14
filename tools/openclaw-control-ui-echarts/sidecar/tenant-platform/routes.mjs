@@ -14,6 +14,7 @@ import {
   listTenantMembers,
   listTenantUsageStats,
   listTenantUsageRecords,
+  getTenantOverview,
   logAudit,
   readOpenClawAgentCatalog,
   registerTenantAgentSession,
@@ -739,6 +740,23 @@ export function createTenantPlatformRouter(deps) {
             configAgents,
           ),
         });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/overview") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const data = getTenantOverview(deps.db, { tenantId: session.tenantId });
+        sendJson(request, response, 200, { ok: true, data });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,

@@ -185,6 +185,9 @@ export function createTenantApiClient() {
     listTenantUsageStats({ page = 1, pageSize = 8, search = "" } = {}) {
       return requestJson(withQuery("/tenant/admin/usage-stats", { page, pageSize, search }));
     },
+    getTenantOverview() {
+      return requestJson("/tenant/admin/overview");
+    },
     listMemberAgents() {
       return requestJson("/member/agents");
     },
