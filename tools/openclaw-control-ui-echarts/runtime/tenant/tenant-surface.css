@@ -20,13 +20,14 @@
 
 .oc-tenant-feedback-toast-root {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1200;
   pointer-events: none;
   width: min(420px, calc(100vw - 32px));
   display: grid;
-  justify-items: end;
+  justify-items: center;
 }
 
 .oc-tenant-feedback-toast {
@@ -201,11 +202,13 @@
   }
 
   .oc-tenant-feedback-toast-root {
+    top: 16px;
     right: 16px;
-    bottom: 16px;
     left: 16px;
+    bottom: auto;
     width: auto;
     justify-items: stretch;
+    transform: none;
   }
 
   .oc-tenant-feedback-toast {
