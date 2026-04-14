@@ -1054,6 +1054,8 @@ function pinMemberChatSession(app, sessionKey) {
         const isLocal = session?.session?.edition === "local";
         const balance = Number(agent?.balancePoints ?? 0);
         if (session?.session?.role !== "platform_admin" && !isLocal && balance <= 0) {
+          // Note: In most cases, the early interceptor in bootMemberChatSurface
+          // will catch this before it reaches here.
           window.alert("积分不足请联系管理员。");
           return { ok: false, error: "insufficient_balance" };
         }
@@ -1306,6 +1308,52 @@ export function bootMemberChatSurface() {
     return;
   }
   window.__openclawMemberChatSurfaceBooted = true;
+
+  // Intercept user actions (Click/Enter) to block send BEFORE UI state changes
+  const checkCreditBeforeAction = () => {
+    if (!isMemberChatRoute()) return true;
+    const session = readTenantSession();
+    const agent = readSelectedTenantAgent();
+    if (session?.session?.role === "platform_admin" || session?.session?.edition === "local") {
+      return true;
+    }
+    const balance = Number(agent?.balancePoints ?? 0);
+    if (balance <= 0) {
+      window.alert("积分不足请联系管理员。");
+      return false;
+    }
+    return true;
+  };
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      const btn = e.target.closest?.(".chat-send-btn");
+      if (btn && !btn.classList.contains("chat-send-btn--stop")) {
+        if (!checkCreditBeforeAction()) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      }
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        const textarea = e.target.closest?.(".agent-chat__input > textarea");
+        if (textarea) {
+          if (!checkCreditBeforeAction()) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }
+      }
+    },
+    true,
+  );
 
   onTenantRouteChange(() => {
     void syncMemberChatSurface();
