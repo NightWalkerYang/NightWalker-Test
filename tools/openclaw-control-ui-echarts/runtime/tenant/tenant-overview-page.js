@@ -13,14 +13,22 @@ function escapeHtml(value) {
 
 export async function refreshTenantOverview(root, controller) {
   try {
+    console.log("[StatsOverview] Refreshing data...");
+    controller.overviewError = null;
     const result = await controller.apiClient.getTenantOverview();
+    console.log("[StatsOverview] API Result:", result);
     controller.overviewData = result || null;
   } catch (error) {
     console.error("Failed to refresh tenant overview:", error);
+    controller.overviewError = error instanceof Error ? error.message : String(error);
   }
 }
 
 export function renderTenantOverview(controller) {
+  if (controller.overviewError) {
+    return `<div class="oc-tenant-overview-loading oc-tenant-overview-error">加载失败: ${escapeHtml(controller.overviewError)}</div>`;
+  }
+  
   const data = controller.overviewData;
   if (!data) {
     return `<div class="oc-tenant-overview-loading">正在加载统计数据...</div>`;

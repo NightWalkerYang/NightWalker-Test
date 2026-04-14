@@ -83,7 +83,9 @@ function normalizeIsoTimestamp(value, fallback = nowIso()) {
 }
 
 function getScalar(db, sql, params = {}) {
-  const row = db.prepare(sql).get(params);
+  const row = Array.isArray(params)
+    ? db.prepare(sql).get(...params)
+    : db.prepare(sql).get(params);
   if (!row) {
     return null;
   }
