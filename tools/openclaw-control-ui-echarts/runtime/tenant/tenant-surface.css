@@ -13,7 +13,8 @@
 }
 
 .oc-tenant-list-view--scrollable {
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 200px);
+  height: auto;
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-gutter: stable;
@@ -226,8 +227,9 @@
 .oc-tenant-overview {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 4px 0;
+  gap: 20px;
+  padding: 4px 0 32px 0;
+  height: fit-content;
 }
 
 .oc-tenant-overview-grid {
@@ -288,7 +290,7 @@
 }
 
 .oc-tenant-chart-card {
-  min-height: 360px;
+  min-height: 280px;
   display: flex;
   flex-direction: column;
 }
