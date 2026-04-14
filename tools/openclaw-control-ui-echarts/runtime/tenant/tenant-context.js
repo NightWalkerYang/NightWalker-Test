@@ -191,7 +191,7 @@ export function routeForRole(role) {
     return PLATFORM_TENANT_MANAGEMENT_ROUTE;
   }
   if (role === "tenant_admin") {
-    return TENANT_MEMBER_MANAGEMENT_ROUTE;
+    return TENANT_STATISTICS_OVERVIEW_ROUTE;
   }
   return TENANT_AGENT_SELECTOR_ROUTE;
 }

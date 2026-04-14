@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountTenantLoginPage } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js";
+import * as tenantContext from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 import {
   readPlatformSession,
   writeTenantSession,
@@ -151,5 +152,68 @@ describe("tenant login page", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(root.textContent).toContain("初始化租户管理员");
     expect(root.textContent).not.toContain("API 暂不可用");
+  });
+
+  it("redirects tenant admins to the statistics overview after login", async () => {
+    window.history.replaceState({}, "", "/login");
+    const redirectSpy = vi
+      .spyOn(tenantContext, "redirectToRoleHome")
+      .mockImplementation(() => undefined);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ok: true,
+            data: {
+              initialized: true,
+              edition: "cloud",
+            },
+          };
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ok: true,
+            data: {
+              token: "tenant-token",
+              session: {
+                role: "tenant_admin",
+                username: "Test001",
+              },
+            },
+          };
+        },
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const root = document.createElement("main");
+    document.body.append(root);
+
+    await mountTenantLoginPage(root);
+
+    const loginForm = root.querySelector("[data-tenant-login-form]");
+    if (!(loginForm instanceof HTMLFormElement)) {
+      throw new Error("Expected tenant login form to render");
+    }
+    const usernameInput = loginForm.querySelector('input[name="username"]');
+    const passwordInput = loginForm.querySelector('input[name="password"]');
+    if (!(usernameInput instanceof HTMLInputElement) || !(passwordInput instanceof HTMLInputElement)) {
+      throw new Error("Expected tenant login inputs to render");
+    }
+    usernameInput.value = "Test001";
+    passwordInput.value = "Test";
+    loginForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(redirectSpy).toHaveBeenCalledWith({
+      role: "tenant_admin",
+      username: "Test001",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

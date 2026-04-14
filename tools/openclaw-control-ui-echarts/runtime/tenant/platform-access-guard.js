@@ -5,6 +5,7 @@ import {
   TENANT_AGENT_SELECTOR_VIEW,
   LOGIN_ROUTE,
   TENANT_MEMBERS_VIEW,
+  TENANT_STATISTICS_OVERVIEW_VIEW,
   TENANT_USAGE_STATS_VIEW,
   clearPlatformSession,
   isTenantLoginView,
@@ -49,6 +50,7 @@ export function resolvePlatformAccessDecision({
     tenantSession?.session?.role === "tenant_admin" &&
     (view === TENANT_MEMBERS_VIEW ||
       view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+      view === TENANT_STATISTICS_OVERVIEW_VIEW ||
       view === TENANT_USAGE_STATS_VIEW)
   ) {
     return "allow";

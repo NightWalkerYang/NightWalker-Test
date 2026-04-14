@@ -111,6 +111,16 @@ describe("platform access guard", () => {
         tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
       }),
     ).toBe("allow");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/",
+        href: "https://www.hailstone.cn:18789/?ocTenantView=tenant-statistics-overview",
+        edition: "cloud",
+        platformSession: null,
+        tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
+      }),
+    ).toBe("allow");
   });
 
   it("redirects members to their own home instead of platform login", () => {
