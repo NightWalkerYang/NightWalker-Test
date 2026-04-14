@@ -51,12 +51,32 @@
 }
 
 :root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section > .nav-section__items {
-  display: none;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .oc-member-chat-action {
   width: 100%;
   justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.sidebar--collapsed .oc-member-chat-action {
+  width: 36px;
+  height: 36px;
+  min-width: 0;
+  padding: 0;
+  font-size: 0;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+.sidebar--collapsed .oc-member-chat-action::before {
+  content: "+";
+  font-size: 18px;
+  line-height: 36px;
 }
 
 .oc-member-chat-session-list {
@@ -110,6 +130,38 @@
 .oc-member-chat-session-item__meta {
   font-size: 11px;
   color: var(--muted);
+}
+
+/* Collapsed state item adjustments */
+.sidebar--collapsed .oc-member-chat-session-row {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.sidebar--collapsed .oc-member-chat-session-delete {
+  display: none;
+}
+
+.sidebar--collapsed .oc-member-chat-session-item {
+  padding: 8px 4px;
+}
+
+.sidebar--collapsed .oc-member-chat-session-item .nav-item__icon {
+  display: none;
+}
+
+.sidebar--collapsed .oc-member-chat-session-item .nav-item__text {
+  align-items: center;
+}
+
+.sidebar--collapsed .oc-member-chat-session-item__label {
+  max-width: 40px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.sidebar--collapsed .oc-member-chat-session-item__meta {
+  display: none;
 }
 
 .oc-member-chat-empty {

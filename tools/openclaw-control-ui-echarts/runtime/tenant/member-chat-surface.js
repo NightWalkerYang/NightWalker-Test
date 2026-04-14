@@ -36,7 +36,7 @@ function isMemberChatRoute(pathname = window.location.pathname, href = window.lo
     return false;
   }
   const session = readTenantSession();
-  if (session?.session?.role !== "member") {
+  if (!session?.session?.role || session.session.role === "platform_admin") {
     return false;
   }
   const selectedAgent = readSelectedTenantAgent(href);
@@ -1049,9 +1049,11 @@ function pinMemberChatSession(app, sessionKey) {
     const originalRequest = app.client.request.bind(app.client);
     app.client.request = async (method, params) => {
       if (method === "chat.send") {
-        const controller = window._ocMemberChatSurfaceController;
-        const isLocal = controller?.session?.session?.edition === "local";
-        if (!isLocal && !(controller?.selectedAgent?.balancePoints > 0)) {
+        const session = readTenantSession();
+        const agent = readSelectedTenantAgent();
+        const isLocal = session?.session?.edition === "local";
+        const balance = Number(agent?.balancePoints ?? 0);
+        if (session?.session?.role !== "platform_admin" && !isLocal && balance <= 0) {
           window.alert("积分不足请联系管理员。");
           return { ok: false, error: "insufficient_balance" };
         }
