@@ -179,7 +179,7 @@ export async function initTenantOverviewCharts(root, controller) {
         itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
         label: { show: false },
         emphasis: { label: { show: true, fontSize: '14', fontWeight: 'bold' } },
-        data: data.topAgents.map(a => ({ value: a.tokens, name: a.id }))
+        data: data.topAgents.map(a => ({ value: a.tokens, name: a.name }))
       }]
     });
     window.addEventListener('resize', () => chart.resize());

@@ -1800,10 +1800,11 @@ export function getTenantOverview(db, params) {
 
   const topAgents = db
     .prepare(
-      `SELECT tenant_agent_id as id, SUM(total_tokens) as tokens
-      FROM tenant_usage_records
-      WHERE tenant_id = ?
-      GROUP BY tenant_agent_id
+      `SELECT COALESCE(NULLIF(ta.description, ''), ta.agent_id) as name, SUM(r.total_tokens) as tokens
+      FROM tenant_usage_records r
+      JOIN tenant_agents ta ON ta.id = r.tenant_agent_id
+      WHERE r.tenant_id = ?
+      GROUP BY r.tenant_agent_id
       ORDER BY tokens DESC
       LIMIT 10`,
     )
@@ -1830,7 +1831,7 @@ export function getTenantOverview(db, params) {
       tokens: Number(m.tokens || 0),
     })),
     topAgents: topAgents.map((a) => ({
-      id: a.id,
+      name: a.name,
       tokens: Number(a.tokens || 0),
     })),
   };

@@ -13,7 +13,7 @@
 }
 
 .oc-tenant-list-view--scrollable {
-  max-height: calc(100vh - 0px);
+  max-height: calc(100vh - 20px);
   height: auto;
   overflow-y: auto;
   padding-right: 6px;
