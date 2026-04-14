@@ -57,7 +57,7 @@ function showSetupMode(root, showSetup) {
   }
 }
 
-async function redirectIfAuthenticated({ apiClient, isLocalEdition }) {
+async function redirectIfAuthenticated({ root, apiClient, isLocalEdition }) {
   const tenantSession = readTenantSession();
   if (tenantSession?.token && tenantSession?.session?.role && tenantSession.session.role !== "platform_admin") {
     try {
@@ -96,6 +96,11 @@ async function redirectIfAuthenticated({ apiClient, isLocalEdition }) {
 }
 
 export async function mountTenantLoginPage(root) {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = new URL("./tenant-surface.css", import.meta.url).href;
+  document.head.append(link);
+
   const apiClient = createTenantApiClient();
   let bootstrap;
   let isLocalEdition = false;
@@ -141,7 +146,7 @@ export async function mountTenantLoginPage(root) {
   if (isLocalEdition) {
     clearPlatformSession();
   }
-  if (await redirectIfAuthenticated({ apiClient, isLocalEdition })) {
+  if (await redirectIfAuthenticated({ root, apiClient, isLocalEdition })) {
     return null;
   }
 
