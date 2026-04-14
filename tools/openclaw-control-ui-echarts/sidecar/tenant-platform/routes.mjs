@@ -755,7 +755,7 @@ export function createTenantPlatformRouter(deps) {
         return;
       }
       try {
-        const data = getTenantOverview(deps.db, { tenantId: session.tenantId });
+        const data = getTenantOverview(deps.db, { tenantId: session.tenantId }, configAgents);
         sendJson(request, response, 200, { ok: true, data });
       } catch (error) {
         sendJson(request, response, 400, {

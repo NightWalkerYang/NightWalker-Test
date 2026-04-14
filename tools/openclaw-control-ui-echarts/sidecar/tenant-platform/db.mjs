@@ -1732,7 +1732,7 @@ export function listTenantAgentSessions(db, params) {
     )
     .all(params.userId, params.tenantAgentId);
 }
-export function getTenantOverview(db, params) {
+export function getTenantOverview(db, params, configAgents = []) {
   const tenantId = String(params.tenantId || "").trim();
   if (!tenantId) {
     throw new Error("tenant_id_required");
@@ -1800,7 +1800,7 @@ export function getTenantOverview(db, params) {
 
   const topAgents = db
     .prepare(
-      `SELECT COALESCE(NULLIF(ta.description, ''), ta.agent_id) as name, SUM(r.total_tokens) as tokens
+      `SELECT ta.agent_id as agentId, ta.description, SUM(r.total_tokens) as tokens
       FROM tenant_usage_records r
       JOIN tenant_agents ta ON ta.id = r.tenant_agent_id
       WHERE r.tenant_id = ?
@@ -1809,6 +1809,8 @@ export function getTenantOverview(db, params) {
       LIMIT 10`,
     )
     .all(tenantId);
+
+  const configMap = new Map((configAgents || []).map((a) => [a.id, a]));
 
   return {
     summary: {
@@ -1830,9 +1832,12 @@ export function getTenantOverview(db, params) {
       username: m.username,
       tokens: Number(m.tokens || 0),
     })),
-    topAgents: topAgents.map((a) => ({
-      name: a.name,
-      tokens: Number(a.tokens || 0),
-    })),
+    topAgents: topAgents.map((a) => {
+      const configEntry = configMap.get(a.agentId) || null;
+      return {
+        name: configEntry?.name || a.description || a.agentId,
+        tokens: Number(a.tokens || 0),
+      };
+    }),
   };
 }
