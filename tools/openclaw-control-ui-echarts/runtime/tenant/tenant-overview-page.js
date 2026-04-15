@@ -211,14 +211,31 @@ export async function initTenantOverviewCharts(root, controller) {
       const agentsEl = root.querySelector('[data-oc-overview-chart="agents"]');
       if (agentsEl) {
         initSingleChart(agentsEl, echarts, {
-          tooltip: { trigger: 'item' },
+          tooltip: { 
+            trigger: 'item',
+            formatter: '{b}: {c} tokens ({d}%)'
+          },
+          legend: {
+            orient: 'vertical',
+            left: 'left',
+            padding: [0, 0, 0, 10],
+            textStyle: { fontSize: 12 }
+          },
           series: [{
+            name: 'Agent 消耗分布',
             type: 'pie',
             radius: ['40%', '70%'],
-            avoidLabelOverlap: false,
-            itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
-            label: { show: false },
-            emphasis: { label: { show: true, fontSize: '14', fontWeight: 'bold' } },
+            center: ['60%', '50%'],
+            avoidLabelOverlap: true,
+            itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
+            label: { 
+              show: true, 
+              position: 'outside',
+              formatter: '{b}'
+            },
+            emphasis: { 
+              label: { show: true, fontSize: '14', fontWeight: 'bold' } 
+            },
             data: (data.topAgents || []).map(a => ({ value: a.tokens, name: a.name }))
           }]
         });

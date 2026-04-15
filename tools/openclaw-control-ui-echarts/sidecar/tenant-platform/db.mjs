@@ -1781,7 +1781,7 @@ export function getTenantOverview(db, params, configAgents = []) {
   const memberCount = Number(
     getScalar(
       db,
-      "SELECT COUNT(*) FROM tenant_memberships WHERE tenant_id = ? AND role = 'tenant_member' AND status = 'active'",
+      "SELECT COUNT(*) FROM tenant_memberships WHERE tenant_id = ? AND role = 'member' AND status = 'active'",
       [tenantId],
     ) || 0,
   );
@@ -1833,7 +1833,7 @@ export function getTenantOverview(db, params, configAgents = []) {
       tokens: Number(m.tokens || 0),
     })),
     topAgents: topAgents.map((a) => {
-      const configEntry = configMap.get(a.agentId) || null;
+      const configEntry = configMap.get(a.agentId) ?? null;
       return {
         name: configEntry?.name || a.description || a.agentId || "未知 Agent",
         tokens: Number(a.tokens || 0),
