@@ -1862,6 +1862,30 @@ export function listTenantAgentSessions(db, params) {
     )
     .all(params.userId, params.tenantAgentId);
 }
+
+function getTenantConsumedCredits(db, tenantId) {
+  const row = db
+    .prepare(
+      `SELECT SUM(
+         CASE
+           WHEN l.amount_points IS NOT NULL THEN l.amount_points
+           WHEN t.deployment_mode = 'local' THEN 0
+           ELSE COALESCE(r.total_cost, 0) * COALESCE(ta.rate_multiplier, 1)
+         END
+       ) AS consumedCredits
+       FROM tenant_usage_records r
+       JOIN tenants t ON t.id = r.tenant_id
+       JOIN tenant_agents ta ON ta.id = r.tenant_agent_id
+       LEFT JOIN tenant_wallet_ledger l
+         ON l.tenant_id = r.tenant_id
+        AND l.category = 'usage_charge'
+        AND l.note = 'usage:' || r.openclaw_session_key || ':' || r.source_fingerprint
+       WHERE r.tenant_id = ?`,
+    )
+    .get(tenantId);
+  return Number(row?.consumedCredits || 0);
+}
+
 export function getTenantOverview(db, params, configAgents = []) {
   const tenantId = String(params.tenantId || "").trim();
   if (!tenantId) {
@@ -1898,6 +1922,7 @@ export function getTenantOverview(db, params, configAgents = []) {
       WHERE tenant_id = ?`,
     )
     .get(tenantId);
+  const consumedCredits = getTenantConsumedCredits(db, tenantId);
 
   const dailyUsage = db
     .prepare(
@@ -1953,6 +1978,7 @@ export function getTenantOverview(db, params, configAgents = []) {
       activeAgents: Number(summary?.activeAgents || 0),
       memberCount,
       walletBalance: Number(wallet?.balance || 0),
+      consumedCredits,
     },
     trend: days.map((day) => ({
       day,

@@ -101,7 +101,7 @@ export function renderTenantOverview(controller) {
         </div>
         <div class="oc-tenant-card oc-tenant-metric-card">
           <div class="oc-tenant-metric-label">已用积分</div>
-          <div class="oc-tenant-metric-value">${formatCredits(summary.walletBalance)}</div>
+          <div class="oc-tenant-metric-value">${formatCredits(summary.consumedCredits ?? summary.walletBalance)}</div>
           <div class="oc-tenant-metric-sub">折合消耗完成额度</div>
         </div>
         <div class="oc-tenant-card oc-tenant-metric-card">

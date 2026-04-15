@@ -14,6 +14,7 @@ import {
   upsertTenantAgent,
   assignTenantAgentToUser,
   listAssignedAgentsForUser,
+  getTenantOverview,
   listTenantUsageRecords,
   syncTenantUsageRecords,
   updateTenantMemberLimit,
@@ -415,6 +416,10 @@ describe("tenant platform database foundation", () => {
         balanceAfter: 9.8,
       });
       expect(String(ledgerRows[0]?.note || "")).toContain(sessionKey);
+
+      const overview = getTenantOverview(db, { tenantId: tenant.id });
+      expect(overview?.summary.walletBalance).toBe(0);
+      expect(overview?.summary.consumedCredits).toBeCloseTo(0.2, 8);
     } finally {
       closeTenantPlatformDb(db);
     }
