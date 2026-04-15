@@ -257,6 +257,15 @@ function main() {
     embeddedLibraries.json5,
     path.join(outputDir, "assets", "vendor", "json5.min.js"),
   );
+  // Keep the legacy runtime path alive for older bundles and cached clients.
+  writeTextIntoOutput(
+    embeddedLibraries.echarts,
+    path.join(outputDir, "assets", "runtime", "echarts", "echarts.min.js"),
+  );
+  writeTextIntoOutput(
+    embeddedLibraries.json5,
+    path.join(outputDir, "assets", "runtime", "echarts", "json5.min.js"),
+  );
 
   process.stdout.write(
     [

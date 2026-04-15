@@ -77,6 +77,10 @@ describe("package local runtime", () => {
     expect(fs.existsSync(path.join(outputDir, "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "login", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "login.html"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts.min.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "json5.min.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "echarts.min.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "json5.min.js"))).toBe(true);
 
     const loginIndex = fs.readFileSync(path.join(outputDir, "login", "index.html"), "utf8");
     const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");

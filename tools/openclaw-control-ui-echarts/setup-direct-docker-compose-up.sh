@@ -527,6 +527,9 @@ main() {
   cp "$CONTROL_UI_RUNTIME_SCRIPT" "$OUTPUT_DIR/assets/openclaw-echarts-renderer.js"
   cp -R "$CONTROL_UI_RUNTIME_MODULE_DIR" "$OUTPUT_DIR/assets/runtime"
   extract_offline_vendors "$OFFLINE_BUNDLED_USERSCRIPT" "$OUTPUT_DIR/assets/vendor"
+  mkdir -p "$OUTPUT_DIR/assets/runtime/echarts"
+  cp "$OUTPUT_DIR/assets/vendor/echarts.min.js" "$OUTPUT_DIR/assets/runtime/echarts/echarts.min.js"
+  cp "$OUTPUT_DIR/assets/vendor/json5.min.js" "$OUTPUT_DIR/assets/runtime/echarts/json5.min.js"
 
   [[ -f "$OUTPUT_DIR/index.html" ]] || fail "Generated Control UI root is missing index.html"
   local auto_gateway_token
