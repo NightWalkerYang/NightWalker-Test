@@ -7,6 +7,17 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(numeric);
 }
 
+function formatCredits(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) {
+    return "0.00";
+  }
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric);
+}
+
 function normalizeAgentLabel(value) {
   const label = String(value ?? "").trim();
   if (!label) {
@@ -45,7 +56,7 @@ function escapeHtml(value) {
 function injectEchartsStyles() {
   const styleId = "oc-echarts-framework-styles";
   if (document.getElementById(styleId)) return;
-  
+
   const style = document.createElement("style");
   style.id = styleId;
   style.textContent = getEchartsStyles();
@@ -69,7 +80,7 @@ export function renderTenantOverview(controller) {
   if (controller.overviewError) {
     return `<div class="oc-tenant-overview-loading oc-tenant-overview-error">加载失败: ${escapeHtml(controller.overviewError)}</div>`;
   }
-  
+
   const data = controller.overviewData;
   if (!data) {
     return `<div class="oc-tenant-overview-loading">正在加载统计数据...</div>`;
@@ -90,7 +101,7 @@ export function renderTenantOverview(controller) {
         </div>
         <div class="oc-tenant-card oc-tenant-metric-card">
           <div class="oc-tenant-metric-label">已用积分</div>
-          <div class="oc-tenant-metric-value">${formatNumber(summary.walletBalance)}</div>
+          <div class="oc-tenant-metric-value">${formatCredits(summary.walletBalance)}</div>
           <div class="oc-tenant-metric-sub">折合消耗完成额度</div>
         </div>
         <div class="oc-tenant-card oc-tenant-metric-card">
@@ -144,7 +155,7 @@ export async function initTenantOverviewCharts(root, controller) {
 
   const vendorBaseUrl = window.__ocVendorBaseUrl || new URL("../../vendor/", import.meta.url);
   const loadLibraries = createLibraryLoader(vendorBaseUrl);
-  
+
   let echarts;
   try {
     const libs = await loadLibraries();
@@ -161,28 +172,30 @@ export async function initTenantOverviewCharts(root, controller) {
       const trendEl = root.querySelector('[data-oc-overview-chart="trend"]');
       if (trendEl) {
         initSingleChart(trendEl, echarts, {
-          tooltip: { trigger: 'axis' },
-          grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+          tooltip: { trigger: "axis" },
+          grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
           xAxis: {
-            type: 'category',
+            type: "category",
             boundaryGap: false,
-            data: data.trend.map(d => d.day.slice(5)), // MM-DD
-            axisLabel: { color: '#64748b' }
+            data: data.trend.map((d) => d.day.slice(5)), // MM-DD
+            axisLabel: { color: "#64748b" },
           },
-          yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
-          series: [{
-            name: 'Tokens',
-            type: 'line',
-            smooth: true,
-            data: data.trend.map(d => d.tokens),
-            areaStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
-                { offset: 1, color: 'rgba(59, 130, 246, 0)' }
-              ])
+          yAxis: { type: "value", axisLabel: { color: "#64748b" } },
+          series: [
+            {
+              name: "Tokens",
+              type: "line",
+              smooth: true,
+              data: data.trend.map((d) => d.tokens),
+              areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
+                  { offset: 1, color: "rgba(59, 130, 246, 0)" },
+                ]),
+              },
+              itemStyle: { color: "#3b82f6" },
             },
-            itemStyle: { color: '#3b82f6' }
-          }]
+          ],
         });
       }
 
@@ -191,26 +204,28 @@ export async function initTenantOverviewCharts(root, controller) {
       if (membersEl) {
         const sortedMembers = [...(data.topMembers || [])].reverse();
         initSingleChart(membersEl, echarts, {
-          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-          grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-          xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
+          tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+          grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
+          xAxis: { type: "value", axisLabel: { show: false }, splitLine: { show: false } },
           yAxis: {
-            type: 'category',
-            data: sortedMembers.map(m => m.username),
-            axisLabel: { color: '#64748b' }
+            type: "category",
+            data: sortedMembers.map((m) => m.username),
+            axisLabel: { color: "#64748b" },
           },
-          series: [{
-            type: 'bar',
-            data: sortedMembers.map(m => m.tokens),
-            itemStyle: {
-              color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
-                { offset: 0, color: '#6366f1' },
-                { offset: 1, color: '#8b5cf6' }
-              ]),
-              borderRadius: [0, 4, 4, 0]
+          series: [
+            {
+              type: "bar",
+              data: sortedMembers.map((m) => m.tokens),
+              itemStyle: {
+                color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
+                  { offset: 0, color: "#6366f1" },
+                  { offset: 1, color: "#8b5cf6" },
+                ]),
+                borderRadius: [0, 4, 4, 0],
+              },
+              label: { show: true, position: "right", color: "#64748b" },
             },
-            label: { show: true, position: 'right', color: '#64748b' }
-          }]
+          ],
         });
       }
 
@@ -219,39 +234,40 @@ export async function initTenantOverviewCharts(root, controller) {
       if (agentsEl) {
         const agentRows = [...(data.topAgents || [])];
         initSingleChart(agentsEl, echarts, {
-          tooltip: { 
-            trigger: 'item',
-            formatter: '{b}: {c} tokens ({d}%)'
+          tooltip: {
+            trigger: "item",
+            formatter: "{b}: {c} tokens ({d}%)",
           },
           legend: {
-            orient: 'vertical',
-            left: 'left',
+            orient: "vertical",
+            left: "left",
             padding: [0, 0, 0, 10],
-            textStyle: { fontSize: 12 }
+            textStyle: { fontSize: 12 },
           },
-          series: [{
-            name: 'Agent 消耗分布',
-            type: 'pie',
-            radius: ['40%', '70%'],
-            center: ['60%', '50%'],
-            avoidLabelOverlap: true,
-            itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
-            label: { 
-              show: true, 
-              position: 'outside',
-              formatter: '{b}'
+          series: [
+            {
+              name: "Agent 消耗分布",
+              type: "pie",
+              radius: ["40%", "70%"],
+              center: ["60%", "50%"],
+              avoidLabelOverlap: true,
+              itemStyle: { borderRadius: 8, borderColor: "#fff", borderWidth: 2 },
+              label: {
+                show: true,
+                position: "outside",
+                formatter: "{b}",
+              },
+              emphasis: {
+                label: { show: true, fontSize: "14", fontWeight: "bold" },
+              },
+              data: agentRows.map((agent) => ({
+                value: agent.tokens,
+                name: resolveAgentDisplayName(agent),
+              })),
             },
-            emphasis: { 
-              label: { show: true, fontSize: '14', fontWeight: 'bold' } 
-            },
-            data: agentRows.map((agent) => ({
-              value: agent.tokens,
-              name: resolveAgentDisplayName(agent),
-            }))
-          }]
+          ],
         });
       }
-
     } catch (error) {
       console.error("Failed to initialize charts:", error);
     }
@@ -260,14 +276,14 @@ export async function initTenantOverviewCharts(root, controller) {
 
 function initSingleChart(el, echarts, option) {
   if (!el || !echarts) return;
-  
+
   if (typeof option.backgroundColor === "undefined") {
     option.backgroundColor = "transparent";
   }
 
   const instance = echarts.init(el, null, { renderer: "canvas" });
   instance.setOption(option, true);
-  
+
   if (typeof ResizeObserver === "function") {
     const ro = new ResizeObserver(() => {
       try {
@@ -278,6 +294,6 @@ function initSingleChart(el, echarts, option) {
     });
     ro.observe(el);
   } else {
-    window.addEventListener('resize', () => instance.resize());
+    window.addEventListener("resize", () => instance.resize());
   }
 }

@@ -103,6 +103,8 @@ describe("tenant overview page", () => {
     root.innerHTML = renderTenantOverview(controller);
     document.body.append(root);
 
+    expect(root.querySelectorAll(".oc-tenant-metric-value")[1]?.textContent).toBe("8.00");
+
     await initTenantOverviewCharts(root, controller);
     await flush();
 
