@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TOOL_DIR="$ROOT_DIR/tools/openclaw-control-ui-echarts"
-OUTPUT_DIR="$TOOL_DIR/generated/control-ui"6
+OUTPUT_DIR="$TOOL_DIR/generated/control-ui"
 CONTROL_UI_RUNTIME_SCRIPT="$TOOL_DIR/openclaw-echarts-renderer.js"
 CONTROL_UI_RUNTIME_MODULE_DIR="$TOOL_DIR/runtime"
 CONTROL_UI_STATIC_DIR="$TOOL_DIR/static"
