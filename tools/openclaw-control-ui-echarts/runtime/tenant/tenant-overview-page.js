@@ -7,14 +7,30 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(numeric);
 }
 
+function normalizeAgentLabel(value) {
+  const label = String(value ?? "").trim();
+  if (!label) {
+    return "";
+  }
+  const normalized = label.toLowerCase();
+  if (normalized === "未知 agent" || normalized === "unknown agent") {
+    return "";
+  }
+  return label;
+}
+
 function resolveAgentDisplayName(agent) {
   return (
-    agent?.name ||
-    agent?.agentName ||
-    agent?.agent_name ||
-    agent?.description ||
-    agent?.agentId ||
-    agent?.agent_id ||
+    normalizeAgentLabel(agent?.displayName) ||
+    normalizeAgentLabel(agent?.name) ||
+    normalizeAgentLabel(agent?.agentName) ||
+    normalizeAgentLabel(agent?.label) ||
+    normalizeAgentLabel(agent?.agent_name) ||
+    normalizeAgentLabel(agent?.description) ||
+    normalizeAgentLabel(agent?.baseAgentId) ||
+    normalizeAgentLabel(agent?.agentId) ||
+    normalizeAgentLabel(agent?.agent_id) ||
+    normalizeAgentLabel(agent?.id) ||
     "未知 Agent"
   );
 }
@@ -39,7 +55,6 @@ function injectEchartsStyles() {
 export async function refreshTenantOverview(root, controller) {
   try {
     controller.overviewError = null;
-    controller.overviewStatus = { libs: 'pending', charts: 'pending' };
     const result = await controller.apiClient.getTenantOverview();
     controller.overviewData = result || null;
   } catch (error) {
@@ -64,19 +79,9 @@ export function renderTenantOverview(controller) {
   if (!summary) {
     return `<div class="oc-tenant-overview-loading">统计数据格式异常。</div>`;
   }
-  
-  const status = controller.overviewStatus || {};
-  const statusHtml = `
-    <div class="oc-tenant-overview-status" style="display:flex;gap:10px;margin-bottom:10px;font-size:11px;color:#64748b;align-items:center;">
-      <span style="padding:2px 6px;border-radius:4px;background:${status.libs === 'ok' ? '#dcfce7' : status.libs === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.libs === 'ok' ? '#166534' : status.libs === 'error' ? '#991b1b' : '#475569'}">库加载: ${status.libs || '待处理'}</span>
-      <span style="padding:2px 6px;border-radius:4px;background:${status.charts === 'ok' ? '#dcfce7' : status.charts === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.charts === 'ok' ? '#166534' : status.charts === 'error' ? '#991b1b' : '#475569'}">图表初始化: ${status.charts || '待处理'}</span>
-      ${status.error ? `<span style="color:#ef4444;font-weight:600;">错误: ${escapeHtml(status.error)}</span>` : ''}
-    </div>
-  `;
-  
+
   return `
     <div class="oc-tenant-overview oc-block-renderer--echarts">
-      ${statusHtml}
       <div class="oc-tenant-overview-grid">
         <div class="oc-tenant-card oc-tenant-metric-card">
           <div class="oc-tenant-metric-label">总消耗 Token</div>
@@ -137,10 +142,6 @@ export async function initTenantOverviewCharts(root, controller) {
   const data = controller.overviewData;
   if (!data) return;
 
-  if (!controller.overviewStatus) {
-    controller.overviewStatus = { libs: 'pending', charts: 'pending' };
-  }
-
   const vendorBaseUrl = window.__ocVendorBaseUrl || new URL("../../vendor/", import.meta.url);
   const loadLibraries = createLibraryLoader(vendorBaseUrl);
   
@@ -148,16 +149,10 @@ export async function initTenantOverviewCharts(root, controller) {
   try {
     const libs = await loadLibraries();
     echarts = libs.echarts;
-    controller.overviewStatus.libs = 'ok';
   } catch (error) {
     console.error("Failed to load ECharts for overview:", error);
-    controller.overviewStatus.libs = 'error';
-    controller.overviewStatus.error = `库加载失败: ${error.message}`;
-    updateStatusInPlace(root, controller.overviewStatus);
     return;
   }
-
-  updateStatusInPlace(root, controller.overviewStatus);
 
   // Use queueMicrotask to ensure layout is settled for accurate sizing
   queueMicrotask(() => {
@@ -257,14 +252,9 @@ export async function initTenantOverviewCharts(root, controller) {
         });
       }
 
-      controller.overviewStatus.charts = 'ok';
     } catch (error) {
       console.error("Failed to initialize charts:", error);
-      controller.overviewStatus.charts = 'error';
-      controller.overviewStatus.error = `图表初始化失败: ${error.message}`;
     }
-
-    updateStatusInPlace(root, controller.overviewStatus);
   });
 }
 
@@ -290,15 +280,4 @@ function initSingleChart(el, echarts, option) {
   } else {
     window.addEventListener('resize', () => instance.resize());
   }
-}
-
-function updateStatusInPlace(root, status) {
-  const container = root.querySelector(".oc-tenant-overview-status");
-  if (!container) return;
-  
-  container.innerHTML = `
-    <span style="padding:2px 6px;border-radius:4px;background:${status.libs === 'ok' ? '#dcfce7' : status.libs === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.libs === 'ok' ? '#166534' : status.libs === 'error' ? '#991b1b' : '#475569'}">库加载: ${status.libs || '待处理'}</span>
-    <span style="padding:2px 6px;border-radius:4px;background:${status.charts === 'ok' ? '#dcfce7' : status.charts === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.charts === 'ok' ? '#166534' : status.charts === 'error' ? '#991b1b' : '#475569'}">图表初始化: ${status.charts || '待处理'}</span>
-    ${status.error ? `<span style="color:#ef4444;font-weight:600;">错误: ${escapeHtml(status.error)}</span>` : ''}
-  `;
 }

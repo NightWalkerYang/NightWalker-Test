@@ -1834,8 +1834,14 @@ export function getTenantOverview(db, params, configAgents = []) {
     })),
     topAgents: topAgents.map((a) => {
       const configEntry = configMap.get(a.agentId) ?? null;
+      const displayName = configEntry?.name || a.description || a.agentId || "未知 Agent";
       return {
-        name: configEntry?.name || a.description || a.agentId || "未知 Agent",
+        name: displayName,
+        displayName,
+        agentName: displayName,
+        label: displayName,
+        agentId: a.agentId,
+        description: a.description ?? null,
         tokens: Number(a.tokens || 0),
       };
     }),

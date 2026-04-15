@@ -91,10 +91,12 @@ describe("tenant overview page", () => {
           { tokens: 20, agentName: "客服助手" },
           { tokens: 10, agent_name: "销售助手" },
           { tokens: 5, description: "研发助手" },
+          { tokens: 4, displayName: "产品助手" },
+          { tokens: 3, label: "数据助手" },
+          { tokens: 2, baseAgentId: "ops-base" },
           { tokens: 1, agentId: "ops" },
         ],
       },
-      overviewStatus: { libs: "pending", charts: "pending" },
     };
 
     const root = document.createElement("main");
@@ -131,7 +133,12 @@ describe("tenant overview page", () => {
       "客服助手",
       "销售助手",
       "研发助手",
+      "产品助手",
+      "数据助手",
+      "ops-base",
       "ops",
     ]);
+    expect(root.textContent).not.toContain("库加载");
+    expect(root.textContent).not.toContain("图表初始化");
   });
 });
