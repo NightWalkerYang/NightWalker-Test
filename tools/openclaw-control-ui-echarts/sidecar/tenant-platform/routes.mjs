@@ -18,6 +18,7 @@ import {
   logAudit,
   readOpenClawAgentCatalog,
   registerTenantAgentSession,
+  revokeTenantAgentAssignments,
   syncTenantUsageRecords,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
@@ -134,6 +135,14 @@ function normalizePath(basePath, pathname) {
 
 function readTenantId(value) {
   return String(value || "").trim();
+}
+
+function readUserIds(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
+  }
+  const normalized = String(value || "").trim();
+  return normalized ? [normalized] : [];
 }
 
 export function createTenantPlatformRouter(deps) {
@@ -682,6 +691,43 @@ export function createTenantPlatformRouter(deps) {
             derivedAgentId: assignment.derivedAgentId,
           },
         });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/revoke-agent-assignments") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const userIds = readUserIds(body.userIds ?? body.userId);
+        const result = revokeTenantAgentAssignments(deps.db, {
+          tenantId: session.tenantId,
+          userIds,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.member.agent_assignment.revoke",
+          resourceType: "member",
+          resourceId: result.affectedUserIds[0] || userIds[0] || null,
+          payloadJson: {
+            userIds,
+            affectedUserIds: result.affectedUserIds,
+            revokedAssignmentCount: result.revokedAssignmentCount,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,

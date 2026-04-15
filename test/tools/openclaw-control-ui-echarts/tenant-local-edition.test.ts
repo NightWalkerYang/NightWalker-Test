@@ -317,6 +317,119 @@ describe("tenant platform local edition", () => {
     expect(newPasswordLogin.payload.data.session.role).toBe("member");
   });
 
+  it("revokes multiple agent assignments through the tenant admin revoke route", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMemberA = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    const createdMemberB = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-b",
+        password: "secret",
+      },
+    });
+    expect(createdMemberA.status).toBe(200);
+    expect(createdMemberB.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMemberA.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+    assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMemberB.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const memberLoginA = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    const memberLoginB = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-b",
+        password: "secret",
+      },
+    });
+    expect(memberLoginA.status).toBe(200);
+    expect(memberLoginB.status).toBe(200);
+
+    const beforeRevokeA = await requestJson(baseUrl, "/member/agents", {
+      token: memberLoginA.payload.data.token,
+    });
+    const beforeRevokeB = await requestJson(baseUrl, "/member/agents", {
+      token: memberLoginB.payload.data.token,
+    });
+    expect(beforeRevokeA.payload.data).toHaveLength(1);
+    expect(beforeRevokeB.payload.data).toHaveLength(1);
+
+    const revoked = await requestJson(baseUrl, "/tenant/admin/revoke-agent-assignments", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        userIds: [createdMemberA.payload.data.id, createdMemberB.payload.data.id],
+      },
+    });
+    expect(revoked.status).toBe(200);
+    expect(revoked.payload.data.revokedAssignmentCount).toBe(2);
+    expect(revoked.payload.data.affectedMemberCount).toBe(2);
+
+    const afterRevokeA = await requestJson(baseUrl, "/member/agents", {
+      token: memberLoginA.payload.data.token,
+    });
+    const afterRevokeB = await requestJson(baseUrl, "/member/agents", {
+      token: memberLoginB.payload.data.token,
+    });
+    expect(afterRevokeA.payload.data).toHaveLength(0);
+    expect(afterRevokeB.payload.data).toHaveLength(0);
+  });
+
   it("allows readonly tenant login after expiry but blocks writes", async () => {
     const sandbox = createSandbox();
     const { baseUrl } = await startSandboxServer(sandbox);

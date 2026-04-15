@@ -179,6 +179,9 @@ export function createTenantApiClient() {
     assignTenantAgent(body) {
       return requestJson("/tenant/admin/assign-agent", { method: "POST", body });
     },
+    revokeTenantAgentAssignments(body) {
+      return requestJson("/tenant/admin/revoke-agent-assignments", { method: "POST", body });
+    },
     getTenantUsageStats(startDate, endDate) {
       return requestJson(withQuery("/tenant/admin/usage-stats", { startDate, endDate }));
     },

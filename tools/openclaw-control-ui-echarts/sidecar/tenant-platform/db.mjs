@@ -751,7 +751,9 @@ export function listTenantMembers(db, tenantId) {
 }
 
 function normalizeMemberStatus(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (normalized === "active" || normalized === "inactive") {
     return normalized;
   }
@@ -810,7 +812,11 @@ export function updateTenantMemberStatus(db, params) {
     if (!current) {
       throw new Error("成员不存在");
     }
-    if (String(current.status || "").trim().toLowerCase() === status) {
+    if (
+      String(current.status || "")
+        .trim()
+        .toLowerCase() === status
+    ) {
       return current;
     }
     db.prepare(
@@ -1077,6 +1083,51 @@ export function assignTenantAgentToUser(db, params) {
   });
 }
 
+export function revokeTenantAgentAssignments(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userIds = Array.isArray(params.userIds)
+    ? [...new Set(params.userIds.map((userId) => String(userId || "").trim()).filter(Boolean))]
+    : [];
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userIds.length) {
+    throw new Error("user_ids_required");
+  }
+
+  return runInTransaction(db, () => {
+    const placeholders = userIds.map(() => "?").join(", ");
+    const selectAssignments = db
+      .prepare(
+        `SELECT id, user_id AS userId
+         FROM user_agent_assignments
+         WHERE tenant_id = ? AND status = 'active' AND user_id IN (${placeholders})`,
+      )
+      .all(tenantId, ...userIds);
+
+    if (!selectAssignments.length) {
+      return {
+        revokedAssignmentCount: 0,
+        affectedUserIds: [],
+        affectedMemberCount: 0,
+      };
+    }
+
+    db.prepare(
+      `UPDATE user_agent_assignments
+       SET status = 'inactive'
+       WHERE tenant_id = ? AND status = 'active' AND user_id IN (${placeholders})`,
+    ).run(tenantId, ...userIds);
+
+    const affectedUserIds = [...new Set(selectAssignments.map((assignment) => assignment.userId))];
+    return {
+      revokedAssignmentCount: selectAssignments.length,
+      affectedUserIds,
+      affectedMemberCount: affectedUserIds.length,
+    };
+  });
+}
+
 export function listAssignedAgentsForUser(db, params, configAgents = []) {
   const configMap = new Map(configAgents.map((entry) => [entry.id, entry]));
   return db
@@ -1329,7 +1380,10 @@ export function syncTenantUsageRecords(db, params) {
     let updated = 0;
     let pointsDelta = 0;
     const now = nowIso();
-    const billingEnabled = String(tenantAgent.deploymentMode || "").trim().toLowerCase() !== "local";
+    const billingEnabled =
+      String(tenantAgent.deploymentMode || "")
+        .trim()
+        .toLowerCase() !== "local";
     const rateMultiplier = Math.max(0, toFiniteNumber(tenantAgent.rateMultiplier, 1));
     let currentAgentBalance = normalizeNonNegativePoints(tenantAgent.balancePoints);
 

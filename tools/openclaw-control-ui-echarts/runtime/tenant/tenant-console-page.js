@@ -92,6 +92,52 @@ function memberStatusToggleLabel(status) {
   return String(status || "").trim() === "active" ? "禁用成员" : "启用成员";
 }
 
+function getAssignmentSelection(controller) {
+  if (!(controller?.selectedAssignmentMemberIds instanceof Set)) {
+    controller.selectedAssignmentMemberIds = new Set();
+  }
+  return controller.selectedAssignmentMemberIds;
+}
+
+function isAssignmentSelectionTarget(member) {
+  return Number(member?.assignedAgentCount || 0) > 0;
+}
+
+function isAssignmentMemberSelected(controller, memberId) {
+  return getAssignmentSelection(controller).has(String(memberId || "").trim());
+}
+
+function setAssignmentMemberSelected(controller, memberId, selected) {
+  const normalized = String(memberId || "").trim();
+  if (!normalized) {
+    return;
+  }
+  const selection = getAssignmentSelection(controller);
+  if (selected) {
+    selection.add(normalized);
+    return;
+  }
+  selection.delete(normalized);
+}
+
+function clearAssignmentSelection(controller) {
+  getAssignmentSelection(controller).clear();
+}
+
+function pruneAssignmentSelection(controller) {
+  if (controller.section !== "agent-assignment") {
+    return;
+  }
+  const membersById = new Map(controller.members.map((member) => [member.id, member]));
+  const selection = getAssignmentSelection(controller);
+  for (const memberId of Array.from(selection)) {
+    const member = membersById.get(memberId);
+    if (!member || !isAssignmentSelectionTarget(member)) {
+      selection.delete(memberId);
+    }
+  }
+}
+
 function ensureController(root, session, apiClient) {
   if (root.__ocTenantConsoleController) {
     root.__ocTenantConsoleController.session = session;
@@ -116,10 +162,12 @@ function ensureController(root, session, apiClient) {
     tenantAgents: [],
     activeMember: null,
     passwordMember: null,
+    selectedAssignmentMemberIds: new Set(),
     usageItems: [],
     usageTotal: 0,
     usagePageSize: PAGE_SIZE,
     usageSearchTimer: null,
+    assignmentRevokeBusy: false,
     dialogs: {
       createMemberOpen: false,
       assignOpen: false,
@@ -208,6 +256,8 @@ function renderToolbar(controller) {
     `;
   }
 
+  const selectedCount =
+    controller.section === "agent-assignment" ? getAssignmentSelection(controller).size : 0;
   return `
     <div class="data-table-toolbar oc-tenant-table-toolbar">
       <label class="data-table-search">
@@ -218,11 +268,22 @@ function renderToolbar(controller) {
           data-tenant-search
         />
       </label>
-      ${
-        controller.section === "members"
-          ? `<button class="btn primary" type="button" data-tenant-open-create>创建成员</button>`
-          : ""
-      }
+      <div class="oc-tenant-table-toolbar__actions">
+        ${
+          controller.section === "agent-assignment" && selectedCount > 0
+            ? `
+              <span class="oc-tenant-selection-summary">已选择 ${formatNumber(selectedCount)} 个成员</span>
+              <button class="btn" type="button" data-tenant-clear-assignment-selection>清空选择</button>
+              <button class="btn oc-tenant-destructive-action" type="button" data-tenant-bulk-revoke>撤回分配</button>
+            `
+            : ""
+        }
+        ${
+          controller.section === "members"
+            ? `<button class="btn primary" type="button" data-tenant-open-create>创建成员</button>`
+            : ""
+        }
+      </div>
     </div>
   `;
 }
@@ -281,12 +342,27 @@ function renderMembersTable(rows) {
   `;
 }
 
-function renderAssignmentTable(rows) {
+function renderAssignmentTable(rows, controller) {
+  const selectableRows = rows.filter(isAssignmentSelectionTarget);
+  const selectedRowsOnPage = selectableRows.filter((member) =>
+    isAssignmentMemberSelected(controller, member.id),
+  );
+  const allSelectableRowsSelected =
+    selectableRows.length > 0 && selectedRowsOnPage.length === selectableRows.length;
   return `
     <div class="data-table-container">
       <table class="data-table">
         <thead>
           <tr>
+            <th class="oc-tenant-assignment-select-col">
+              <input
+                type="checkbox"
+                data-tenant-assignment-select-all
+                aria-label="全选当前页可撤回成员"
+                ${selectableRows.length ? "" : "disabled"}
+                ${allSelectableRowsSelected ? "checked" : ""}
+              />
+            </th>
             <th>成员账号</th>
             <th>状态</th>
             <th>已分配 Agent</th>
@@ -301,6 +377,15 @@ function renderAssignmentTable(rows) {
                   .map(
                     (member) => `
                       <tr>
+                        <td class="oc-tenant-assignment-select-cell">
+                          <input
+                            type="checkbox"
+                            data-tenant-assignment-select="${escapeHtml(member.id)}"
+                            aria-label="选择 ${escapeHtml(member.username)}"
+                            ${isAssignmentSelectionTarget(member) ? "" : "disabled"}
+                            ${isAssignmentMemberSelected(controller, member.id) ? "checked" : ""}
+                          />
+                        </td>
                         <td>${escapeHtml(member.username)}</td>
                         <td><span class="data-table-badge data-table-badge--${member.status === "active" ? "direct" : "unknown"}">${escapeHtml(member.status)}</span></td>
                         <td>${formatNumber(member.assignedAgentCount)}</td>
@@ -308,13 +393,21 @@ function renderAssignmentTable(rows) {
                         <td>
                           <div class="oc-tenant-table-actions">
                             <button class="btn" type="button" data-tenant-open-assign="${escapeHtml(member.id)}">分配Agent</button>
+                            <button
+                              class="btn oc-tenant-destructive-action"
+                              type="button"
+                              data-tenant-revoke-assignment="${escapeHtml(member.id)}"
+                              ${isAssignmentSelectionTarget(member) ? "" : "disabled"}
+                            >
+                              撤回分配
+                            </button>
                           </div>
                         </td>
                       </tr>
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="5" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
+              : `<tr><td colspan="6" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
           }
         </tbody>
       </table>
@@ -431,7 +524,10 @@ function renderAssignDialog(controller) {
 }
 
 function totalUsagePages(controller) {
-  return Math.max(1, Math.ceil((Number(controller.usageTotal || 0) || 0) / (controller.usagePageSize || PAGE_SIZE)));
+  return Math.max(
+    1,
+    Math.ceil((Number(controller.usageTotal || 0) || 0) / (controller.usagePageSize || PAGE_SIZE)),
+  );
 }
 
 function renderUsageTable(rows) {
@@ -530,25 +626,47 @@ function restoreRenderFocusState(root, state) {
   }
 }
 
+function syncAssignmentSelectionState(root, controller, rows) {
+  if (controller.section !== "agent-assignment") {
+    return;
+  }
+  const selectAll = root.querySelector("[data-tenant-assignment-select-all]");
+  if (!(selectAll instanceof HTMLInputElement)) {
+    return;
+  }
+  const selectableRows = rows.filter(isAssignmentSelectionTarget);
+  const selectedRows = selectableRows.filter((member) =>
+    isAssignmentMemberSelected(controller, member.id),
+  );
+  selectAll.checked = selectableRows.length > 0 && selectedRows.length === selectableRows.length;
+  selectAll.indeterminate = selectedRows.length > 0 && selectedRows.length < selectableRows.length;
+  selectAll.disabled = selectableRows.length === 0;
+}
+
 function render(root, controller) {
   const focusState = captureRenderFocusState(root);
   const isUsageStats = controller.section === "usage-stats";
   const isOverview = controller.section === "statistics-overview";
-  const pagination = isUsageStats || isOverview ? null : paginate(filterMembers(controller), getPageValue(controller));
+  if (controller.section === "agent-assignment") {
+    pruneAssignmentSelection(controller);
+  }
+  const pagination =
+    isUsageStats || isOverview
+      ? null
+      : paginate(filterMembers(controller), getPageValue(controller));
   if (pagination) {
     setPageValue(controller, pagination.page);
   }
 
-  const contentMarkup =
-    isUsageStats
-      ? renderUsageList(controller)
-      : isOverview
-        ? renderTenantOverview(controller)
-        : `
+  const contentMarkup = isUsageStats
+    ? renderUsageList(controller)
+    : isOverview
+      ? renderTenantOverview(controller)
+      : `
         <div class="data-table-wrapper">
           ${
             controller.section === "agent-assignment"
-              ? renderAssignmentTable(pagination.items)
+              ? renderAssignmentTable(pagination.items, controller)
               : renderMembersTable(pagination.items)
           }
           ${renderPagination(pagination)}
@@ -583,6 +701,9 @@ function render(root, controller) {
       openDialog(root.querySelector("[data-tenant-assign-dialog]"));
     }
   }
+  if (controller.section === "agent-assignment") {
+    syncAssignmentSelectionState(root, controller, pagination?.items || []);
+  }
   restoreRenderFocusState(root, focusState);
 }
 
@@ -597,7 +718,8 @@ async function refresh(root, controller) {
     });
     controller.usageItems = Array.isArray(data?.items) ? data.items : [];
     controller.usageTotal = Number(data?.total || 0);
-    controller.usagePageSize = Number(data?.pageSize || controller.usagePageSize || PAGE_SIZE) || PAGE_SIZE;
+    controller.usagePageSize =
+      Number(data?.pageSize || controller.usagePageSize || PAGE_SIZE) || PAGE_SIZE;
     const currentPage = Number(data?.page || page) || 1;
     const totalPages = totalUsagePages(controller);
     controller.pageBySection["usage-stats"] = Math.min(Math.max(1, currentPage), totalPages);
@@ -651,6 +773,65 @@ async function updateMemberStatus(root, controller, input) {
   } catch (error) {
     render(root, controller);
     setFeedback(root, error instanceof Error ? error.message : String(error), true);
+  }
+}
+
+async function revokeAssignmentMembers(root, controller, userIds) {
+  const normalizedUserIds = [
+    ...new Set(userIds.map((userId) => String(userId || "").trim()).filter(Boolean)),
+  ];
+  if (!normalizedUserIds.length || controller.assignmentRevokeBusy) {
+    return;
+  }
+
+  const selectedMembers = normalizedUserIds
+    .map((userId) => memberById(controller, userId))
+    .filter(Boolean);
+  const promptLabel =
+    normalizedUserIds.length === 1
+      ? `成员“${selectedMembers[0]?.username || normalizedUserIds[0]}”`
+      : `选中的 ${formatNumber(normalizedUserIds.length)} 个成员`;
+  let confirmed = true;
+  if (typeof window.confirm === "function") {
+    try {
+      confirmed = window.confirm(`确认撤回${promptLabel}的 Agent 分配吗？`);
+    } catch {
+      confirmed = false;
+    }
+  }
+  if (!confirmed) {
+    return;
+  }
+
+  controller.assignmentRevokeBusy = true;
+  try {
+    const result = await controller.apiClient.revokeTenantAgentAssignments({
+      userIds: normalizedUserIds,
+    });
+    const selection = getAssignmentSelection(controller);
+    for (const userId of normalizedUserIds) {
+      selection.delete(userId);
+    }
+    await refresh(root, controller);
+    const revokedAssignmentCount = Number(result?.revokedAssignmentCount || 0);
+    const affectedMemberCount = Number(
+      result?.affectedMemberCount || normalizedUserIds.length || 0,
+    );
+    if (revokedAssignmentCount > 0) {
+      setFeedback(
+        root,
+        affectedMemberCount > 1
+          ? `已撤回 ${affectedMemberCount} 个成员的 ${revokedAssignmentCount} 条 Agent 分配。`
+          : `成员 Agent 分配已撤回，共 ${revokedAssignmentCount} 条记录。`,
+      );
+      return;
+    }
+    setFeedback(root, "未找到可撤回的 Agent 分配。");
+  } catch (error) {
+    render(root, controller);
+    setFeedback(root, error instanceof Error ? error.message : String(error), true);
+  } finally {
+    controller.assignmentRevokeBusy = false;
   }
 }
 
@@ -718,6 +899,26 @@ async function handleClick(root, controller, event) {
     controller.activeMember = memberById(controller, assignTrigger.dataset.tenantOpenAssign);
     controller.dialogs.assignOpen = true;
     render(root, controller);
+    return;
+  }
+
+  const revokeTrigger = target.closest("[data-tenant-revoke-assignment]");
+  if (revokeTrigger instanceof HTMLElement) {
+    await revokeAssignmentMembers(root, controller, [revokeTrigger.dataset.tenantRevokeAssignment]);
+    return;
+  }
+
+  const clearSelectionTrigger = target.closest("[data-tenant-clear-assignment-selection]");
+  if (clearSelectionTrigger instanceof HTMLElement) {
+    clearAssignmentSelection(controller);
+    render(root, controller);
+    return;
+  }
+
+  const batchRevokeTrigger = target.closest("[data-tenant-bulk-revoke]");
+  if (batchRevokeTrigger instanceof HTMLElement) {
+    await revokeAssignmentMembers(root, controller, Array.from(getAssignmentSelection(controller)));
+    return;
   }
 }
 
@@ -728,6 +929,23 @@ function handleInput(root, controller, event) {
   }
   if (target.hasAttribute("data-tenant-member-status-toggle")) {
     void updateMemberStatus(root, controller, target);
+    return;
+  }
+  if (target.hasAttribute("data-tenant-assignment-select-all")) {
+    const visibleMembers = paginate(filterMembers(controller), getPageValue(controller)).items;
+    const selected = target.checked;
+    for (const member of visibleMembers) {
+      if (!isAssignmentSelectionTarget(member)) {
+        continue;
+      }
+      setAssignmentMemberSelected(controller, member.id, selected);
+    }
+    render(root, controller);
+    return;
+  }
+  if (target.hasAttribute("data-tenant-assignment-select")) {
+    setAssignmentMemberSelected(controller, target.dataset.tenantAssignmentSelect, target.checked);
+    render(root, controller);
     return;
   }
   if (target.hasAttribute("data-tenant-search")) {
@@ -814,6 +1032,9 @@ export async function mountTenantConsolePage(root, options = {}) {
   const controller = ensureController(root, session, apiClient);
   const previousSection = controller.section;
   controller.section = options.section || "members";
+  if (previousSection !== controller.section || controller.section !== "agent-assignment") {
+    clearAssignmentSelection(controller);
+  }
   if (previousSection === "usage-stats" && controller.usageSearchTimer) {
     window.clearTimeout(controller.usageSearchTimer);
     controller.usageSearchTimer = null;

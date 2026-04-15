@@ -1,4 +1,4 @@
-.content[data-oc-tenant-surface-active="true"]> :not([data-oc-tenant-surface-root]) {
+.content[data-oc-tenant-surface-active="true"] > :not([data-oc-tenant-surface-root]) {
   display: none !important;
 }
 
@@ -46,6 +46,20 @@
 
 .oc-tenant-table-toolbar .data-table-search {
   min-width: min(420px, 100%);
+}
+
+.oc-tenant-table-toolbar__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.oc-tenant-selection-summary {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .oc-tenant-table-actions {
@@ -107,22 +121,25 @@
   white-space: nowrap;
 }
 
-.oc-tenant-member-switch input:checked+.oc-tenant-member-switch__track {
+.oc-tenant-member-switch input:checked + .oc-tenant-member-switch__track {
   border-color: color-mix(in srgb, var(--accent) 48%, var(--border) 52%);
   background: color-mix(in srgb, var(--accent) 24%, var(--bg-elevated) 76%);
 }
 
-.oc-tenant-member-switch input:checked+.oc-tenant-member-switch__track .oc-tenant-member-switch__thumb {
+.oc-tenant-member-switch
+  input:checked
+  + .oc-tenant-member-switch__track
+  .oc-tenant-member-switch__thumb {
   transform: translateX(20px);
 }
 
-.oc-tenant-member-switch input:focus-visible+.oc-tenant-member-switch__track {
+.oc-tenant-member-switch input:focus-visible + .oc-tenant-member-switch__track {
   outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
   outline-offset: 2px;
 }
 
-.oc-tenant-member-switch input:disabled+.oc-tenant-member-switch__track,
-.oc-tenant-member-switch input:disabled~.oc-tenant-member-switch__label {
+.oc-tenant-member-switch input:disabled + .oc-tenant-member-switch__track,
+.oc-tenant-member-switch input:disabled ~ .oc-tenant-member-switch__label {
   opacity: 0.65;
 }
 
@@ -130,6 +147,28 @@
   text-align: center;
   color: var(--muted);
   padding: 28px 16px !important;
+}
+
+.oc-tenant-assignment-select-col,
+.oc-tenant-assignment-select-cell {
+  width: 48px;
+  text-align: center;
+}
+
+.oc-tenant-assignment-select-col input,
+.oc-tenant-assignment-select-cell input {
+  width: 16px;
+  height: 16px;
+}
+
+.oc-tenant-destructive-action {
+  color: var(--oc-tenant-danger);
+  border-color: color-mix(in srgb, var(--oc-tenant-danger) 42%, var(--border) 58%);
+  background: color-mix(in srgb, var(--oc-tenant-danger) 10%, var(--bg-elevated) 90%);
+}
+
+.oc-tenant-destructive-action:hover {
+  background: color-mix(in srgb, var(--oc-tenant-danger) 16%, var(--bg-elevated) 84%);
 }
 
 .oc-tenant-modal {
@@ -194,6 +233,10 @@
     min-width: 0;
   }
 
+  .oc-tenant-table-toolbar__actions {
+    justify-content: flex-start;
+  }
+
   .oc-tenant-member-actions {
     min-width: 0;
   }
@@ -244,7 +287,9 @@
   border-radius: 16px;
   padding: 20px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .oc-tenant-card:hover {
@@ -317,7 +362,6 @@
 }
 
 @media (max-width: 900px) {
-
   .oc-tenant-overview-main,
   .oc-tenant-overview-side {
     grid-template-columns: 1fr;

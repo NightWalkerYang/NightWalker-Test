@@ -208,9 +208,7 @@ describe("tenant surface", () => {
       "成员密码已更新。",
     );
 
-    const statusToggle = document.querySelector(
-      "[data-tenant-member-status-toggle='member-1']",
-    );
+    const statusToggle = document.querySelector("[data-tenant-member-status-toggle='member-1']");
     expect(statusToggle).not.toBeNull();
     if (statusToggle instanceof HTMLInputElement) {
       statusToggle.checked = false;
@@ -227,9 +225,10 @@ describe("tenant surface", () => {
     expect(document.querySelector("[data-tenant-member-status-toggle='member-1']")?.checked).toBe(
       false,
     );
-    expect(document.querySelector("[data-tenant-member-status-toggle='member-1']")?.parentElement?.textContent).toContain(
-      "已禁用",
-    );
+    expect(
+      document.querySelector("[data-tenant-member-status-toggle='member-1']")?.parentElement
+        ?.textContent,
+    ).toContain("已禁用");
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
       "成员已禁用。",
     );
@@ -300,7 +299,141 @@ describe("tenant surface", () => {
     expect(surfaceRoot?.querySelector("[data-tenant-open-assign]")?.textContent).toContain(
       "分配Agent",
     );
+    expect(
+      surfaceRoot?.querySelector("[data-tenant-revoke-assignment='member-1']")?.textContent,
+    ).toContain("撤回分配");
+    expect(surfaceRoot?.querySelector("[data-tenant-assignment-select='member-1']")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-open-create]")).toBeNull();
+  });
+
+  it("supports multi-select revoking agent assignments from the assignment list", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-agent-assignment");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 1,
+          createdAt: "2026-04-03T08:00:00.000Z",
+        },
+        {
+          id: "member-2",
+          username: "bob",
+          status: "active",
+          assignedAgentCount: 1,
+          createdAt: "2026-04-04T08:00:00.000Z",
+        },
+      ],
+      revokeCalls: [],
+    };
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return okJson(state.members);
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson([
+            {
+              id: "tenant-agent-1",
+              agentId: "subotech-finance",
+              agentName: "苏博泰克财务分析助手",
+              balancePoints: 100,
+            },
+          ]);
+        }
+        if (url.endsWith("/tenant/admin/revoke-agent-assignments") && method === "POST") {
+          state.revokeCalls.push(body);
+          const userIds = Array.isArray(body.userIds) ? body.userIds : [];
+          for (const member of state.members) {
+            if (userIds.includes(member.id)) {
+              member.assignedAgentCount = 0;
+            }
+          }
+          return okJson({
+            revokedAssignmentCount: userIds.length,
+            affectedUserIds: userIds,
+            affectedMemberCount: userIds.length,
+          });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const firstCheckbox = document.querySelector("[data-tenant-assignment-select='member-1']");
+    const secondCheckbox = document.querySelector("[data-tenant-assignment-select='member-2']");
+    expect(firstCheckbox).not.toBeNull();
+    expect(secondCheckbox).not.toBeNull();
+    if (firstCheckbox instanceof HTMLInputElement) {
+      firstCheckbox.checked = true;
+      firstCheckbox.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+    const secondCheckboxAfterFirst = document.querySelector(
+      "[data-tenant-assignment-select='member-2']",
+    );
+    if (secondCheckboxAfterFirst instanceof HTMLInputElement) {
+      secondCheckboxAfterFirst.checked = true;
+      secondCheckboxAfterFirst.dispatchEvent(
+        new Event("input", { bubbles: true, cancelable: true }),
+      );
+    }
+    await flush();
+
+    const bulkRevokeButton = document.querySelector("[data-tenant-bulk-revoke]");
+    expect(bulkRevokeButton?.textContent).toContain("撤回分配");
+    bulkRevokeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.revokeCalls).toEqual([
+      {
+        userIds: ["member-1", "member-2"],
+      },
+    ]);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "已撤回 2 个成员的 2 条 Agent 分配。",
+    );
+    expect(document.querySelector("[data-tenant-bulk-revoke]")).toBeNull();
+    expect(document.querySelector("[data-tenant-assignment-select-all]")?.checked).toBe(false);
+    expect(document.querySelector("[data-tenant-assignment-select='member-1']")?.checked).toBe(
+      false,
+    );
+    expect(document.querySelector("[data-tenant-assignment-select='member-2']")?.checked).toBe(
+      false,
+    );
   });
 
   it("mounts the native tenant usage stats view", async () => {
