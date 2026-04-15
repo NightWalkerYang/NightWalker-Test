@@ -97,6 +97,8 @@ function createRevokeAssignmentDialogState() {
     open: false,
     loading: false,
     busy: false,
+    confirmOpen: false,
+    confirmSelectedAssignmentIds: [],
     memberId: "",
     memberUsername: "",
     assignments: [],
@@ -117,6 +119,61 @@ function getRevokeAssignmentDialog(controller) {
 
 function isRevokeAssignmentSelectionTarget(member) {
   return Number(member?.assignedAgentCount || 0) > 0;
+}
+
+function getRevokeAssignmentSelectableAssignments(dialog) {
+  if (!Array.isArray(dialog?.assignments)) {
+    return [];
+  }
+  return dialog.assignments.filter((assignment) =>
+    Boolean(String(assignment?.assignmentId || "").trim()),
+  );
+}
+
+function isRevokeAssignmentPlaceholderLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return true;
+  }
+  const lowered = normalized.toLowerCase();
+  return (
+    lowered === "not_found" ||
+    lowered === "not found" ||
+    lowered === "unknown" ||
+    normalized === "未知 Agent"
+  );
+}
+
+function getRevokeAssignmentDisplayName(assignment) {
+  for (const candidate of [
+    assignment?.displayName,
+    assignment?.agentName,
+    assignment?.description,
+    assignment?.baseAgentId,
+    assignment?.derivedAgentId,
+    assignment?.assignmentId,
+  ]) {
+    if (!isRevokeAssignmentPlaceholderLabel(candidate)) {
+      return String(candidate || "").trim();
+    }
+  }
+  return "未知 Agent";
+}
+
+function getRevokeAssignmentConfirmAssignments(dialog) {
+  const selectedAssignmentIds = new Set(
+    Array.isArray(dialog?.confirmSelectedAssignmentIds)
+      ? dialog.confirmSelectedAssignmentIds
+          .map((assignmentId) => String(assignmentId || "").trim())
+          .filter(Boolean)
+      : [],
+  );
+  if (!selectedAssignmentIds.size) {
+    return [];
+  }
+  return getRevokeAssignmentSelectableAssignments(dialog).filter((assignment) =>
+    selectedAssignmentIds.has(String(assignment.assignmentId || "").trim()),
+  );
 }
 
 function isRevokeAssignmentSelected(controller, assignmentId) {
@@ -148,9 +205,9 @@ function pruneRevokeAssignmentSelection(controller) {
     return;
   }
   const assignmentIds = new Set(
-    dialog.assignments
-      .map((assignment) => String(assignment?.assignmentId || "").trim())
-      .filter(Boolean),
+    getRevokeAssignmentSelectableAssignments(dialog).map((assignment) =>
+      String(assignment.assignmentId || "").trim(),
+    ),
   );
   for (const assignmentId of Array.from(dialog.selectedAssignmentIds)) {
     if (!assignmentIds.has(assignmentId)) {
@@ -514,9 +571,7 @@ function renderAssignDialog(controller) {
 function renderRevokeAssignmentDialog(controller) {
   const dialog = getRevokeAssignmentDialog(controller);
   const selectedCount = dialog.selectedAssignmentIds.size;
-  const selectableAssignments = dialog.assignments.filter((assignment) =>
-    Boolean(String(assignment?.assignmentId || "").trim()),
-  );
+  const selectableAssignments = getRevokeAssignmentSelectableAssignments(dialog);
   const allAssignmentsSelected =
     selectableAssignments.length > 0 && selectedCount === selectableAssignments.length;
   const statusMarkup = dialog.loading
@@ -545,13 +600,13 @@ function renderRevokeAssignmentDialog(controller) {
                         <input
                           type="checkbox"
                           data-tenant-revoke-assignment-select="${escapeHtml(assignment.assignmentId)}"
-                          aria-label="选择 ${escapeHtml(assignment.displayName || assignment.agentName || assignment.description || assignment.baseAgentId || assignment.assignmentId)}"
+                          aria-label="选择 ${escapeHtml(getRevokeAssignmentDisplayName(assignment))}"
                           ${dialog.busy ? "disabled" : ""}
                           ${isRevokeAssignmentSelected(controller, assignment.assignmentId) ? "checked" : ""}
                         />
                       </td>
                       <td>
-                        <div class="oc-tenant-revoke-assignment__agent-name">${escapeHtml(assignment.displayName || assignment.agentName || assignment.description || assignment.baseAgentId || assignment.assignmentId)}</div>
+                        <div class="oc-tenant-revoke-assignment__agent-name">${escapeHtml(getRevokeAssignmentDisplayName(assignment))}</div>
                         <div class="oc-tenant-revoke-assignment__agent-meta">${escapeHtml(assignment.derivedAgentId || assignment.baseAgentId || "-")}</div>
                       </td>
                       <td>${escapeHtml(assignment.description || "-")}</td>
@@ -599,7 +654,59 @@ function renderRevokeAssignmentDialog(controller) {
             ${listMarkup}
             <div class="oc-tenant-modal__actions">
               <button class="btn" type="button" data-tenant-close-dialog="revoke">取消</button>
-              <button class="btn primary" type="submit" ${dialog.loading || dialog.busy || selectedCount === 0 ? "disabled" : ""}>确认撤回</button>
+              <button class="btn primary" type="submit" ${dialog.loading || dialog.busy || selectedCount === 0 ? "disabled" : ""}>下一步</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderRevokeAssignmentConfirmDialog(controller) {
+  const dialog = getRevokeAssignmentDialog(controller);
+  if (!dialog.confirmOpen) {
+    return "";
+  }
+  const selectedAssignments = getRevokeAssignmentConfirmAssignments(dialog);
+  const memberLabel = dialog.memberUsername || dialog.memberId || "该成员";
+  const selectedCount = selectedAssignments.length || dialog.confirmSelectedAssignmentIds.length;
+  return `
+    <dialog class="oc-tenant-modal" data-tenant-revoke-confirm-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">确认撤回</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="revoke-confirm">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
+          <div class="callout info">
+            确认后将立即撤回成员“${escapeHtml(memberLabel)}”已选中的 ${formatNumber(selectedCount)} 个 Agent。
+          </div>
+          ${
+            selectedAssignments.length
+              ? `
+                <section class="oc-tenant-revoke-confirm">
+                  <div class="oc-tenant-revoke-confirm__title">将撤回的 Agent</div>
+                  <ul class="oc-tenant-revoke-confirm__list">
+                    ${selectedAssignments
+                      .map(
+                        (assignment) => `
+                          <li>
+                            <div class="oc-tenant-revoke-confirm__name">${escapeHtml(getRevokeAssignmentDisplayName(assignment))}</div>
+                            <div class="oc-tenant-revoke-confirm__meta">${escapeHtml(assignment.derivedAgentId || assignment.baseAgentId || "-")}</div>
+                          </li>
+                        `,
+                      )
+                      .join("")}
+                  </ul>
+                </section>
+              `
+              : ""
+          }
+          <form class="oc-tenant-modal__form" data-tenant-revoke-confirm-form>
+            <div class="oc-tenant-modal__actions">
+              <button class="btn" type="button" data-tenant-close-dialog="revoke-confirm">返回</button>
+              <button class="btn primary" type="submit" ${dialog.busy ? "disabled" : ""}>确认撤回</button>
             </div>
           </form>
         </div>
@@ -720,9 +827,7 @@ function syncRevokeAssignmentSelectionState(root, controller) {
   if (!(selectAll instanceof HTMLInputElement)) {
     return;
   }
-  const selectableAssignments = dialog.assignments.filter((assignment) =>
-    Boolean(String(assignment?.assignmentId || "").trim()),
-  );
+  const selectableAssignments = getRevokeAssignmentSelectableAssignments(dialog);
   const selectedAssignments = selectableAssignments.filter((assignment) =>
     dialog.selectedAssignmentIds.has(String(assignment.assignmentId || "").trim()),
   );
@@ -775,7 +880,7 @@ function render(root, controller) {
     ${
       isUsageStats || isOverview
         ? ""
-        : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}`
+        : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
     }
   `;
 
@@ -795,6 +900,9 @@ function render(root, controller) {
     }
     if (controller.revokeAssignmentDialog?.open) {
       openDialog(root.querySelector("[data-tenant-revoke-assignment-dialog]"));
+    }
+    if (controller.revokeAssignmentDialog?.confirmOpen) {
+      openDialog(root.querySelector("[data-tenant-revoke-confirm-dialog]"));
     }
   }
   if (controller.section === "agent-assignment") {
@@ -923,34 +1031,42 @@ async function openRevokeAssignmentDialog(root, controller, memberId) {
   }
 }
 
-async function revokeSelectedAssignments(root, controller) {
+async function openRevokeAssignmentConfirmDialog(root, controller) {
   const dialog = controller.revokeAssignmentDialog;
   if (!dialog?.open || dialog.loading || dialog.busy) {
     return;
   }
 
-  const dialogToken = Number(dialog.requestToken || 0);
+  pruneRevokeAssignmentSelection(controller);
   const selectedAssignmentIds = Array.from(dialog.selectedAssignmentIds);
   if (!selectedAssignmentIds.length) {
     setFeedback(root, "请选择要撤回的 Agent。", true);
     return;
   }
 
-  const memberLabel = dialog.memberUsername || dialog.memberId || "该成员";
-  let confirmed = true;
-  if (typeof window.confirm === "function") {
-    try {
-      confirmed = window.confirm(
-        `确认撤回成员“${memberLabel}”已分配的 ${formatNumber(selectedAssignmentIds.length)} 个 Agent 吗？`,
-      );
-    } catch {
-      confirmed = false;
-    }
-  }
-  if (!confirmed) {
+  dialog.confirmOpen = true;
+  dialog.confirmSelectedAssignmentIds = selectedAssignmentIds;
+  dialog.error = "";
+  render(root, controller);
+}
+
+async function revokeSelectedAssignments(root, controller) {
+  const dialog = controller.revokeAssignmentDialog;
+  if (!dialog?.open || dialog.loading || dialog.busy || !dialog.confirmOpen) {
     return;
   }
 
+  const dialogToken = Number(dialog.requestToken || 0);
+  const selectedAssignmentIds = Array.from(dialog.confirmSelectedAssignmentIds || []);
+  if (!selectedAssignmentIds.length) {
+    dialog.confirmOpen = false;
+    dialog.confirmSelectedAssignmentIds = [];
+    render(root, controller);
+    setFeedback(root, "请选择要撤回的 Agent。", true);
+    return;
+  }
+
+  const memberLabel = dialog.memberUsername || dialog.memberId || "该成员";
   dialog.busy = true;
   render(root, controller);
   try {
@@ -993,6 +1109,8 @@ async function revokeSelectedAssignments(root, controller) {
       currentDialog.memberId === dialog.memberId
     ) {
       currentDialog.busy = false;
+      currentDialog.confirmOpen = false;
+      currentDialog.confirmSelectedAssignmentIds = [];
       currentDialog.loading = false;
       currentDialog.error = "未找到可撤回的 Agent 分配。";
       render(root, controller);
@@ -1011,6 +1129,8 @@ async function revokeSelectedAssignments(root, controller) {
       currentDialog.memberId === dialog.memberId
     ) {
       currentDialog.busy = false;
+      currentDialog.confirmOpen = false;
+      currentDialog.confirmSelectedAssignmentIds = [];
       currentDialog.loading = false;
       currentDialog.error = errorMessage;
     }
@@ -1078,6 +1198,12 @@ async function handleClick(root, controller, event) {
       controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
       closeDialog(root.querySelector("[data-tenant-revoke-assignment-dialog]"));
     }
+    if (dialogKind === "revoke-confirm") {
+      const dialog = getRevokeAssignmentDialog(controller);
+      dialog.confirmOpen = false;
+      dialog.confirmSelectedAssignmentIds = [];
+      closeDialog(root.querySelector("[data-tenant-revoke-confirm-dialog]"));
+    }
     render(root, controller);
     return;
   }
@@ -1115,7 +1241,7 @@ function handleInput(root, controller, event) {
     const selected = target.checked;
     clearRevokeAssignmentSelection(controller);
     if (selected) {
-      for (const assignment of dialog.assignments) {
+      for (const assignment of getRevokeAssignmentSelectableAssignments(dialog)) {
         setRevokeAssignmentSelected(controller, assignment.assignmentId, true);
       }
     }
@@ -1202,6 +1328,12 @@ async function handleSubmit(root, controller, event) {
   }
 
   if (target.matches("[data-tenant-revoke-assignment-form]")) {
+    event.preventDefault();
+    await openRevokeAssignmentConfirmDialog(root, controller);
+    return;
+  }
+
+  if (target.matches("[data-tenant-revoke-confirm-form]")) {
     event.preventDefault();
     await revokeSelectedAssignments(root, controller);
     return;

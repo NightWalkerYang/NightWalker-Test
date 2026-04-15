@@ -357,10 +357,10 @@ describe("tenant surface", () => {
       },
       revokeCalls: [],
     };
-    vi.stubGlobal(
-      "confirm",
-      vi.fn(() => true),
-    );
+    const confirmSpy = vi.fn(() => {
+      throw new Error("window.confirm should not be called");
+    });
+    vi.stubGlobal("confirm", confirmSpy);
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input, options = {}) => {
@@ -463,6 +463,18 @@ describe("tenant surface", () => {
 
     const revokeForm = document.querySelector("[data-tenant-revoke-assignment-form]");
     revokeForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    const confirmDialog = document.querySelector("[data-tenant-revoke-confirm-dialog]");
+    expect(confirmDialog?.open).toBe(true);
+    expect(confirmDialog?.textContent).toContain("确认撤回");
+    expect(confirmDialog?.textContent).toContain("alice");
+    expect(confirmDialog?.textContent).toContain("已选中的 2 个 Agent");
+
+    const confirmForm = document.querySelector("[data-tenant-revoke-confirm-form]");
+    confirmForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await flush();
     await flush();
 
