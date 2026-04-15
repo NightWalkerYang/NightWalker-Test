@@ -93,7 +93,7 @@ export async function initTenantOverviewCharts(root, controller) {
   const data = controller.overviewData;
   if (!data) return;
 
-  const vendorBaseUrl = new URL("../echarts/", import.meta.url);
+  const vendorBaseUrl = new URL("../../vendor/", import.meta.url);
   const loadLibraries = createLibraryLoader(vendorBaseUrl);
   
   let echarts;
