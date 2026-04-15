@@ -1,4 +1,5 @@
 import { createLibraryLoader } from "../echarts/libraries.js";
+import { getEchartsStyles } from "../echarts/styles.js";
 
 function formatNumber(value) {
   const numeric = Number(value || 0);
@@ -11,6 +12,16 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function injectEchartsStyles() {
+  const styleId = "oc-echarts-framework-styles";
+  if (document.getElementById(styleId)) return;
+  
+  const style = document.createElement("style");
+  style.id = styleId;
+  style.textContent = getEchartsStyles();
+  document.head.append(style);
 }
 
 export async function refreshTenantOverview(root, controller) {
@@ -26,6 +37,8 @@ export async function refreshTenantOverview(root, controller) {
 }
 
 export function renderTenantOverview(controller) {
+  injectEchartsStyles();
+
   if (controller.overviewError) {
     return `<div class="oc-tenant-overview-loading oc-tenant-overview-error">加载失败: ${escapeHtml(controller.overviewError)}</div>`;
   }
@@ -50,7 +63,7 @@ export function renderTenantOverview(controller) {
   `;
   
   return `
-    <div class="oc-tenant-overview">
+    <div class="oc-tenant-overview oc-block-renderer--echarts">
       ${statusHtml}
       <div class="oc-tenant-overview-grid">
         <div class="oc-tenant-card oc-tenant-metric-card">
@@ -80,7 +93,9 @@ export function renderTenantOverview(controller) {
           <div class="oc-tenant-card-header">
             <h3 class="oc-tenant-card-title">Token 消耗趋势 (14天)</h3>
           </div>
-          <div class="oc-tenant-chart-container" data-oc-overview-chart="trend"></div>
+          <div class="oc-block-renderer__body">
+            <div class="oc-block-renderer__chart" data-oc-overview-chart="trend"></div>
+          </div>
         </div>
       </div>
 
@@ -89,13 +104,17 @@ export function renderTenantOverview(controller) {
           <div class="oc-tenant-card-header">
             <h3 class="oc-tenant-card-title">成员消耗排名</h3>
           </div>
-          <div class="oc-tenant-chart-container" data-oc-overview-chart="members"></div>
+          <div class="oc-block-renderer__body">
+            <div class="oc-block-renderer__chart" data-oc-overview-chart="members"></div>
+          </div>
         </div>
         <div class="oc-tenant-card oc-tenant-chart-card">
           <div class="oc-tenant-card-header">
             <h3 class="oc-tenant-card-title">Agent 消耗分布</h3>
           </div>
-          <div class="oc-tenant-chart-container" data-oc-overview-chart="agents"></div>
+          <div class="oc-block-renderer__body">
+            <div class="oc-block-renderer__chart" data-oc-overview-chart="agents"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -128,95 +147,116 @@ export async function initTenantOverviewCharts(root, controller) {
 
   updateStatusInPlace(root, controller.overviewStatus);
 
-  try {
-    // Trend Chart
-    const trendEl = root.querySelector('[data-oc-overview-chart="trend"]');
-    if (trendEl) {
-      const chart = echarts.init(trendEl);
-      chart.setOption({
-        tooltip: { trigger: 'axis' },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: {
-          type: 'category',
-          boundaryGap: false,
-          data: data.trend.map(d => d.day.slice(5)), // MM-DD
-          axisLabel: { color: '#64748b' }
-        },
-        yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
-        series: [{
-          name: 'Tokens',
-          type: 'line',
-          smooth: true,
-          data: data.trend.map(d => d.tokens),
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
-              { offset: 1, color: 'rgba(59, 130, 246, 0)' }
-            ])
+  // Use queueMicrotask to ensure layout is settled for accurate sizing
+  queueMicrotask(() => {
+    try {
+      // Trend Chart
+      const trendEl = root.querySelector('[data-oc-overview-chart="trend"]');
+      if (trendEl) {
+        initSingleChart(trendEl, echarts, {
+          tooltip: { trigger: 'axis' },
+          grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+          xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: data.trend.map(d => d.day.slice(5)), // MM-DD
+            axisLabel: { color: '#64748b' }
           },
-          itemStyle: { color: '#3b82f6' }
-        }]
-      });
-      window.addEventListener('resize', () => chart.resize());
-    }
+          yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
+          series: [{
+            name: 'Tokens',
+            type: 'line',
+            smooth: true,
+            data: data.trend.map(d => d.tokens),
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
+                { offset: 1, color: 'rgba(59, 130, 246, 0)' }
+              ])
+            },
+            itemStyle: { color: '#3b82f6' }
+          }]
+        });
+      }
 
-    // Members Chart
-    const membersEl = root.querySelector('[data-oc-overview-chart="members"]');
-    if (membersEl) {
-      const chart = echarts.init(membersEl);
-      const sortedMembers = [...(data.topMembers || [])].reverse();
-      chart.setOption({
-        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
-        yAxis: {
-          type: 'category',
-          data: sortedMembers.map(m => m.username),
-          axisLabel: { color: '#64748b' }
-        },
-        series: [{
-          type: 'bar',
-          data: sortedMembers.map(m => m.tokens),
-          itemStyle: {
-            color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
-              { offset: 0, color: '#6366f1' },
-              { offset: 1, color: '#8b5cf6' }
-            ]),
-            borderRadius: [0, 4, 4, 0]
+      // Members Chart
+      const membersEl = root.querySelector('[data-oc-overview-chart="members"]');
+      if (membersEl) {
+        const sortedMembers = [...(data.topMembers || [])].reverse();
+        initSingleChart(membersEl, echarts, {
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+          xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
+          yAxis: {
+            type: 'category',
+            data: sortedMembers.map(m => m.username),
+            axisLabel: { color: '#64748b' }
           },
-          label: { show: true, position: 'right', color: '#64748b' }
-        }]
-      });
-      window.addEventListener('resize', () => chart.resize());
+          series: [{
+            type: 'bar',
+            data: sortedMembers.map(m => m.tokens),
+            itemStyle: {
+              color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
+                { offset: 0, color: '#6366f1' },
+                { offset: 1, color: '#8b5cf6' }
+              ]),
+              borderRadius: [0, 4, 4, 0]
+            },
+            label: { show: true, position: 'right', color: '#64748b' }
+          }]
+        });
+      }
+
+      // Agents Chart
+      const agentsEl = root.querySelector('[data-oc-overview-chart="agents"]');
+      if (agentsEl) {
+        initSingleChart(agentsEl, echarts, {
+          tooltip: { trigger: 'item' },
+          series: [{
+            type: 'pie',
+            radius: ['40%', '70%'],
+            avoidLabelOverlap: false,
+            itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+            label: { show: false },
+            emphasis: { label: { show: true, fontSize: '14', fontWeight: 'bold' } },
+            data: (data.topAgents || []).map(a => ({ value: a.tokens, name: a.name }))
+          }]
+        });
+      }
+
+      controller.overviewStatus.charts = 'ok';
+    } catch (error) {
+      console.error("Failed to initialize charts:", error);
+      controller.overviewStatus.charts = 'error';
+      controller.overviewStatus.error = `图表初始化失败: ${error.message}`;
     }
 
-    // Agents Chart
-    const agentsEl = root.querySelector('[data-oc-overview-chart="agents"]');
-    if (agentsEl) {
-      const chart = echarts.init(agentsEl);
-      chart.setOption({
-        tooltip: { trigger: 'item' },
-        series: [{
-          type: 'pie',
-          radius: ['40%', '70%'],
-          avoidLabelOverlap: false,
-          itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
-          label: { show: false },
-          emphasis: { label: { show: true, fontSize: '14', fontWeight: 'bold' } },
-          data: (data.topAgents || []).map(a => ({ value: a.tokens, name: a.name }))
-        }]
-      });
-      window.addEventListener('resize', () => chart.resize());
-    }
+    updateStatusInPlace(root, controller.overviewStatus);
+  });
+}
 
-    controller.overviewStatus.charts = 'ok';
-  } catch (error) {
-    console.error("Failed to initialize charts:", error);
-    controller.overviewStatus.charts = 'error';
-    controller.overviewStatus.error = `图表初始化失败: ${error.message}`;
+function initSingleChart(el, echarts, option) {
+  if (!el || !echarts) return;
+  
+  if (typeof option.backgroundColor === "undefined") {
+    option.backgroundColor = "transparent";
   }
 
-  updateStatusInPlace(root, controller.overviewStatus);
+  const instance = echarts.init(el, null, { renderer: "canvas" });
+  instance.setOption(option, true);
+  
+  if (typeof ResizeObserver === "function") {
+    const ro = new ResizeObserver(() => {
+      try {
+        instance.resize();
+      } catch (e) {
+        // Ignore resize errors for detached nodes
+      }
+    });
+    ro.observe(el);
+  } else {
+    window.addEventListener('resize', () => instance.resize());
+  }
 }
 
 function updateStatusInPlace(root, status) {
