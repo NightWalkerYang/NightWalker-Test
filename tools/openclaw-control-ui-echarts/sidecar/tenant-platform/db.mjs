@@ -1781,7 +1781,7 @@ export function getTenantOverview(db, params, configAgents = []) {
   const memberCount = Number(
     getScalar(
       db,
-      "SELECT COUNT(*) FROM tenant_memberships WHERE tenant_id = ? AND role = 'member' AND status = 'active'",
+      "SELECT COUNT(*) FROM tenant_memberships WHERE tenant_id = ? AND role = 'tenant_member' AND status = 'active'",
       [tenantId],
     ) || 0,
   );

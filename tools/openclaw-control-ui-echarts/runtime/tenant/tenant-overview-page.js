@@ -1,7 +1,9 @@
 import { createLibraryLoader } from "../echarts/libraries.js";
 
 function formatNumber(value) {
-  return new Intl.NumberFormat().format(Number(value || 0));
+  const numeric = Number(value || 0);
+  if (Number.isNaN(numeric)) return "0";
+  return new Intl.NumberFormat().format(numeric);
 }
 
 function escapeHtml(value) {
@@ -14,6 +16,7 @@ function escapeHtml(value) {
 export async function refreshTenantOverview(root, controller) {
   try {
     controller.overviewError = null;
+    controller.overviewStatus = { libs: 'pending', charts: 'pending' };
     const result = await controller.apiClient.getTenantOverview();
     controller.overviewData = result || null;
   } catch (error) {
@@ -37,8 +40,18 @@ export function renderTenantOverview(controller) {
     return `<div class="oc-tenant-overview-loading">统计数据格式异常。</div>`;
   }
   
+  const status = controller.overviewStatus || {};
+  const statusHtml = `
+    <div class="oc-tenant-overview-status" style="display:flex;gap:10px;margin-bottom:10px;font-size:11px;color:#64748b;align-items:center;">
+      <span style="padding:2px 6px;border-radius:4px;background:${status.libs === 'ok' ? '#dcfce7' : status.libs === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.libs === 'ok' ? '#166534' : status.libs === 'error' ? '#991b1b' : '#475569'}">库加载: ${status.libs || '待处理'}</span>
+      <span style="padding:2px 6px;border-radius:4px;background:${status.charts === 'ok' ? '#dcfce7' : status.charts === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.charts === 'ok' ? '#166534' : status.charts === 'error' ? '#991b1b' : '#475569'}">图表初始化: ${status.charts || '待处理'}</span>
+      ${status.error ? `<span style="color:#ef4444;font-weight:600;">错误: ${escapeHtml(status.error)}</span>` : ''}
+    </div>
+  `;
+  
   return `
     <div class="oc-tenant-overview">
+      ${statusHtml}
       <div class="oc-tenant-overview-grid">
         <div class="oc-tenant-card oc-tenant-metric-card">
           <div class="oc-tenant-metric-label">总消耗 Token</div>
@@ -93,6 +106,10 @@ export async function initTenantOverviewCharts(root, controller) {
   const data = controller.overviewData;
   if (!data) return;
 
+  if (!controller.overviewStatus) {
+    controller.overviewStatus = { libs: 'pending', charts: 'pending' };
+  }
+
   const vendorBaseUrl = new URL("../../vendor/", import.meta.url);
   const loadLibraries = createLibraryLoader(vendorBaseUrl);
   
@@ -100,88 +117,115 @@ export async function initTenantOverviewCharts(root, controller) {
   try {
     const libs = await loadLibraries();
     echarts = libs.echarts;
+    controller.overviewStatus.libs = 'ok';
   } catch (error) {
     console.error("Failed to load ECharts for overview:", error);
+    controller.overviewStatus.libs = 'error';
+    controller.overviewStatus.error = `库加载失败: ${error.message}`;
+    updateStatusInPlace(root, controller.overviewStatus);
     return;
   }
 
-  // Trend Chart
-  const trendEl = root.querySelector('[data-oc-overview-chart="trend"]');
-  if (trendEl) {
-    const chart = echarts.init(trendEl);
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: {
-        type: 'category',
-        boundaryGap: false,
-        data: data.trend.map(d => d.day.slice(5)), // MM-DD
-        axisLabel: { color: '#64748b' }
-      },
-      yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
-      series: [{
-        name: 'Tokens',
-        type: 'line',
-        smooth: true,
-        data: data.trend.map(d => d.tokens),
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
-            { offset: 1, color: 'rgba(59, 130, 246, 0)' }
-          ])
+  updateStatusInPlace(root, controller.overviewStatus);
+
+  try {
+    // Trend Chart
+    const trendEl = root.querySelector('[data-oc-overview-chart="trend"]');
+    if (trendEl) {
+      const chart = echarts.init(trendEl);
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+        xAxis: {
+          type: 'category',
+          boundaryGap: false,
+          data: data.trend.map(d => d.day.slice(5)), // MM-DD
+          axisLabel: { color: '#64748b' }
         },
-        itemStyle: { color: '#3b82f6' }
-      }]
-    });
-    window.addEventListener('resize', () => chart.resize());
+        yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
+        series: [{
+          name: 'Tokens',
+          type: 'line',
+          smooth: true,
+          data: data.trend.map(d => d.tokens),
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
+              { offset: 1, color: 'rgba(59, 130, 246, 0)' }
+            ])
+          },
+          itemStyle: { color: '#3b82f6' }
+        }]
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+
+    // Members Chart
+    const membersEl = root.querySelector('[data-oc-overview-chart="members"]');
+    if (membersEl) {
+      const chart = echarts.init(membersEl);
+      const sortedMembers = [...(data.topMembers || [])].reverse();
+      chart.setOption({
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+        xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
+        yAxis: {
+          type: 'category',
+          data: sortedMembers.map(m => m.username),
+          axisLabel: { color: '#64748b' }
+        },
+        series: [{
+          type: 'bar',
+          data: sortedMembers.map(m => m.tokens),
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
+              { offset: 0, color: '#6366f1' },
+              { offset: 1, color: '#8b5cf6' }
+            ]),
+            borderRadius: [0, 4, 4, 0]
+          },
+          label: { show: true, position: 'right', color: '#64748b' }
+        }]
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+
+    // Agents Chart
+    const agentsEl = root.querySelector('[data-oc-overview-chart="agents"]');
+    if (agentsEl) {
+      const chart = echarts.init(agentsEl);
+      chart.setOption({
+        tooltip: { trigger: 'item' },
+        series: [{
+          type: 'pie',
+          radius: ['40%', '70%'],
+          avoidLabelOverlap: false,
+          itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+          label: { show: false },
+          emphasis: { label: { show: true, fontSize: '14', fontWeight: 'bold' } },
+          data: (data.topAgents || []).map(a => ({ value: a.tokens, name: a.name }))
+        }]
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+
+    controller.overviewStatus.charts = 'ok';
+  } catch (error) {
+    console.error("Failed to initialize charts:", error);
+    controller.overviewStatus.charts = 'error';
+    controller.overviewStatus.error = `图表初始化失败: ${error.message}`;
   }
 
-  // Members Chart
-  const membersEl = root.querySelector('[data-oc-overview-chart="members"]');
-  if (membersEl) {
-    const chart = echarts.init(membersEl);
-    const sortedMembers = [...data.topMembers].reverse();
-    chart.setOption({
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
-      yAxis: {
-        type: 'category',
-        data: sortedMembers.map(m => m.username),
-        axisLabel: { color: '#64748b' }
-      },
-      series: [{
-        type: 'bar',
-        data: sortedMembers.map(m => m.tokens),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
-            { offset: 0, color: '#6366f1' },
-            { offset: 1, color: '#8b5cf6' }
-          ]),
-          borderRadius: [0, 4, 4, 0]
-        },
-        label: { show: true, position: 'right', color: '#64748b' }
-      }]
-    });
-    window.addEventListener('resize', () => chart.resize());
-  }
+  updateStatusInPlace(root, controller.overviewStatus);
+}
 
-  // Agents Chart
-  const agentsEl = root.querySelector('[data-oc-overview-chart="agents"]');
-  if (agentsEl) {
-    const chart = echarts.init(agentsEl);
-    chart.setOption({
-      tooltip: { trigger: 'item' },
-      series: [{
-        type: 'pie',
-        radius: ['40%', '70%'],
-        avoidLabelOverlap: false,
-        itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
-        label: { show: false },
-        emphasis: { label: { show: true, fontSize: '14', fontWeight: 'bold' } },
-        data: data.topAgents.map(a => ({ value: a.tokens, name: a.name }))
-      }]
-    });
-    window.addEventListener('resize', () => chart.resize());
-  }
+function updateStatusInPlace(root, status) {
+  const container = root.querySelector(".oc-tenant-overview-status");
+  if (!container) return;
+  
+  container.innerHTML = `
+    <span style="padding:2px 6px;border-radius:4px;background:${status.libs === 'ok' ? '#dcfce7' : status.libs === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.libs === 'ok' ? '#166534' : status.libs === 'error' ? '#991b1b' : '#475569'}">库加载: ${status.libs || '待处理'}</span>
+    <span style="padding:2px 6px;border-radius:4px;background:${status.charts === 'ok' ? '#dcfce7' : status.charts === 'error' ? '#fee2e2' : '#f1f5f9'};color:${status.charts === 'ok' ? '#166534' : status.charts === 'error' ? '#991b1b' : '#475569'}">图表初始化: ${status.charts || '待处理'}</span>
+    ${status.error ? `<span style="color:#ef4444;font-weight:600;">错误: ${escapeHtml(status.error)}</span>` : ''}
+  `;
 }

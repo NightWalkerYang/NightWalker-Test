@@ -314,6 +314,7 @@
   flex: 1;
   min-height: 280px;
   width: 100%;
+  border: 1px dashed #e2e8f0; /* Debug boundary */
 }
 
 @media (max-width: 900px) {
