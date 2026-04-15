@@ -513,6 +513,11 @@ describe("tenant platform local edition", () => {
     );
     expect(assignedAgentsBefore.status).toBe(200);
     expect(assignedAgentsBefore.payload.data).toHaveLength(2);
+    expect(
+      assignedAgentsBefore.payload.data.every(
+        (entry) => String(entry.displayName || entry.agentName || "").trim() !== "not_found",
+      ),
+    ).toBe(true);
     expect(assignedAgentsBefore.payload.data.map((entry) => entry.assignmentId).toSorted()).toEqual(
       [firstAssignment.assignmentId, secondAssignment.assignmentId].toSorted(),
     );

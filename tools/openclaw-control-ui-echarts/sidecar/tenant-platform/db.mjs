@@ -388,6 +388,24 @@ function normalizeAgentIdentity(agent) {
   };
 }
 
+function resolveAssignedAgentDisplayName(...candidates) {
+  for (const candidate of candidates) {
+    const value = String(candidate || "").trim();
+    if (!value) {
+      continue;
+    }
+    const normalized = value.toLowerCase();
+    if (normalized === "not_found" || normalized === "not found" || normalized === "unknown") {
+      continue;
+    }
+    if (normalized === "未知 agent") {
+      continue;
+    }
+    return value;
+  }
+  return "";
+}
+
 export function readOpenClawAgentCatalog(configPath) {
   try {
     const parsed = parseOpenClawConfig(configPath);
@@ -1225,11 +1243,19 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
       const baseAgentId = String(row.baseAgentId || "").trim();
       const agentId = resolvedAgentId || baseAgentId;
       const configEntry = configMap.get(baseAgentId) ?? configMap.get(resolvedAgentId) ?? null;
+      const displayName = resolveAssignedAgentDisplayName(
+        configEntry?.name,
+        row.description,
+        baseAgentId,
+        agentId,
+        resolvedAgentId,
+      );
       return {
         ...row,
         agentId,
         baseAgentId,
-        agentName: configEntry?.name ?? baseAgentId ?? agentId,
+        agentName: displayName || baseAgentId || agentId,
+        displayName,
         emoji: configEntry?.emoji ?? null,
         avatar: configEntry?.avatar ?? null,
       };

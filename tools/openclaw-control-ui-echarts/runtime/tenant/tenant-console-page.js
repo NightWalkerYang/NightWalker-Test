@@ -545,13 +545,13 @@ function renderRevokeAssignmentDialog(controller) {
                         <input
                           type="checkbox"
                           data-tenant-revoke-assignment-select="${escapeHtml(assignment.assignmentId)}"
-                          aria-label="选择 ${escapeHtml(assignment.agentName || assignment.baseAgentId || assignment.assignmentId)}"
+                          aria-label="选择 ${escapeHtml(assignment.displayName || assignment.agentName || assignment.description || assignment.baseAgentId || assignment.assignmentId)}"
                           ${dialog.busy ? "disabled" : ""}
                           ${isRevokeAssignmentSelected(controller, assignment.assignmentId) ? "checked" : ""}
                         />
                       </td>
                       <td>
-                        <div class="oc-tenant-revoke-assignment__agent-name">${escapeHtml(assignment.agentName || assignment.baseAgentId || assignment.assignmentId)}</div>
+                        <div class="oc-tenant-revoke-assignment__agent-name">${escapeHtml(assignment.displayName || assignment.agentName || assignment.description || assignment.baseAgentId || assignment.assignmentId)}</div>
                         <div class="oc-tenant-revoke-assignment__agent-meta">${escapeHtml(assignment.derivedAgentId || assignment.baseAgentId || "-")}</div>
                       </td>
                       <td>${escapeHtml(assignment.description || "-")}</td>
