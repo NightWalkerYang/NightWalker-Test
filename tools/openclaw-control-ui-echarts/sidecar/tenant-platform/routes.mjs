@@ -145,6 +145,14 @@ function readUserIds(value) {
   return normalized ? [normalized] : [];
 }
 
+function readAssignmentIds(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
+  }
+  const normalized = String(value || "").trim();
+  return normalized ? [normalized] : [];
+}
+
 export function createTenantPlatformRouter(deps) {
   return async function handleTenantPlatformRequest(request, response) {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
@@ -700,6 +708,43 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/tenant/admin/members/agents") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      const userId = String(url.searchParams.get("userId") || "").trim();
+      if (!userId) {
+        sendJson(request, response, 400, { ok: false, error: "user_id_required" });
+        return;
+      }
+      const member = deps.db
+        .prepare(
+          `SELECT u.id
+           FROM users u
+           JOIN tenant_memberships tm ON tm.user_id = u.id
+           WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status = 'active' AND u.id = ?`,
+        )
+        .get(session.tenantId, userId);
+      if (!member) {
+        sendJson(request, response, 404, { ok: false, error: "member_not_found" });
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listAssignedAgentsForUser(
+          deps.db,
+          {
+            userId,
+            configPath: deps.config.configPath,
+            configDir: deps.config.configDir,
+          },
+          configAgents,
+        ),
+      });
+      return;
+    }
+
     if (request.method === "POST" && relativePath === "/tenant/admin/revoke-agent-assignments") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
@@ -711,18 +756,23 @@ export function createTenantPlatformRouter(deps) {
       try {
         const body = await readJsonBody(request);
         const userIds = readUserIds(body.userIds ?? body.userId);
+        const assignmentIds = readAssignmentIds(body.assignmentIds ?? body.assignmentId);
         const result = revokeTenantAgentAssignments(deps.db, {
           tenantId: session.tenantId,
           userIds,
+          userId: String(body.userId || "").trim(),
+          assignmentIds,
         });
         logAudit(deps.db, {
           userId: session.userId,
           tenantId: session.tenantId,
           action: "tenant.member.agent_assignment.revoke",
           resourceType: "member",
-          resourceId: result.affectedUserIds[0] || userIds[0] || null,
+          resourceId:
+            result.affectedUserIds[0] || String(body.userId || "").trim() || userIds[0] || null,
           payloadJson: {
             userIds,
+            assignmentIds,
             affectedUserIds: result.affectedUserIds,
             revokedAssignmentCount: result.revokedAssignmentCount,
           },

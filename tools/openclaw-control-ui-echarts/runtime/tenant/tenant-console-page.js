@@ -92,48 +92,69 @@ function memberStatusToggleLabel(status) {
   return String(status || "").trim() === "active" ? "禁用成员" : "启用成员";
 }
 
-function getAssignmentSelection(controller) {
-  if (!(controller?.selectedAssignmentMemberIds instanceof Set)) {
-    controller.selectedAssignmentMemberIds = new Set();
-  }
-  return controller.selectedAssignmentMemberIds;
+function createRevokeAssignmentDialogState() {
+  return {
+    open: false,
+    loading: false,
+    busy: false,
+    memberId: "",
+    memberUsername: "",
+    assignments: [],
+    selectedAssignmentIds: new Set(),
+    error: "",
+    requestToken: 0,
+  };
 }
 
-function isAssignmentSelectionTarget(member) {
+function getRevokeAssignmentDialog(controller) {
+  if (
+    !(controller?.revokeAssignmentDialog && typeof controller.revokeAssignmentDialog === "object")
+  ) {
+    controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
+  }
+  return controller.revokeAssignmentDialog;
+}
+
+function isRevokeAssignmentSelectionTarget(member) {
   return Number(member?.assignedAgentCount || 0) > 0;
 }
 
-function isAssignmentMemberSelected(controller, memberId) {
-  return getAssignmentSelection(controller).has(String(memberId || "").trim());
+function isRevokeAssignmentSelected(controller, assignmentId) {
+  return getRevokeAssignmentDialog(controller).selectedAssignmentIds.has(
+    String(assignmentId || "").trim(),
+  );
 }
 
-function setAssignmentMemberSelected(controller, memberId, selected) {
-  const normalized = String(memberId || "").trim();
+function setRevokeAssignmentSelected(controller, assignmentId, selected) {
+  const normalized = String(assignmentId || "").trim();
   if (!normalized) {
     return;
   }
-  const selection = getAssignmentSelection(controller);
+  const dialog = getRevokeAssignmentDialog(controller);
   if (selected) {
-    selection.add(normalized);
+    dialog.selectedAssignmentIds.add(normalized);
     return;
   }
-  selection.delete(normalized);
+  dialog.selectedAssignmentIds.delete(normalized);
 }
 
-function clearAssignmentSelection(controller) {
-  getAssignmentSelection(controller).clear();
+function clearRevokeAssignmentSelection(controller) {
+  getRevokeAssignmentDialog(controller).selectedAssignmentIds.clear();
 }
 
-function pruneAssignmentSelection(controller) {
-  if (controller.section !== "agent-assignment") {
+function pruneRevokeAssignmentSelection(controller) {
+  const dialog = controller?.revokeAssignmentDialog;
+  if (!dialog?.open) {
     return;
   }
-  const membersById = new Map(controller.members.map((member) => [member.id, member]));
-  const selection = getAssignmentSelection(controller);
-  for (const memberId of Array.from(selection)) {
-    const member = membersById.get(memberId);
-    if (!member || !isAssignmentSelectionTarget(member)) {
-      selection.delete(memberId);
+  const assignmentIds = new Set(
+    dialog.assignments
+      .map((assignment) => String(assignment?.assignmentId || "").trim())
+      .filter(Boolean),
+  );
+  for (const assignmentId of Array.from(dialog.selectedAssignmentIds)) {
+    if (!assignmentIds.has(assignmentId)) {
+      dialog.selectedAssignmentIds.delete(assignmentId);
     }
   }
 }
@@ -162,12 +183,11 @@ function ensureController(root, session, apiClient) {
     tenantAgents: [],
     activeMember: null,
     passwordMember: null,
-    selectedAssignmentMemberIds: new Set(),
+    revokeAssignmentDialog: createRevokeAssignmentDialogState(),
     usageItems: [],
     usageTotal: 0,
     usagePageSize: PAGE_SIZE,
     usageSearchTimer: null,
-    assignmentRevokeBusy: false,
     dialogs: {
       createMemberOpen: false,
       assignOpen: false,
@@ -198,6 +218,9 @@ function ensureController(root, session, apiClient) {
     if (event.target.matches("[data-tenant-member-password-dialog]")) {
       controller.dialogs.changePasswordOpen = false;
       controller.passwordMember = null;
+    }
+    if (event.target.matches("[data-tenant-revoke-assignment-dialog]")) {
+      controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
     }
     render(root, controller);
   });
@@ -256,8 +279,6 @@ function renderToolbar(controller) {
     `;
   }
 
-  const selectedCount =
-    controller.section === "agent-assignment" ? getAssignmentSelection(controller).size : 0;
   return `
     <div class="data-table-toolbar oc-tenant-table-toolbar">
       <label class="data-table-search">
@@ -269,15 +290,6 @@ function renderToolbar(controller) {
         />
       </label>
       <div class="oc-tenant-table-toolbar__actions">
-        ${
-          controller.section === "agent-assignment" && selectedCount > 0
-            ? `
-              <span class="oc-tenant-selection-summary">已选择 ${formatNumber(selectedCount)} 个成员</span>
-              <button class="btn" type="button" data-tenant-clear-assignment-selection>清空选择</button>
-              <button class="btn oc-tenant-destructive-action" type="button" data-tenant-bulk-revoke>撤回分配</button>
-            `
-            : ""
-        }
         ${
           controller.section === "members"
             ? `<button class="btn primary" type="button" data-tenant-open-create>创建成员</button>`
@@ -343,26 +355,11 @@ function renderMembersTable(rows) {
 }
 
 function renderAssignmentTable(rows, controller) {
-  const selectableRows = rows.filter(isAssignmentSelectionTarget);
-  const selectedRowsOnPage = selectableRows.filter((member) =>
-    isAssignmentMemberSelected(controller, member.id),
-  );
-  const allSelectableRowsSelected =
-    selectableRows.length > 0 && selectedRowsOnPage.length === selectableRows.length;
   return `
     <div class="data-table-container">
       <table class="data-table">
         <thead>
           <tr>
-            <th class="oc-tenant-assignment-select-col">
-              <input
-                type="checkbox"
-                data-tenant-assignment-select-all
-                aria-label="全选当前页可撤回成员"
-                ${selectableRows.length ? "" : "disabled"}
-                ${allSelectableRowsSelected ? "checked" : ""}
-              />
-            </th>
             <th>成员账号</th>
             <th>状态</th>
             <th>已分配 Agent</th>
@@ -377,15 +374,6 @@ function renderAssignmentTable(rows, controller) {
                   .map(
                     (member) => `
                       <tr>
-                        <td class="oc-tenant-assignment-select-cell">
-                          <input
-                            type="checkbox"
-                            data-tenant-assignment-select="${escapeHtml(member.id)}"
-                            aria-label="选择 ${escapeHtml(member.username)}"
-                            ${isAssignmentSelectionTarget(member) ? "" : "disabled"}
-                            ${isAssignmentMemberSelected(controller, member.id) ? "checked" : ""}
-                          />
-                        </td>
                         <td>${escapeHtml(member.username)}</td>
                         <td><span class="data-table-badge data-table-badge--${member.status === "active" ? "direct" : "unknown"}">${escapeHtml(member.status)}</span></td>
                         <td>${formatNumber(member.assignedAgentCount)}</td>
@@ -397,7 +385,7 @@ function renderAssignmentTable(rows, controller) {
                               class="btn oc-tenant-destructive-action"
                               type="button"
                               data-tenant-revoke-assignment="${escapeHtml(member.id)}"
-                              ${isAssignmentSelectionTarget(member) ? "" : "disabled"}
+                              ${isRevokeAssignmentSelectionTarget(member) ? "" : "disabled"}
                             >
                               撤回分配
                             </button>
@@ -523,6 +511,103 @@ function renderAssignDialog(controller) {
   `;
 }
 
+function renderRevokeAssignmentDialog(controller) {
+  const dialog = getRevokeAssignmentDialog(controller);
+  const selectedCount = dialog.selectedAssignmentIds.size;
+  const selectableAssignments = dialog.assignments.filter((assignment) =>
+    Boolean(String(assignment?.assignmentId || "").trim()),
+  );
+  const allAssignmentsSelected =
+    selectableAssignments.length > 0 && selectedCount === selectableAssignments.length;
+  const statusMarkup = dialog.loading
+    ? `<div class="callout info">正在加载该成员已分配的 Agent...</div>`
+    : dialog.error
+      ? `<div class="callout info">${escapeHtml(dialog.error)}</div>`
+      : "";
+  const listMarkup =
+    !dialog.loading && dialog.assignments.length
+      ? `
+        <div class="data-table-container oc-tenant-revoke-assignment-list">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="oc-tenant-assignment-select-col"></th>
+                <th>Agent</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dialog.assignments
+                .map(
+                  (assignment) => `
+                    <tr>
+                      <td class="oc-tenant-assignment-select-cell">
+                        <input
+                          type="checkbox"
+                          data-tenant-revoke-assignment-select="${escapeHtml(assignment.assignmentId)}"
+                          aria-label="选择 ${escapeHtml(assignment.agentName || assignment.baseAgentId || assignment.assignmentId)}"
+                          ${dialog.busy ? "disabled" : ""}
+                          ${isRevokeAssignmentSelected(controller, assignment.assignmentId) ? "checked" : ""}
+                        />
+                      </td>
+                      <td>
+                        <div class="oc-tenant-revoke-assignment__agent-name">${escapeHtml(assignment.agentName || assignment.baseAgentId || assignment.assignmentId)}</div>
+                        <div class="oc-tenant-revoke-assignment__agent-meta">${escapeHtml(assignment.derivedAgentId || assignment.baseAgentId || "-")}</div>
+                      </td>
+                      <td>${escapeHtml(assignment.description || "-")}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : !dialog.loading && !dialog.error
+        ? `<div class="callout info">该成员当前没有可撤回的 Agent 分配。</div>`
+        : "";
+  return `
+    <dialog class="oc-tenant-modal oc-tenant-modal--wide" data-tenant-revoke-assignment-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">撤回分配</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="revoke">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
+          <form class="oc-tenant-modal__form" data-tenant-revoke-assignment-form>
+            <input type="hidden" name="userId" value="${escapeHtml(dialog.memberId)}" />
+            <label class="field">
+              <span>目标成员</span>
+              <input type="text" value="${escapeHtml(dialog.memberUsername || dialog.memberId)}" disabled />
+            </label>
+            <div class="oc-tenant-revoke-assignment-toolbar">
+              <label class="oc-tenant-revoke-assignment-toolbar__select-all">
+                <input
+                  type="checkbox"
+                  data-tenant-revoke-assignment-select-all
+                  aria-label="全选该成员已分配的 Agent"
+                  ${dialog.loading || dialog.busy || !selectableAssignments.length ? "disabled" : ""}
+                  ${allAssignmentsSelected ? "checked" : ""}
+                />
+                <span>全选</span>
+              </label>
+              <span class="oc-tenant-revoke-assignment-toolbar__summary">
+                已选择 ${formatNumber(selectedCount)} 个 Agent
+              </span>
+            </div>
+            ${statusMarkup}
+            ${listMarkup}
+            <div class="oc-tenant-modal__actions">
+              <button class="btn" type="button" data-tenant-close-dialog="revoke">取消</button>
+              <button class="btn primary" type="submit" ${dialog.loading || dialog.busy || selectedCount === 0 ? "disabled" : ""}>确认撤回</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
 function totalUsagePages(controller) {
   return Math.max(
     1,
@@ -626,21 +711,29 @@ function restoreRenderFocusState(root, state) {
   }
 }
 
-function syncAssignmentSelectionState(root, controller, rows) {
-  if (controller.section !== "agent-assignment") {
+function syncRevokeAssignmentSelectionState(root, controller) {
+  const dialog = controller.revokeAssignmentDialog;
+  if (controller.section !== "agent-assignment" || !dialog?.open) {
     return;
   }
-  const selectAll = root.querySelector("[data-tenant-assignment-select-all]");
+  const selectAll = root.querySelector("[data-tenant-revoke-assignment-select-all]");
   if (!(selectAll instanceof HTMLInputElement)) {
     return;
   }
-  const selectableRows = rows.filter(isAssignmentSelectionTarget);
-  const selectedRows = selectableRows.filter((member) =>
-    isAssignmentMemberSelected(controller, member.id),
+  const selectableAssignments = dialog.assignments.filter((assignment) =>
+    Boolean(String(assignment?.assignmentId || "").trim()),
   );
-  selectAll.checked = selectableRows.length > 0 && selectedRows.length === selectableRows.length;
-  selectAll.indeterminate = selectedRows.length > 0 && selectedRows.length < selectableRows.length;
-  selectAll.disabled = selectableRows.length === 0;
+  const selectedAssignments = selectableAssignments.filter((assignment) =>
+    dialog.selectedAssignmentIds.has(String(assignment.assignmentId || "").trim()),
+  );
+  selectAll.checked =
+    selectableAssignments.length > 0 &&
+    selectedAssignments.length === selectableAssignments.length &&
+    !dialog.loading &&
+    !dialog.busy;
+  selectAll.indeterminate =
+    selectedAssignments.length > 0 && selectedAssignments.length < selectableAssignments.length;
+  selectAll.disabled = selectableAssignments.length === 0 || dialog.loading || dialog.busy;
 }
 
 function render(root, controller) {
@@ -648,7 +741,7 @@ function render(root, controller) {
   const isUsageStats = controller.section === "usage-stats";
   const isOverview = controller.section === "statistics-overview";
   if (controller.section === "agent-assignment") {
-    pruneAssignmentSelection(controller);
+    pruneRevokeAssignmentSelection(controller);
   }
   const pagination =
     isUsageStats || isOverview
@@ -682,7 +775,7 @@ function render(root, controller) {
     ${
       isUsageStats || isOverview
         ? ""
-        : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}`
+        : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}`
     }
   `;
 
@@ -700,9 +793,12 @@ function render(root, controller) {
     if (controller.dialogs.assignOpen) {
       openDialog(root.querySelector("[data-tenant-assign-dialog]"));
     }
+    if (controller.revokeAssignmentDialog?.open) {
+      openDialog(root.querySelector("[data-tenant-revoke-assignment-dialog]"));
+    }
   }
   if (controller.section === "agent-assignment") {
-    syncAssignmentSelectionState(root, controller, pagination?.items || []);
+    syncRevokeAssignmentSelectionState(root, controller);
   }
   restoreRenderFocusState(root, focusState);
 }
@@ -776,25 +872,77 @@ async function updateMemberStatus(root, controller, input) {
   }
 }
 
-async function revokeAssignmentMembers(root, controller, userIds) {
-  const normalizedUserIds = [
-    ...new Set(userIds.map((userId) => String(userId || "").trim()).filter(Boolean)),
-  ];
-  if (!normalizedUserIds.length || controller.assignmentRevokeBusy) {
+async function openRevokeAssignmentDialog(root, controller, memberId) {
+  const member = memberById(controller, memberId);
+  if (!member || !isRevokeAssignmentSelectionTarget(member)) {
     return;
   }
 
-  const selectedMembers = normalizedUserIds
-    .map((userId) => memberById(controller, userId))
-    .filter(Boolean);
-  const promptLabel =
-    normalizedUserIds.length === 1
-      ? `成员“${selectedMembers[0]?.username || normalizedUserIds[0]}”`
-      : `选中的 ${formatNumber(normalizedUserIds.length)} 个成员`;
+  const previousToken = Number(controller.revokeAssignmentDialog?.requestToken || 0);
+  controller.revokeAssignmentDialog = {
+    ...createRevokeAssignmentDialogState(),
+    open: true,
+    loading: true,
+    memberId: member.id,
+    memberUsername: member.username,
+    requestToken: previousToken + 1,
+  };
+  render(root, controller);
+
+  const requestToken = controller.revokeAssignmentDialog.requestToken;
+  try {
+    const assignments = await controller.apiClient.listTenantMemberAssignedAgents(member.id);
+    const currentDialog = controller.revokeAssignmentDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.memberId !== member.id
+    ) {
+      return;
+    }
+    currentDialog.assignments = Array.isArray(assignments) ? assignments : [];
+    currentDialog.loading = false;
+    currentDialog.error = "";
+    pruneRevokeAssignmentSelection(controller);
+    render(root, controller);
+  } catch (error) {
+    const currentDialog = controller.revokeAssignmentDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.memberId !== member.id
+    ) {
+      return;
+    }
+    currentDialog.loading = false;
+    currentDialog.error = error instanceof Error ? error.message : String(error);
+    render(root, controller);
+    setFeedback(root, currentDialog.error, true);
+  }
+}
+
+async function revokeSelectedAssignments(root, controller) {
+  const dialog = controller.revokeAssignmentDialog;
+  if (!dialog?.open || dialog.loading || dialog.busy) {
+    return;
+  }
+
+  const dialogToken = Number(dialog.requestToken || 0);
+  const selectedAssignmentIds = Array.from(dialog.selectedAssignmentIds);
+  if (!selectedAssignmentIds.length) {
+    setFeedback(root, "请选择要撤回的 Agent。", true);
+    return;
+  }
+
+  const memberLabel = dialog.memberUsername || dialog.memberId || "该成员";
   let confirmed = true;
   if (typeof window.confirm === "function") {
     try {
-      confirmed = window.confirm(`确认撤回${promptLabel}的 Agent 分配吗？`);
+      confirmed = window.confirm(
+        `确认撤回成员“${memberLabel}”已分配的 ${formatNumber(selectedAssignmentIds.length)} 个 Agent 吗？`,
+      );
     } catch {
       confirmed = false;
     }
@@ -803,35 +951,71 @@ async function revokeAssignmentMembers(root, controller, userIds) {
     return;
   }
 
-  controller.assignmentRevokeBusy = true;
+  dialog.busy = true;
+  render(root, controller);
   try {
     const result = await controller.apiClient.revokeTenantAgentAssignments({
-      userIds: normalizedUserIds,
+      userId: dialog.memberId,
+      assignmentIds: selectedAssignmentIds,
     });
-    const selection = getAssignmentSelection(controller);
-    for (const userId of normalizedUserIds) {
-      selection.delete(userId);
-    }
-    await refresh(root, controller);
     const revokedAssignmentCount = Number(result?.revokedAssignmentCount || 0);
-    const affectedMemberCount = Number(
-      result?.affectedMemberCount || normalizedUserIds.length || 0,
-    );
     if (revokedAssignmentCount > 0) {
-      setFeedback(
-        root,
-        affectedMemberCount > 1
-          ? `已撤回 ${affectedMemberCount} 个成员的 ${revokedAssignmentCount} 条 Agent 分配。`
-          : `成员 Agent 分配已撤回，共 ${revokedAssignmentCount} 条记录。`,
-      );
+      const currentDialog = controller.revokeAssignmentDialog;
+      if (
+        currentDialog &&
+        currentDialog.open &&
+        currentDialog.requestToken === dialogToken &&
+        currentDialog.memberId === dialog.memberId
+      ) {
+        controller.revokeAssignmentDialog = null;
+      }
+      try {
+        await refresh(root, controller);
+      } catch (refreshError) {
+        render(root, controller);
+        setFeedback(
+          root,
+          refreshError instanceof Error
+            ? `已撤回 ${memberLabel} 的 ${revokedAssignmentCount} 个 Agent 分配，但列表刷新失败：${refreshError.message}`
+            : `已撤回 ${memberLabel} 的 ${revokedAssignmentCount} 个 Agent 分配，但列表刷新失败。`,
+          true,
+        );
+        return;
+      }
+      setFeedback(root, `已撤回成员“${memberLabel}”的 ${revokedAssignmentCount} 个 Agent 分配。`);
       return;
     }
-    setFeedback(root, "未找到可撤回的 Agent 分配。");
-  } catch (error) {
+    const currentDialog = controller.revokeAssignmentDialog;
+    if (
+      currentDialog &&
+      currentDialog.open &&
+      currentDialog.requestToken === dialogToken &&
+      currentDialog.memberId === dialog.memberId
+    ) {
+      currentDialog.busy = false;
+      currentDialog.loading = false;
+      currentDialog.error = "未找到可撤回的 Agent 分配。";
+      render(root, controller);
+      setFeedback(root, currentDialog.error, true);
+      return;
+    }
     render(root, controller);
-    setFeedback(root, error instanceof Error ? error.message : String(error), true);
-  } finally {
-    controller.assignmentRevokeBusy = false;
+    setFeedback(root, "未找到可撤回的 Agent 分配。", true);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const currentDialog = controller.revokeAssignmentDialog;
+    if (
+      currentDialog &&
+      currentDialog.open &&
+      currentDialog.requestToken === dialogToken &&
+      currentDialog.memberId === dialog.memberId
+    ) {
+      currentDialog.busy = false;
+      currentDialog.loading = false;
+      currentDialog.error = errorMessage;
+    }
+    render(root, controller);
+    setFeedback(root, errorMessage, true);
   }
 }
 
@@ -890,6 +1074,10 @@ async function handleClick(root, controller, event) {
       controller.passwordMember = null;
       closeDialog(root.querySelector("[data-tenant-member-password-dialog]"));
     }
+    if (dialogKind === "revoke") {
+      controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
+      closeDialog(root.querySelector("[data-tenant-revoke-assignment-dialog]"));
+    }
     render(root, controller);
     return;
   }
@@ -904,20 +1092,11 @@ async function handleClick(root, controller, event) {
 
   const revokeTrigger = target.closest("[data-tenant-revoke-assignment]");
   if (revokeTrigger instanceof HTMLElement) {
-    await revokeAssignmentMembers(root, controller, [revokeTrigger.dataset.tenantRevokeAssignment]);
-    return;
-  }
-
-  const clearSelectionTrigger = target.closest("[data-tenant-clear-assignment-selection]");
-  if (clearSelectionTrigger instanceof HTMLElement) {
-    clearAssignmentSelection(controller);
-    render(root, controller);
-    return;
-  }
-
-  const batchRevokeTrigger = target.closest("[data-tenant-bulk-revoke]");
-  if (batchRevokeTrigger instanceof HTMLElement) {
-    await revokeAssignmentMembers(root, controller, Array.from(getAssignmentSelection(controller)));
+    await openRevokeAssignmentDialog(
+      root,
+      controller,
+      revokeTrigger.dataset.tenantRevokeAssignment,
+    );
     return;
   }
 }
@@ -931,20 +1110,24 @@ function handleInput(root, controller, event) {
     void updateMemberStatus(root, controller, target);
     return;
   }
-  if (target.hasAttribute("data-tenant-assignment-select-all")) {
-    const visibleMembers = paginate(filterMembers(controller), getPageValue(controller)).items;
+  if (target.hasAttribute("data-tenant-revoke-assignment-select-all")) {
+    const dialog = getRevokeAssignmentDialog(controller);
     const selected = target.checked;
-    for (const member of visibleMembers) {
-      if (!isAssignmentSelectionTarget(member)) {
-        continue;
+    clearRevokeAssignmentSelection(controller);
+    if (selected) {
+      for (const assignment of dialog.assignments) {
+        setRevokeAssignmentSelected(controller, assignment.assignmentId, true);
       }
-      setAssignmentMemberSelected(controller, member.id, selected);
     }
     render(root, controller);
     return;
   }
-  if (target.hasAttribute("data-tenant-assignment-select")) {
-    setAssignmentMemberSelected(controller, target.dataset.tenantAssignmentSelect, target.checked);
+  if (target.hasAttribute("data-tenant-revoke-assignment-select")) {
+    setRevokeAssignmentSelected(
+      controller,
+      target.dataset.tenantRevokeAssignmentSelect,
+      target.checked,
+    );
     render(root, controller);
     return;
   }
@@ -1015,6 +1198,13 @@ async function handleSubmit(root, controller, event) {
     } catch (error) {
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }
+    return;
+  }
+
+  if (target.matches("[data-tenant-revoke-assignment-form]")) {
+    event.preventDefault();
+    await revokeSelectedAssignments(root, controller);
+    return;
   }
 }
 
@@ -1033,7 +1223,7 @@ export async function mountTenantConsolePage(root, options = {}) {
   const previousSection = controller.section;
   controller.section = options.section || "members";
   if (previousSection !== controller.section || controller.section !== "agent-assignment") {
-    clearAssignmentSelection(controller);
+    clearRevokeAssignmentSelection(controller);
   }
   if (previousSection === "usage-stats" && controller.usageSearchTimer) {
     window.clearTimeout(controller.usageSearchTimer);
@@ -1046,12 +1236,14 @@ export async function mountTenantConsolePage(root, options = {}) {
   }
   if (controller.section !== "agent-assignment") {
     controller.dialogs.assignOpen = false;
+    controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
   }
   if (controller.section === "usage-stats") {
     controller.dialogs.createMemberOpen = false;
     controller.dialogs.assignOpen = false;
     controller.dialogs.changePasswordOpen = false;
     controller.passwordMember = null;
+    controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
   }
   await refresh(root, controller);
   return { root };

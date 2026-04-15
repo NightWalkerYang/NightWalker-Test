@@ -430,6 +430,120 @@ describe("tenant platform local edition", () => {
     expect(afterRevokeB.payload.data).toHaveLength(0);
   });
 
+  it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const firstTenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const secondTenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-writing",
+      description: "文案辅助",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const firstAssignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId: firstTenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+    const secondAssignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId: secondTenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const assignedAgentsBefore = await requestJson(
+      baseUrl,
+      `/tenant/admin/members/agents?userId=${encodeURIComponent(createdMember.payload.data.id)}`,
+      {
+        token: tenantAdminToken,
+      },
+    );
+    expect(assignedAgentsBefore.status).toBe(200);
+    expect(assignedAgentsBefore.payload.data).toHaveLength(2);
+    expect(assignedAgentsBefore.payload.data.map((entry) => entry.assignmentId).toSorted()).toEqual(
+      [firstAssignment.assignmentId, secondAssignment.assignmentId].toSorted(),
+    );
+
+    const revoked = await requestJson(baseUrl, "/tenant/admin/revoke-agent-assignments", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        userId: createdMember.payload.data.id,
+        assignmentIds: [firstAssignment.assignmentId, secondAssignment.assignmentId],
+      },
+    });
+    expect(revoked.status).toBe(200);
+    expect(revoked.payload.data.revokedAssignmentCount).toBe(2);
+    expect(revoked.payload.data.affectedMemberCount).toBe(1);
+
+    const assignedAgentsAfter = await requestJson(
+      baseUrl,
+      `/tenant/admin/members/agents?userId=${encodeURIComponent(createdMember.payload.data.id)}`,
+      {
+        token: tenantAdminToken,
+      },
+    );
+    expect(assignedAgentsAfter.payload.data).toHaveLength(0);
+
+    const memberAgentsAfter = await requestJson(baseUrl, "/member/agents", {
+      token: memberLogin.payload.data.token,
+    });
+    expect(memberAgentsAfter.payload.data).toHaveLength(0);
+  });
+
   it("allows readonly tenant login after expiry but blocks writes", async () => {
     const sandbox = createSandbox();
     const { baseUrl } = await startSandboxServer(sandbox);

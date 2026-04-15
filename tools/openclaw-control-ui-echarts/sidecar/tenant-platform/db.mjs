@@ -1085,17 +1085,67 @@ export function assignTenantAgentToUser(db, params) {
 
 export function revokeTenantAgentAssignments(db, params) {
   const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
   const userIds = Array.isArray(params.userIds)
     ? [...new Set(params.userIds.map((userId) => String(userId || "").trim()).filter(Boolean))]
+    : [];
+  const assignmentIds = Array.isArray(params.assignmentIds)
+    ? [
+        ...new Set(
+          params.assignmentIds
+            .map((assignmentId) => String(assignmentId || "").trim())
+            .filter(Boolean),
+        ),
+      ]
     : [];
   if (!tenantId) {
     throw new Error("tenant_id_required");
   }
-  if (!userIds.length) {
+  if (!userIds.length && !assignmentIds.length) {
     throw new Error("user_ids_required");
   }
 
   return runInTransaction(db, () => {
+    if (assignmentIds.length) {
+      const placeholders = assignmentIds.map(() => "?").join(", ");
+      const selectClauses = ["tenant_id = ?", "status = 'active'", `id IN (${placeholders})`];
+      const bindings = [tenantId, ...assignmentIds];
+      if (userId) {
+        selectClauses.push("user_id = ?");
+        bindings.push(userId);
+      }
+      const selectAssignments = db
+        .prepare(
+          `SELECT id, user_id AS userId
+           FROM user_agent_assignments
+           WHERE ${selectClauses.join(" AND ")}`,
+        )
+        .all(...bindings);
+
+      if (!selectAssignments.length) {
+        return {
+          revokedAssignmentCount: 0,
+          affectedUserIds: [],
+          affectedMemberCount: 0,
+        };
+      }
+
+      db.prepare(
+        `UPDATE user_agent_assignments
+         SET status = 'inactive'
+         WHERE ${selectClauses.join(" AND ")}`,
+      ).run(...bindings);
+
+      const affectedUserIds = [
+        ...new Set(selectAssignments.map((assignment) => assignment.userId)),
+      ];
+      return {
+        revokedAssignmentCount: selectAssignments.length,
+        affectedUserIds,
+        affectedMemberCount: affectedUserIds.length,
+      };
+    }
+
     const placeholders = userIds.map(() => "?").join(", ");
     const selectAssignments = db
       .prepare(
