@@ -47,14 +47,15 @@ export function createLibraryLoader(vendorBaseUrl) {
   }
 
   return async function ensureLibraries() {
+    const version = Date.now();
     const echarts = await loadScriptOnce(
       "echarts",
-      new URL("./echarts.min.js", vendorBaseUrl),
+      new URL(`./echarts.min.js?v=${version}`, vendorBaseUrl),
       "echarts",
     );
     const json5 = await loadScriptOnce(
       "json5",
-      new URL("./json5.min.js", vendorBaseUrl),
+      new URL(`./json5.min.js?v=${version}`, vendorBaseUrl),
       "JSON5",
     );
     return { echarts, json5 };

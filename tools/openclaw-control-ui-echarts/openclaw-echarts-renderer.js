@@ -19,6 +19,9 @@ const scriptUrl = new URL(import.meta.url);
 const vendorBaseUrl = new URL("./vendor/", scriptUrl);
 const controlUiRootUrl = new URL("../", scriptUrl);
 
+// Expose globally for components that need to side-load libraries
+window.__ocVendorBaseUrl = vendorBaseUrl;
+
 const runtime = createFencedBlockRuntime([
   createEchartsAdapter({
     vendorBaseUrl,

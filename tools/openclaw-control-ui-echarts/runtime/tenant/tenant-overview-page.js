@@ -110,7 +110,7 @@ export async function initTenantOverviewCharts(root, controller) {
     controller.overviewStatus = { libs: 'pending', charts: 'pending' };
   }
 
-  const vendorBaseUrl = new URL("../../vendor/", import.meta.url);
+  const vendorBaseUrl = window.__ocVendorBaseUrl || new URL("../../vendor/", import.meta.url);
   const loadLibraries = createLibraryLoader(vendorBaseUrl);
   
   let echarts;
