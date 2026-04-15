@@ -7,6 +7,18 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(numeric);
 }
 
+function resolveAgentDisplayName(agent) {
+  return (
+    agent?.name ||
+    agent?.agentName ||
+    agent?.agent_name ||
+    agent?.description ||
+    agent?.agentId ||
+    agent?.agent_id ||
+    "未知 Agent"
+  );
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -210,6 +222,7 @@ export async function initTenantOverviewCharts(root, controller) {
       // Agents Chart
       const agentsEl = root.querySelector('[data-oc-overview-chart="agents"]');
       if (agentsEl) {
+        const agentRows = [...(data.topAgents || [])];
         initSingleChart(agentsEl, echarts, {
           tooltip: { 
             trigger: 'item',
@@ -236,7 +249,10 @@ export async function initTenantOverviewCharts(root, controller) {
             emphasis: { 
               label: { show: true, fontSize: '14', fontWeight: 'bold' } 
             },
-            data: (data.topAgents || []).map(a => ({ value: a.tokens, name: a.name }))
+            data: agentRows.map((agent) => ({
+              value: agent.tokens,
+              name: resolveAgentDisplayName(agent),
+            }))
           }]
         });
       }

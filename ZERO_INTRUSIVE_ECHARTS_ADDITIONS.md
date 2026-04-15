@@ -165,6 +165,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-usage-stats-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-overview-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-access-guard.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
@@ -228,6 +229,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The custom Control UI build chain now generates stable `/login` aliases (`login/index.html` and `login.html`) without the previous directory/file collision, so zero-intrusive redeploys no longer fail or regress into `Not Found` because of broken login entry artifacts.
 - The Control UI rebuild scripts now preserve the `generated/control-ui` root directory itself and only replace its contents, preventing Docker bind mounts from sticking to a deleted empty directory and causing post-redeploy `Not Found` pages.
 - Tenant-admin login now defaults to the native-shell `统计总览` view (`ocTenantView=tenant-statistics-overview`) instead of landing on `成员管理`, while the sidebar still keeps `成员管理`, `Agent 分配`, and `耗量统计` as switchable entries.
+- Tenant-admin statistics overview now resolves Agent pie-chart labels with the same display-name fallback as the usage list, so `Agent 消耗分布` can render readable Agent names instead of only raw ids.
 - The ECharts overview assets are now emitted under both `assets/vendor/` and the legacy `assets/runtime/echarts/` path so mixed deployments and cached bundles can still load the overview charts.
 - The tenant-admin sidebar now injects a sibling `统计` dropdown alongside `管理`, with a `耗量统计` entry that renders a server-paginated usage list for member, Agent, total token, input, output, cache read, cache write, credit, and time columns. The page now prefers debit-direction `tenant_wallet_ledger` usage charges for `消耗积分`, falls back to synced `tenant_usage_records` for older rows, and keeps the existing `data-table` layout from 成员管理 / Agent 分配 pages.
 - Member chat usage sync now writes both `tenant_usage_records` and, for cloud tenants, idempotent `tenant_wallet_ledger` usage-charge rows keyed by `openclaw_session_key + source_fingerprint`, then deducts the matching `tenant_agents.balance_points` inside the same sidecar transaction.
