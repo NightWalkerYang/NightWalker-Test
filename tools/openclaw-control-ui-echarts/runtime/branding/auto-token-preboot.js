@@ -114,8 +114,13 @@
       : inferBasePathFromPathname(location.pathname);
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const gatewayUrl = `${proto}://${location.host}${basePath}`;
-    const scope = normalizeGatewayTokenScope(gatewayUrl);
-    storage.setItem(`openclaw.control.token.v1:${scope}`, token);
+    const scopes = new Set([
+      normalizeGatewayTokenScope(gatewayUrl),
+      normalizeGatewayTokenScope(`${proto}://${location.host}`),
+    ]);
+    for (const scope of scopes) {
+      storage.setItem(`openclaw.control.token.v1:${scope}`, token);
+    }
     window.__OPENCLAW_CONTROL_UI_AUTO_TOKEN__ = true;
   } catch {
     // Best-effort only. The app can still fall back to manual login if storage

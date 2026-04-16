@@ -199,7 +199,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The chat background uses an injected animated ambient layer.
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
-- Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap.
+- Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap that mirrors the gateway token into both the route scope and the root scope so public routes can reuse existing stored settings.
 - CSP-sensitive preboot behavior now uses same-origin external scripts instead of inline bootstrap blocks.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.

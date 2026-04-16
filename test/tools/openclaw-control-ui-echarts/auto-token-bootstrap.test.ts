@@ -23,8 +23,13 @@ describe("zero-intrusive auto token bootstrap", () => {
 
     applyAutoGatewayTokenBootstrap("  demo-token  ");
 
-    const expectedKey = `openclaw.control.token.v1:ws://${window.location.host}/openclaw`;
-    expect(window.sessionStorage.getItem(expectedKey)).toBe("demo-token");
+    const expectedKeys = [
+      `openclaw.control.token.v1:ws://${window.location.host}/openclaw`,
+      `openclaw.control.token.v1:ws://${window.location.host}`,
+    ];
+    for (const key of expectedKeys) {
+      expect(window.sessionStorage.getItem(key)).toBe("demo-token");
+    }
     expect(window.__OPENCLAW_CONTROL_UI_AUTO_TOKEN__).toBe(true);
   });
 
@@ -34,8 +39,13 @@ describe("zero-intrusive auto token bootstrap", () => {
 
     applyAutoGatewayTokenBootstrap("demo-token");
 
-    const expectedKey = `openclaw.control.token.v1:ws://${window.location.host}/dashboard`;
-    expect(window.sessionStorage.getItem(expectedKey)).toBe("demo-token");
+    const expectedKeys = [
+      `openclaw.control.token.v1:ws://${window.location.host}/dashboard`,
+      `openclaw.control.token.v1:ws://${window.location.host}`,
+    ];
+    for (const key of expectedKeys) {
+      expect(window.sessionStorage.getItem(key)).toBe("demo-token");
+    }
   });
 
   it("injects a single bootstrap script into index.html", () => {
