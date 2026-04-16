@@ -1,5 +1,5 @@
 import { bootTenantRouteSync, onTenantRouteChange } from "../tenant/route-sync.js";
-import { isEchartsViewPublicPath } from "./context.js";
+import { isEchartsViewPublicPath, normalizeEchartsViewRouteUrl } from "./context.js";
 
 const ROOT_ATTR = "data-oc-echarts-view-root";
 const STYLE_ATTR = "data-oc-echarts-view-style";
@@ -31,6 +31,16 @@ function ensureRoot(content) {
   return root;
 }
 
+function normalizeEchartsViewLocation() {
+  const normalized = normalizeEchartsViewRouteUrl(window.location.href, window.location.href);
+  if (
+    normalized.pathname !== window.location.pathname ||
+    normalized.search !== window.location.search
+  ) {
+    window.history.replaceState({}, "", normalized.toString());
+  }
+}
+
 function renderPage(root) {
   root.innerHTML = `
     <section class="oc-echarts-view-card">
@@ -57,6 +67,7 @@ async function mountCurrentSurface(content) {
   }
 
   ensureStyle();
+  normalizeEchartsViewLocation();
   document.documentElement.setAttribute(ROUTE_ATTR, "true");
   document.body?.setAttribute(ROUTE_ATTR, "true");
   content.setAttribute(ACTIVE_ATTR, "true");

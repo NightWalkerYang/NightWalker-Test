@@ -89,6 +89,16 @@ describe("platform access guard", () => {
         tenantSession: null,
       }),
     ).toBe("skip");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/echarts-view/chat",
+        href: "https://www.hailstone.cn:18789/echarts-view/chat",
+        edition: "cloud",
+        platformSession: null,
+        tenantSession: null,
+      }),
+    ).toBe("skip");
   });
 
   it("allows tenant admins only on tenant management views", () => {

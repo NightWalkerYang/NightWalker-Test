@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe("public echarts view surface", () => {
   it("mounts a placeholder card and cleans up when the route changes", async () => {
-    window.history.replaceState({}, "", "/echarts-view");
+    window.history.replaceState({}, "", "/echarts-view/chat");
     document.body.innerHTML = `
       <button class="topbar-search"></button>
       <nav class="sidebar-nav"></nav>
@@ -32,6 +32,7 @@ describe("public echarts view surface", () => {
 
     expect(document.documentElement.getAttribute("data-oc-echarts-view-route")).toBe("true");
     expect(document.body.getAttribute("data-oc-echarts-view-route")).toBe("true");
+    expect(window.location.pathname).toBe("/echarts-view");
     expect(document.querySelector(".content")?.getAttribute("data-oc-echarts-view-active")).toBe(
       "true",
     );
