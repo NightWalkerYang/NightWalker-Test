@@ -1008,7 +1008,7 @@ export function listTenantUsageRecords(db, params) {
   return { items, total, page, pageSize };
 }
 
-export function assignTenantAgentToUser(db, params) {
+function assignTenantAgentToUserCore(db, params) {
   const tenantAgent = db
     .prepare(
       `SELECT id, tenant_id AS tenantId, agent_id AS baseAgentId
@@ -1033,70 +1033,120 @@ export function assignTenantAgentToUser(db, params) {
     throw new Error("member_not_found");
   }
 
-  return runInTransaction(db, () => {
-    const existing = db
-      .prepare(
-        `SELECT id, derived_agent_id AS derivedAgentId, derived_workspace_dir AS derivedWorkspaceDir
-         FROM user_agent_assignments
-         WHERE user_id = ? AND tenant_agent_id = ?`,
-      )
-      .get(params.userId, params.tenantAgentId);
+  const existing = db
+    .prepare(
+      `SELECT id, derived_agent_id AS derivedAgentId, derived_workspace_dir AS derivedWorkspaceDir
+       FROM user_agent_assignments
+       WHERE user_id = ? AND tenant_agent_id = ?`,
+    )
+    .get(params.userId, params.tenantAgentId);
 
-    const derivedAgentId =
-      String(existing?.derivedAgentId || "").trim() ||
-      deriveTenantMemberAgentId({
-        tenantId: params.tenantId,
-        userId: params.userId,
-        tenantAgentId: params.tenantAgentId,
-        baseAgentId: tenantAgent.baseAgentId,
-      });
-
-    const workspace = ensureTenantDerivedWorkspace({
+  const derivedAgentId =
+    String(existing?.derivedAgentId || "").trim() ||
+    deriveTenantMemberAgentId({
       tenantId: params.tenantId,
       userId: params.userId,
       tenantAgentId: params.tenantAgentId,
       baseAgentId: tenantAgent.baseAgentId,
-      derivedAgentId,
-      configPath: params.configPath,
-      configDir: params.configDir,
     });
 
-    if (existing) {
-      db.prepare(
-        `UPDATE user_agent_assignments
-         SET status = 'active',
-             derived_agent_id = @derivedAgentId,
-             derived_workspace_dir = @derivedWorkspaceDir
-         WHERE id = @id`,
-      ).run({
-        id: existing.id,
-        derivedAgentId,
-        derivedWorkspaceDir: workspace.canonicalWorkspace,
-      });
-      return {
-        assignmentId: existing.id,
-        derivedAgentId,
-      };
-    }
+  const workspace = ensureTenantDerivedWorkspace({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    tenantAgentId: params.tenantAgentId,
+    baseAgentId: tenantAgent.baseAgentId,
+    derivedAgentId,
+    configPath: params.configPath,
+    configDir: params.configDir,
+  });
 
-    const assignmentId = createId("assignment");
+  if (existing) {
     db.prepare(
-      `INSERT INTO user_agent_assignments
-         (id, tenant_id, user_id, tenant_agent_id, derived_agent_id, derived_workspace_dir, status, created_at)
-       VALUES
-         (@id, @tenantId, @userId, @tenantAgentId, @derivedAgentId, @derivedWorkspaceDir, 'active', @createdAt)`,
+      `UPDATE user_agent_assignments
+       SET status = 'active',
+           derived_agent_id = @derivedAgentId,
+           derived_workspace_dir = @derivedWorkspaceDir
+       WHERE id = @id`,
     ).run({
-      id: assignmentId,
-      tenantId: params.tenantId,
-      userId: params.userId,
-      tenantAgentId: params.tenantAgentId,
+      id: existing.id,
       derivedAgentId,
       derivedWorkspaceDir: workspace.canonicalWorkspace,
-      createdAt: nowIso(),
     });
     return {
-      assignmentId,
+      assignmentId: existing.id,
       derivedAgentId,
+    };
+  }
+
+  const assignmentId = createId("assignment");
+  db.prepare(
+    `INSERT INTO user_agent_assignments
+       (id, tenant_id, user_id, tenant_agent_id, derived_agent_id, derived_workspace_dir, status, created_at)
+     VALUES
+       (@id, @tenantId, @userId, @tenantAgentId, @derivedAgentId, @derivedWorkspaceDir, 'active', @createdAt)`,
+  ).run({
+    id: assignmentId,
+    tenantId: params.tenantId,
+    userId: params.userId,
+    tenantAgentId: params.tenantAgentId,
+    derivedAgentId,
+    derivedWorkspaceDir: workspace.canonicalWorkspace,
+    createdAt: nowIso(),
+  });
+  return {
+    assignmentId,
+    derivedAgentId,
+  };
+}
+
+export function assignTenantAgentToUser(db, params) {
+  return runInTransaction(db, () => assignTenantAgentToUserCore(db, params));
+}
+
+export function assignTenantAgentsToUser(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const tenantAgentIds = Array.isArray(params.tenantAgentIds)
+    ? [...new Set(params.tenantAgentIds.map((tenantAgentId) => String(tenantAgentId || "").trim()).filter(Boolean))]
+    : String(params.tenantAgentId || "").trim()
+      ? [String(params.tenantAgentId || "").trim()]
+      : [];
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+  if (!tenantAgentIds.length) {
+    throw new Error("tenant_agent_ids_required");
+  }
+
+  return runInTransaction(db, () => {
+    const assignmentIds = [];
+    const derivedAgentIds = [];
+    for (const tenantAgentId of tenantAgentIds) {
+      const result = assignTenantAgentToUserCore(db, {
+        ...params,
+        tenantId,
+        userId,
+        tenantAgentId,
+      });
+      if (result?.assignmentId) {
+        assignmentIds.push(result.assignmentId);
+      }
+      if (result?.derivedAgentId) {
+        derivedAgentIds.push(result.derivedAgentId);
+      }
+    }
+    const affectedUserIds = userId ? [userId] : [];
+    return {
+      assignmentId: assignmentIds[0] || null,
+      derivedAgentId: derivedAgentIds[0] || null,
+      assignmentIds,
+      derivedAgentIds,
+      assignedAssignmentCount: assignmentIds.length,
+      affectedUserIds,
+      affectedMemberCount: affectedUserIds.length,
     };
   });
 }

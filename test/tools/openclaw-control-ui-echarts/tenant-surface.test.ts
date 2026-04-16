@@ -497,6 +497,180 @@ describe("tenant surface", () => {
     );
   });
 
+  it("opens an assign dialog, hides already assigned agents, and submits multiple selections", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-agent-assignment");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 1,
+          createdAt: "2026-04-03T08:00:00.000Z",
+        },
+      ],
+      memberAssignments: {
+        "member-1": [
+          {
+            assignmentId: "assignment-1",
+            baseAgentId: "subotech-finance",
+            agentName: "苏博泰克财务分析助手",
+            description: "财务分析",
+            derivedAgentId: "tenant-member-1-finance",
+            derivedWorkspaceDir: "/tmp/workspace-1",
+            tenantAgentId: "tenant-agent-1",
+          },
+        ],
+      },
+      tenantAgents: [
+        {
+          id: "tenant-agent-1",
+          agentId: "subotech-finance",
+          agentName: "苏博泰克财务分析助手",
+          description: "财务分析",
+          balancePoints: 100,
+        },
+        {
+          id: "tenant-agent-2",
+          agentId: "subotech-writing",
+          agentName: "文案助手",
+          description: "文案辅助",
+          balancePoints: 80,
+        },
+        {
+          id: "tenant-agent-3",
+          agentId: "subotech-code",
+          agentName: "代码助手",
+          description: "代码辅助",
+          balancePoints: 60,
+        },
+      ],
+      assignCalls: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/members/agents") && method === "GET") {
+          const parsed = new URL(url, window.location.href);
+          const userId = parsed.searchParams.get("userId") || "";
+          return okJson(state.memberAssignments[userId] || []);
+        }
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return okJson(state.members);
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson(state.tenantAgents);
+        }
+        if (url.endsWith("/tenant/admin/assign-agent") && method === "POST") {
+          state.assignCalls.push(body);
+          const tenantAgentIds = Array.isArray(body.tenantAgentIds)
+            ? body.tenantAgentIds
+            : body.tenantAgentId
+              ? [body.tenantAgentId]
+              : [];
+          const member = state.members.find((item) => item.id === body.userId);
+          if (member) {
+            member.assignedAgentCount += tenantAgentIds.length;
+          }
+          return okJson({
+            assignmentIds: tenantAgentIds.map((tenantAgentId, index) => `assignment-${index + 2}`),
+            derivedAgentIds: tenantAgentIds.map(
+              (tenantAgentId) => `${tenantAgentId}-derived`,
+            ),
+            assignedAssignmentCount: tenantAgentIds.length,
+            affectedUserIds: body.userId ? [body.userId] : [],
+            affectedMemberCount: body.userId ? 1 : 0,
+          });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const assignButton = document.querySelector("[data-tenant-open-assign='member-1']");
+    expect(assignButton?.textContent).toContain("分配Agent");
+    assignButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    const assignDialog = document.querySelector("[data-tenant-assign-dialog]");
+    expect(assignDialog?.open).toBe(true);
+    expect(assignDialog?.querySelector("[data-tenant-assign-agent-select='tenant-agent-1']")).toBeNull();
+    expect(
+      assignDialog?.querySelector("[data-tenant-assign-agent-select='tenant-agent-2']"),
+    ).not.toBeNull();
+    expect(
+      assignDialog?.querySelector("[data-tenant-assign-agent-select='tenant-agent-3']"),
+    ).not.toBeNull();
+
+    const selectAll = assignDialog?.querySelector("[data-tenant-assign-agent-select-all]");
+    expect(selectAll).not.toBeNull();
+    if (selectAll instanceof HTMLInputElement) {
+      selectAll.checked = true;
+      selectAll.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const selectedAgentTwo = document.querySelector(
+      "[data-tenant-assign-agent-select='tenant-agent-2']",
+    );
+    const selectedAgentThree = document.querySelector(
+      "[data-tenant-assign-agent-select='tenant-agent-3']",
+    );
+    expect(selectedAgentTwo instanceof HTMLInputElement ? selectedAgentTwo.checked : false).toBe(
+      true,
+    );
+    expect(
+      selectedAgentThree instanceof HTMLInputElement ? selectedAgentThree.checked : false,
+    ).toBe(true);
+
+    const assignForm = document.querySelector("[data-tenant-assignment-form]");
+    assignForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.assignCalls).toEqual([
+      {
+        userId: "member-1",
+        tenantAgentIds: ["tenant-agent-2", "tenant-agent-3"],
+      },
+    ]);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "已为成员“alice”分配 2 个 Agent。",
+    );
+    expect(
+      document.querySelector("[data-tenant-assign-dialog]") instanceof HTMLDialogElement
+        ? document.querySelector("[data-tenant-assign-dialog]")?.open
+        : false,
+    ).toBe(false);
+  });
+
   it("mounts the native tenant usage stats view", async () => {
     writeTenantSession({
       token: "tenant-token",

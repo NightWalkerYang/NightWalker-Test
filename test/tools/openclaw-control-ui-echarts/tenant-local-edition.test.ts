@@ -430,6 +430,94 @@ describe("tenant platform local edition", () => {
     expect(afterRevokeB.payload.data).toHaveLength(0);
   });
 
+  it("assigns multiple tenant agents to a member in a single request", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const firstTenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const secondTenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-writing",
+      description: "文案辅助",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+
+    const assigned = await requestJson(baseUrl, "/tenant/admin/assign-agent", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        userId: createdMember.payload.data.id,
+        tenantAgentIds: [firstTenantAgentId, secondTenantAgentId],
+      },
+    });
+    expect(assigned.status).toBe(200);
+    expect(assigned.payload.data.assignedAssignmentCount).toBe(2);
+    expect(assigned.payload.data.assignmentIds).toHaveLength(2);
+
+    const assignedAgents = await requestJson(
+      baseUrl,
+      `/tenant/admin/members/agents?userId=${createdMember.payload.data.id}`,
+      {
+        token: tenantAdminToken,
+      },
+    );
+    expect(assignedAgents.status).toBe(200);
+    expect(assignedAgents.payload.data).toHaveLength(2);
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+    const memberAgents = await requestJson(baseUrl, "/member/agents", {
+      token: memberLogin.payload.data.token,
+    });
+    expect(memberAgents.status).toBe(200);
+    expect(memberAgents.payload.data).toHaveLength(2);
+  });
+
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {
     const sandbox = createSandbox();
     const { baseUrl, db } = await startSandboxServer(sandbox);

@@ -179,6 +179,9 @@ export function createTenantApiClient() {
     listTenantMemberAssignedAgents(userId) {
       return requestJson(withQuery("/tenant/admin/members/agents", { userId }));
     },
+    assignTenantAgents(body) {
+      return requestJson("/tenant/admin/assign-agent", { method: "POST", body });
+    },
     assignTenantAgent(body) {
       return requestJson("/tenant/admin/assign-agent", { method: "POST", body });
     },

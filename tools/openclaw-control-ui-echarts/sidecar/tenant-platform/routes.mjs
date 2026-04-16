@@ -8,6 +8,7 @@ import {
   getBootstrapStatus,
   getTenantContextForUser,
   getUserByUsername,
+  assignTenantAgentsToUser,
   listAssignedAgentsForUser,
   listTenants,
   listTenantAgents,
@@ -685,18 +686,37 @@ export function createTenantPlatformRouter(deps) {
       }
       try {
         const body = await readJsonBody(request);
-        const assignment = assignTenantAgentToUser(deps.db, {
+        const tenantAgentIds = readAssignmentIds(body.tenantAgentIds ?? body.tenantAgentId);
+        const assignment = assignTenantAgentsToUser(deps.db, {
           tenantId: session.tenantId,
           userId: String(body.userId || "").trim(),
-          tenantAgentId: String(body.tenantAgentId || "").trim(),
+          tenantAgentIds,
           configPath: deps.config.configPath,
           configDir: deps.config.configDir,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.member.agent_assignment.assign",
+          resourceType: "member",
+          resourceId: String(body.userId || "").trim() || null,
+          payloadJson: {
+            userId: String(body.userId || "").trim(),
+            tenantAgentIds,
+            assignmentIds: assignment.assignmentIds,
+            assignedAssignmentCount: assignment.assignedAssignmentCount,
+          },
         });
         sendJson(request, response, 200, {
           ok: true,
           data: {
             assignmentId: assignment.assignmentId,
             derivedAgentId: assignment.derivedAgentId,
+            assignmentIds: assignment.assignmentIds,
+            derivedAgentIds: assignment.derivedAgentIds,
+            assignedAssignmentCount: assignment.assignedAssignmentCount,
+            affectedUserIds: assignment.affectedUserIds,
+            affectedMemberCount: assignment.affectedMemberCount,
           },
         });
       } catch (error) {
