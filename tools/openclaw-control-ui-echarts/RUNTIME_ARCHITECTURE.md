@@ -79,6 +79,17 @@ Optional hooks:
 - `onSourceToggle(state, nextState)`
 - `onViewportResize(state)`
 
+## 3. Route Surfaces
+
+The runtime also mounts a few route-scoped surfaces on top of the native Control UI shell:
+
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/`
+- `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/`
+- `tools/openclaw-control-ui-echarts/runtime/lufeng/`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/`
+
+These layers share route sync and content-area mounting, but each route keeps its own styles and cleanup rules.
+
 ## Current File Block Support
 
 The runtime now supports blocks like:

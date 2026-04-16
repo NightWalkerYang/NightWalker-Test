@@ -1,3 +1,4 @@
+import { isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
@@ -36,7 +37,7 @@ export function resolvePlatformAccessDecision({
   if (isTenantLoginView(view)) {
     return "skip";
   }
-  if (isLufengPublicPath(pathname)) {
+  if (isLufengPublicPath(pathname) || isEchartsViewPublicPath(pathname)) {
     return "skip";
   }
   if (!isNativeControlUiPath(pathname)) {

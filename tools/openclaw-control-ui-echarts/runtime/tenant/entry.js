@@ -1,3 +1,4 @@
+import { ECHARTS_VIEW_ROUTE } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
@@ -84,6 +85,11 @@ const ICONS = {
       <path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"></path>
     </svg>
   `,
+  chart: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 19h16v2H4Zm2-4 4-4 3 3 5-7 1.6 1.2-6.2 8.8-3-3-4.1 4.1Z"></path>
+    </svg>
+  `,
 };
 
 function createSectionLabel(text = "管理") {
@@ -107,6 +113,22 @@ function createNavItem({ className, href, title, text, icon }) {
     <span class="nav-item__text">${text}</span>
   `;
   return link;
+}
+
+function normalizePathname(pathname = window.location.pathname) {
+  const raw = String(pathname ?? "").trim() || "/";
+  const prefixed = raw.startsWith("/") ? raw : `/${raw}`;
+  const withoutIndex = prefixed.replace(/\/index\.html$/i, "");
+  if (withoutIndex.length > 1 && withoutIndex.endsWith("/")) {
+    return withoutIndex.slice(0, -1);
+  }
+  return withoutIndex;
+}
+
+function isPathActive(expectedPath, pathname = window.location.pathname) {
+  const normalizedExpected = normalizePathname(expectedPath);
+  const normalizedCurrent = normalizePathname(pathname);
+  return normalizedCurrent === normalizedExpected || normalizedCurrent.endsWith(normalizedExpected);
 }
 
 function getSectionConfigForSession(session) {
@@ -192,17 +214,12 @@ function getSectionConfigForSession(session) {
   if (role === "member") {
     const currentPath = new URL(window.location.href, document.baseURI).pathname;
     const selectedAgent = readSelectedTenantAgent();
-    if (currentPath === "/chat" && selectedAgent?.id && selectedAgent?.agentId) {
-      return {
-        sections: [{ className: MANAGEMENT_SECTION_CLASS, label: "Agent", links: [] }],
-      };
-    }
-    return {
-      sections: [
-        {
-          className: MANAGEMENT_SECTION_CLASS,
-          label: "Agent",
-          links: [
+    const onMemberChatPage =
+      isPathActive("/chat", currentPath) && selectedAgent?.id && selectedAgent?.agentId;
+    const links = [
+      ...(onMemberChatPage
+        ? []
+        : [
             {
               className: "oc-member-agent-selector-link",
               href: TENANT_AGENT_SELECTOR_ROUTE,
@@ -211,7 +228,22 @@ function getSectionConfigForSession(session) {
               icon: ICONS.agentAllocation,
               activeView: TENANT_AGENT_SELECTOR_VIEW,
             },
-          ],
+          ]),
+      {
+        className: "oc-member-echarts-link",
+        href: new URL("./echarts-view", document.baseURI).href,
+        title: "可视化展示",
+        text: "可视化展示",
+        icon: ICONS.chart,
+        activePath: ECHARTS_VIEW_ROUTE,
+      },
+    ];
+    return {
+      sections: [
+        {
+          className: MANAGEMENT_SECTION_CLASS,
+          label: onMemberChatPage ? "更多" : "Agent",
+          links,
         },
       ],
     };
@@ -226,9 +258,14 @@ function updateManagementSectionState(section) {
     return;
   }
   const activeView = readTenantView();
+  const currentPathname = window.location.pathname;
   for (const item of section.querySelectorAll(".nav-item")) {
     const expectedView = item.getAttribute("data-oc-platform-view")?.trim() || "";
-    item.classList.toggle("nav-item--active", expectedView === activeView);
+    const expectedPath = item.getAttribute("data-oc-platform-path")?.trim() || "";
+    const isActive =
+      (expectedView && expectedView === activeView) ||
+      (expectedPath && isPathActive(expectedPath, currentPathname));
+    item.classList.toggle("nav-item--active", isActive);
   }
 }
 
@@ -322,8 +359,17 @@ function createNavSection(session, spec) {
       text: link.text,
       icon: link.icon,
     });
-    item.setAttribute("data-oc-platform-view", link.activeView);
-    item.classList.toggle("nav-item--active", activeView === link.activeView);
+    if (link.activeView) {
+      item.setAttribute("data-oc-platform-view", link.activeView);
+    }
+    if (link.activePath) {
+      item.setAttribute("data-oc-platform-path", link.activePath);
+    }
+    item.classList.toggle(
+      "nav-item--active",
+      (link.activeView && activeView === link.activeView) ||
+        (link.activePath && isPathActive(link.activePath)),
+    );
     items.append(item);
   }
 

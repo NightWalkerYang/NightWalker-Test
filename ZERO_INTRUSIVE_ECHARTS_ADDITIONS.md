@@ -88,6 +88,12 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/page.js`
 
+### Runtime: Public ECharts View
+
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/page.css`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js`
+
 ### Runtime: Lufeng Public Route
 
 - `tools/openclaw-control-ui-echarts/runtime/lufeng/bootstrap.js`
@@ -153,6 +159,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/framework-styles.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/echarts-view-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/local-runtime-common.test.ts`
@@ -200,6 +207,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Platform admin login and tenant login now share a unified single-entry view that renders on the native Control UI root via `?ocTenantView=login`, avoiding the native router bouncing unknown `/login` pathnames back to the console. The `/login` pathname is still recognized as a backward-compatible alias when accessed directly.
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
+- The native Control UI now supports a public `/echarts-view` placeholder route, and tenant members now get a matching `可视化展示` sidebar entry that opens it without requiring login.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
 - Tenant-admin management now also includes a native-shell `耗量统计` view with search plus server-paginated usage rows sourced from sidecar usage records.

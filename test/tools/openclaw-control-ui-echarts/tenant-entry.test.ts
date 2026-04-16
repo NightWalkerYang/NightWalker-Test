@@ -131,9 +131,13 @@ describe("zero-intrusive tenant entry", () => {
       "ocTenantView=tenant-agent-assignment",
     );
     expect(statsSection).not.toBeNull();
-    expect(statsItems).toHaveLength(1);
-    expect(statsItems[0]?.textContent).toContain("耗量统计");
-    expect(statsItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
+    expect(statsItems).toHaveLength(2);
+    expect(statsItems[0]?.textContent).toContain("统计总览");
+    expect(statsItems[0]?.getAttribute("href")).toContain(
+      "ocTenantView=tenant-statistics-overview",
+    );
+    expect(statsItems[1]?.textContent).toContain("耗量统计");
+    expect(statsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant_admin",
     );
@@ -153,7 +157,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[3]?.hidden).toBe(false);
   });
 
-  it("injects an Agent-only sidebar group for tenant members", () => {
+  it("injects a member sidebar group with Agent selection and visualization", () => {
     writeTenantSession({
       token: "member-token",
       session: {
@@ -180,9 +184,11 @@ describe("zero-intrusive tenant entry", () => {
     const items = section?.querySelectorAll(".nav-item") ?? [];
     expect(section).not.toBeNull();
     expect(section?.querySelector(".nav-section__label-text")?.textContent).toContain("Agent");
-    expect(items).toHaveLength(1);
+    expect(items).toHaveLength(2);
     expect(items[0]?.textContent).toContain("Agent选择");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-selector");
+    expect(items[1]?.textContent).toContain("可视化展示");
+    expect(items[1]?.getAttribute("href")).toContain("echarts-view");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "member",
     );
@@ -199,7 +205,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[2] instanceof HTMLElement ? utilityItems[2].hidden : true).toBe(false);
   });
 
-  it("does not keep the Agent selector menu in the sidebar on member chat routes", () => {
+  it("keeps the visualization menu in the sidebar on member chat routes", () => {
     writeTenantSession({
       token: "member-token",
       session: {
@@ -228,7 +234,13 @@ describe("zero-intrusive tenant entry", () => {
 
     bootTenantEntry();
 
-    expect(document.querySelector(".oc-platform-management-section")).toBeNull();
+    const section = document.querySelector(".oc-platform-management-section");
+    const items = section?.querySelectorAll(".nav-item") ?? [];
+    expect(section).not.toBeNull();
+    expect(section?.querySelector(".nav-section__label-text")?.textContent).toContain("更多");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.textContent).toContain("可视化展示");
+    expect(items[0]?.getAttribute("href")).toContain("echarts-view");
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
   });
@@ -267,8 +279,9 @@ describe("zero-intrusive tenant entry", () => {
     expect(managementItems[0]?.textContent).toContain("成员管理");
     expect(managementItems[1]?.textContent).toContain("Agent 分配");
     expect(statsSection).not.toBeNull();
-    expect(statsItems).toHaveLength(1);
-    expect(statsItems[0]?.textContent).toContain("耗量统计");
+    expect(statsItems).toHaveLength(2);
+    expect(statsItems[0]?.textContent).toContain("统计总览");
+    expect(statsItems[1]?.textContent).toContain("耗量统计");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant_admin",
     );
