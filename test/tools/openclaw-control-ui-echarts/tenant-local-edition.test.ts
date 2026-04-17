@@ -518,6 +518,99 @@ describe("tenant platform local edition", () => {
     expect(memberAgents.payload.data).toHaveLength(2);
   });
 
+  it("lists current member visualizations and resolves them to workspace html", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-visual",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const assignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const visualizationDir = path.join(
+      sandbox.config.configDir,
+      "workspace-agents",
+      String(assignment.derivedAgentId),
+      "Echarts",
+    );
+    fs.mkdirSync(visualizationDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(visualizationDir, "销售数据可视化_index.html"),
+      "<!doctype html><html><head><title>销售数据</title></head><body><main id=\"viz\">销售数据</main></body></html>",
+      "utf8",
+    );
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-visual",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const listResponse = await requestJson(baseUrl, "/member/visualizations", {
+      token: memberLogin.payload.data.token,
+    });
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.payload.data).toHaveLength(1);
+    expect(listResponse.payload.data[0].visualizationName).toBe("销售数据可视化");
+    expect(listResponse.payload.data[0].href).toContain("/echarts-view?token=");
+
+    const resolveResponse = await requestJson(
+      baseUrl,
+      `/member/visualizations/resolve?token=${encodeURIComponent(listResponse.payload.data[0].token)}`,
+    );
+    expect(resolveResponse.status).toBe(200);
+    expect(resolveResponse.payload.data.visualizationName).toBe("销售数据可视化");
+    expect(resolveResponse.payload.data.href).toContain(
+      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+    );
+    expect(resolveResponse.payload.data.html).toContain("销售数据");
+    expect(resolveResponse.payload.data.baseHref).toContain("/workspace-agent-downloads/");
+  });
+
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {
     const sandbox = createSandbox();
     const { baseUrl, db } = await startSandboxServer(sandbox);

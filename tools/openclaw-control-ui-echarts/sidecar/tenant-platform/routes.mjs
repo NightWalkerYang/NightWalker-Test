@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { issueSessionToken, readSessionToken, verifyPassword } from "./auth.mjs";
 import {
   createBootstrapLocalTenantAdmin,
@@ -10,6 +12,7 @@ import {
   getUserByUsername,
   assignTenantAgentsToUser,
   listAssignedAgentsForUser,
+  listAssignedAgentVisualizationsForUser,
   listTenants,
   listTenantAgents,
   listTenantMembers,
@@ -152,6 +155,56 @@ function readAssignmentIds(value) {
   }
   const normalized = String(value || "").trim();
   return normalized ? [normalized] : [];
+}
+
+function readVisualizationToken(value) {
+  return String(value || "").trim();
+}
+
+function buildEchartsViewHref(origin, token) {
+  const url = new URL("/echarts-view", origin);
+  url.searchParams.set("token", token);
+  return url.href;
+}
+
+function buildWorkspaceAgentDownloadHref(origin, segments) {
+  const pathname = Array.isArray(segments) ? segments : [];
+  const encoded = pathname
+    .map((segment) => encodeURIComponent(String(segment || "").trim()))
+    .join("/");
+  return new URL(`/${encoded}`, origin).href;
+}
+
+function buildWorkspaceAgentDownloadBaseHref(origin, derivedAgentId) {
+  return buildWorkspaceAgentDownloadHref(origin, [
+    "workspace-agent-downloads",
+    derivedAgentId,
+    "Echarts",
+    "",
+  ]);
+}
+
+function readMemberVisualizationTokenPayload(token, secret) {
+  const payload = readSessionToken(token, secret);
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  if (String(payload.purpose || "").trim() !== "member_visualization") {
+    return null;
+  }
+  const tenantId = String(payload.tenantId || "").trim();
+  const userId = String(payload.userId || "").trim();
+  const derivedAgentId = String(payload.derivedAgentId || "").trim();
+  const visualizationFileName = String(payload.visualizationFileName || "").trim();
+  if (!tenantId || !userId || !derivedAgentId || !visualizationFileName) {
+    return null;
+  }
+  return {
+    tenantId,
+    userId,
+    derivedAgentId,
+    visualizationFileName,
+  };
 }
 
 export function createTenantPlatformRouter(deps) {
@@ -899,6 +952,114 @@ export function createTenantPlatformRouter(deps) {
           configAgents,
         ),
       });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/visualizations") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const visualizations = listAssignedAgentVisualizationsForUser(
+        deps.db,
+        {
+          ...session,
+          configPath: deps.config.configPath,
+          configDir: deps.config.configDir,
+        },
+        configAgents,
+      ).map((item) => {
+        const token = issueSessionToken(
+          {
+            purpose: "member_visualization",
+            tenantId: item.tenantId,
+            userId: item.userId,
+            derivedAgentId: item.derivedAgentId,
+            visualizationFileName: item.visualizationFileName,
+          },
+          deps.config.sessionSecret,
+        );
+        const title = item.agentName
+          ? `${item.visualizationName} · ${item.agentName}`
+          : item.visualizationName;
+        return {
+          id: `${item.derivedAgentId}:${item.visualizationFileName}`,
+          agentId: item.derivedAgentId,
+          baseAgentId: item.baseAgentId,
+          agentName: item.agentName,
+          visualizationFileName: item.visualizationFileName,
+          visualizationName: item.visualizationName,
+          title,
+          token,
+          href: buildEchartsViewHref(url.origin, token),
+        };
+      });
+      sendJson(request, response, 200, {
+        ok: true,
+        data: visualizations,
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/visualizations/resolve") {
+      const token = readVisualizationToken(url.searchParams.get("token"));
+      if (!token) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      const payload = readMemberVisualizationTokenPayload(token, deps.config.sessionSecret);
+      if (!payload) {
+        sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+        return;
+      }
+      const visualizations = listAssignedAgentVisualizationsForUser(
+        deps.db,
+        {
+          tenantId: payload.tenantId,
+          userId: payload.userId,
+          configPath: deps.config.configPath,
+          configDir: deps.config.configDir,
+        },
+        configAgents,
+      );
+      const match = visualizations.find(
+        (item) =>
+          item.derivedAgentId === payload.derivedAgentId &&
+          item.visualizationFileName === payload.visualizationFileName,
+      );
+      if (!match) {
+        sendJson(request, response, 404, { ok: false, error: "visualization_not_found" });
+        return;
+      }
+      const visualizationPath = path.join(
+        String(match.derivedWorkspaceDir || "").trim(),
+        "Echarts",
+        match.visualizationFileName,
+      );
+      try {
+        const html = fs.readFileSync(visualizationPath, "utf8");
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            html,
+            baseHref: buildWorkspaceAgentDownloadBaseHref(url.origin, match.derivedAgentId),
+            href: buildWorkspaceAgentDownloadHref(url.origin, [
+              "workspace-agent-downloads",
+              match.derivedAgentId,
+              "Echarts",
+              match.visualizationFileName,
+            ]),
+            visualizationName: match.visualizationName,
+            agentName: match.agentName,
+            agentId: match.derivedAgentId,
+          },
+        });
+      } catch {
+        sendJson(request, response, 404, {
+          ok: false,
+          error: "visualization_not_found",
+        });
+      }
       return;
     }
 

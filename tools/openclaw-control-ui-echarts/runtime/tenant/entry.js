@@ -1,4 +1,4 @@
-import { ECHARTS_VIEW_ROUTE } from "../echarts-view/context.js";
+import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
@@ -32,6 +32,7 @@ const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
 const STATS_SECTION_CLASS = "oc-tenant-stats-section";
+const MEMBER_VISUALIZATION_SECTION_CLASS = "oc-member-visualization-section";
 const NAV_SECTION_CLASSES = [MANAGEMENT_SECTION_CLASS, STATS_SECTION_CLASS];
 const NAV_SECTION_SELECTOR = NAV_SECTION_CLASSES.map((name) => `.${name}`).join(", ");
 const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
@@ -48,6 +49,8 @@ const TOPBAR_LOGOUT_DIALOG_SELECTOR = "[data-oc-platform-logout-dialog]";
 const TOPBAR_DIALOG_CLOSE_SELECTOR = "[data-oc-platform-dialog-close]";
 const TOPBAR_DIALOG_CONFIRM_LOGOUT_SELECTOR = "[data-oc-platform-confirm-logout]";
 const TENANT_ROLE_CONTEXT_ATTR = "data-oc-tenant-role-context";
+const MEMBER_VISUALIZATION_CACHE = new Map();
+const MEMBER_VISUALIZATION_SIGNATURE_ATTR = "data-oc-member-visualization-signature";
 
 const ICONS = {
   tenants: `
@@ -216,28 +219,18 @@ function getSectionConfigForSession(session) {
     const selectedAgent = readSelectedTenantAgent();
     const onMemberChatPage =
       isPathActive("/chat", currentPath) && selectedAgent?.id && selectedAgent?.agentId;
-    const links = [
-      ...(onMemberChatPage
-        ? []
-        : [
-            {
-              className: "oc-member-agent-selector-link",
-              href: TENANT_AGENT_SELECTOR_ROUTE,
-              title: "Agent 选择",
-              text: "Agent选择",
-              icon: ICONS.agentAllocation,
-              activeView: TENANT_AGENT_SELECTOR_VIEW,
-            },
-          ]),
-      {
-        className: "oc-member-echarts-link",
-        href: new URL("./echarts-view", document.baseURI).href,
-        title: "可视化展示",
-        text: "可视化展示",
-        icon: ICONS.chart,
-        activePath: ECHARTS_VIEW_ROUTE,
-      },
-    ];
+    const links = onMemberChatPage
+      ? []
+      : [
+          {
+            className: "oc-member-agent-selector-link",
+            href: TENANT_AGENT_SELECTOR_ROUTE,
+            title: "Agent 选择",
+            text: "Agent选择",
+            icon: ICONS.agentAllocation,
+            activeView: TENANT_AGENT_SELECTOR_VIEW,
+          },
+        ];
     return {
       sections: [
         {
@@ -251,6 +244,120 @@ function getSectionConfigForSession(session) {
   return {
     sections: [{ className: MANAGEMENT_SECTION_CLASS, label: "管理", links: [] }],
   };
+}
+
+function buildMemberVisualizationLinks(visualizations) {
+  return visualizations.map((item) => ({
+    className: "oc-member-visualization-link",
+    href: item.href,
+    title: item.title || item.visualizationName || "",
+    text: item.visualizationName || item.title || item.visualizationFileName || "",
+    icon: ICONS.chart,
+    activePath: ECHARTS_VIEW_ROUTE,
+  }));
+}
+
+function getMemberVisualizationSignature(visualizations) {
+  return visualizations
+    .map((item) => [item.id, item.href, item.visualizationName, item.agentName].join("|"))
+    .join(";;");
+}
+
+function readMemberVisualizationSessionKey(session) {
+  return String(session?.token || "").trim();
+}
+
+function loadMemberVisualizations(session) {
+  const sessionKey = readMemberVisualizationSessionKey(session);
+  if (!sessionKey) {
+    return Promise.resolve([]);
+  }
+  if (!MEMBER_VISUALIZATION_CACHE.has(sessionKey)) {
+    let promise;
+    promise = createTenantApiClient()
+      .listMemberVisualizations()
+      .then((items) => (Array.isArray(items) ? items : []))
+      .catch((error) => {
+        MEMBER_VISUALIZATION_CACHE.delete(sessionKey);
+        throw error;
+      })
+      .finally(() => {
+        if (MEMBER_VISUALIZATION_CACHE.get(sessionKey) === promise) {
+          MEMBER_VISUALIZATION_CACHE.delete(sessionKey);
+        }
+      });
+    MEMBER_VISUALIZATION_CACHE.set(sessionKey, promise);
+  }
+  return MEMBER_VISUALIZATION_CACHE.get(sessionKey);
+}
+
+function insertVisualizationSection(container, section) {
+  const managementSection = container.querySelector(`:scope > .${MANAGEMENT_SECTION_CLASS}`);
+  if (managementSection instanceof HTMLElement) {
+    managementSection.insertAdjacentElement("afterend", section);
+    return;
+  }
+  const firstSection = container.querySelector(":scope > .nav-section");
+  container.insertBefore(section, firstSection ?? null);
+}
+
+async function syncMemberVisualizationSection(container) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+  const session = readSessionForCurrentView();
+  const role = String(session?.session?.role || "");
+  const existing = container.querySelector(`:scope > .${MEMBER_VISUALIZATION_SECTION_CLASS}`);
+  if (role !== "member") {
+    existing?.remove();
+    return;
+  }
+
+  const sessionKey = readMemberVisualizationSessionKey(session);
+  if (!sessionKey) {
+    existing?.remove();
+    return;
+  }
+
+  let visualizations = [];
+  try {
+    visualizations = await loadMemberVisualizations(session);
+  } catch {
+    visualizations = [];
+  }
+
+  const latestSession = readSessionForCurrentView();
+  if (
+    readMemberVisualizationSessionKey(latestSession) !== sessionKey ||
+    String(latestSession?.session?.role || "") !== "member"
+  ) {
+    return;
+  }
+
+  if (!Array.isArray(visualizations) || visualizations.length === 0) {
+    existing?.remove();
+    return;
+  }
+
+  const links = buildMemberVisualizationLinks(visualizations);
+  const signature = getMemberVisualizationSignature(visualizations);
+  if (
+    existing instanceof HTMLElement &&
+    existing.getAttribute("data-oc-management-role") === role &&
+    existing.getAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR) === signature
+  ) {
+    updateManagementSectionState(existing);
+    return;
+  }
+
+  existing?.remove();
+  const section = createNavSection(session, {
+    className: MEMBER_VISUALIZATION_SECTION_CLASS,
+    label: "可视化展示",
+    links,
+  });
+  section.setAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR, signature);
+  insertVisualizationSection(container, section);
 }
 
 function updateManagementSectionState(section) {
@@ -476,7 +583,8 @@ function syncSidebarNavForRole(container, role) {
       section.hidden = false;
       continue;
     }
-    section.hidden = shouldTenantHideNativeSections;
+    const isRoleNav = section.getAttribute("data-oc-role-nav") === "true";
+    section.hidden = shouldTenantHideNativeSections && !isRoleNav;
   }
 }
 
@@ -770,7 +878,7 @@ export function bootTenantEntry() {
   if (window.__openclawTenantEntryBooted) {
     return;
   }
-  if (isLufengPublicPath()) {
+  if (isLufengPublicPath() || isEchartsViewPublicPath()) {
     return;
   }
   window.__openclawTenantEntryBooted = true;
@@ -802,6 +910,9 @@ export function bootTenantEntry() {
         ensureSidebarRouteHandlers(container);
         ensureManagementSection(container);
         syncSidebarNavForRole(container, role);
+        if (role === "member") {
+          void syncMemberVisualizationSection(container);
+        }
       }
     }
 

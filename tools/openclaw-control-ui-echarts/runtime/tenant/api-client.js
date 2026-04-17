@@ -200,6 +200,12 @@ export function createTenantApiClient() {
     listMemberAgents() {
       return requestJson("/member/agents");
     },
+    listMemberVisualizations() {
+      return requestJson("/member/visualizations");
+    },
+    resolveMemberVisualization(token) {
+      return requestJson(withQuery("/member/visualizations/resolve", { token }));
+    },
     syncMemberUsageRecords(body) {
       return requestJson("/member/usage-records/sync", { method: "POST", body });
     },

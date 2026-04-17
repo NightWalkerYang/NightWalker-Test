@@ -91,7 +91,6 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Runtime: Public ECharts View
 
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js`
-- `tools/openclaw-control-ui-echarts/runtime/echarts-view/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js`
 
 ### Runtime: Lufeng Public Route
@@ -207,7 +206,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Platform admin login and tenant login now share a unified single-entry view that renders on the native Control UI root via `?ocTenantView=login`, avoiding the native router bouncing unknown `/login` pathnames back to the console. The `/login` pathname is still recognized as a backward-compatible alias when accessed directly.
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
-- The native Control UI now supports a public `/echarts-view` placeholder route, including the `/echarts-view/chat` compatibility alias, and tenant members now get a matching `可视化展示` sidebar entry that opens it without requiring login.
+- The native Control UI now supports a public `/echarts-view` bridge route, including the `/echarts-view/chat` compatibility alias, and tenant members now get a current-member-only `可视化展示` dropdown populated from their assigned Agent workspaces' `Echarts/*_index.html` files. The bridge route resolves a signed token and writes the target workspace HTML directly into the page, with no placeholder shell.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Tenant-admin management now renders inside the native Control UI content area through single-entry query views instead of using a standalone tenant admin page.
 - Tenant-admin management now also includes a native-shell `耗量统计` view with search plus server-paginated usage rows sourced from sidecar usage records.

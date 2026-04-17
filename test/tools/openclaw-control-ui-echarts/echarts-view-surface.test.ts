@@ -2,53 +2,72 @@
  * @vitest-environment jsdom
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { bootEchartsViewSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js";
+
+function stubVisualizationResolve(html, baseHref) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: {
+          html,
+          baseHref,
+        },
+      }),
+    })),
+  );
+}
 
 afterEach(() => {
   document.head.innerHTML = "";
   document.body.innerHTML = "";
-  document.documentElement.removeAttribute("data-oc-echarts-view-route");
-  document.body.removeAttribute("data-oc-echarts-view-route");
   window.history.replaceState({}, "", "/");
   delete window.__openclawEchartsViewSurfaceBooted;
   delete window.__openclawTenantRouteSyncBooted;
+  vi.unstubAllGlobals();
 });
 
 describe("public echarts view surface", () => {
-  it("mounts a placeholder card and cleans up when the route changes", async () => {
-    window.history.replaceState({}, "", "/echarts-view/chat");
+  it("loads workspace html into the public route and normalizes the alias path", async () => {
+    const baseHref =
+      "https://www.hailstone.cn:18789/workspace-agent-downloads/tenant-agent-1/Echarts/";
+    window.history.replaceState(
+      {},
+      "",
+      "/echarts-view/chat?token=member-visualization-token",
+    );
     document.body.innerHTML = `
-      <button class="topbar-search"></button>
-      <nav class="sidebar-nav"></nav>
-      <div class="sidebar-utility-group"></div>
-      <div class="sidebar-shell__footer"></div>
       <div class="content">
         <div class="native-placeholder">native content</div>
       </div>
     `;
+    stubVisualizationResolve(
+      `<!doctype html>
+       <html>
+         <head>
+           <title>销售数据可视化</title>
+         </head>
+         <body>
+           <main id="viz">
+             <img src="./chart.png" alt="chart">
+           </main>
+         </body>
+       </html>`,
+      baseHref,
+    );
 
     await bootEchartsViewSurface();
+    await Promise.resolve();
 
-    expect(document.documentElement.getAttribute("data-oc-echarts-view-route")).toBe("true");
-    expect(document.body.getAttribute("data-oc-echarts-view-route")).toBe("true");
     expect(window.location.pathname).toBe("/echarts-view");
-    expect(document.querySelector(".content")?.getAttribute("data-oc-echarts-view-active")).toBe(
-      "true",
-    );
-    expect(document.querySelector("[data-oc-echarts-view-root]")?.textContent).toContain(
-      "可视化展示",
-    );
-    expect(document.head.querySelector('[data-oc-echarts-view-style="true"]')).toBeInstanceOf(
-      HTMLLinkElement,
-    );
-
-    window.history.replaceState({}, "", "/chat");
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(document.querySelector("[data-oc-echarts-view-root]")).toBeNull();
-    expect(document.head.querySelector('[data-oc-echarts-view-style="true"]')).toBeNull();
-    expect(document.documentElement.getAttribute("data-oc-echarts-view-route")).toBeNull();
+    expect(window.location.search).toContain("token=member-visualization-token");
+    expect(document.head.querySelector("base")?.getAttribute("href")).toBe(baseHref);
+    expect(document.title).toBe("销售数据可视化");
+    expect(document.querySelector("#viz")).not.toBeNull();
+    expect(document.body.textContent).not.toContain("native content");
+    expect(document.body.textContent).not.toContain("可视化展示");
   });
 });

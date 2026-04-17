@@ -1,5 +1,6 @@
 import { bootChatAmbientBackground } from "./runtime/background/chat-ambient.js";
 import { bootBrandReplacer } from "./runtime/branding/brand-replacer.js";
+import { isEchartsViewPublicPath } from "./runtime/echarts-view/context.js";
 import { bootEchartsViewSurface } from "./runtime/echarts-view/surface.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
 import { createFileAdapter } from "./runtime/file/adapter.js";
@@ -34,6 +35,10 @@ const runtime = createFencedBlockRuntime([
 ]);
 
 function boot() {
+  if (isEchartsViewPublicPath(window.location.pathname)) {
+    bootEchartsViewSurface();
+    return;
+  }
   bootBrandReplacer();
   bootChatAmbientBackground();
   bootToolRunCluster();

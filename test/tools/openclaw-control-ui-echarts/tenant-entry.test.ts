@@ -2,12 +2,29 @@
  * @vitest-environment jsdom
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { bootTenantEntry } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
 import {
   writeSelectedTenantAgent,
   writeTenantSession,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
+
+function stubVisualizationFetch(items = []) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: items,
+      }),
+    })),
+  );
+}
+
+function flushAsync() {
+  return new Promise((resolve) => window.setTimeout(resolve, 0));
+}
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -15,6 +32,7 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
   delete window.__openclawTenantEntryBooted;
   delete window.__openclawTenantRouteSyncBooted;
+  vi.unstubAllGlobals();
 });
 
 describe("zero-intrusive tenant entry", () => {
@@ -157,7 +175,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[3]?.hidden).toBe(false);
   });
 
-  it("injects a member sidebar group with Agent selection and visualization", () => {
+  it("injects a member sidebar group with Agent selection and visualization", async () => {
     writeTenantSession({
       token: "member-token",
       session: {
@@ -177,18 +195,39 @@ describe("zero-intrusive tenant entry", () => {
         <a class="sidebar-utility-link">版本 v2026.4.1</a>
       </div>
     `;
+    stubVisualizationFetch([
+      {
+        id: "tenant-agent-1:销售数据可视化_index.html",
+        href: "https://www.hailstone.cn:18789/echarts-view?token=member-visualization-token",
+        agentId: "tenant-agent-1",
+        agentName: "苏博泰克财务分析助手",
+        visualizationName: "销售数据可视化",
+        visualizationFileName: "销售数据可视化_index.html",
+        title: "销售数据可视化 · 苏博泰克财务分析助手",
+        token: "member-visualization-token",
+      },
+    ]);
 
     bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
 
     const section = document.querySelector(".oc-platform-management-section");
     const items = section?.querySelectorAll(".nav-item") ?? [];
+    const visualizationSection = document.querySelector(".oc-member-visualization-section");
+    const visualizationItems = visualizationSection?.querySelectorAll(".nav-item") ?? [];
     expect(section).not.toBeNull();
     expect(section?.querySelector(".nav-section__label-text")?.textContent).toContain("Agent");
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(1);
     expect(items[0]?.textContent).toContain("Agent选择");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=tenant-agent-selector");
-    expect(items[1]?.textContent).toContain("可视化展示");
-    expect(items[1]?.getAttribute("href")).toContain("echarts-view");
+    expect(visualizationSection).not.toBeNull();
+    expect(visualizationSection?.querySelector(".nav-section__label-text")?.textContent).toContain(
+      "可视化展示",
+    );
+    expect(visualizationItems).toHaveLength(1);
+    expect(visualizationItems[0]?.textContent).toContain("销售数据可视化");
+    expect(visualizationItems[0]?.getAttribute("href")).toContain("echarts-view?token=");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "member",
     );
@@ -205,7 +244,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[2] instanceof HTMLElement ? utilityItems[2].hidden : true).toBe(false);
   });
 
-  it("keeps the visualization menu in the sidebar on member chat routes", () => {
+  it("keeps the visualization menu in the sidebar on member chat routes", async () => {
     writeTenantSession({
       token: "member-token",
       session: {
@@ -231,16 +270,34 @@ describe("zero-intrusive tenant entry", () => {
         <a class="sidebar-utility-link">版本 v2026.4.1</a>
       </div>
     `;
+    stubVisualizationFetch([
+      {
+        id: "tenant-agent-1:销售数据可视化_index.html",
+        href: "https://www.hailstone.cn:18789/echarts-view?token=member-visualization-token",
+        agentId: "tenant-agent-1",
+        agentName: "苏博泰克财务分析助手",
+        visualizationName: "销售数据可视化",
+        visualizationFileName: "销售数据可视化_index.html",
+        title: "销售数据可视化 · 苏博泰克财务分析助手",
+        token: "member-visualization-token",
+      },
+    ]);
 
     bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
 
     const section = document.querySelector(".oc-platform-management-section");
-    const items = section?.querySelectorAll(".nav-item") ?? [];
-    expect(section).not.toBeNull();
-    expect(section?.querySelector(".nav-section__label-text")?.textContent).toContain("更多");
+    const visualizationSection = document.querySelector(".oc-member-visualization-section");
+    const items = visualizationSection?.querySelectorAll(".nav-item") ?? [];
+    expect(section).toBeNull();
+    expect(visualizationSection).not.toBeNull();
+    expect(visualizationSection?.querySelector(".nav-section__label-text")?.textContent).toContain(
+      "可视化展示",
+    );
     expect(items).toHaveLength(1);
-    expect(items[0]?.textContent).toContain("可视化展示");
-    expect(items[0]?.getAttribute("href")).toContain("echarts-view");
+    expect(items[0]?.textContent).toContain("销售数据可视化");
+    expect(items[0]?.getAttribute("href")).toContain("echarts-view?token=");
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
   });

@@ -14,6 +14,7 @@ import {
   upsertTenantAgent,
   assignTenantAgentToUser,
   listAssignedAgentsForUser,
+  listAssignedAgentVisualizationsForUser,
   getTenantOverview,
   listTenantUsageRecords,
   syncTenantUsageRecords,
@@ -157,6 +158,38 @@ describe("tenant platform database foundation", () => {
       expect(agents[0]?.agentName).toBe("财务分析助手");
       expect(agents[0]?.emoji).toBe("💼");
       expect(agents[0]?.balancePoints).toBe(42);
+
+      const visualizationDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+        "Echarts",
+      );
+      fs.mkdirSync(visualizationDir, { recursive: true });
+      fs.writeFileSync(path.join(visualizationDir, "销售数据可视化_index.html"), "<html></html>");
+      fs.writeFileSync(path.join(visualizationDir, "折线图_index.html"), "<html></html>");
+      fs.writeFileSync(path.join(visualizationDir, "notes.txt"), "ignored");
+
+      const visualizations = listAssignedAgentVisualizationsForUser(
+        db,
+        {
+          tenantId: tenant.id,
+          userId: member.id,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        },
+        catalog,
+      );
+      expect(visualizations).toHaveLength(2);
+      expect(visualizations.map((item) => item.visualizationName).toSorted()).toEqual([
+        "折线图",
+        "销售数据可视化",
+      ]);
+      expect(
+        visualizations.every(
+          (item) => item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
+        ),
+      ).toBe(true);
     } finally {
       closeTenantPlatformDb(db);
     }

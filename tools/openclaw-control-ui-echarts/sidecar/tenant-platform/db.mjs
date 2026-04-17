@@ -1312,6 +1312,44 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
     });
 }
 
+function listWorkspaceVisualizationFiles(workspaceDir) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir) {
+    return [];
+  }
+  const echartsDir = path.join(normalizedWorkspaceDir, "Echarts");
+  try {
+    if (!fs.existsSync(echartsDir) || !fs.statSync(echartsDir).isDirectory()) {
+      return [];
+    }
+    return fs
+      .readdirSync(echartsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /_index\.html$/i.test(entry.name))
+      .map((entry) => entry.name)
+      .toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function stripVisualizationIndexSuffix(fileName) {
+  return String(fileName || "")
+    .trim()
+    .replace(/_index\.html$/i, "");
+}
+
+export function listAssignedAgentVisualizationsForUser(db, params, configAgents = []) {
+  return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) =>
+    listWorkspaceVisualizationFiles(agent.derivedWorkspaceDir).map((visualizationFileName) => ({
+      ...agent,
+      visualizationFileName,
+      visualizationName: stripVisualizationIndexSuffix(visualizationFileName),
+      visualizationRelativePath: path.posix.join("Echarts", visualizationFileName),
+    })),
+  );
+}
+
 export function syncTenantUsageRecords(db, params) {
   const tenantId = String(params.tenantId || "").trim();
   const userId = String(params.userId || "").trim();

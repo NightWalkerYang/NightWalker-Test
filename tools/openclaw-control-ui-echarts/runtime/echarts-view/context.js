@@ -23,6 +23,11 @@ export function isEchartsViewPublicPath(pathname = window.location.pathname) {
   return normalized === ECHARTS_VIEW_ROUTE || normalized === ECHARTS_VIEW_CHAT_ROUTE;
 }
 
+export function readEchartsViewToken(locationHref = window.location.href) {
+  const url = new URL(locationHref, document.baseURI);
+  return url.searchParams.get("token")?.trim() || "";
+}
+
 export function normalizeEchartsViewRouteUrl(urlLike, baseHref = window.location.href) {
   const url = new URL(urlLike, baseHref);
   if (!isEchartsViewPublicPath(url.pathname)) {
