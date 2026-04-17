@@ -1,5 +1,6 @@
 const ECHARTS_VIEW_ROUTE = "/echarts-view";
 const ECHARTS_VIEW_CHAT_ROUTE = `${ECHARTS_VIEW_ROUTE}/chat`;
+const ECHARTS_VIEW_CANONICAL_ROUTE = `${ECHARTS_VIEW_ROUTE}/`;
 const ECHARTS_VIEW_TOKEN_STORAGE_KEY = "openclaw:tenant-platform:echarts-view-token:v1";
 
 function normalizePathname(pathname = window.location.pathname) {
@@ -80,10 +81,11 @@ export function normalizeEchartsViewRouteUrl(urlLike, baseHref = window.location
   }
 
   const normalizedPathname = normalizeEchartsViewPathname(url.pathname);
-  if (normalizedPathname === ECHARTS_VIEW_CHAT_ROUTE) {
-    url.pathname = ECHARTS_VIEW_ROUTE;
-  }
-  if (normalizeEchartsViewPathname(url.pathname) === ECHARTS_VIEW_ROUTE) {
+  if (
+    normalizedPathname === ECHARTS_VIEW_CHAT_ROUTE ||
+    normalizedPathname === ECHARTS_VIEW_ROUTE
+  ) {
+    url.pathname = ECHARTS_VIEW_CANONICAL_ROUTE;
     url.searchParams.delete("session");
   }
   return url;

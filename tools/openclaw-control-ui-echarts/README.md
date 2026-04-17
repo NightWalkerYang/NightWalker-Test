@@ -119,7 +119,7 @@ The builder extracts `echarts` and `json5` from the tracked offline bundle at `t
 
 This matters because the gateway serves the Control UI with a CSP that allows `script-src 'self'` but blocks inline scripts. The generated overlay therefore avoids inline vendor injection and stays compatible with the gateway CSP.
 
-The public-route preboot scripts for `/echarts-view`, `/lufeng`, and the auto-token path are injected before the main Control UI bundle so they can set route state before the native app bootstrap runs.
+The generated UI also writes a dedicated static `/echarts-view/` entry page for public visualization sharing, while the root Control UI still injects the public-route preboot scripts for `/echarts-view`, `/lufeng`, and the auto-token path so legacy shell entry points keep working before the native app bootstrap runs.
 
 ## Configure OpenClaw
 

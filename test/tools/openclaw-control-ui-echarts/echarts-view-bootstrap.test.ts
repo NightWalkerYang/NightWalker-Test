@@ -29,12 +29,12 @@ describe("echarts view public bootstrap", () => {
     expect(window.__OPENCLAW_CONTROL_UI_BASE_PATH__).toBe("/");
     expect(window.__OPENCLAW_ECHARTS_VIEW_MODE__).toBe(true);
     expect(document.documentElement.getAttribute("data-oc-echarts-view-route")).toBe("true");
-    expect(window.location.pathname).toBe("/echarts-view");
+    expect(window.location.pathname).toBe("/echarts-view/");
     expect(window.location.search).toContain("token=viz-token");
     expect(window.location.search).not.toContain("session=");
 
     window.history.pushState({}, "", "/echarts-view/chat?token=next-token");
-    expect(window.location.pathname).toBe("/echarts-view");
+    expect(window.location.pathname).toBe("/echarts-view/");
     expect(window.location.search).toContain("token=next-token");
   });
 

@@ -36,7 +36,7 @@ describe("public echarts view surface", () => {
     window.history.replaceState(
       {},
       "",
-      "/echarts-view/chat?token=member-visualization-token",
+      "/echarts-view/?token=member-visualization-token",
     );
     document.body.innerHTML = `
       <div class="content">
@@ -61,7 +61,7 @@ describe("public echarts view surface", () => {
     await bootEchartsViewSurface();
     await Promise.resolve();
 
-    expect(window.location.pathname).toBe("/echarts-view");
+    expect(window.location.pathname).toBe("/echarts-view/");
     expect(window.location.search).toContain("token=member-visualization-token");
     expect(document.title).toBe("销售数据可视化");
     const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
@@ -88,7 +88,7 @@ describe("public echarts view surface", () => {
     await bootEchartsViewSurface();
     await Promise.resolve();
 
-    expect(window.location.pathname).toBe("/echarts-view");
+    expect(window.location.pathname).toBe("/echarts-view/");
     expect(window.location.search).toContain("token=member-visualization-token");
     expect(document.title).toBe("财务报表可视化");
     expect(document.querySelector(`iframe#oc-echarts-view-frame`)).not.toBeNull();

@@ -512,6 +512,26 @@ create_login_route_entry() {
   rm -f "$temp_login"
 }
 
+create_echarts_view_route_entry() {
+  local output_dir="$1"
+  local echarts_view_dir="$output_dir/echarts-view"
+  mkdir -p "$echarts_view_dir"
+
+  cat >"$echarts_view_dir/index.html" <<'HTML'
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>可视化展示</title>
+  </head>
+  <body>
+    <script type="module" src="/assets/openclaw-echarts-renderer.js"></script>
+  </body>
+</html>
+HTML
+}
+
 extract_offline_vendors() {
   local bundle_path="$1"
   local vendor_dir="$2"
@@ -605,6 +625,7 @@ main() {
   inject_runtime_script "$OUTPUT_DIR/index.html"
   replace_brand_favicons "$OUTPUT_DIR/index.html"
   create_login_route_entry "$OUTPUT_DIR/index.html"
+  create_echarts_view_route_entry "$OUTPUT_DIR"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_gateway_control_ui_root

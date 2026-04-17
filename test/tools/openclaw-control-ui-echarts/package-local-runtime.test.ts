@@ -87,6 +87,7 @@ describe("package local runtime", () => {
     expect(fs.existsSync(path.join(outputDir, "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "login", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "login.html"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "echarts-view", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "json5.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "echarts.min.js"))).toBe(true);
@@ -103,6 +104,11 @@ describe("package local runtime", () => {
     expect(indexHtml.indexOf("data-openclaw-lufeng-bootstrap")).toBeLessThan(
       indexHtml.indexOf("./assets/index-realhash.js"),
     );
+    const echartsViewIndex = fs.readFileSync(
+      path.join(outputDir, "echarts-view", "index.html"),
+      "utf8",
+    );
+    expect(echartsViewIndex).toContain("/assets/openclaw-echarts-renderer.js");
     const loginIndex = fs.readFileSync(path.join(outputDir, "login", "index.html"), "utf8");
     const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");
     expect(loginIndex).toContain('<base href="/" />');

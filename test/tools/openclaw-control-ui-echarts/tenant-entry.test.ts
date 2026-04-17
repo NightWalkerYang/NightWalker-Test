@@ -198,7 +198,7 @@ describe("zero-intrusive tenant entry", () => {
     stubVisualizationFetch([
       {
         id: "tenant-agent-1:销售数据可视化_index.html",
-        href: "/echarts-view?token=member-visualization-token",
+        href: "/echarts-view/?token=member-visualization-token",
         agentId: "tenant-agent-1",
         agentName: "苏博泰克财务分析助手",
         visualizationName: "销售数据可视化",
@@ -227,7 +227,7 @@ describe("zero-intrusive tenant entry", () => {
     );
     expect(visualizationItems).toHaveLength(1);
     expect(visualizationItems[0]?.textContent).toContain("销售数据可视化");
-    expect(visualizationItems[0]?.getAttribute("href")).toContain("echarts-view?token=");
+    expect(visualizationItems[0]?.getAttribute("href")).toContain("echarts-view/?token=");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "member",
     );
@@ -273,7 +273,7 @@ describe("zero-intrusive tenant entry", () => {
     stubVisualizationFetch([
       {
         id: "tenant-agent-1:销售数据可视化_index.html",
-        href: "/echarts-view?token=member-visualization-token",
+        href: "/echarts-view/?token=member-visualization-token",
         agentId: "tenant-agent-1",
         agentName: "苏博泰克财务分析助手",
         visualizationName: "销售数据可视化",
@@ -297,7 +297,7 @@ describe("zero-intrusive tenant entry", () => {
     );
     expect(items).toHaveLength(1);
     expect(items[0]?.textContent).toContain("销售数据可视化");
-    expect(items[0]?.getAttribute("href")).toContain("echarts-view?token=");
+    expect(items[0]?.getAttribute("href")).toContain("echarts-view/?token=");
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
   });

@@ -162,7 +162,7 @@ function readVisualizationToken(value) {
 }
 
 function buildEchartsViewHref(token) {
-  return `/echarts-view?token=${encodeURIComponent(token)}`;
+  return `/echarts-view/?token=${encodeURIComponent(token)}`;
 }
 
 function buildWorkspaceAgentDownloadHref(segments) {

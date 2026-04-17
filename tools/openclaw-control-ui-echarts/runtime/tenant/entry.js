@@ -258,6 +258,25 @@ function buildMemberVisualizationLinks(visualizations) {
   }));
 }
 
+function openPublicRoute(destination) {
+  if (!(destination instanceof URL)) {
+    return false;
+  }
+  if (isEchartsViewPublicPath(destination.pathname)) {
+    const token = destination.searchParams.get("token")?.trim() || "";
+    if (token) {
+      writeEchartsViewToken(token);
+    }
+    window.location.assign(destination.href);
+    return true;
+  }
+  if (isLufengPublicPath(destination.pathname)) {
+    window.location.assign(destination.href);
+    return true;
+  }
+  return false;
+}
+
 function getMemberVisualizationSignature(visualizations) {
   return visualizations
     .map((item) => [item.id, item.href, item.visualizationName, item.agentName].join("|"))
@@ -399,8 +418,9 @@ function ensureManagementSectionHandlers(section) {
       return;
     }
     const destination = new URL(link.href, document.baseURI);
-    if (destination.pathname === "/echarts-view") {
-      writeEchartsViewToken(destination.searchParams.get("token") || "");
+    if (openPublicRoute(destination)) {
+      event.preventDefault();
+      return;
     }
     event.preventDefault();
     navigateTenantRoute(link.href);
@@ -444,6 +464,10 @@ function ensureSidebarRouteHandlers(container) {
       }
       const destination = new URL(link.href, document.baseURI);
       if (destination.origin !== window.location.origin || !destination.pathname.startsWith("/")) {
+        return;
+      }
+      if (openPublicRoute(destination)) {
+        event.preventDefault();
         return;
       }
       event.preventDefault();

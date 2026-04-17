@@ -167,9 +167,9 @@
 
 ### 4.1 可视化展示公共页
 
-租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view`，路由通过签名 token 加载对应 workspace HTML，并将其挂载到全页 iframe 中，避免外层控制台 CSP 干扰可视化脚本；同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
+租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view/?token=...`，该路由由独立静态入口页承载，页面本身只负责加载可视化桥接脚本并通过签名 token 请求对应 workspace HTML，再将其挂载到全页 iframe 中，避免外层控制台壳干扰可视化脚本；同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
 
-`/echarts-view` 进入时还需要先注入一个同源 preboot 脚本，并且必须放在主控制台 bundle 之前执行，在主壳启动之前把 `window.__OPENCLAW_CONTROL_UI_BASE_PATH__` 固定到根路径，避免主壳把当前路由误当成基路径并请求 `/echarts-view/__openclaw/control-ui-config.json`。
+`/echarts-view/` 的独立入口页必须落在 `echarts-view/index.html`，这样控制台网关会直接返回这份静态页而不是回落到主壳；`/echarts-view` 这个旧式裸路径仍可以作为兼容性别名继续保留在路由归一化里，但分享链接和成员菜单都应统一使用带 trailing slash 的 token 化链接。
 
 当前要求：
 

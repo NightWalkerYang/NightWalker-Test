@@ -172,11 +172,33 @@ function buildLoginEntryHtml(indexHtml) {
   return indexHtml.replace("</head>", '    <base href="/" />\n  </head>');
 }
 
+function buildEchartsViewEntryHtml() {
+  return [
+    "<!doctype html>",
+    '<html lang="zh-CN">',
+    "  <head>",
+    '    <meta charset="utf-8" />',
+    '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
+    "    <title>可视化展示</title>",
+    "  </head>",
+    "  <body>",
+    '    <script type="module" src="/assets/openclaw-echarts-renderer.js"></script>',
+    "  </body>",
+    "</html>",
+    "",
+  ].join("\n");
+}
+
 function writeLoginRouteAliases(outputDir, indexContent) {
   const loginIndexPath = path.join(outputDir, "login", "index.html");
   const loginHtmlPath = path.join(outputDir, "login.html");
   writeTextIntoOutput(indexContent, loginIndexPath);
   writeTextIntoOutput(indexContent, loginHtmlPath);
+}
+
+function writeEchartsViewRouteEntry(outputDir) {
+  const echartsViewIndexPath = path.join(outputDir, "echarts-view", "index.html");
+  writeTextIntoOutput(buildEchartsViewEntryHtml(), echartsViewIndexPath);
 }
 
 function extractEmbeddedLibraries(bundleSource) {
@@ -236,6 +258,7 @@ function main() {
   );
   fs.writeFileSync(outputIndexPath, finalizedIndexHtml, "utf8");
   writeLoginRouteAliases(outputDir, buildLoginEntryHtml(finalizedIndexHtml));
+  writeEchartsViewRouteEntry(outputDir);
 
   const embeddedLibraries = extractEmbeddedLibraries(
     fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),
