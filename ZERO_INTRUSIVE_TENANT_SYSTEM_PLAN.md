@@ -169,6 +169,8 @@
 
 租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view`，路由通过签名 token 加载对应 workspace HTML，并将其挂载到全页 iframe 中，避免外层控制台 CSP 干扰可视化脚本；同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
 
+`/echarts-view` 进入时还需要先注入一个同源 preboot 脚本，在主控制台壳启动之前把 `window.__OPENCLAW_CONTROL_UI_BASE_PATH__` 固定到根路径，避免主壳把当前路由误当成基路径并请求 `/echarts-view/__openclaw/control-ui-config.json`。
+
 当前要求：
 
 - 这个路由不要求登录

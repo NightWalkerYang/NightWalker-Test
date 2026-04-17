@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
 import { injectAutoGatewayTokenBootstrap } from "./runtime/branding/auto-token.js";
+import { injectEchartsViewPublicBootstrap } from "./runtime/echarts-view/bootstrap.js";
 import { injectLufengPublicBootstrap } from "./runtime/lufeng/bootstrap.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -225,7 +226,10 @@ function main() {
   const finalizedIndexHtml = injectRuntimeScript(
     replaceBrandFavicons(
       injectAutoGatewayTokenBootstrap(
-        injectLufengPublicBootstrap(outputIndex, autoGatewayToken),
+        injectLufengPublicBootstrap(
+          injectEchartsViewPublicBootstrap(outputIndex),
+          autoGatewayToken,
+        ),
         autoGatewayToken,
       ),
     ),

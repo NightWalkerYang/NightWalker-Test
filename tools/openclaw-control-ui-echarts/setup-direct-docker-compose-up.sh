@@ -79,6 +79,35 @@ resolve_auto_gateway_token() {
   trim_whitespace "$token"
 }
 
+inject_echarts_view_public_bootstrap() {
+  local index_path="$1"
+  local python_bin
+
+  python_bin="$(resolve_python)"
+
+  "$python_bin" - "$index_path" <<'PY'
+import pathlib
+import sys
+
+index_path = pathlib.Path(sys.argv[1])
+
+html = index_path.read_text(encoding="utf-8")
+if "data-openclaw-echarts-view-bootstrap" in html:
+    raise SystemExit(0)
+
+script = (
+    '    <script type="module" src="./assets/runtime/echarts-view/preboot.js" '
+    'data-openclaw-echarts-view-bootstrap></script>'
+)
+
+if "</head>" not in html:
+    raise SystemExit(f"index.html is missing </head>: {index_path}")
+
+html = html.replace("  </head>", f"{script}\n  </head>", 1)
+index_path.write_text(html, encoding="utf-8")
+PY
+}
+
 inject_lufeng_public_bootstrap() {
   local index_path="$1"
   local token="$2"
@@ -534,6 +563,7 @@ main() {
   [[ -f "$OUTPUT_DIR/index.html" ]] || fail "Generated Control UI root is missing index.html"
   local auto_gateway_token
   auto_gateway_token="$(resolve_auto_gateway_token)"
+  inject_echarts_view_public_bootstrap "$OUTPUT_DIR/index.html"
   inject_lufeng_public_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
   inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
   inject_runtime_script "$OUTPUT_DIR/index.html"

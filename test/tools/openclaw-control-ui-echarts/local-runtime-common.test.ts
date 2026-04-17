@@ -53,19 +53,24 @@ OPENCLAW_GATEWAY_PORT=19999
     );
   });
 
-  it("syncs both control-ui bootstrap tokens", () => {
+  it("syncs all control-ui bootstrap tokens", () => {
     const initial = [
       "<html>",
       "  <head>",
+      '    <script type="module" src="./assets/runtime/echarts-view/preboot.js" data-openclaw-echarts-view-bootstrap></script>',
       '    <script src="./assets/runtime/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="old"></script>',
       '    <script src="./assets/runtime/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="old"></script>',
       "  </head>",
       "</html>",
     ].join("\n");
     const updated = syncControlUiBootstrapScripts(initial, "next-token");
+    expect(updated).toContain('data-openclaw-echarts-view-bootstrap');
     expect(updated).toContain('data-openclaw-auto-token-bootstrap data-gateway-token="next-token"');
     expect(updated).toContain('data-openclaw-lufeng-bootstrap data-gateway-token="next-token"');
     expect(updated).not.toContain('data-gateway-token="old"');
+    expect(updated.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
+      updated.indexOf("data-openclaw-auto-token-bootstrap"),
+    );
   });
 
   it("seeds the runtime config file from the packaged template when missing", () => {

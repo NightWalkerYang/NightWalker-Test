@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 const DEFAULT_GATEWAY_TOKEN = "local-runtime-shared-token";
 const AUTO_TOKEN_MARKER = "data-openclaw-auto-token-bootstrap";
 const LUFENG_TOKEN_MARKER = "data-openclaw-lufeng-bootstrap";
+const ECHARTS_VIEW_TOKEN_MARKER = "data-openclaw-echarts-view-bootstrap";
 const AUTO_TOKEN_SRC = "./assets/runtime/branding/auto-token-preboot.js";
 const LUFENG_TOKEN_SRC = "./assets/runtime/lufeng/preboot.js";
+const ECHARTS_VIEW_SRC = "./assets/runtime/echarts-view/preboot.js";
 
 function normalizeLine(line) {
   return String(line ?? "").replace(/^\uFEFF/, "").trim();
@@ -56,6 +58,10 @@ function buildBootstrapTag(marker, scriptSrc, token) {
     return "";
   }
   return `    <script src="${scriptSrc}" ${marker} data-gateway-token="${escapeHtmlAttribute(normalizedToken)}"></script>`;
+}
+
+function buildStaticBootstrapTag(marker, scriptSrc) {
+  return `    <script type="module" src="${scriptSrc}" ${marker}></script>`;
 }
 
 function replaceTaggedScript(indexHtml, marker, nextTag) {
@@ -187,12 +193,20 @@ export function resolveRuntimeEnv(rootDir, processEnv = process.env) {
 }
 
 export function syncControlUiBootstrapScripts(indexHtml, gatewayToken) {
+  const nextEchartsTag = buildStaticBootstrapTag(
+    ECHARTS_VIEW_TOKEN_MARKER,
+    ECHARTS_VIEW_SRC,
+  );
   const nextAutoTokenTag = buildBootstrapTag(AUTO_TOKEN_MARKER, AUTO_TOKEN_SRC, gatewayToken);
   const nextLufengTag = buildBootstrapTag(LUFENG_TOKEN_MARKER, LUFENG_TOKEN_SRC, gatewayToken);
   return replaceTaggedScript(
-    replaceTaggedScript(indexHtml, AUTO_TOKEN_MARKER, nextAutoTokenTag),
-    LUFENG_TOKEN_MARKER,
-    nextLufengTag,
+    replaceTaggedScript(
+      replaceTaggedScript(indexHtml, ECHARTS_VIEW_TOKEN_MARKER, nextEchartsTag),
+      LUFENG_TOKEN_MARKER,
+      nextLufengTag,
+    ),
+    AUTO_TOKEN_MARKER,
+    nextAutoTokenTag,
   );
 }
 

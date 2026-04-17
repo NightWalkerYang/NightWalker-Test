@@ -52,7 +52,16 @@ describe("package local runtime", () => {
     fs.mkdirSync(sourceDir, { recursive: true });
     fs.writeFileSync(
       path.join(sourceDir, "index.html"),
-      "<html><head></head><body>ok</body></html>\n",
+      [
+        "<html>",
+        "  <head>",
+        "  </head>",
+        "  <body>",
+        "    ok",
+        "  </body>",
+        "</html>",
+        "",
+      ].join("\n"),
       "utf8",
     );
 
@@ -82,6 +91,11 @@ describe("package local runtime", () => {
     expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "echarts.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "json5.min.js"))).toBe(true);
 
+    const indexHtml = fs.readFileSync(path.join(outputDir, "index.html"), "utf8");
+    expect(indexHtml).toContain("data-openclaw-echarts-view-bootstrap");
+    expect(indexHtml.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
+      indexHtml.indexOf("data-openclaw-lufeng-bootstrap"),
+    );
     const loginIndex = fs.readFileSync(path.join(outputDir, "login", "index.html"), "utf8");
     const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");
     expect(loginIndex).toContain('<base href="/" />');
