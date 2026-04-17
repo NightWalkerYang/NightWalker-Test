@@ -7,35 +7,12 @@ import {
 
 const VISUALIZATION_FRAME_ID = "oc-echarts-view-frame";
 
-function escapeHtmlAttribute(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function readDocumentTitle(html) {
   const match = String(html || "").match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
   if (!match) {
     return "";
   }
   return match[1].replace(/<[^>]*>/g, "").trim();
-}
-
-function injectBaseHref(html, baseHref) {
-  const normalizedBaseHref = String(baseHref || "").trim();
-  if (!normalizedBaseHref) {
-    return html;
-  }
-
-  const baseTag = `<base href="${escapeHtmlAttribute(normalizedBaseHref)}">`;
-  if (/<base\b[^>]*>/i.test(html)) {
-    return html.replace(/<base\b[^>]*>/i, baseTag);
-  }
-  if (/<head\b[^>]*>/i.test(html)) {
-    return html.replace(/<head\b[^>]*>/i, (headOpen) => `${headOpen}\n    ${baseTag}`);
-  }
-  return html;
 }
 
 function clearVisualizationHost() {
@@ -87,7 +64,7 @@ async function loadVisualizationDocument(token) {
     return null;
   }
   return {
-    html: injectBaseHref(html, result?.baseHref),
+    html,
     title: readDocumentTitle(html),
   };
 }

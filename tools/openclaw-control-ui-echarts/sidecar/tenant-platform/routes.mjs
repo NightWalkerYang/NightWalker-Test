@@ -169,6 +169,7 @@ function buildEchartsViewHref(token) {
 
 const ECHARTS_VIEW_INLINE_SCRIPT_DIR = "__openclaw_echarts_view__";
 const ECHARTS_VIEW_INLINE_SCRIPT_PREFIX = "inline-script";
+const VISUALIZATION_RESOURCE_ATTRIBUTES = new Set(["src", "href", "data", "poster"]);
 const EXECUTABLE_SCRIPT_TYPES = new Set([
   "",
   "module",
@@ -231,26 +232,6 @@ function readScriptText(node) {
     .join("");
 }
 
-function buildVisualizationScriptHref(relativePath) {
-  return `./${relativePath}`;
-}
-
-function cloneScriptAttrs(attrs, scriptHref) {
-  const cloned = [];
-  for (const attr of Array.isArray(attrs) ? attrs : []) {
-    const name = String(attr?.name || "").trim();
-    if (!name || name.toLowerCase() === "src") {
-      continue;
-    }
-    cloned.push({
-      name,
-      value: String(attr?.value || ""),
-    });
-  }
-  cloned.push({ name: "src", value: scriptHref });
-  return cloned;
-}
-
 function createVisualizationAssetSubdir(visualizationFileName) {
   const digest = crypto
     .createHash("sha256")
@@ -260,16 +241,49 @@ function createVisualizationAssetSubdir(visualizationFileName) {
   return `${ECHARTS_VIEW_INLINE_SCRIPT_DIR}-${digest}`;
 }
 
-function rewriteVisualizationInlineScripts(html, generatedScriptDir, visualizationFileName) {
+function isAbsoluteOrSpecialHref(value) {
+  return /^(?:[a-zA-Z][a-zA-Z\d+\-.]*:|\/\/|\/)/.test(value) || value.startsWith("#") || value.startsWith("?");
+}
+
+function buildWorkspaceAssetHref(workspaceBaseHref, relativePath) {
+  const normalizedBaseHref = String(workspaceBaseHref || "").trim();
+  const normalizedRelativePath = String(relativePath || "").trim();
+  if (!normalizedRelativePath) {
+    return "";
+  }
+  if (isAbsoluteOrSpecialHref(normalizedRelativePath) || !normalizedBaseHref) {
+    return normalizedRelativePath;
+  }
+  const baseUrl = new URL(normalizedBaseHref, "http://127.0.0.1");
+  const resolved = new URL(normalizedRelativePath, baseUrl);
+  return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+}
+
+function rewriteVisualizationHtml(html, workspaceBaseHref, generatedScriptDir, visualizationFileName) {
   const document = parse5.parse(String(html || ""));
-  let inlineScriptIndex = 0;
   const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
   const generatedPathRoot = path.join(generatedScriptDir, generatedSubdir);
+  const normalizedWorkspaceBaseHref = String(workspaceBaseHref || "").trim();
+  let inlineScriptIndex = 0;
+
+  const rewriteAttributes = (node) => {
+    if (!Array.isArray(node?.attrs) || node.attrs.length === 0) {
+      return;
+    }
+    for (const attr of node.attrs) {
+      const attributeName = String(attr?.name || "").trim().toLowerCase();
+      if (!VISUALIZATION_RESOURCE_ATTRIBUTES.has(attributeName)) {
+        continue;
+      }
+      attr.value = buildWorkspaceAssetHref(normalizedWorkspaceBaseHref, attr.value);
+    }
+  };
 
   const visit = (node) => {
     if (node?.content) {
       visit(node.content);
     }
+    rewriteAttributes(node);
     if (!Array.isArray(node?.childNodes) || node.childNodes.length === 0) {
       return;
     }
@@ -285,14 +299,25 @@ function rewriteVisualizationInlineScripts(html, generatedScriptDir, visualizati
         const scriptFileName = `${ECHARTS_VIEW_INLINE_SCRIPT_PREFIX}-${inlineScriptIndex + 1}-${scriptHash}.js`;
         fs.mkdirSync(generatedPathRoot, { recursive: true });
         fs.writeFileSync(path.join(generatedPathRoot, scriptFileName), scriptContent, "utf8");
-        const scriptHref = buildVisualizationScriptHref(
+        const scriptHref = buildWorkspaceAssetHref(
+          normalizedWorkspaceBaseHref,
           path.posix.join(generatedSubdir, scriptFileName),
         );
+        const nextAttrs = [];
+        for (const attr of Array.isArray(child.attrs) ? child.attrs : []) {
+          const attrName = String(attr?.name || "").trim();
+          if (!attrName || attrName.toLowerCase() === "src") {
+            continue;
+          }
+          nextAttrs.push({
+            name: attrName,
+            value: String(attr?.value || ""),
+          });
+        }
+        nextAttrs.push({ name: "src", value: scriptHref });
         node.childNodes[index] = {
-          nodeName: "script",
-          tagName: "script",
-          namespaceURI: "http://www.w3.org/1999/xhtml",
-          attrs: cloneScriptAttrs(child.attrs, scriptHref),
+          ...child,
+          attrs: nextAttrs,
           childNodes: [],
         };
         inlineScriptIndex += 1;
@@ -1178,8 +1203,10 @@ export function createTenantPlatformRouter(deps) {
       const visualizationPath = path.join(workspaceRoot, "Echarts", match.visualizationFileName);
       try {
         const html = fs.readFileSync(visualizationPath, "utf8");
-        const generatedScriptHtml = rewriteVisualizationInlineScripts(
+        const workspaceBaseHref = buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId);
+        const generatedScriptHtml = rewriteVisualizationHtml(
           html,
+          workspaceBaseHref,
           path.join(workspaceRoot, "Echarts"),
           match.visualizationFileName,
         );
@@ -1187,7 +1214,7 @@ export function createTenantPlatformRouter(deps) {
           ok: true,
           data: {
             html: generatedScriptHtml,
-            baseHref: buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId),
+            baseHref: workspaceBaseHref,
             href: buildWorkspaceAgentDownloadHref([
               "workspace-agent-downloads",
               match.derivedAgentId,

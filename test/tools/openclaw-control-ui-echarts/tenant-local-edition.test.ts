@@ -629,17 +629,29 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).toContain("销售数据");
     expect(resolveResponse.payload.data.baseHref).toMatch(/^\/workspace-agent-downloads\//);
     expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
+    expect(resolveResponse.payload.data.html).toContain(
+      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/financial_data.js`,
+    );
     expect(resolveResponse.payload.data.html).toContain("__openclaw_echarts_view__");
     expect(resolveResponse.payload.data.html).not.toContain(
       "document.getElementById('viz').textContent",
     );
+    expect(resolveResponse.payload.data.html).not.toContain('src="financial_data.js"');
 
     const generatedScriptMatch = resolveResponse.payload.data.html.match(
-      /<script\b[^>]*src="([^"]*__openclaw_echarts_view__-[^"]+)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*\/workspace-agent-downloads\/[^"]*__openclaw_echarts_view__-[^"]+)"[^>]*><\/script>/i,
     );
     expect(generatedScriptMatch).not.toBeNull();
     const generatedScriptHref = generatedScriptMatch?.[1] || "";
-    const generatedScriptPath = path.join(visualizationDir, generatedScriptHref);
+    const generatedScriptPath = path.join(
+      visualizationDir,
+      generatedScriptHref.replace(
+        new RegExp(
+          `^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+        ),
+        "",
+      ),
+    );
     expect(fs.existsSync(generatedScriptPath)).toBe(true);
     expect(fs.readFileSync(generatedScriptPath, "utf8")).toContain(
       "document.getElementById('viz').textContent",

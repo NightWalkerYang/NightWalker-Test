@@ -51,7 +51,7 @@ describe("public echarts view surface", () => {
          </head>
          <body>
            <main id="viz">
-             <img src="./chart.png" alt="chart">
+             <img src="/workspace-agent-downloads/tenant-agent-1/Echarts/chart.png" alt="chart">
            </main>
          </body>
        </html>`,
@@ -66,7 +66,10 @@ describe("public echarts view surface", () => {
     expect(document.title).toBe("销售数据可视化");
     const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
     expect(frame).not.toBeNull();
-    expect(frame?.getAttribute("srcdoc")).toContain(`<base href="${baseHref}">`);
+    expect(frame?.getAttribute("srcdoc")).not.toContain("<base href=");
+    expect(frame?.getAttribute("srcdoc")).toContain(
+      '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/chart.png" alt="chart">',
+    );
     expect(frame?.getAttribute("srcdoc")).toContain("<main id=\"viz\">");
     expect(document.body.textContent).not.toContain("native content");
     expect(document.body.textContent).not.toContain("可视化展示");
