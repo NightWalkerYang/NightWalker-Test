@@ -23,25 +23,40 @@ function safeSessionStorage() {
   }
 }
 
+function safeLocalStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function writeEchartsViewToken(token) {
   const normalized = String(token || "").trim();
-  const storage = safeSessionStorage();
-  if (!storage) {
+  const storages = [safeSessionStorage(), safeLocalStorage()].filter(Boolean);
+  if (!storages.length) {
     return;
   }
-  if (!normalized) {
-    storage.removeItem(ECHARTS_VIEW_TOKEN_STORAGE_KEY);
-    return;
+  for (const storage of storages) {
+    if (!normalized) {
+      storage.removeItem(ECHARTS_VIEW_TOKEN_STORAGE_KEY);
+      continue;
+    }
+    storage.setItem(ECHARTS_VIEW_TOKEN_STORAGE_KEY, normalized);
   }
-  storage.setItem(ECHARTS_VIEW_TOKEN_STORAGE_KEY, normalized);
 }
 
 function readStoredEchartsViewToken() {
-  const storage = safeSessionStorage();
-  if (!storage) {
-    return "";
+  for (const storage of [safeSessionStorage(), safeLocalStorage()]) {
+    if (!storage) {
+      continue;
+    }
+    const token = storage.getItem(ECHARTS_VIEW_TOKEN_STORAGE_KEY)?.trim() || "";
+    if (token) {
+      return token;
+    }
   }
-  return storage.getItem(ECHARTS_VIEW_TOKEN_STORAGE_KEY)?.trim() || "";
+  return "";
 }
 
 export function normalizeEchartsViewPathname(pathname = window.location.pathname) {

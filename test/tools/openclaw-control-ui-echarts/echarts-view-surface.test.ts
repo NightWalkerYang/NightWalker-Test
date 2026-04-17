@@ -3,7 +3,6 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { writeEchartsViewToken } from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js";
 import { bootEchartsViewSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js";
 
 function stubVisualizationResolve(html, baseHref) {
@@ -75,7 +74,11 @@ describe("public echarts view surface", () => {
 
   it("falls back to the stored token when the public route opens without a query token", async () => {
     const baseHref = "/workspace-agent-downloads/tenant-agent-1/Echarts/";
-    writeEchartsViewToken("member-visualization-token");
+    window.sessionStorage.clear();
+    window.localStorage.setItem(
+      "openclaw:tenant-platform:echarts-view-token:v1",
+      "member-visualization-token",
+    );
     window.history.replaceState({}, "", "/echarts-view");
     stubVisualizationResolve(
       `<!doctype html><html><head><title>财务报表可视化</title></head><body><main id="viz">fallback</main></body></html>`,
