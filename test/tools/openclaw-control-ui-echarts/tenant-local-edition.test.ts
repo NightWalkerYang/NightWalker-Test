@@ -596,7 +596,8 @@ describe("tenant platform local edition", () => {
     expect(listResponse.status).toBe(200);
     expect(listResponse.payload.data).toHaveLength(1);
     expect(listResponse.payload.data[0].visualizationName).toBe("销售数据可视化");
-    expect(listResponse.payload.data[0].href).toContain("/echarts-view?token=");
+    expect(listResponse.payload.data[0].href).toMatch(/^\/echarts-view\?token=/);
+    expect(listResponse.payload.data[0].href).not.toMatch(/^https?:\/\//);
 
     const resolveResponse = await requestJson(
       baseUrl,
@@ -604,11 +605,13 @@ describe("tenant platform local edition", () => {
     );
     expect(resolveResponse.status).toBe(200);
     expect(resolveResponse.payload.data.visualizationName).toBe("销售数据可视化");
-    expect(resolveResponse.payload.data.href).toContain(
-      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+    expect(resolveResponse.payload.data.href).toMatch(
+      new RegExp(`^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`),
     );
+    expect(resolveResponse.payload.data.href).not.toMatch(/^https?:\/\//);
     expect(resolveResponse.payload.data.html).toContain("销售数据");
-    expect(resolveResponse.payload.data.baseHref).toContain("/workspace-agent-downloads/");
+    expect(resolveResponse.payload.data.baseHref).toMatch(/^\/workspace-agent-downloads\//);
+    expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
   });
 
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {

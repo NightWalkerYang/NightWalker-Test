@@ -32,8 +32,7 @@ afterEach(() => {
 
 describe("public echarts view surface", () => {
   it("loads workspace html into the public route and normalizes the alias path", async () => {
-    const baseHref =
-      "https://www.hailstone.cn:18789/workspace-agent-downloads/tenant-agent-1/Echarts/";
+    const baseHref = "/workspace-agent-downloads/tenant-agent-1/Echarts/";
     window.history.replaceState(
       {},
       "",

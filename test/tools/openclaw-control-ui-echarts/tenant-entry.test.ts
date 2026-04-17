@@ -198,7 +198,7 @@ describe("zero-intrusive tenant entry", () => {
     stubVisualizationFetch([
       {
         id: "tenant-agent-1:销售数据可视化_index.html",
-        href: "https://www.hailstone.cn:18789/echarts-view?token=member-visualization-token",
+        href: "/echarts-view?token=member-visualization-token",
         agentId: "tenant-agent-1",
         agentName: "苏博泰克财务分析助手",
         visualizationName: "销售数据可视化",
@@ -273,7 +273,7 @@ describe("zero-intrusive tenant entry", () => {
     stubVisualizationFetch([
       {
         id: "tenant-agent-1:销售数据可视化_index.html",
-        href: "https://www.hailstone.cn:18789/echarts-view?token=member-visualization-token",
+        href: "/echarts-view?token=member-visualization-token",
         agentId: "tenant-agent-1",
         agentName: "苏博泰克财务分析助手",
         visualizationName: "销售数据可视化",

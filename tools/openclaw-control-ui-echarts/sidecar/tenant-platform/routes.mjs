@@ -161,22 +161,20 @@ function readVisualizationToken(value) {
   return String(value || "").trim();
 }
 
-function buildEchartsViewHref(origin, token) {
-  const url = new URL("/echarts-view", origin);
-  url.searchParams.set("token", token);
-  return url.href;
+function buildEchartsViewHref(token) {
+  return `/echarts-view?token=${encodeURIComponent(token)}`;
 }
 
-function buildWorkspaceAgentDownloadHref(origin, segments) {
+function buildWorkspaceAgentDownloadHref(segments) {
   const pathname = Array.isArray(segments) ? segments : [];
   const encoded = pathname
     .map((segment) => encodeURIComponent(String(segment || "").trim()))
     .join("/");
-  return new URL(`/${encoded}`, origin).href;
+  return `/${encoded}`;
 }
 
-function buildWorkspaceAgentDownloadBaseHref(origin, derivedAgentId) {
-  return buildWorkspaceAgentDownloadHref(origin, [
+function buildWorkspaceAgentDownloadBaseHref(derivedAgentId) {
+  return buildWorkspaceAgentDownloadHref([
     "workspace-agent-downloads",
     derivedAgentId,
     "Echarts",
@@ -991,7 +989,7 @@ export function createTenantPlatformRouter(deps) {
           visualizationName: item.visualizationName,
           title,
           token,
-          href: buildEchartsViewHref(url.origin, token),
+          href: buildEchartsViewHref(token),
         };
       });
       sendJson(request, response, 200, {
@@ -1042,8 +1040,8 @@ export function createTenantPlatformRouter(deps) {
           ok: true,
           data: {
             html,
-            baseHref: buildWorkspaceAgentDownloadBaseHref(url.origin, match.derivedAgentId),
-            href: buildWorkspaceAgentDownloadHref(url.origin, [
+            baseHref: buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId),
+            href: buildWorkspaceAgentDownloadHref([
               "workspace-agent-downloads",
               match.derivedAgentId,
               "Echarts",
