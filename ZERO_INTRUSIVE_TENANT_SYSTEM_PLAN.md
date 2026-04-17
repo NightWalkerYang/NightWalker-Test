@@ -1516,11 +1516,13 @@
   - 说明文件覆盖启动、授权、公钥放置、续期与到期行为
 - 当前已补充可直接填写的本地模板：
   - `runtime.env.example` 已补充模型凭证占位项
-  - `openclaw.local.example.json5` 已补充最小默认模型结构
+  - `openclaw.local.example.json5` 已补充可移植基线配置
   - 客户现场人员可以直接按模板替换实际 provider 和 model
+  - 基线会保留模型、工具、默认 Agent 和基础策略，同时排除 auth profiles、已创建 Agent、已保存 API key 等运行态数据
 - 当前运行包默认已直接附带：
   - `runtime.env`
   - `data/.openclaw/openclaw.json`
+- direct-docker setup 现在会把这份可移植基线同步进现有 `openclaw.json`，再单独补 `gateway.controlUi.root`
 - 当前默认 `OPENCLAW_GATEWAY_BIND=loopback`，本机开箱即可启动，不需要额外配置 Control UI origin
 - 即使客户误删 `data/.openclaw/openclaw.json`，启动准备层也会按包内模板自动补回
 - 当前已补齐非 Docker 运行包兼容层：

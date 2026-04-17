@@ -28,7 +28,9 @@
 - `runtime.env.example`
   - 本地运行包环境变量模板
 - `openclaw.local.example.json5`
-  - OpenClaw 配置示例
+  - 可移植的 OpenClaw 基线配置示例
+  - 保留模型、工具、默认 Agent 和基础策略
+  - 不包含 auth profiles、已创建 Agent、已保存 API key、node pairing 等运行态数据
 - `README-customer-deploy.md`
   - 面向客户现场实施人员的部署说明
 - `data/`
@@ -64,6 +66,7 @@
 - `data/.openclaw/openclaw.json`
   - 至少确认 `agents.defaults.model.primary`
   - 让它和你上面实际提供的模型提供商一致
+  - 如果你是从现有环境导出模板，优先保留这份基线里的模型和工具策略，再按机器实际路径微调
 
 ## 单独启动
 
@@ -94,3 +97,5 @@
   - 同步 Gateway token 到 Control UI 预启动脚本
   - 将 `workspace-downloads` 和 `workspace-agent-downloads` 指向本地数据目录
 - 因为这是**运行包**，不是源码仓库，交付时只需要打包生成目录，不需要额外交付 Git 历史
+- 如果你想把现有环境的 `openclaw.json` 重新整理成这份可移植基线，可以用 `portable-config.mjs` 重新导出，再覆盖 `openclaw.local.example.json5`
+  - 例如：`node tools/openclaw-control-ui-echarts/local-runtime/portable-config.mjs --source ~/.openclaw/openclaw.json --emit example --write tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5`

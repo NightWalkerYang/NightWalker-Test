@@ -8,6 +8,12 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 const buildScriptPath = path.join(here, "build-custom-control-ui.mjs");
+const portableConfigScriptPath = path.join(here, "local-runtime", "portable-config.mjs");
+const portableConfigSourcePath = path.join(
+  here,
+  "local-runtime",
+  "openclaw.local.example.json5",
+);
 const overridePath = path.join(repoRoot, "docker-compose.override.yml");
 const envFilePath = path.join(repoRoot, ".env");
 
@@ -194,9 +200,89 @@ function syncGatewayControlUiRoot() {
   return true;
 }
 
+function syncPortableBaselineConfig() {
+  const check = spawnSync("docker", ["compose", "config"], {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+  if (check.status !== 0) {
+    process.stderr.write(
+      "WARN: docker compose is not available in repo root; skip syncing portable baseline config.\n",
+    );
+    return false;
+  }
+
+  const batchResult = spawnSync(
+    process.execPath,
+    [
+      portableConfigScriptPath,
+      "--source",
+      portableConfigSourcePath,
+      "--emit",
+      "batch",
+    ],
+    {
+      cwd: repoRoot,
+      stdio: "pipe",
+      encoding: "utf8",
+    },
+  );
+  if (batchResult.status !== 0) {
+    process.stderr.write(
+      [
+        `WARN: failed to derive portable baseline config from ${portableConfigSourcePath}; skip syncing.`,
+        batchResult.stderr?.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n") + "\n",
+    );
+    return false;
+  }
+
+  const batchJson = (batchResult.stdout || "").trim();
+  if (!batchJson) {
+    return false;
+  }
+
+  const result = spawnSync(
+    "docker",
+    [
+      "compose",
+      "run",
+      "--rm",
+      "--no-deps",
+      "openclaw-cli",
+      "config",
+      "set",
+      "--batch-json",
+      batchJson,
+    ],
+    {
+      cwd: repoRoot,
+      stdio: "pipe",
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0) {
+    process.stderr.write(
+      [
+        "WARN: failed to sync portable baseline config automatically; run this manually:",
+        "  docker compose run --rm --no-deps openclaw-cli config set --batch-json '<portable batch JSON>'",
+        result.stderr?.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n") + "\n",
+    );
+    return false;
+  }
+  process.stdout.write("Synced portable baseline config from openclaw.local.example.json5\n");
+  return true;
+}
+
 function main() {
   buildCustomControlUi();
   const extraMounts = writeRootOverride();
+  syncPortableBaselineConfig();
   syncGatewayControlUiRoot();
 
   process.stdout.write(

@@ -37,6 +37,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/local-runtime/CUSTOMER_DEPLOYMENT_GUIDE.md`
 - `tools/openclaw-control-ui-echarts/local-runtime/README.md`
 - `tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5`
+- `tools/openclaw-control-ui-echarts/local-runtime/portable-config.mjs`
 - `tools/openclaw-control-ui-echarts/local-runtime/runtime-common.mjs`
 - `tools/openclaw-control-ui-echarts/local-runtime/runtime.env.example`
 - `tools/openclaw-control-ui-echarts/local-runtime/start-gateway.mjs`
@@ -164,6 +165,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/lufeng-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/local-runtime-common.test.ts`
+- `test/tools/openclaw-control-ui-echarts/portable-config.test.ts`
 - `test/tools/openclaw-control-ui-echarts/member-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/feedback-toast.test.ts`
 - `test/tools/openclaw-control-ui-echarts/member-chat-surface.test.ts`
@@ -232,9 +234,10 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, trims the sidebar down to the native chat section only, hides assistant avatars (including branded `SPTC` logo avatars), and locks the model/session controls.
 - A non-Docker local runtime package can now be staged with prebuilt gateway assets, the tenant sidecar, launch scripts, runtime env templates, and local-license bootstrap wiring.
 - The non-Docker local runtime package now includes a customer-facing deployment guide alongside the operator/runtime templates.
-- The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a minimal default model setup.
+- The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a portable baseline config seeded from the real deployment shape.
 - The non-Docker local runtime packager now vendors missing runtime-only packages, patches `file-type/core.js` compatibility inside the packaged runtime, and seeds a default `loopback` gateway bind so the packaged local edition boots without extra Control UI origin setup.
 - The non-Docker local runtime package now seeds an active `runtime.env` plus `data/.openclaw/openclaw.json` into the output, trims the starter config so it no longer emits missing-`OPENAI_API_KEY` warnings by default, and recreates the config from the bundled template if a customer deletes it.
+- The direct-docker setup helpers now sync the same portable baseline config into existing `openclaw.json` files without touching runtime-only state, then continue to sync `gateway.controlUi.root` for the generated Control UI.
 - Local edition bootstrap now bypasses platform-admin setup entirely: the first local login initializes a single local tenant admin, members continue to use the tenant login entry, and native root access redirects to the tenant flow instead of the platform-admin flow.
 - Unified `/login` now validates cached sessions before auto-redirect and logout clears both platform/tenant local sessions to prevent login-control redirect loops.
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.

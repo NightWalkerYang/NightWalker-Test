@@ -241,7 +241,7 @@ The staged package includes:
 - a preinstalled OpenClaw runtime under `runtime/`
 - tenant sidecar code under the packaged runtime tree
 - `runtime.env.example`
-- `openclaw.local.example.json5`
+- `openclaw.local.example.json5` (portable baseline config, not a full state export)
 - `start-gateway`
 - `start-tenant-platform`
 - `start-local-runtime`
@@ -252,6 +252,8 @@ The local runtime scripts automatically:
 - update the shared gateway token used by the zero-intrusive bootstrap scripts
 - point `workspace-downloads` at the local workspace directory
 - point `workspace-agent-downloads` at the local `workspace-agents` directory
+
+The direct-docker setup helper also syncs the portable baseline config into the mounted `openclaw.json` first, then applies the generated Control UI root override separately so runtime state stays intact.
 
 This path is intended for the local authorized edition:
 

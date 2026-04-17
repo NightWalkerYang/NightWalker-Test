@@ -7,6 +7,8 @@ OUTPUT_DIR="$TOOL_DIR/generated/control-ui"
 CONTROL_UI_RUNTIME_SCRIPT="$TOOL_DIR/openclaw-echarts-renderer.js"
 CONTROL_UI_RUNTIME_MODULE_DIR="$TOOL_DIR/runtime"
 CONTROL_UI_STATIC_DIR="$TOOL_DIR/static"
+PORTABLE_CONFIG_SCRIPT="$TOOL_DIR/local-runtime/portable-config.mjs"
+PORTABLE_CONFIG_SOURCE="$TOOL_DIR/local-runtime/openclaw.local.example.json5"
 OFFLINE_BUNDLED_USERSCRIPT="$ROOT_DIR/tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js"
 OVERRIDE_PATH="$ROOT_DIR/docker-compose.override.yml"
 ENV_FILE="$ROOT_DIR/.env"
@@ -361,6 +363,37 @@ sync_gateway_control_ui_root() {
   fi
 }
 
+sync_portable_baseline_config() {
+  if ! command -v node >/dev/null 2>&1; then
+    printf '%s\n' "WARN: node not found; skip syncing portable baseline config." >&2
+    return 0
+  fi
+  if ! (cd "$ROOT_DIR" && docker compose config >/dev/null 2>&1); then
+    printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing portable baseline config." >&2
+    return 0
+  fi
+
+  local batch_json=""
+  if ! batch_json="$(
+    node "$PORTABLE_CONFIG_SCRIPT" \
+      --source "$PORTABLE_CONFIG_SOURCE" \
+      --emit batch
+  )"; then
+    printf '%s\n' "WARN: failed to derive portable baseline config from $PORTABLE_CONFIG_SOURCE; skip syncing." >&2
+    return 0
+  fi
+
+  batch_json="$(trim_whitespace "$batch_json")"
+  [[ -n "$batch_json" ]] || return 0
+
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps openclaw-cli config set --batch-json "$batch_json" >/dev/null 2>&1; then
+    printf '%s\n' "Synced portable baseline config from openclaw.local.example.json5"
+  else
+    printf '%s\n' "WARN: failed to sync portable baseline config automatically; run this manually:" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps openclaw-cli config set --batch-json '<portable batch JSON>'" >&2
+  fi
+}
+
 inject_runtime_script() {
   local index_path="$1"
   local temp_index="$index_path.tmp"
@@ -628,6 +661,7 @@ main() {
   create_echarts_view_route_entry "$OUTPUT_DIR"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
+  sync_portable_baseline_config
   sync_gateway_control_ui_root
 
   printf '%s\n' "Custom Control UI root written to: $OUTPUT_DIR"

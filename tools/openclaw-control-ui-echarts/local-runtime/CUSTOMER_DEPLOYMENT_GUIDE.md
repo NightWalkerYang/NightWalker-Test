@@ -90,6 +90,23 @@ data/.openclaw/openclaw.json
 - coding plan 配置
 - Agent 配置
 
+这份模板是“可移植基线”，默认不会包含：
+
+- auth profiles / 保存的 API key
+- 已创建 Agent
+- node pairing
+- workspace 或其他机器专属路径
+
+如果你需要从现有环境重新导出这份基线，可以先用 `portable-config.mjs` 生成，再覆盖 `openclaw.local.example.json5`。
+例如：
+
+```bash
+node tools/openclaw-control-ui-echarts/local-runtime/portable-config.mjs \
+  --source ~/.openclaw/openclaw.json \
+  --emit example \
+  --write tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5
+```
+
 ## 四、准备授权文件
 
 本地版不走在线支付，使用授权文件控制有效期。
