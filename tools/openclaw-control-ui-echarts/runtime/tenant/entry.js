@@ -27,6 +27,7 @@ import {
   readSessionForCurrentView,
   readTenantView,
 } from "./tenant-context.js";
+import { writeEchartsViewToken } from "../echarts-view/context.js";
 
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
@@ -396,6 +397,10 @@ function ensureManagementSectionHandlers(section) {
     }
     if (!link.closest(NAV_SECTION_SELECTOR)) {
       return;
+    }
+    const destination = new URL(link.href, document.baseURI);
+    if (destination.pathname === "/echarts-view") {
+      writeEchartsViewToken(destination.searchParams.get("token") || "");
     }
     event.preventDefault();
     navigateTenantRoute(link.href);

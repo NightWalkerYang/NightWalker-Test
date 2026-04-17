@@ -3,6 +3,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { writeEchartsViewToken } from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js";
 import { bootEchartsViewSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js";
 
 function stubVisualizationResolve(html, baseHref) {
@@ -70,5 +71,23 @@ describe("public echarts view surface", () => {
     expect(frame?.getAttribute("srcdoc")).toContain("<main id=\"viz\">");
     expect(document.body.textContent).not.toContain("native content");
     expect(document.body.textContent).not.toContain("可视化展示");
+  });
+
+  it("falls back to the stored token when the public route opens without a query token", async () => {
+    const baseHref = "/workspace-agent-downloads/tenant-agent-1/Echarts/";
+    writeEchartsViewToken("member-visualization-token");
+    window.history.replaceState({}, "", "/echarts-view");
+    stubVisualizationResolve(
+      `<!doctype html><html><head><title>财务报表可视化</title></head><body><main id="viz">fallback</main></body></html>`,
+      baseHref,
+    );
+
+    await bootEchartsViewSurface();
+    await Promise.resolve();
+
+    expect(window.location.pathname).toBe("/echarts-view");
+    expect(window.location.search).toContain("token=member-visualization-token");
+    expect(document.title).toBe("财务报表可视化");
+    expect(document.querySelector(`iframe#oc-echarts-view-frame`)).not.toBeNull();
   });
 });

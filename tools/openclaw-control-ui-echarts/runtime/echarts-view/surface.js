@@ -63,6 +63,19 @@ function normalizeEchartsViewLocation() {
   }
 }
 
+function normalizeEchartsViewTokenLocation(token) {
+  const normalizedToken = String(token || "").trim();
+  if (!normalizedToken) {
+    return;
+  }
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("token") === normalizedToken) {
+    return;
+  }
+  url.searchParams.set("token", normalizedToken);
+  window.history.replaceState({}, "", url.toString());
+}
+
 async function loadVisualizationDocument(token) {
   if (!token) {
     return null;
@@ -116,6 +129,7 @@ export async function bootEchartsViewSurface() {
     if (!visualizationDocument) {
       return null;
     }
+    normalizeEchartsViewTokenLocation(token);
     if (visualizationDocument.title) {
       document.title = visualizationDocument.title;
     }
