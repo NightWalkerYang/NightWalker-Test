@@ -518,7 +518,7 @@ describe("tenant platform local edition", () => {
     expect(memberAgents.payload.data).toHaveLength(2);
   });
 
-  it("lists current member visualizations and resolves them to workspace html", async () => {
+  it("lists current member visualizations and externalizes inline scripts into workspace assets", async () => {
     const sandbox = createSandbox();
     const { baseUrl, db } = await startSandboxServer(sandbox);
 
@@ -577,7 +577,22 @@ describe("tenant platform local edition", () => {
     fs.mkdirSync(visualizationDir, { recursive: true });
     fs.writeFileSync(
       path.join(visualizationDir, "销售数据可视化_index.html"),
-      "<!doctype html><html><head><title>销售数据</title></head><body><main id=\"viz\">销售数据</main></body></html>",
+      [
+        "<!doctype html>",
+        "<html>",
+        "  <head>",
+        "    <title>销售数据</title>",
+        '    <script src="/assets/vendor/echarts.min.js"></script>',
+        '    <script src="financial_data.js"></script>',
+        "  </head>",
+        "  <body>",
+        '    <main id="viz"></main>',
+        "    <script>",
+        "      document.getElementById('viz').textContent = '销售数据';",
+        "    </script>",
+        "  </body>",
+        "</html>",
+      ].join("\n"),
       "utf8",
     );
 
@@ -596,7 +611,7 @@ describe("tenant platform local edition", () => {
     expect(listResponse.status).toBe(200);
     expect(listResponse.payload.data).toHaveLength(1);
     expect(listResponse.payload.data[0].visualizationName).toBe("销售数据可视化");
-    expect(listResponse.payload.data[0].href).toMatch(/^\/echarts-view\?token=/);
+    expect(listResponse.payload.data[0].href).toMatch(/^\/echarts-view\/\?token=/);
     expect(listResponse.payload.data[0].href).not.toMatch(/^https?:\/\//);
 
     const resolveResponse = await requestJson(
@@ -606,12 +621,29 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.status).toBe(200);
     expect(resolveResponse.payload.data.visualizationName).toBe("销售数据可视化");
     expect(resolveResponse.payload.data.href).toMatch(
-      new RegExp(`^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`),
+      new RegExp(
+        `^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+      ),
     );
     expect(resolveResponse.payload.data.href).not.toMatch(/^https?:\/\//);
     expect(resolveResponse.payload.data.html).toContain("销售数据");
     expect(resolveResponse.payload.data.baseHref).toMatch(/^\/workspace-agent-downloads\//);
     expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
+    expect(resolveResponse.payload.data.html).toContain("__openclaw_echarts_view__");
+    expect(resolveResponse.payload.data.html).not.toContain(
+      "document.getElementById('viz').textContent",
+    );
+
+    const generatedScriptMatch = resolveResponse.payload.data.html.match(
+      /<script\b[^>]*src="([^"]*__openclaw_echarts_view__-[^"]+)"[^>]*><\/script>/i,
+    );
+    expect(generatedScriptMatch).not.toBeNull();
+    const generatedScriptHref = generatedScriptMatch?.[1] || "";
+    const generatedScriptPath = path.join(visualizationDir, generatedScriptHref);
+    expect(fs.existsSync(generatedScriptPath)).toBe(true);
+    expect(fs.readFileSync(generatedScriptPath, "utf8")).toContain(
+      "document.getElementById('viz').textContent",
+    );
   });
 
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {

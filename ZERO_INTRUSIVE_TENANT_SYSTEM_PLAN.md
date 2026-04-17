@@ -167,9 +167,11 @@
 
 ### 4.1 可视化展示公共页
 
-租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view/?token=...`，该路由由独立静态入口页承载，页面本身只负责加载可视化桥接脚本并通过签名 token 请求对应 workspace HTML，再将其挂载到全页 iframe 中，避免外层控制台壳干扰可视化脚本；同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
+租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view/?token=...`，该路由由独立静态入口页承载，页面本身只负责加载可视化桥接脚本并通过签名 token 请求对应 workspace HTML，再将其挂载到全页 iframe 中；在装载前，服务端会把 workspace HTML 里的内联 `<script>` 外提成同源的生成脚本文件（放到对应 Agent 的 `Echarts/__openclaw_echarts_view__/...` 下），从而绕开 `srcdoc` 对内联脚本的 CSP 限制，避免外层控制台壳干扰可视化脚本。同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
 
 `/echarts-view/` 的独立入口页必须落在 `echarts-view/index.html`，这样控制台网关会直接返回这份静态页而不是回落到主壳；`/echarts-view` 这个旧式裸路径仍可以作为兼容性别名继续保留在路由归一化里，但分享链接和成员菜单都应统一使用带 trailing slash 的 token 化链接。
+
+大屏可视化 HTML 自身需要直接引用同源静态资产里的 ECharts，不允许再写 `https://cdn.jsdelivr.net/npm/echarts...` 这类外链。服务器当前可用的公开路径是 `/assets/vendor/echarts.min.js`，其落盘位置对应 `tools/openclaw-control-ui-echarts/generated/control-ui/assets/vendor/echarts.min.js`；如需兼容旧产物，也可以回退到 `/assets/runtime/echarts/echarts.min.js`。生成出的 HTML 只应告知用户“已生成什么可视化内容，并可在侧边栏 `可视化展示` 中查看”，不要暴露文件名。
 
 当前要求：
 

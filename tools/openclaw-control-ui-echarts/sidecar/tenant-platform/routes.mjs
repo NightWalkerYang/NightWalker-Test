@@ -1,5 +1,7 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import * as parse5 from "parse5";
 import { issueSessionToken, readSessionToken, verifyPassword } from "./auth.mjs";
 import {
   createBootstrapLocalTenantAdmin,
@@ -163,6 +165,145 @@ function readVisualizationToken(value) {
 
 function buildEchartsViewHref(token) {
   return `/echarts-view/?token=${encodeURIComponent(token)}`;
+}
+
+const ECHARTS_VIEW_INLINE_SCRIPT_DIR = "__openclaw_echarts_view__";
+const ECHARTS_VIEW_INLINE_SCRIPT_PREFIX = "inline-script";
+const EXECUTABLE_SCRIPT_TYPES = new Set([
+  "",
+  "module",
+  "text/javascript",
+  "application/javascript",
+  "text/ecmascript",
+  "application/ecmascript",
+  "text/jscript",
+  "application/x-javascript",
+]);
+
+function readAttributeValue(node, attributeName) {
+  const match = node?.attrs?.find(
+    (attribute) =>
+      String(attribute?.name || "")
+        .trim()
+        .toLowerCase() === attributeName,
+  );
+  return String(match?.value || "");
+}
+
+function isExecutableScriptType(scriptType) {
+  return EXECUTABLE_SCRIPT_TYPES.has(
+    String(scriptType || "")
+      .trim()
+      .toLowerCase(),
+  );
+}
+
+function isExecutableInlineScript(node) {
+  if (
+    !node ||
+    String(node.tagName || "")
+      .trim()
+      .toLowerCase() !== "script"
+  ) {
+    return false;
+  }
+  if (readAttributeValue(node, "src")) {
+    return false;
+  }
+  return isExecutableScriptType(readAttributeValue(node, "type"));
+}
+
+function readScriptText(node) {
+  if (!Array.isArray(node?.childNodes) || node.childNodes.length === 0) {
+    return "";
+  }
+  return node.childNodes
+    .map((child) => {
+      if (
+        String(child?.nodeName || "")
+          .trim()
+          .toLowerCase() === "#text"
+      ) {
+        return String(child.value || "");
+      }
+      return readScriptText(child);
+    })
+    .join("");
+}
+
+function buildVisualizationScriptHref(relativePath) {
+  return `./${relativePath}`;
+}
+
+function cloneScriptAttrs(attrs, scriptHref) {
+  const cloned = [];
+  for (const attr of Array.isArray(attrs) ? attrs : []) {
+    const name = String(attr?.name || "").trim();
+    if (!name || name.toLowerCase() === "src") {
+      continue;
+    }
+    cloned.push({
+      name,
+      value: String(attr?.value || ""),
+    });
+  }
+  cloned.push({ name: "src", value: scriptHref });
+  return cloned;
+}
+
+function createVisualizationAssetSubdir(visualizationFileName) {
+  const digest = crypto
+    .createHash("sha256")
+    .update(String(visualizationFileName || ""), "utf8")
+    .digest("hex")
+    .slice(0, 12);
+  return `${ECHARTS_VIEW_INLINE_SCRIPT_DIR}-${digest}`;
+}
+
+function rewriteVisualizationInlineScripts(html, generatedScriptDir, visualizationFileName) {
+  const document = parse5.parse(String(html || ""));
+  let inlineScriptIndex = 0;
+  const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
+  const generatedPathRoot = path.join(generatedScriptDir, generatedSubdir);
+
+  const visit = (node) => {
+    if (node?.content) {
+      visit(node.content);
+    }
+    if (!Array.isArray(node?.childNodes) || node.childNodes.length === 0) {
+      return;
+    }
+    for (let index = 0; index < node.childNodes.length; index += 1) {
+      const child = node.childNodes[index];
+      if (isExecutableInlineScript(child)) {
+        const scriptContent = readScriptText(child).replace(/\r\n?/g, "\n");
+        const scriptHash = crypto
+          .createHash("sha256")
+          .update(scriptContent, "utf8")
+          .digest("hex")
+          .slice(0, 12);
+        const scriptFileName = `${ECHARTS_VIEW_INLINE_SCRIPT_PREFIX}-${inlineScriptIndex + 1}-${scriptHash}.js`;
+        fs.mkdirSync(generatedPathRoot, { recursive: true });
+        fs.writeFileSync(path.join(generatedPathRoot, scriptFileName), scriptContent, "utf8");
+        const scriptHref = buildVisualizationScriptHref(
+          path.posix.join(generatedSubdir, scriptFileName),
+        );
+        node.childNodes[index] = {
+          nodeName: "script",
+          tagName: "script",
+          namespaceURI: "http://www.w3.org/1999/xhtml",
+          attrs: cloneScriptAttrs(child.attrs, scriptHref),
+          childNodes: [],
+        };
+        inlineScriptIndex += 1;
+        continue;
+      }
+      visit(child);
+    }
+  };
+
+  visit(document);
+  return parse5.serialize(document);
 }
 
 function buildWorkspaceAgentDownloadHref(segments) {
@@ -1029,17 +1170,23 @@ export function createTenantPlatformRouter(deps) {
         sendJson(request, response, 404, { ok: false, error: "visualization_not_found" });
         return;
       }
-      const visualizationPath = path.join(
-        String(match.derivedWorkspaceDir || "").trim(),
-        "Echarts",
-        match.visualizationFileName,
-      );
+      const workspaceRoot = String(match.derivedWorkspaceDir || "").trim();
+      if (!workspaceRoot) {
+        sendJson(request, response, 404, { ok: false, error: "visualization_not_found" });
+        return;
+      }
+      const visualizationPath = path.join(workspaceRoot, "Echarts", match.visualizationFileName);
       try {
         const html = fs.readFileSync(visualizationPath, "utf8");
+        const generatedScriptHtml = rewriteVisualizationInlineScripts(
+          html,
+          path.join(workspaceRoot, "Echarts"),
+          match.visualizationFileName,
+        );
         sendJson(request, response, 200, {
           ok: true,
           data: {
-            html,
+            html: generatedScriptHtml,
             baseHref: buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId),
             href: buildWorkspaceAgentDownloadHref([
               "workspace-agent-downloads",
