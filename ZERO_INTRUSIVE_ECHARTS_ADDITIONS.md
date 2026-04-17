@@ -202,7 +202,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap that mirrors the gateway token into both the route scope and the root scope so public routes can reuse existing stored settings.
 - CSP-sensitive preboot behavior now uses same-origin external scripts instead of inline bootstrap blocks.
-- The public `/echarts-view` bridge now also injects an early same-origin preboot script that pins the Control UI base path before the main shell bundle boots, so the browser does not fall back to `/echarts-view/__openclaw/control-ui-config.json` during route entry.
+- The public `/echarts-view` bridge now also injects an early same-origin preboot script before the main shell bundle boots, pinning the Control UI base path ahead of the native app bootstrap so the browser does not fall back to `/echarts-view/__openclaw/control-ui-config.json` during route entry.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
 - The tenant platform sidecar now supports a local-edition license file, signature verification, renewal-code application, and read-only enforcement after expiry.

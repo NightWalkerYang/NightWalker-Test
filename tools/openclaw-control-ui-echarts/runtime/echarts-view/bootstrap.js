@@ -4,6 +4,12 @@ import {
 } from "./context.js";
 
 const ECHARTS_VIEW_BOOTSTRAP_MARKER = "data-openclaw-echarts-view-bootstrap";
+const MAIN_BUNDLE_PATTERN =
+  /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
+const ECHARTS_VIEW_BOOTSTRAP_PATTERN = new RegExp(
+  `^\\s*<script[^>]*${ECHARTS_VIEW_BOOTSTRAP_MARKER}[^>]*><\\/script>\\s*$`,
+  "gm",
+);
 
 function patchPublicRouteHistory() {
   if (window.__OPENCLAW_ECHARTS_VIEW_HISTORY_PATCHED__) {
@@ -26,6 +32,20 @@ function patchPublicRouteHistory() {
   window.history.replaceState = wrap(originalReplaceState);
   window.history.pushState = wrap(originalPushState);
   window.__OPENCLAW_ECHARTS_VIEW_HISTORY_PATCHED__ = true;
+}
+
+function injectBeforeMainBundle(indexHtml, nextTag) {
+  const cleaned = indexHtml.replace(ECHARTS_VIEW_BOOTSTRAP_PATTERN, "");
+  if (!nextTag) {
+    return cleaned;
+  }
+  if (MAIN_BUNDLE_PATTERN.test(cleaned)) {
+    return cleaned.replace(MAIN_BUNDLE_PATTERN, `${nextTag}\n$&`);
+  }
+  if (!cleaned.includes("</head>")) {
+    throw new Error("index.html is missing </head>; cannot inject the ECharts view bootstrap.");
+  }
+  return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
 }
 
 export function applyEchartsViewPublicBootstrap() {
@@ -60,11 +80,5 @@ export function buildEchartsViewPublicBootstrapTag() {
 }
 
 export function injectEchartsViewPublicBootstrap(indexHtml) {
-  if (indexHtml.includes(ECHARTS_VIEW_BOOTSTRAP_MARKER)) {
-    return indexHtml;
-  }
-  if (!indexHtml.includes("</head>")) {
-    throw new Error("index.html is missing </head>; cannot inject the ECharts view bootstrap.");
-  }
-  return indexHtml.replace("  </head>", `${buildEchartsViewPublicBootstrapTag()}\n  </head>`);
+  return injectBeforeMainBundle(indexHtml, buildEchartsViewPublicBootstrapTag());
 }

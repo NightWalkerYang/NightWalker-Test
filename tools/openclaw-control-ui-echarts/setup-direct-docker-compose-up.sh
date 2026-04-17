@@ -87,23 +87,35 @@ inject_echarts_view_public_bootstrap() {
 
   "$python_bin" - "$index_path" <<'PY'
 import pathlib
+import re
 import sys
 
 index_path = pathlib.Path(sys.argv[1])
 
 html = index_path.read_text(encoding="utf-8")
-if "data-openclaw-echarts-view-bootstrap" in html:
-    raise SystemExit(0)
+html = re.sub(
+    r'^\s*<script[^>]*data-openclaw-echarts-view-bootstrap[^>]*></script>\s*$',
+    "",
+    html,
+    flags=re.M,
+)
 
 script = (
     '    <script type="module" src="./assets/runtime/echarts-view/preboot.js" '
     'data-openclaw-echarts-view-bootstrap></script>'
 )
 
-if "</head>" not in html:
-    raise SystemExit(f"index.html is missing </head>: {index_path}")
+main_bundle_pattern = re.compile(
+    r'^\s*<script type="module" crossorigin src="\./assets/index-[^"]+"></script>\s*$',
+    re.M,
+)
 
-html = html.replace("  </head>", f"{script}\n  </head>", 1)
+if main_bundle_pattern.search(html):
+    html = main_bundle_pattern.sub(lambda match: f"{script}\n{match.group(0)}", html, count=1)
+elif "</head>" not in html:
+    raise SystemExit(f"index.html is missing </head>: {index_path}")
+else:
+    html = html.replace("  </head>", f"{script}\n  </head>", 1)
 index_path.write_text(html, encoding="utf-8")
 PY
 }
@@ -117,14 +129,19 @@ inject_lufeng_public_bootstrap() {
 
   "$python_bin" - "$index_path" "$token" <<'PY'
 import pathlib
+import re
 import sys
 
 index_path = pathlib.Path(sys.argv[1])
 token = (sys.argv[2] or "").strip()
 
 html = index_path.read_text(encoding="utf-8")
-if "data-openclaw-lufeng-bootstrap" in html:
-    raise SystemExit(0)
+html = re.sub(
+    r'^\s*<script[^>]*data-openclaw-lufeng-bootstrap[^>]*></script>\s*$',
+    "",
+    html,
+    flags=re.M,
+)
 
 token_attr = (
     token.replace("&", "&amp;")
@@ -137,10 +154,17 @@ script = (
     f'data-openclaw-lufeng-bootstrap data-gateway-token="{token_attr}"></script>'
 )
 
-if "</head>" not in html:
-    raise SystemExit(f"index.html is missing </head>: {index_path}")
+main_bundle_pattern = re.compile(
+    r'^\s*<script type="module" crossorigin src="\./assets/index-[^"]+"></script>\s*$',
+    re.M,
+)
 
-html = html.replace("  </head>", f"{script}\n  </head>", 1)
+if main_bundle_pattern.search(html):
+    html = main_bundle_pattern.sub(lambda match: f"{script}\n{match.group(0)}", html, count=1)
+elif "</head>" not in html:
+    raise SystemExit(f"index.html is missing </head>: {index_path}")
+else:
+    html = html.replace("  </head>", f"{script}\n  </head>", 1)
 index_path.write_text(html, encoding="utf-8")
 PY
 }
@@ -416,6 +440,7 @@ inject_auto_gateway_token_bootstrap() {
 
   "$python_bin" - "$index_path" "$token" <<'PY'
 import pathlib
+import re
 import sys
 
 index_path = pathlib.Path(sys.argv[1])
@@ -424,8 +449,12 @@ if not token:
     raise SystemExit(0)
 
 html = index_path.read_text(encoding="utf-8")
-if "data-openclaw-auto-token-bootstrap" in html:
-    raise SystemExit(0)
+html = re.sub(
+    r'^\s*<script[^>]*data-openclaw-auto-token-bootstrap[^>]*></script>\s*$',
+    "",
+    html,
+    flags=re.M,
+)
 
 token_attr = (
     token.replace("&", "&amp;")
@@ -438,10 +467,17 @@ script = (
     f'data-openclaw-auto-token-bootstrap data-gateway-token="{token_attr}"></script>'
 )
 
-if "</head>" not in html:
-    raise SystemExit(f"index.html is missing </head>: {index_path}")
+main_bundle_pattern = re.compile(
+    r'^\s*<script type="module" crossorigin src="\./assets/index-[^"]+"></script>\s*$',
+    re.M,
+)
 
-html = html.replace("  </head>", f"{script}\n  </head>", 1)
+if main_bundle_pattern.search(html):
+    html = main_bundle_pattern.sub(lambda match: f"{script}\n{match.group(0)}", html, count=1)
+elif "</head>" not in html:
+    raise SystemExit(f"index.html is missing </head>: {index_path}")
+else:
+    html = html.replace("  </head>", f"{script}\n  </head>", 1)
 index_path.write_text(html, encoding="utf-8")
 PY
 }

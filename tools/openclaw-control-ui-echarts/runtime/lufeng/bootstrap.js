@@ -9,6 +9,10 @@ import {
   resolveGatewayOrigin,
 } from "./context.js";
 
+const MAIN_BUNDLE_PATTERN =
+  /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
+const LUFENG_BOOTSTRAP_PATTERN = /^\s*<script[^>]*data-openclaw-lufeng-bootstrap[^>]*><\/script>\s*$/gm;
+
 export function applyLufengPublicBootstrap(rawToken) {
   if (
     typeof window === "undefined" ||
@@ -115,19 +119,24 @@ function escapeHtmlAttribute(value) {
   });
 }
 
+function injectBeforeMainBundle(indexHtml, nextTag) {
+  const cleaned = indexHtml.replace(LUFENG_BOOTSTRAP_PATTERN, "");
+  if (!nextTag) {
+    return cleaned;
+  }
+  if (MAIN_BUNDLE_PATTERN.test(cleaned)) {
+    return cleaned.replace(MAIN_BUNDLE_PATTERN, `${nextTag}\n$&`);
+  }
+  if (!cleaned.includes("</head>")) {
+    throw new Error("index.html is missing </head>; cannot inject the Lufeng bootstrap.");
+  }
+  return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
+}
+
 export function buildLufengPublicBootstrapTag(rawToken) {
   return `    <script src="./assets/runtime/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="${escapeHtmlAttribute(rawToken)}"></script>`;
 }
 
 export function injectLufengPublicBootstrap(indexHtml, rawToken) {
-  if (indexHtml.includes("data-openclaw-lufeng-bootstrap")) {
-    return indexHtml;
-  }
-  if (!indexHtml.includes("</head>")) {
-    throw new Error("index.html is missing </head>; cannot inject the Lufeng bootstrap.");
-  }
-  return indexHtml.replace(
-    "  </head>",
-    `${buildLufengPublicBootstrapTag(rawToken)}\n  </head>`,
-  );
+  return injectBeforeMainBundle(indexHtml, buildLufengPublicBootstrapTag(rawToken));
 }

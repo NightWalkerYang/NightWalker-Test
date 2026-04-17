@@ -57,6 +57,7 @@ OPENCLAW_GATEWAY_PORT=19999
     const initial = [
       "<html>",
       "  <head>",
+      '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
       '    <script type="module" src="./assets/runtime/echarts-view/preboot.js" data-openclaw-echarts-view-bootstrap></script>',
       '    <script src="./assets/runtime/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="old"></script>',
       '    <script src="./assets/runtime/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="old"></script>',
@@ -70,6 +71,15 @@ OPENCLAW_GATEWAY_PORT=19999
     expect(updated).not.toContain('data-gateway-token="old"');
     expect(updated.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
       updated.indexOf("data-openclaw-auto-token-bootstrap"),
+    );
+    expect(updated.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
+      updated.indexOf("assets/index-realhash.js"),
+    );
+    expect(updated.indexOf("data-openclaw-auto-token-bootstrap")).toBeLessThan(
+      updated.indexOf("assets/index-realhash.js"),
+    );
+    expect(updated.indexOf("data-openclaw-lufeng-bootstrap")).toBeLessThan(
+      updated.indexOf("./assets/index-realhash.js"),
     );
   });
 

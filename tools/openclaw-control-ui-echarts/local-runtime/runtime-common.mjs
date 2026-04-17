@@ -6,6 +6,8 @@ const DEFAULT_GATEWAY_TOKEN = "local-runtime-shared-token";
 const AUTO_TOKEN_MARKER = "data-openclaw-auto-token-bootstrap";
 const LUFENG_TOKEN_MARKER = "data-openclaw-lufeng-bootstrap";
 const ECHARTS_VIEW_TOKEN_MARKER = "data-openclaw-echarts-view-bootstrap";
+const MAIN_BUNDLE_PATTERN =
+  /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
 const AUTO_TOKEN_SRC = "./assets/runtime/branding/auto-token-preboot.js";
 const LUFENG_TOKEN_SRC = "./assets/runtime/lufeng/preboot.js";
 const ECHARTS_VIEW_SRC = "./assets/runtime/echarts-view/preboot.js";
@@ -67,18 +69,19 @@ function buildStaticBootstrapTag(marker, scriptSrc) {
 function replaceTaggedScript(indexHtml, marker, nextTag) {
   const pattern = new RegExp(
     `^\\s*<script[^>]*${marker}[^>]*><\\/script>\\s*$`,
-    "m",
+    "gm",
   );
-  if (pattern.test(indexHtml)) {
-    return nextTag ? indexHtml.replace(pattern, nextTag) : indexHtml.replace(pattern, "");
-  }
+  const cleaned = indexHtml.replace(pattern, "");
   if (!nextTag) {
-    return indexHtml;
+    return cleaned;
   }
-  if (!indexHtml.includes("</head>")) {
+  if (MAIN_BUNDLE_PATTERN.test(cleaned)) {
+    return cleaned.replace(MAIN_BUNDLE_PATTERN, `${nextTag}\n$&`);
+  }
+  if (!cleaned.includes("</head>")) {
     throw new Error("control_ui_index_missing_head");
   }
-  return indexHtml.replace("  </head>", `${nextTag}\n  </head>`);
+  return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
 }
 
 export function parseRuntimeEnvFile(text) {

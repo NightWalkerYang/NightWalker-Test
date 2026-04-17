@@ -39,7 +39,14 @@ describe("echarts view public bootstrap", () => {
   });
 
   it("injects the public bootstrap module only once", () => {
-    const source = ["<html>", "  <head>", "  </head>", "  <body></body>", "</html>"].join("\n");
+    const source = [
+      "<html>",
+      "  <head>",
+      '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
+      "  </head>",
+      "  <body></body>",
+      "</html>",
+    ].join("\n");
 
     const firstPass = injectEchartsViewPublicBootstrap(source);
     const secondPass = injectEchartsViewPublicBootstrap(firstPass);
@@ -47,6 +54,9 @@ describe("echarts view public bootstrap", () => {
     expect(firstPass).toContain("data-openclaw-echarts-view-bootstrap");
     expect(firstPass).toContain("./assets/runtime/echarts-view/preboot.js");
     expect(firstPass).toContain('type="module"');
+    expect(firstPass.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
+      firstPass.indexOf("./assets/index-realhash.js"),
+    );
     expect(secondPass.match(/data-openclaw-echarts-view-bootstrap/g)).toHaveLength(1);
   });
 });

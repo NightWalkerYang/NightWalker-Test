@@ -1,3 +1,7 @@
+const MAIN_BUNDLE_PATTERN =
+  /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
+const AUTO_TOKEN_PATTERN = /^\s*<script[^>]*data-openclaw-auto-token-bootstrap[^>]*><\/script>\s*$/gm;
+
 export function applyAutoGatewayTokenBootstrap(rawToken) {
   const token = String(rawToken ?? "").trim();
   if (!token || typeof window === "undefined" || typeof location === "undefined") {
@@ -139,6 +143,20 @@ function escapeHtmlAttribute(value) {
   });
 }
 
+function injectBeforeMainBundle(indexHtml, nextTag) {
+  const cleaned = indexHtml.replace(AUTO_TOKEN_PATTERN, "");
+  if (!nextTag) {
+    return cleaned;
+  }
+  if (MAIN_BUNDLE_PATTERN.test(cleaned)) {
+    return cleaned.replace(MAIN_BUNDLE_PATTERN, `${nextTag}\n$&`);
+  }
+  if (!cleaned.includes("</head>")) {
+    throw new Error("index.html is missing </head>; cannot inject the auto token bootstrap.");
+  }
+  return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
+}
+
 export function buildAutoGatewayTokenBootstrapTag(rawToken) {
   const token = String(rawToken ?? "").trim();
   if (!token) {
@@ -149,11 +167,5 @@ export function buildAutoGatewayTokenBootstrapTag(rawToken) {
 
 export function injectAutoGatewayTokenBootstrap(indexHtml, rawToken) {
   const scriptTag = buildAutoGatewayTokenBootstrapTag(rawToken);
-  if (!scriptTag || indexHtml.includes("data-openclaw-auto-token-bootstrap")) {
-    return indexHtml;
-  }
-  if (!indexHtml.includes("</head>")) {
-    throw new Error("index.html is missing </head>; cannot inject the auto token bootstrap.");
-  }
-  return indexHtml.replace("  </head>", `${scriptTag}\n  </head>`);
+  return injectBeforeMainBundle(indexHtml, scriptTag);
 }

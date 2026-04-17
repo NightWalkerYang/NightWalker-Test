@@ -55,6 +55,7 @@ describe("package local runtime", () => {
       [
         "<html>",
         "  <head>",
+        '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
         "  </head>",
         "  <body>",
         "    ok",
@@ -95,6 +96,12 @@ describe("package local runtime", () => {
     expect(indexHtml).toContain("data-openclaw-echarts-view-bootstrap");
     expect(indexHtml.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
       indexHtml.indexOf("data-openclaw-lufeng-bootstrap"),
+    );
+    expect(indexHtml.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
+      indexHtml.indexOf("./assets/index-realhash.js"),
+    );
+    expect(indexHtml.indexOf("data-openclaw-lufeng-bootstrap")).toBeLessThan(
+      indexHtml.indexOf("./assets/index-realhash.js"),
     );
     const loginIndex = fs.readFileSync(path.join(outputDir, "login", "index.html"), "utf8");
     const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");

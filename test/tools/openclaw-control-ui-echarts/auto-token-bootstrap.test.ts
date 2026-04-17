@@ -49,7 +49,14 @@ describe("zero-intrusive auto token bootstrap", () => {
   });
 
   it("injects a single bootstrap script into index.html", () => {
-    const source = ["<html>", "  <head>", "  </head>", "  <body></body>", "</html>"].join("\n");
+    const source = [
+      "<html>",
+      "  <head>",
+      '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
+      "  </head>",
+      "  <body></body>",
+      "</html>",
+    ].join("\n");
 
     const firstPass = injectAutoGatewayTokenBootstrap(source, "token-123");
     const secondPass = injectAutoGatewayTokenBootstrap(firstPass, "token-123");
@@ -57,11 +64,21 @@ describe("zero-intrusive auto token bootstrap", () => {
     expect(firstPass).toContain("data-openclaw-auto-token-bootstrap");
     expect(firstPass).toContain("./assets/runtime/branding/auto-token-preboot.js");
     expect(firstPass).toContain('data-gateway-token="token-123"');
+    expect(firstPass.indexOf("data-openclaw-auto-token-bootstrap")).toBeLessThan(
+      firstPass.indexOf("./assets/index-realhash.js"),
+    );
     expect(secondPass.match(/data-openclaw-auto-token-bootstrap/g)).toHaveLength(1);
   });
 
   it("escapes script-breaking token content", () => {
-    const source = ["<html>", "  <head>", "  </head>", "  <body></body>", "</html>"].join("\n");
+    const source = [
+      "<html>",
+      "  <head>",
+      '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
+      "  </head>",
+      "  <body></body>",
+      "</html>",
+    ].join("\n");
 
     const result = injectAutoGatewayTokenBootstrap(source, "</script><img>");
 
