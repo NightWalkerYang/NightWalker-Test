@@ -167,7 +167,7 @@
 
 ### 4.1 可视化展示公共页
 
-租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view`，路由通过签名 token 加载对应 workspace HTML。
+租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view`，路由通过签名 token 加载对应 workspace HTML，并将其挂载到全页 iframe 中，避免外层控制台 CSP 干扰可视化脚本。
 
 当前要求：
 

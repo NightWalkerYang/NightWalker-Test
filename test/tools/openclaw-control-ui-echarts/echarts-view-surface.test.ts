@@ -63,9 +63,11 @@ describe("public echarts view surface", () => {
 
     expect(window.location.pathname).toBe("/echarts-view");
     expect(window.location.search).toContain("token=member-visualization-token");
-    expect(document.head.querySelector("base")?.getAttribute("href")).toBe(baseHref);
     expect(document.title).toBe("销售数据可视化");
-    expect(document.querySelector("#viz")).not.toBeNull();
+    const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
+    expect(frame).not.toBeNull();
+    expect(frame?.getAttribute("srcdoc")).toContain(`<base href="${baseHref}">`);
+    expect(frame?.getAttribute("srcdoc")).toContain("<main id=\"viz\">");
     expect(document.body.textContent).not.toContain("native content");
     expect(document.body.textContent).not.toContain("可视化展示");
   });

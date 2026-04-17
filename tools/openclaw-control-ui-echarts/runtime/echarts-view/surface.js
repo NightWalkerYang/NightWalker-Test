@@ -5,13 +5,21 @@ import {
   readEchartsViewToken,
 } from "./context.js";
 
-const BLANK_DOCUMENT_HTML = "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>";
+const VISUALIZATION_FRAME_ID = "oc-echarts-view-frame";
 
 function escapeHtmlAttribute(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function readDocumentTitle(html) {
+  const match = String(html || "").match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  if (!match) {
+    return "";
+  }
+  return match[1].replace(/<[^>]*>/g, "").trim();
 }
 
 function injectBaseHref(html, baseHref) {
@@ -30,14 +38,19 @@ function injectBaseHref(html, baseHref) {
   return html;
 }
 
-function writeDocumentHtml(html) {
-  document.open();
-  document.write(String(html || BLANK_DOCUMENT_HTML));
-  document.close();
-}
-
-function writeBlankDocument() {
-  writeDocumentHtml(BLANK_DOCUMENT_HTML);
+function clearVisualizationHost() {
+  document.documentElement.style.background = "#fff";
+  document.documentElement.style.margin = "0";
+  document.documentElement.style.width = "100%";
+  document.documentElement.style.height = "100%";
+  if (document.body instanceof HTMLElement) {
+    document.body.style.background = "#fff";
+    document.body.style.margin = "0";
+    document.body.style.width = "100%";
+    document.body.style.height = "100%";
+    document.body.style.overflow = "hidden";
+    document.body.replaceChildren();
+  }
 }
 
 function normalizeEchartsViewLocation() {
@@ -62,7 +75,23 @@ async function loadVisualizationDocument(token) {
   }
   return {
     html: injectBaseHref(html, result?.baseHref),
+    title: readDocumentTitle(html),
   };
+}
+
+function createVisualizationFrame(html) {
+  const frame = document.createElement("iframe");
+  frame.id = VISUALIZATION_FRAME_ID;
+  frame.title = "可视化展示";
+  frame.setAttribute("loading", "eager");
+  frame.setAttribute("referrerpolicy", "no-referrer");
+  frame.style.border = "0";
+  frame.style.display = "block";
+  frame.style.width = "100%";
+  frame.style.height = "100%";
+  frame.style.minHeight = "100vh";
+  frame.srcdoc = String(html || "");
+  return frame;
 }
 
 export async function bootEchartsViewSurface() {
@@ -75,19 +104,26 @@ export async function bootEchartsViewSurface() {
     return null;
   }
 
-  normalizeEchartsViewLocation();
-  writeBlankDocument();
-
   const token = readEchartsViewToken();
+  normalizeEchartsViewLocation();
+  clearVisualizationHost();
+  if (!token) {
+    return null;
+  }
+
   try {
     const visualizationDocument = await loadVisualizationDocument(token);
     if (!visualizationDocument) {
       return null;
     }
-    writeDocumentHtml(visualizationDocument.html);
+    if (visualizationDocument.title) {
+      document.title = visualizationDocument.title;
+    }
+    const frame = createVisualizationFrame(visualizationDocument.html);
+    document.body.append(frame);
     return visualizationDocument;
   } catch {
-    writeBlankDocument();
+    clearVisualizationHost();
     return null;
   }
 }
