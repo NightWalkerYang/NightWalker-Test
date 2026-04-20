@@ -1,40 +1,33 @@
-import { bootTenantRouteSync, onTenantRouteChange } from "../tenant/route-sync.js";
+import { createTenantApiClient } from "../tenant/api-client.js";
 import {
   isEchartsViewPublicPath,
   normalizeEchartsViewRouteUrl,
-  extractDashboardRouteParams,
+  readEchartsViewToken,
 } from "./context.js";
 
-const ROOT_ATTR = "data-oc-echarts-view-root";
-const STYLE_ATTR = "data-oc-echarts-view-style";
-const ACTIVE_ATTR = "data-oc-echarts-view-active";
-const ROUTE_ATTR = "data-oc-echarts-view-route";
+const VISUALIZATION_FRAME_ID = "oc-echarts-view-frame";
 
-let _currentView = null;
-
-function ensureStyle() {
-  let link = document.head.querySelector(`[${STYLE_ATTR}]`);
-  if (link instanceof HTMLLinkElement) {
-    return link;
+function readDocumentTitle(html) {
+  const match = String(html || "").match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  if (!match) {
+    return "";
   }
-  link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = new URL("./page.css", import.meta.url).href;
-  link.setAttribute(STYLE_ATTR, "true");
-  document.head.append(link);
-  return link;
+  return match[1].replace(/<[^>]*>/g, "").trim();
 }
 
-function ensureRoot(content) {
-  let root = content.querySelector(`[${ROOT_ATTR}]`);
-  if (root instanceof HTMLElement) {
-    return root;
+function clearVisualizationHost() {
+  document.documentElement.style.background = "#fff";
+  document.documentElement.style.margin = "0";
+  document.documentElement.style.width = "100%";
+  document.documentElement.style.height = "100%";
+  if (document.body instanceof HTMLElement) {
+    document.body.style.background = "#fff";
+    document.body.style.margin = "0";
+    document.body.style.width = "100%";
+    document.body.style.height = "100%";
+    document.body.style.overflow = "hidden";
+    document.body.replaceChildren();
   }
-  root = document.createElement("section");
-  root.setAttribute(ROOT_ATTR, "true");
-  root.className = "oc-echarts-view-root";
-  content.prepend(root);
-  return root;
 }
 
 function normalizeEchartsViewLocation() {
@@ -47,114 +40,81 @@ function normalizeEchartsViewLocation() {
   }
 }
 
-function navigate(path) {
-  window.history.pushState({}, "", path);
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-async function renderPage(root) {
-  const params = extractDashboardRouteParams(window.location.pathname);
-  const viewKey = `${params.view}:${params.dashboardId || params.publicToken || ""}`;
-
-  if (_currentView === viewKey) {
+function normalizeEchartsViewTokenLocation(token) {
+  const normalizedToken = String(token || "").trim();
+  if (!normalizedToken) {
     return;
   }
-  _currentView = viewKey;
-
-  root.innerHTML = "";
-
-  const onNavigate = (path) => {
-    _currentView = null;
-    navigate(path);
-  };
-
-  if (params.view === "list") {
-    const { renderDashboardList } = await import("./dashboard-list.js");
-    await renderDashboardList(root, { onNavigate });
-  } else if (params.view === "editor") {
-    const { renderDashboardEditor } = await import("./dashboard-editor.js");
-    await renderDashboardEditor(root, { dashboardId: params.dashboardId, onNavigate });
-  } else if (params.view === "display") {
-    const { renderDashboardDisplay } = await import("./dashboard-display.js");
-    await renderDashboardDisplay(root, { dashboardId: params.dashboardId, onNavigate });
-  } else if (params.view === "public") {
-    const { renderDashboardDisplay } = await import("./dashboard-display.js");
-    await renderDashboardDisplay(root, { publicToken: params.publicToken, onNavigate });
-  } else {
-    root.innerHTML = `<div class="oc-dv-error">未知路由</div>`;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("token") === normalizedToken) {
+    return;
   }
+  url.searchParams.set("token", normalizedToken);
+  window.history.replaceState({}, "", url.toString());
 }
 
-async function mountCurrentSurface(content) {
-  if (!isEchartsViewPublicPath(window.location.pathname)) {
-    content.removeAttribute(ACTIVE_ATTR);
-    content.querySelector(`[${ROOT_ATTR}]`)?.remove();
-    document.documentElement.removeAttribute(ROUTE_ATTR);
-    document.body?.removeAttribute(ROUTE_ATTR);
-    document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
-    _currentView = null;
+async function loadVisualizationDocument(token) {
+  if (!token) {
     return null;
   }
 
-  ensureStyle();
-  normalizeEchartsViewLocation();
-  document.documentElement.setAttribute(ROUTE_ATTR, "true");
-  document.body?.setAttribute(ROUTE_ATTR, "true");
-  content.setAttribute(ACTIVE_ATTR, "true");
-  const root = ensureRoot(content);
-  await renderPage(root);
-  return root;
+  const result = await createTenantApiClient().resolveMemberVisualization(token);
+  const html = String(result?.html || "").trim();
+  if (!html) {
+    return null;
+  }
+  return {
+    html,
+    title: readDocumentTitle(html),
+  };
+}
+
+function createVisualizationFrame(html) {
+  const frame = document.createElement("iframe");
+  frame.id = VISUALIZATION_FRAME_ID;
+  frame.title = "可视化展示";
+  frame.setAttribute("loading", "eager");
+  frame.setAttribute("referrerpolicy", "no-referrer");
+  frame.style.border = "0";
+  frame.style.display = "block";
+  frame.style.width = "100%";
+  frame.style.height = "100%";
+  frame.style.minHeight = "100vh";
+  frame.srcdoc = String(html || "");
+  return frame;
 }
 
 export async function bootEchartsViewSurface() {
-  bootTenantRouteSync();
-
-  const scan = async (scope = document) => {
-    const content =
-      scope instanceof Element && scope.matches(".content")
-        ? scope
-        : document.querySelector(".content");
-    if (!(content instanceof HTMLElement)) {
-      return null;
-    }
-    return mountCurrentSurface(content);
-  };
-
-  const initial = await scan(document);
   if (window.__openclawEchartsViewSurfaceBooted) {
-    return initial;
+    return null;
   }
   window.__openclawEchartsViewSurfaceBooted = true;
 
-  onTenantRouteChange(() => {
-    void scan(document);
-  });
+  if (!isEchartsViewPublicPath(window.location.pathname)) {
+    return null;
+  }
 
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (!(node instanceof Element)) {
-          continue;
-        }
-        if (node.closest?.(`[${ROOT_ATTR}]`)) {
-          continue;
-        }
-        if (node.matches(".content")) {
-          void scan(node);
-          continue;
-        }
-        const nestedContent = node.querySelector?.(".content");
-        if (nestedContent instanceof Element) {
-          void scan(nestedContent);
-        }
-      }
+  const token = readEchartsViewToken();
+  normalizeEchartsViewLocation();
+  clearVisualizationHost();
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const visualizationDocument = await loadVisualizationDocument(token);
+    if (!visualizationDocument) {
+      return null;
     }
-  });
-
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-  });
-
-  return initial;
+    normalizeEchartsViewTokenLocation(token);
+    if (visualizationDocument.title) {
+      document.title = visualizationDocument.title;
+    }
+    const frame = createVisualizationFrame(visualizationDocument.html);
+    document.body.append(frame);
+    return visualizationDocument;
+  } catch {
+    clearVisualizationHost();
+    return null;
+  }
 }

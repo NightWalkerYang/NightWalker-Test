@@ -2,7 +2,6 @@ const ECHARTS_VIEW_ROUTE = "/echarts-view";
 const ECHARTS_VIEW_CHAT_ROUTE = `${ECHARTS_VIEW_ROUTE}/chat`;
 const ECHARTS_VIEW_CANONICAL_ROUTE = `${ECHARTS_VIEW_ROUTE}/`;
 const ECHARTS_VIEW_TOKEN_STORAGE_KEY = "openclaw:tenant-platform:echarts-view-token:v1";
-const ECHARTS_VIEW_PUBLIC_PREFIX = `${ECHARTS_VIEW_ROUTE}/public/`;
 
 function normalizePathname(pathname = window.location.pathname) {
   const raw = String(pathname ?? "").trim() || "/";
@@ -67,52 +66,7 @@ export function normalizeEchartsViewPathname(pathname = window.location.pathname
 
 export function isEchartsViewPublicPath(pathname = window.location.pathname) {
   const normalized = normalizeEchartsViewPathname(pathname);
-  return (
-    normalized === ECHARTS_VIEW_ROUTE ||
-    normalized === ECHARTS_VIEW_CHAT_ROUTE ||
-    normalized.startsWith(ECHARTS_VIEW_ROUTE + "/")
-  );
-}
-
-export function isEchartsViewPublicTokenPath(pathname = window.location.pathname) {
-  const normalized = normalizeEchartsViewPathname(pathname);
-  return normalized.startsWith(ECHARTS_VIEW_PUBLIC_PREFIX);
-}
-
-export function extractPublicToken(pathname = window.location.pathname) {
-  const normalized = normalizeEchartsViewPathname(pathname);
-  if (!normalized.startsWith(ECHARTS_VIEW_PUBLIC_PREFIX)) {
-    return null;
-  }
-  return normalized.slice(ECHARTS_VIEW_PUBLIC_PREFIX.length).split("/")[0] || null;
-}
-
-export function extractDashboardRouteParams(pathname = window.location.pathname) {
-  const normalized = normalizeEchartsViewPathname(pathname);
-  if (normalized === ECHARTS_VIEW_ROUTE || normalized === ECHARTS_VIEW_CHAT_ROUTE) {
-    return { view: "list", dashboardId: null, mode: null };
-  }
-  // /echarts-view/public/:token
-  const publicMatch = normalized.match(/^\/echarts-view\/public\/([^/]+)$/);
-  if (publicMatch) {
-    return { view: "public", dashboardId: null, publicToken: publicMatch[1], mode: "display" };
-  }
-  // /echarts-view/dashboard/:id/edit
-  const editMatch = normalized.match(/^\/echarts-view\/dashboard\/([^/]+)\/edit$/);
-  if (editMatch) {
-    return { view: "editor", dashboardId: editMatch[1], mode: "edit" };
-  }
-  // /echarts-view/dashboard/:id/display
-  const displayMatch = normalized.match(/^\/echarts-view\/dashboard\/([^/]+)\/display$/);
-  if (displayMatch) {
-    return { view: "display", dashboardId: displayMatch[1], mode: "display" };
-  }
-  // /echarts-view/dashboard/:id
-  const dashMatch = normalized.match(/^\/echarts-view\/dashboard\/([^/]+)$/);
-  if (dashMatch) {
-    return { view: "editor", dashboardId: dashMatch[1], mode: "edit" };
-  }
-  return { view: "list", dashboardId: null, mode: null };
+  return normalized === ECHARTS_VIEW_ROUTE || normalized === ECHARTS_VIEW_CHAT_ROUTE;
 }
 
 export function readEchartsViewToken(locationHref = window.location.href) {
@@ -127,10 +81,10 @@ export function normalizeEchartsViewRouteUrl(urlLike, baseHref = window.location
   }
 
   const normalizedPathname = normalizeEchartsViewPathname(url.pathname);
-  if (normalizedPathname === ECHARTS_VIEW_CHAT_ROUTE) {
-    url.pathname = ECHARTS_VIEW_ROUTE;
-  }
-  if (normalizeEchartsViewPathname(url.pathname) === ECHARTS_VIEW_ROUTE) {
+  if (
+    normalizedPathname === ECHARTS_VIEW_CHAT_ROUTE ||
+    normalizedPathname === ECHARTS_VIEW_ROUTE
+  ) {
     url.pathname = ECHARTS_VIEW_CANONICAL_ROUTE;
     url.searchParams.delete("session");
   }
