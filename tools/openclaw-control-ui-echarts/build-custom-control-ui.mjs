@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
@@ -84,9 +85,39 @@ function readDotenvValue(key) {
   return undefined;
 }
 
+function resolveConfigDir() {
+  const configured = (
+    process.env.OPENCLAW_CONFIG_DIR ??
+    readDotenvValue("OPENCLAW_CONFIG_DIR") ??
+    ""
+  ).trim();
+  if (!configured) {
+    return path.join(os.homedir(), ".openclaw");
+  }
+  return path.isAbsolute(configured)
+    ? configured
+    : path.resolve(repoRoot, configured);
+}
+
+function readGatewayTokenFromConfig() {
+  const configPath = path.join(resolveConfigDir(), "openclaw.json");
+  if (!fs.existsSync(configPath)) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    return String(parsed?.gateway?.auth?.token ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 function resolveAutoGatewayToken() {
-  return (process.env.OPENCLAW_GATEWAY_TOKEN ?? readDotenvValue("OPENCLAW_GATEWAY_TOKEN") ?? "")
-    .trim();
+  return (
+    process.env.OPENCLAW_GATEWAY_TOKEN ??
+    readDotenvValue("OPENCLAW_GATEWAY_TOKEN") ??
+    readGatewayTokenFromConfig()
+  ).trim();
 }
 
 function ensureFileExists(filePath, label) {
