@@ -1,4 +1,4 @@
-import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/context.js";
+import { ECHARTS_VIEW_ROUTE } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
@@ -26,6 +26,7 @@ import {
   readSelectedTenantAgent,
   readSessionForCurrentView,
   readTenantView,
+  resolveTenantApiBaseCandidates,
 } from "./tenant-context.js";
 import { writeEchartsViewToken } from "../echarts-view/context.js";
 
@@ -52,6 +53,7 @@ const TOPBAR_DIALOG_CONFIRM_LOGOUT_SELECTOR = "[data-oc-platform-confirm-logout]
 const TENANT_ROLE_CONTEXT_ATTR = "data-oc-tenant-role-context";
 const MEMBER_VISUALIZATION_CACHE = new Map();
 const MEMBER_VISUALIZATION_SIGNATURE_ATTR = "data-oc-member-visualization-signature";
+const DASHBOARDS_SECTION_CLASS = "oc-echarts-dashboards-section";
 
 const ICONS = {
   tenants: `
@@ -210,6 +212,14 @@ function getSectionConfigForSession(session) {
               icon: ICONS.stats,
               activeView: TENANT_USAGE_STATS_VIEW,
             },
+            {
+              className: "oc-tenant-echarts-link",
+              href: new URL("./echarts-view", document.baseURI).href,
+              title: "可视化展示",
+              text: "可视化展示",
+              icon: ICONS.chart,
+              activePath: ECHARTS_VIEW_ROUTE,
+            },
           ],
         },
       ],
@@ -220,18 +230,28 @@ function getSectionConfigForSession(session) {
     const selectedAgent = readSelectedTenantAgent();
     const onMemberChatPage =
       isPathActive("/chat", currentPath) && selectedAgent?.id && selectedAgent?.agentId;
-    const links = onMemberChatPage
-      ? []
-      : [
-          {
-            className: "oc-member-agent-selector-link",
-            href: TENANT_AGENT_SELECTOR_ROUTE,
-            title: "Agent 选择",
-            text: "Agent选择",
-            icon: ICONS.agentAllocation,
-            activeView: TENANT_AGENT_SELECTOR_VIEW,
-          },
-        ];
+    const links = [
+      ...(onMemberChatPage
+        ? []
+        : [
+            {
+              className: "oc-member-agent-selector-link",
+              href: TENANT_AGENT_SELECTOR_ROUTE,
+              title: "Agent 选择",
+              text: "Agent选择",
+              icon: ICONS.agentAllocation,
+              activeView: TENANT_AGENT_SELECTOR_VIEW,
+            },
+          ]),
+      {
+        className: "oc-member-echarts-link",
+        href: new URL("./echarts-view", document.baseURI).href,
+        title: "可视化展示",
+        text: "可视化展示",
+        icon: ICONS.chart,
+        activePath: ECHARTS_VIEW_ROUTE,
+      },
+    ];
     return {
       sections: [
         {
@@ -262,7 +282,7 @@ function openPublicRoute(destination) {
   if (!(destination instanceof URL)) {
     return false;
   }
-  if (isEchartsViewPublicPath(destination.pathname)) {
+  if (destination.pathname.startsWith(ECHARTS_VIEW_ROUTE)) {
     const token = destination.searchParams.get("token")?.trim() || "";
     if (token) {
       writeEchartsViewToken(token);
@@ -612,8 +632,11 @@ function syncSidebarNavForRole(container, role) {
       section.hidden = false;
       continue;
     }
-    const isRoleNav = section.getAttribute("data-oc-role-nav") === "true";
-    section.hidden = shouldTenantHideNativeSections && !isRoleNav;
+    if (section.classList.contains(DASHBOARDS_SECTION_CLASS)) {
+      section.hidden = false;
+      continue;
+    }
+    section.hidden = shouldTenantHideNativeSections;
   }
 }
 
@@ -903,11 +926,124 @@ function ensureTopbarLogoutHandler() {
   });
 }
 
+// ─── 侧边栏动态大屏列表 ────────────────────────────────────────────────────────
+
+let _sidebarDashboardCache = null;
+let _sidebarDashboardCacheTime = 0;
+let _sidebarDashboardRefreshTimer = null;
+const SIDEBAR_DASHBOARD_CACHE_TTL = 30_000;
+
+async function _fetchDashboardsForSidebar(session) {
+  const now = Date.now();
+  if (_sidebarDashboardCache !== null && now - _sidebarDashboardCacheTime < SIDEBAR_DASHBOARD_CACHE_TTL) {
+    return _sidebarDashboardCache;
+  }
+  const baseUrls = resolveTenantApiBaseCandidates();
+  const headers = { "content-type": "application/json" };
+  if (session?.token) {
+    headers.authorization = `Bearer ${session.token}`;
+  }
+  for (const baseUrl of baseUrls) {
+    try {
+      const response = await fetch(`${baseUrl}/dashboards`, { headers });
+      const payload = await response.json();
+      if (payload?.ok) {
+        _sidebarDashboardCache = Array.isArray(payload.data) ? payload.data : [];
+        _sidebarDashboardCacheTime = Date.now();
+        return _sidebarDashboardCache;
+      }
+    } catch {
+      // try next base URL
+    }
+  }
+  return [];
+}
+
+async function _updateDashboardsSidebarSection(container, session) {
+  if (!(container instanceof HTMLElement)) return;
+  const role = String(session?.session?.role || "");
+  if (role !== "tenant_admin" && role !== "member") {
+    container.querySelector(`.${DASHBOARDS_SECTION_CLASS}`)?.remove();
+    return;
+  }
+
+  let dashboards;
+  try {
+    dashboards = await _fetchDashboardsForSidebar(session);
+  } catch {
+    return;
+  }
+
+  container.querySelector(`.${DASHBOARDS_SECTION_CLASS}`)?.remove();
+  if (!dashboards.length) return;
+
+  const section = document.createElement("section");
+  section.className = `nav-section ${DASHBOARDS_SECTION_CLASS}`;
+
+  const labelEl = createSectionLabel("我的大屏");
+  labelEl.setAttribute("aria-expanded", "true");
+
+  const items = document.createElement("div");
+  items.className = "nav-section__items";
+
+  for (const dashboard of dashboards) {
+    const href = `/echarts-view/dashboard/${dashboard.id}/display`;
+    const item = createNavItem({
+      className: "oc-echarts-dashboard-item",
+      href: new URL(href, document.baseURI).href,
+      title: dashboard.title,
+      text: dashboard.title,
+      icon: ICONS.chart,
+    });
+    item.setAttribute("data-oc-platform-path", href);
+    item.classList.toggle("nav-item--active", isPathActive(href));
+    items.append(item);
+  }
+
+  labelEl.addEventListener("click", () => {
+    section.classList.toggle("nav-section--collapsed");
+    labelEl.setAttribute("aria-expanded", String(!section.classList.contains("nav-section--collapsed")));
+  });
+
+  section.addEventListener("click", (event) => {
+    const link = event.target.closest(".nav-item[href]");
+    if (!(link instanceof HTMLAnchorElement)) return;
+    event.preventDefault();
+    navigateTenantRoute(link.href);
+  });
+
+  section.append(labelEl, items);
+
+  const statsSection = container.querySelector(`.${STATS_SECTION_CLASS}`);
+  const mgmtSection = container.querySelector(`.${MANAGEMENT_SECTION_CLASS}`);
+  const anchor = statsSection || mgmtSection;
+  if (anchor?.nextSibling) {
+    container.insertBefore(section, anchor.nextSibling);
+  } else if (anchor) {
+    container.append(section);
+  } else {
+    container.append(section);
+  }
+}
+
+function _scheduleSidebarDashboardRefresh(invalidateCache = false) {
+  if (invalidateCache) {
+    _sidebarDashboardCache = null;
+  }
+  clearTimeout(_sidebarDashboardRefreshTimer);
+  _sidebarDashboardRefreshTimer = setTimeout(() => {
+    const session = readSessionForCurrentView();
+    for (const container of document.querySelectorAll(SIDEBAR_NAV_SELECTOR)) {
+      void _updateDashboardsSidebarSection(container, session);
+    }
+  }, 150);
+}
+
 export function bootTenantEntry() {
   if (window.__openclawTenantEntryBooted) {
     return;
   }
-  if (isLufengPublicPath() || isEchartsViewPublicPath()) {
+  if (isLufengPublicPath()) {
     return;
   }
   window.__openclawTenantEntryBooted = true;
@@ -942,6 +1078,9 @@ export function bootTenantEntry() {
         if (role === "member") {
           void syncMemberVisualizationSection(container);
         }
+      }
+      if (role === "tenant_admin" || role === "member") {
+        _scheduleSidebarDashboardRefresh();
       }
     }
 
@@ -999,5 +1138,9 @@ export function bootTenantEntry() {
   observer.observe(document.documentElement, {
     subtree: true,
     childList: true,
+  });
+
+  window.addEventListener("oc-dashboards-changed", () => {
+    _scheduleSidebarDashboardRefresh(true);
   });
 }

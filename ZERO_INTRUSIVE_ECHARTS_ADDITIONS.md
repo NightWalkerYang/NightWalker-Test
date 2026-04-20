@@ -95,6 +95,12 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js`
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/preboot.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/page.css`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/api.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/dashboard-list.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/dashboard-editor.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/dashboard-display.js`
+- `tools/openclaw-control-ui-echarts/runtime/echarts-view/chart-generator.js`
 
 ### Runtime: Lufeng Public Route
 
@@ -141,7 +147,10 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/kingdee-client.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/kingdee-data-transformer.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/002_dashboards.sql`
 
 ### Static Pages
 
@@ -252,6 +261,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tenant member chat now intercepts the send action: if the selected Agent's assigned balance is not greater than 0 (for non-local editions), it blocks the message and displays a "积分不足请联系管理员。" alert.
 - Unified `/login` now validates account status during both new logins and auto-authentication; if the account is not active, it intercepts the process and displays a "账号未启用，请联系管理员。" alert.
 - Tenant-admin member management now exposes an operation column with member password changes plus an enable/disable switch, backed by zero-intrusive tenant-member update routes in the sidecar.
+- The `/echarts-view` route now supports a full AI-driven financial dashboard system: tenant members and admins can create, edit, and display ECharts dashboards backed by Kingdee Cloud Star OpenAPI data; dashboards support public share links (no-login), auto-refresh, and AI chat-driven chart generation via the existing fenced-block pipeline; the sidecar provides `kingdee_connections`, `dashboards`, `dashboard_charts`, and `kingdee_query_cache` tables (migration 002) plus REST endpoints at `/kingdee/*`, `/dashboards/*`, and `/public/dashboards/:token`; tenant-admin sidebar now includes a "可视化展示" shortcut alongside the existing "管理" and "统计" groups.
 - The native "Update available" notification banner is now hidden through the injected framework styles layer to maintain a clean production UI.
 
 ## Important Notes

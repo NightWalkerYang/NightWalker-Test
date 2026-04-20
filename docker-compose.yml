@@ -26,6 +26,9 @@ services:
       - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
     init: true
     restart: unless-stopped
+    depends_on:
+      openclaw-tenant-platform:
+        condition: service_healthy
     command:
       [
         "node",
@@ -48,6 +51,44 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  openclaw-tenant-platform:
+    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    environment:
+      HOME: /home/node
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      OPENCLAW_TENANT_PLATFORM_BIND: 0.0.0.0
+      OPENCLAW_TENANT_PLATFORM_PORT: 18801
+      OPENCLAW_TENANT_PLATFORM_API_BASE: /tenant-platform-api/v1
+      OPENCLAW_TENANT_PLATFORM_EDITION: ${OPENCLAW_TENANT_PLATFORM_EDITION:-cloud}
+      OPENCLAW_TENANT_PLATFORM_LICENSE_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PATH:-}
+      OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY:-}
+      OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH:-}
+      TZ: ${OPENCLAW_TZ:-UTC}
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro
+    command:
+      [
+        "node",
+        "tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs",
+      ]
+    ports:
+      - "${OPENCLAW_TENANT_PLATFORM_PORT:-18801}:18801"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:18801/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
 
   openclaw-cli:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
