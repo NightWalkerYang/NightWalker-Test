@@ -583,13 +583,34 @@ describe("tenant platform local edition", () => {
         "  <head>",
         "    <title>销售数据</title>",
         '    <script src="/assets/vendor/echarts.min.js"></script>',
+        '    <a href="资金大屏可视化_index.html">切换到资金大屏</a>',
         '    <script src="financial_data.js"></script>',
         "  </head>",
         "  <body>",
         '    <main id="viz"></main>',
         "    <script>",
-        "      document.getElementById('viz').textContent = '销售数据';",
+        "      async function loadData() {",
+        "        const response = await fetch('dashboard_data.json');",
+        "        const data = await response.json();",
+        "        document.getElementById('viz').textContent = data.summary.total_assets;",
+        "      }",
+        "      loadData();",
         "    </script>",
+        "  </body>",
+        "</html>",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "资金大屏可视化_index.html"),
+      [
+        "<!doctype html>",
+        "<html>",
+        "  <head>",
+        "    <title>资金大屏</title>",
+        "  </head>",
+        "  <body>",
+        "    <main>资金大屏</main>",
         "  </body>",
         "</html>",
       ].join("\n"),
@@ -609,14 +630,20 @@ describe("tenant platform local edition", () => {
       token: memberLogin.payload.data.token,
     });
     expect(listResponse.status).toBe(200);
-    expect(listResponse.payload.data).toHaveLength(1);
-    expect(listResponse.payload.data[0].visualizationName).toBe("销售数据可视化");
-    expect(listResponse.payload.data[0].href).toMatch(/^\/echarts-view\/\?token=/);
-    expect(listResponse.payload.data[0].href).not.toMatch(/^https?:\/\//);
+    expect(listResponse.payload.data.map((item) => item.visualizationName).toSorted()).toEqual([
+      "资金大屏可视化",
+      "销售数据可视化",
+    ]);
+    const salesVisualization = listResponse.payload.data.find(
+      (item) => item.visualizationName === "销售数据可视化",
+    );
+    expect(salesVisualization).toBeDefined();
+    expect(salesVisualization?.href).toMatch(/^\/echarts-view\/\?token=/);
+    expect(salesVisualization?.href).not.toMatch(/^https?:\/\//);
 
     const resolveResponse = await requestJson(
       baseUrl,
-      `/member/visualizations/resolve?token=${encodeURIComponent(listResponse.payload.data[0].token)}`,
+      `/member/visualizations/resolve?token=${encodeURIComponent(String(salesVisualization?.token || ""))}`,
     );
     expect(resolveResponse.status).toBe(200);
     expect(resolveResponse.payload.data.visualizationName).toBe("销售数据可视化");
@@ -629,12 +656,14 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).toContain("销售数据");
     expect(resolveResponse.payload.data.baseHref).toMatch(/^\/workspace-agent-downloads\//);
     expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
+    expect(resolveResponse.payload.data.html).toContain('/echarts-view/?token=');
+    expect(resolveResponse.payload.data.html).not.toContain('href="资金大屏可视化_index.html"');
     expect(resolveResponse.payload.data.html).toContain(
       `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/financial_data.js`,
     );
     expect(resolveResponse.payload.data.html).toContain("__openclaw_echarts_view__");
     expect(resolveResponse.payload.data.html).not.toContain(
-      "document.getElementById('viz').textContent",
+      "fetch('dashboard_data.json')",
     );
     expect(resolveResponse.payload.data.html).not.toContain('src="financial_data.js"');
 
@@ -653,9 +682,11 @@ describe("tenant platform local edition", () => {
       ),
     );
     expect(fs.existsSync(generatedScriptPath)).toBe(true);
-    expect(fs.readFileSync(generatedScriptPath, "utf8")).toContain(
-      "document.getElementById('viz').textContent",
+    const generatedScriptContent = fs.readFileSync(generatedScriptPath, "utf8");
+    expect(generatedScriptContent).toContain(
+      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/dashboard_data.json`,
     );
+    expect(generatedScriptContent).toContain("document.getElementById('viz').textContent");
   });
 
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {

@@ -259,7 +259,76 @@ function buildWorkspaceAssetHref(workspaceBaseHref, relativePath) {
   return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }
 
-function rewriteVisualizationHtml(html, workspaceBaseHref, generatedScriptDir, visualizationFileName) {
+function splitHrefSuffix(value) {
+  const normalizedValue = String(value || "").trim();
+  if (!normalizedValue) {
+    return { path: "", suffix: "" };
+  }
+  const queryIndex = normalizedValue.indexOf("?");
+  const hashIndex = normalizedValue.indexOf("#");
+  const suffixIndex = [queryIndex, hashIndex]
+    .filter((index) => index >= 0)
+    .reduce((minimum, index) => Math.min(minimum, index), normalizedValue.length);
+  return {
+    path: normalizedValue.slice(0, suffixIndex),
+    suffix: normalizedValue.slice(suffixIndex),
+  };
+}
+
+function resolveVisualizationResourceHref(resourceHref, workspaceBaseHref, visualizationHrefMap = new Map()) {
+  const normalizedHref = String(resourceHref || "").trim();
+  if (!normalizedHref) {
+    return "";
+  }
+  if (isAbsoluteOrSpecialHref(normalizedHref)) {
+    return normalizedHref;
+  }
+  const { path: hrefPath, suffix } = splitHrefSuffix(normalizedHref);
+  const targetFileName = path.posix.basename(hrefPath);
+  if (
+    targetFileName.toLowerCase().endsWith(".html") &&
+    visualizationHrefMap instanceof Map &&
+    visualizationHrefMap.has(targetFileName)
+  ) {
+    return `${visualizationHrefMap.get(targetFileName)}${suffix}`;
+  }
+  return buildWorkspaceAssetHref(workspaceBaseHref, normalizedHref);
+}
+
+function rewriteVisualizationScriptContent(scriptContent, workspaceBaseHref, visualizationHrefMap = new Map()) {
+  let rewrittenScriptContent = String(scriptContent || "");
+  const rewriteQuotedUrl = (pattern) =>
+    rewrittenScriptContent.replace(pattern, (match, prefix, quote, url) => {
+      const resolvedHref = resolveVisualizationResourceHref(url, workspaceBaseHref, visualizationHrefMap);
+      return `${prefix}${quote}${resolvedHref}${quote}`;
+    });
+
+  // Keep executable inline scripts self-contained: resolve common URL-based APIs
+  // against the workspace download path before writing the generated asset.
+  rewrittenScriptContent = rewriteQuotedUrl(/(fetch\s*\(\s*)(['"])([^'"]+)\2/g);
+  rewrittenScriptContent = rewriteQuotedUrl(/((?:window\.)?open\s*\(\s*)(['"])([^'"]+)\2/g);
+  rewrittenScriptContent = rewriteQuotedUrl(
+    /((?:window\.)?(?:location|document\.location)\.assign\s*\(\s*)(['"])([^'"]+)\2/g,
+  );
+  rewrittenScriptContent = rewriteQuotedUrl(
+    /((?:window\.)?(?:location|document\.location)\.replace\s*\(\s*)(['"])([^'"]+)\2/g,
+  );
+  rewrittenScriptContent = rewriteQuotedUrl(
+    /((?:window\.)?(?:location|document\.location)\s*=\s*)(['"])([^'"]+)\2/g,
+  );
+  rewrittenScriptContent = rewriteQuotedUrl(/((?:[\w$]+\.)+href\s*=\s*)(['"])([^'"]+)\2/g);
+  rewrittenScriptContent = rewriteQuotedUrl(/((?:[\w$]+\.)+src\s*=\s*)(['"])([^'"]+)\2/g);
+
+  return rewrittenScriptContent;
+}
+
+function rewriteVisualizationHtml(
+  html,
+  workspaceBaseHref,
+  generatedScriptDir,
+  visualizationFileName,
+  visualizationHrefMap = new Map(),
+) {
   const document = parse5.parse(String(html || ""));
   const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
   const generatedPathRoot = path.join(generatedScriptDir, generatedSubdir);
@@ -275,7 +344,11 @@ function rewriteVisualizationHtml(html, workspaceBaseHref, generatedScriptDir, v
       if (!VISUALIZATION_RESOURCE_ATTRIBUTES.has(attributeName)) {
         continue;
       }
-      attr.value = buildWorkspaceAssetHref(normalizedWorkspaceBaseHref, attr.value);
+      attr.value = resolveVisualizationResourceHref(
+        attr.value,
+        normalizedWorkspaceBaseHref,
+        visualizationHrefMap,
+      );
     }
   };
 
@@ -291,14 +364,19 @@ function rewriteVisualizationHtml(html, workspaceBaseHref, generatedScriptDir, v
       const child = node.childNodes[index];
       if (isExecutableInlineScript(child)) {
         const scriptContent = readScriptText(child).replace(/\r\n?/g, "\n");
+        const rewrittenScriptContent = rewriteVisualizationScriptContent(
+          scriptContent,
+          normalizedWorkspaceBaseHref,
+          visualizationHrefMap,
+        );
         const scriptHash = crypto
           .createHash("sha256")
-          .update(scriptContent, "utf8")
+          .update(rewrittenScriptContent, "utf8")
           .digest("hex")
           .slice(0, 12);
         const scriptFileName = `${ECHARTS_VIEW_INLINE_SCRIPT_PREFIX}-${inlineScriptIndex + 1}-${scriptHash}.js`;
         fs.mkdirSync(generatedPathRoot, { recursive: true });
-        fs.writeFileSync(path.join(generatedPathRoot, scriptFileName), scriptContent, "utf8");
+        fs.writeFileSync(path.join(generatedPathRoot, scriptFileName), rewrittenScriptContent, "utf8");
         const scriptHref = buildWorkspaceAssetHref(
           normalizedWorkspaceBaseHref,
           path.posix.join(generatedSubdir, scriptFileName),
@@ -1186,6 +1264,23 @@ export function createTenantPlatformRouter(deps) {
         },
         configAgents,
       );
+      const visualizationHrefMap = new Map();
+      for (const item of visualizations) {
+        if (String(item?.derivedAgentId || "").trim() !== payload.derivedAgentId) {
+          continue;
+        }
+        const tokenForVisualization = issueSessionToken(
+          {
+            purpose: "member_visualization",
+            tenantId: payload.tenantId,
+            userId: payload.userId,
+            derivedAgentId: item.derivedAgentId,
+            visualizationFileName: item.visualizationFileName,
+          },
+          deps.config.sessionSecret,
+        );
+        visualizationHrefMap.set(item.visualizationFileName, buildEchartsViewHref(tokenForVisualization));
+      }
       const match = visualizations.find(
         (item) =>
           item.derivedAgentId === payload.derivedAgentId &&
@@ -1209,6 +1304,7 @@ export function createTenantPlatformRouter(deps) {
           workspaceBaseHref,
           path.join(workspaceRoot, "Echarts"),
           match.visualizationFileName,
+          visualizationHrefMap,
         );
         sendJson(request, response, 200, {
           ok: true,
