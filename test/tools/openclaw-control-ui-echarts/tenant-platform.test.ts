@@ -100,6 +100,31 @@ describe("tenant platform database foundation", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
     try {
+      const baseWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        "finance",
+      );
+      fs.mkdirSync(path.join(baseWorkspace, "memory"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "skills"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "sessions"), { recursive: true });
+      fs.writeFileSync(path.join(baseWorkspace, "MEMORY.md"), "# 母 Agent 记忆", "utf8");
+      fs.writeFileSync(
+        path.join(baseWorkspace, "memory", "tenant-policy.md"),
+        "成员首次分配后应继承这段记忆。",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "README.md"),
+        "skills should be available in the derived workspace",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "sessions", "old.jsonl"),
+        "{\"type\":\"assistant\"}\n",
+        "utf8",
+      );
+
       createBootstrapPlatformAdmin(db, {
         username: "platform-root",
         password: "secret",
@@ -146,6 +171,21 @@ describe("tenant platform database foundation", () => {
           path.join(sandbox.config.configDir, "workspace-agents", String(assignment.derivedAgentId)),
         ),
       ).toBe(true);
+      const derivedWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "MEMORY.md"), "utf8")).toContain(
+        "母 Agent 记忆",
+      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "memory", "tenant-policy.md"), "utf8"),
+      ).toContain("成员首次分配后应继承");
+      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
+        "skills should be available",
+      );
+      expect(fs.existsSync(path.join(derivedWorkspace, "sessions", "old.jsonl"))).toBe(false);
 
       const agents = listAssignedAgentsForUser(
         db,

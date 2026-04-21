@@ -212,6 +212,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
 - The tenant platform sidecar now supports a local-edition license file, signature verification, renewal-code application, and read-only enforcement after expiry.
+- Tenant member Agent assignment now seeds each derived workspace with the base Agent's `MEMORY.md` / `memory.md` / `memory/` / `skills/` plus the existing bootstrap templates, while still excluding prior sessions and other runtime artifacts so assignment remains a one-time derivation.
 - Platform admin login and tenant login now share a unified single-entry view that renders on the native Control UI root via `?ocTenantView=login`, avoiding the native router bouncing unknown `/login` pathnames back to the console. The `/login` pathname is still recognized as a backward-compatible alias when accessed directly.
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.

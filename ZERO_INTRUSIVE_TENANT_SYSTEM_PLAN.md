@@ -1557,8 +1557,9 @@
   - 目标目录：`workspace-agents/<derived-agent-id>`
   - 运行时别名：`workspace-<derived-agent-id>`
 - 工作区初始化采用“部分模板继承”：
-  - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / skills`
-  - 仅在派生工作区缺失时复制，不覆盖成员后续个性化修改
+  - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / MEMORY.md / memory.md / memory/ / skills/`
+  - 只复制这批白名单内容，不继承旧会话、日志或其他运行时产物
+  - 仅在派生工作区缺失对应文件时复制，不覆盖成员后续个性化修改，因此成员派生工作区与母 Agent 是“一次性派生”而不是持续跟随更新
 - 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态
 
 ## 十二、当前还需要继续确认的事项

@@ -19,6 +19,9 @@ const DERIVED_AGENT_TEMPLATE_ENTRIES = [
   "TOOLS.md",
   "HEARTBEAT.md",
   "BOOTSTRAP.md",
+  "MEMORY.md",
+  "memory.md",
+  "memory",
   "skills",
 ];
 const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
