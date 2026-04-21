@@ -218,6 +218,7 @@ Logo 规则固定为：
   - `tenant_memberships.status = deleted`
   - `users.status = inactive`
   - 同步把该成员当前有效的 `user_agent_assignments` 标记为 `inactive`
+  - 同步清理该成员派生出来的专属 Agent 工作空间目录，包括 `workspace-agents/<derivedAgentId>` 与 `workspace-<derivedAgentId>`
   - 历史记录、耗量和审计保留不删
   - 租户管理员与平台管理员的成员列表默认不展示已删除成员
 

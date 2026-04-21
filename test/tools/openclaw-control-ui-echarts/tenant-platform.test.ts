@@ -508,16 +508,39 @@ describe("tenant platform database foundation", () => {
         configPath: sandbox.config.configPath,
         configDir: sandbox.config.configDir,
       });
+      const derivedAgentId = String(
+        db
+          .prepare(
+            `SELECT derived_agent_id AS derivedAgentId
+             FROM user_agent_assignments
+             WHERE tenant_id = ? AND user_id = ? AND tenant_agent_id = ?`,
+          )
+          .get(tenant.id, member.id, tenantAgentId)?.derivedAgentId || "",
+      );
+      const canonicalWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        derivedAgentId,
+      );
+      const runtimeWorkspace = path.join(
+        sandbox.config.configDir,
+        `workspace-${derivedAgentId}`,
+      );
+      expect(fs.existsSync(canonicalWorkspace)).toBe(true);
+      expect(fs.existsSync(runtimeWorkspace)).toBe(true);
 
       const deleted = deleteTenantMember(db, {
         tenantId: tenant.id,
         userId: member.id,
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
       });
 
       expect(deleted).toMatchObject({
         id: member.id,
         username: "member-delete",
         revokedAssignmentCount: 1,
+        removedWorkspaceCount: 1,
       });
       expect(listTenantMembers(db, tenant.id)).toEqual([]);
       expect(getUserByUsername(db, "member-delete")?.status).toBe("inactive");
@@ -546,6 +569,8 @@ describe("tenant platform database foundation", () => {
           readOpenClawAgentCatalog(sandbox.config.configPath),
         ),
       ).toEqual([]);
+      expect(fs.existsSync(canonicalWorkspace)).toBe(false);
+      expect(fs.existsSync(runtimeWorkspace)).toBe(false);
     } finally {
       closeTenantPlatformDb(db);
     }

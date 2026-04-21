@@ -377,6 +377,124 @@ function ensureTenantDerivedWorkspace(params) {
   };
 }
 
+function isPathInside(basePath, candidatePath) {
+  const base = path.resolve(String(basePath || "").trim());
+  const candidate = path.resolve(String(candidatePath || "").trim());
+  if (!base || !candidate) {
+    return false;
+  }
+  const relative = path.relative(base, candidate);
+  return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function removeWorkspacePath(targetPath) {
+  const normalized = String(targetPath || "").trim();
+  if (!normalized) {
+    return false;
+  }
+  let stats;
+  try {
+    stats = fs.lstatSync(normalized);
+  } catch {
+    return false;
+  }
+  if (stats.isSymbolicLink()) {
+    fs.rmSync(normalized, { force: true });
+    return true;
+  }
+  if (stats.isDirectory()) {
+    fs.rmSync(normalized, { recursive: true, force: true });
+    return true;
+  }
+  fs.rmSync(normalized, { force: true });
+  return true;
+}
+
+function collectMemberDerivedWorkspaceEntries(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!tenantId || !userId) {
+    return [];
+  }
+  return db
+    .prepare(
+      `SELECT derived_agent_id AS derivedAgentId,
+              derived_workspace_dir AS derivedWorkspaceDir
+       FROM user_agent_assignments
+       WHERE tenant_id = ? AND user_id = ?`,
+    )
+    .all(tenantId, userId)
+    .map((row) => ({
+      derivedAgentId: String(row?.derivedAgentId || "").trim(),
+      derivedWorkspaceDir: String(row?.derivedWorkspaceDir || "").trim(),
+    }))
+    .filter((row) => row.derivedAgentId || row.derivedWorkspaceDir);
+}
+
+function cleanupMemberDerivedWorkspaces(entries, params = {}) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return {
+      removedWorkspaceCount: 0,
+      removedPathCount: 0,
+    };
+  }
+
+  const configDir = resolveConfigDir(params);
+  const workspaceAgentsRoot = path.join(configDir, "workspace-agents");
+  const removedWorkspaceIds = new Set();
+  const removedPaths = new Set();
+
+  for (const entry of entries) {
+    const derivedAgentId =
+      String(entry?.derivedAgentId || "").trim() ||
+      path.basename(String(entry?.derivedWorkspaceDir || "").trim());
+    if (!derivedAgentId) {
+      continue;
+    }
+
+    let canonicalWorkspace = "";
+    const recordedWorkspace = String(entry?.derivedWorkspaceDir || "").trim();
+    if (recordedWorkspace) {
+      const resolvedRecordedWorkspace = path.resolve(recordedWorkspace);
+      if (
+        isPathInside(workspaceAgentsRoot, resolvedRecordedWorkspace) &&
+        path.basename(resolvedRecordedWorkspace) === derivedAgentId
+      ) {
+        canonicalWorkspace = resolvedRecordedWorkspace;
+      }
+    }
+    if (!canonicalWorkspace) {
+      canonicalWorkspace = path.join(workspaceAgentsRoot, derivedAgentId);
+    }
+
+    const runtimeWorkspace = path.join(configDir, `workspace-${derivedAgentId}`);
+    const targets = [runtimeWorkspace, canonicalWorkspace];
+    let removedForWorkspace = false;
+    for (const target of targets) {
+      const resolvedTarget = path.resolve(target);
+      if (!isPathInside(configDir, resolvedTarget)) {
+        continue;
+      }
+      try {
+        if (removeWorkspacePath(resolvedTarget)) {
+          removedPaths.add(resolvedTarget);
+          removedForWorkspace = true;
+        }
+      } catch {
+        // Best-effort cleanup only. Member deletion must not be blocked by stale workspace files.
+      }
+    }
+    if (removedForWorkspace) {
+      removedWorkspaceIds.add(derivedAgentId);
+    }
+  }
+
+  return {
+    removedWorkspaceCount: removedWorkspaceIds.size,
+    removedPathCount: removedPaths.size,
+  };
+}
+
 function normalizeAgentIdentity(agent) {
   const identity = agent?.identity && typeof agent.identity === "object" ? agent.identity : {};
   const name =
@@ -869,6 +987,10 @@ export function deleteTenantMember(db, params) {
     if (!current) {
       throw new Error("成员不存在");
     }
+    const cleanupEntries = collectMemberDerivedWorkspaceEntries(db, {
+      tenantId,
+      userId,
+    });
 
     const updatedAt = nowIso();
     db.prepare(
@@ -899,11 +1021,14 @@ export function deleteTenantMember(db, params) {
       tenantId,
       userId,
     });
+    const cleanupResult = cleanupMemberDerivedWorkspaces(cleanupEntries, params);
 
     return {
       id: current.id,
       username: current.username,
       revokedAssignmentCount: Number(revokeAssignments?.changes || 0),
+      removedWorkspaceCount: Number(cleanupResult?.removedWorkspaceCount || 0),
+      removedWorkspacePathCount: Number(cleanupResult?.removedPathCount || 0),
     };
   });
 }

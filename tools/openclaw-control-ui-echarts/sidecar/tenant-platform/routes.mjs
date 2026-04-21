@@ -1092,6 +1092,8 @@ export function createTenantPlatformRouter(deps) {
         const member = deleteTenantMember(deps.db, {
           tenantId: session.tenantId,
           userId: String(body.userId || "").trim(),
+          configDir: deps.config?.configDir,
+          configPath: deps.config?.configPath,
         });
         logAudit(deps.db, {
           userId: session.userId,
@@ -1103,6 +1105,7 @@ export function createTenantPlatformRouter(deps) {
             userId: String(body.userId || "").trim(),
             username: member?.username || null,
             revokedAssignmentCount: Number(member?.revokedAssignmentCount || 0),
+            removedWorkspaceCount: Number(member?.removedWorkspaceCount || 0),
           },
         });
         sendJson(request, response, 200, { ok: true, data: member });
