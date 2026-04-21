@@ -98,6 +98,21 @@ function memberStatusToggleLabel(status) {
   return String(status || "").trim() === "active" ? "禁用成员" : "启用成员";
 }
 
+function createDeleteMemberDialogState() {
+  return {
+    id: "",
+    username: "",
+    assignedAgentCount: 0,
+  };
+}
+
+function getDeleteMemberTarget(controller) {
+  if (!(controller?.deleteMemberTarget && typeof controller.deleteMemberTarget === "object")) {
+    controller.deleteMemberTarget = createDeleteMemberDialogState();
+  }
+  return controller.deleteMemberTarget;
+}
+
 function createAgentDetailDialogState() {
   return {
     open: false,
@@ -398,6 +413,7 @@ function ensureController(root, session, apiClient) {
     activeMember: null,
     assignAgentDialog: createAssignAgentDialogState(),
     passwordMember: null,
+    deleteMemberTarget: createDeleteMemberDialogState(),
     revokeAssignmentDialog: createRevokeAssignmentDialogState(),
     usageItems: [],
     usageTotal: 0,
@@ -407,6 +423,7 @@ function ensureController(root, session, apiClient) {
       createMemberOpen: false,
       assignOpen: false,
       changePasswordOpen: false,
+      deleteMemberOpen: false,
     },
   };
 
@@ -433,6 +450,10 @@ function ensureController(root, session, apiClient) {
     if (event.target.matches("[data-tenant-member-password-dialog]")) {
       controller.dialogs.changePasswordOpen = false;
       controller.passwordMember = null;
+    }
+    if (event.target.matches("[data-tenant-member-delete-dialog]")) {
+      controller.dialogs.deleteMemberOpen = false;
+      controller.deleteMemberTarget = createDeleteMemberDialogState();
     }
     if (event.target.matches("[data-tenant-agent-detail-dialog]")) {
       controller.agentDetailDialog = createAgentDetailDialogState();
@@ -560,6 +581,13 @@ function renderMembersTable(rows) {
                         <td>
                           <div class="oc-tenant-table-actions oc-tenant-member-actions">
                             <button class="btn" type="button" data-tenant-open-member-password="${escapeHtml(member.id)}">更改密码</button>
+                            <button
+                              class="btn oc-tenant-destructive-action"
+                              type="button"
+                              data-tenant-open-member-delete="${escapeHtml(member.id)}"
+                            >
+                              删除成员
+                            </button>
                             <label class="oc-tenant-member-switch">
                               <input
                                 type="checkbox"
@@ -826,6 +854,45 @@ function renderChangePasswordDialog(controller) {
                   <label class="field"><span>新密码</span><input name="password" type="password" autocomplete="new-password" required /></label>
                   <div class="oc-tenant-modal__actions">
                     <button class="btn primary" type="submit">保存密码</button>
+                  </div>
+                </form>
+              `
+              : `<div class="callout info">请选择成员后再操作。</div>`
+          }
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderDeleteMemberDialog(controller) {
+  const member = getDeleteMemberTarget(controller);
+  const assignedAgentCount = Number(member?.assignedAgentCount || 0);
+  const revokeHint = assignedAgentCount
+    ? `删除后会同步失效该成员当前的 ${formatNumber(assignedAgentCount)} 条 Agent 分配。`
+    : "删除后该成员将无法继续登录。";
+  return `
+    <dialog class="oc-tenant-modal" data-tenant-member-delete-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">删除成员</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="delete-member">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
+          ${
+            member?.id
+              ? `
+                <form class="oc-tenant-modal__form" data-tenant-member-delete-form>
+                  <input type="hidden" name="userId" value="${escapeHtml(member.id)}" />
+                  <label class="field"><span>成员账号</span><input type="text" value="${escapeHtml(member.username || member.id)}" disabled /></label>
+                  <div class="callout warning">
+                    即将删除成员“${escapeHtml(member.username || member.id)}”。<br />
+                    <strong>删除后不可在成员列表中恢复。</strong><br />
+                    ${escapeHtml(revokeHint)}
+                  </div>
+                  <div class="oc-tenant-modal__actions">
+                    <button class="btn" type="button" data-tenant-close-dialog="delete-member">取消</button>
+                    <button class="btn oc-tenant-destructive-action" type="submit">确认删除</button>
                   </div>
                 </form>
               `
@@ -1265,7 +1332,7 @@ function render(root, controller) {
         ? ""
         : isOwnedAgents
           ? `${renderAgentDetailDialog(controller)}`
-          : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
+          : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderDeleteMemberDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
     }
   `;
 
@@ -1282,6 +1349,9 @@ function render(root, controller) {
     }
     if (controller.dialogs.changePasswordOpen) {
       openDialog(root.querySelector("[data-tenant-member-password-dialog]"));
+    }
+    if (controller.dialogs.deleteMemberOpen) {
+      openDialog(root.querySelector("[data-tenant-member-delete-dialog]"));
     }
     if (controller.dialogs.assignOpen || controller.assignAgentDialog?.open) {
       openDialog(root.querySelector("[data-tenant-assign-dialog]"));
@@ -1347,11 +1417,32 @@ async function refresh(root, controller) {
   ) {
     controller.activeMember = null;
   }
+  if (
+    controller.deleteMemberTarget?.id &&
+    !members.some((member) => member.id === controller.deleteMemberTarget.id)
+  ) {
+    controller.dialogs.deleteMemberOpen = false;
+    controller.deleteMemberTarget = createDeleteMemberDialogState();
+  }
   render(root, controller);
 }
 
 function memberById(controller, userId) {
   return controller.members.find((member) => member.id === userId) ?? null;
+}
+
+function openDeleteMemberDialog(root, controller, memberId) {
+  const member = memberById(controller, memberId);
+  if (!member) {
+    return;
+  }
+  controller.deleteMemberTarget = {
+    id: String(member.id || "").trim(),
+    username: String(member.username || "").trim(),
+    assignedAgentCount: Number(member.assignedAgentCount || 0),
+  };
+  controller.dialogs.deleteMemberOpen = true;
+  render(root, controller);
 }
 
 async function updateMemberStatus(root, controller, input) {
@@ -1646,6 +1737,12 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  const deleteTrigger = target.closest("[data-tenant-open-member-delete]");
+  if (deleteTrigger instanceof HTMLElement) {
+    openDeleteMemberDialog(root, controller, deleteTrigger.dataset.tenantOpenMemberDelete);
+    return;
+  }
+
   const closeDialogTrigger = target.closest("[data-tenant-close-dialog]");
   if (closeDialogTrigger instanceof HTMLElement) {
     const dialogKind = closeDialogTrigger.dataset.tenantCloseDialog || "";
@@ -1663,6 +1760,11 @@ async function handleClick(root, controller, event) {
       controller.dialogs.changePasswordOpen = false;
       controller.passwordMember = null;
       closeDialog(root.querySelector("[data-tenant-member-password-dialog]"));
+    }
+    if (dialogKind === "delete-member") {
+      controller.dialogs.deleteMemberOpen = false;
+      controller.deleteMemberTarget = createDeleteMemberDialogState();
+      closeDialog(root.querySelector("[data-tenant-member-delete-dialog]"));
     }
     if (dialogKind === "agent-detail") {
       controller.agentDetailDialog = createAgentDetailDialogState();
@@ -1805,6 +1907,31 @@ async function handleSubmit(root, controller, event) {
     return;
   }
 
+  if (target.matches("[data-tenant-member-delete-form]")) {
+    event.preventDefault();
+    try {
+      const payload = Object.fromEntries(new FormData(target).entries());
+      const result = await controller.apiClient.deleteTenantMember(payload);
+      const memberLabel =
+        String(result?.username || controller.deleteMemberTarget?.username || payload.userId || "").trim() ||
+        "该成员";
+      const revokedAssignmentCount = Number(result?.revokedAssignmentCount || 0);
+      controller.dialogs.deleteMemberOpen = false;
+      controller.deleteMemberTarget = createDeleteMemberDialogState();
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-tenant-member-delete-dialog]"));
+      setFeedback(
+        root,
+        revokedAssignmentCount > 0
+          ? `成员“${memberLabel}”已删除，并同步失效 ${formatNumber(revokedAssignmentCount)} 条 Agent 分配。`
+          : `成员“${memberLabel}”已删除。`,
+      );
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
   if (target.matches("[data-tenant-assignment-form]")) {
     event.preventDefault();
     const dialog = getAssignAgentDialog(controller);
@@ -1934,7 +2061,9 @@ export async function mountTenantConsolePage(root, options = {}) {
   if (controller.section !== "members") {
     controller.dialogs.createMemberOpen = false;
     controller.dialogs.changePasswordOpen = false;
+    controller.dialogs.deleteMemberOpen = false;
     controller.passwordMember = null;
+    controller.deleteMemberTarget = createDeleteMemberDialogState();
   }
   if (controller.section !== "owned-agents") {
     controller.agentDetailDialog = createAgentDetailDialogState();
@@ -1949,7 +2078,9 @@ export async function mountTenantConsolePage(root, options = {}) {
     controller.dialogs.createMemberOpen = false;
     controller.dialogs.assignOpen = false;
     controller.dialogs.changePasswordOpen = false;
+    controller.dialogs.deleteMemberOpen = false;
     controller.passwordMember = null;
+    controller.deleteMemberTarget = createDeleteMemberDialogState();
     controller.agentDetailDialog = createAgentDetailDialogState();
     controller.activeMember = null;
     controller.assignAgentDialog = createAssignAgentDialogState();

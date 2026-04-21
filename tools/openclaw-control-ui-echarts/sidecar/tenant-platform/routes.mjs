@@ -7,6 +7,7 @@ import {
   createBootstrapLocalTenantAdmin,
   assignTenantAgentToUser,
   createBootstrapPlatformAdmin,
+  deleteTenantMember,
   createTenantMember,
   createTenantWithAdmin,
   getBootstrapStatus,
@@ -1066,6 +1067,42 @@ export function createTenantPlatformRouter(deps) {
           payloadJson: {
             userId: String(body.userId || "").trim(),
             status: member?.status || String(body.status || "").trim() || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: member });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/members/delete") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const member = deleteTenantMember(deps.db, {
+          tenantId: session.tenantId,
+          userId: String(body.userId || "").trim(),
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.member.delete",
+          resourceType: "member",
+          resourceId: member?.id || String(body.userId || "").trim() || null,
+          payloadJson: {
+            userId: String(body.userId || "").trim(),
+            username: member?.username || null,
+            revokedAssignmentCount: Number(member?.revokedAssignmentCount || 0),
           },
         });
         sendJson(request, response, 200, { ok: true, data: member });

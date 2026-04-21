@@ -748,7 +748,7 @@ function getTenantMemberRow(db, tenantId, userId) {
        FROM users u
        JOIN tenant_memberships tm ON tm.user_id = u.id
        LEFT JOIN user_agent_assignments ua ON ua.user_id = u.id AND ua.status = 'active'
-       WHERE tm.tenant_id = ? AND tm.role = 'member' AND u.id = ?
+       WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted' AND u.id = ?
        GROUP BY u.id, tm.role, tm.created_at`,
       )
       .get(tenantId, userId) ?? null
@@ -764,7 +764,7 @@ export function listTenantMembers(db, tenantId) {
        FROM users u
        JOIN tenant_memberships tm ON tm.user_id = u.id
        LEFT JOIN user_agent_assignments ua ON ua.user_id = u.id AND ua.status = 'active'
-       WHERE tm.tenant_id = ? AND tm.role = 'member'
+       WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted'
        GROUP BY u.id, tm.role, tm.created_at
        ORDER BY tm.created_at DESC`,
     )
@@ -851,6 +851,60 @@ export function updateTenantMemberStatus(db, params) {
       updatedAt: nowIso(),
     });
     return getTenantMemberRow(db, tenantId, userId);
+  });
+}
+
+export function deleteTenantMember(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+
+  return runInTransaction(db, () => {
+    const current = getTenantMemberRow(db, tenantId, userId);
+    if (!current) {
+      throw new Error("成员不存在");
+    }
+
+    const updatedAt = nowIso();
+    db.prepare(
+      `UPDATE tenant_memberships
+       SET status = 'deleted'
+       WHERE tenant_id = @tenantId
+         AND user_id = @userId
+         AND role = 'member'
+         AND status != 'deleted'`,
+    ).run({
+      tenantId,
+      userId,
+    });
+    db.prepare(
+      `UPDATE users
+       SET status = 'inactive',
+           updated_at = @updatedAt
+       WHERE id = @userId`,
+    ).run({
+      userId,
+      updatedAt,
+    });
+    const revokeAssignments = db.prepare(
+      `UPDATE user_agent_assignments
+       SET status = 'inactive'
+       WHERE tenant_id = @tenantId AND user_id = @userId AND status = 'active'`,
+    ).run({
+      tenantId,
+      userId,
+    });
+
+    return {
+      id: current.id,
+      username: current.username,
+      revokedAssignmentCount: Number(revokeAssignments?.changes || 0),
+    };
   });
 }
 

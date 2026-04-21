@@ -6,6 +6,7 @@ import {
   openTenantPlatformDb,
   closeTenantPlatformDb,
   createBootstrapPlatformAdmin,
+  deleteTenantMember,
   createTenantWithAdmin,
   createTenantMember,
   getUserByUsername,
@@ -462,6 +463,89 @@ describe("tenant platform database foundation", () => {
         status: "active",
       });
       expect(enabled?.status).toBe("active");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("logically deletes tenant members and revokes their active assignments", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "iota",
+        name: "租户 Iota",
+        adminUsername: "iota-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-delete",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 12,
+        status: "active",
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const deleted = deleteTenantMember(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+      });
+
+      expect(deleted).toMatchObject({
+        id: member.id,
+        username: "member-delete",
+        revokedAssignmentCount: 1,
+      });
+      expect(listTenantMembers(db, tenant.id)).toEqual([]);
+      expect(getUserByUsername(db, "member-delete")?.status).toBe("inactive");
+      expect(
+        db
+          .prepare(
+            `SELECT status
+             FROM tenant_memberships
+             WHERE tenant_id = ? AND user_id = ? AND role = 'member'`,
+          )
+          .get(tenant.id, member.id)?.status,
+      ).toBe("deleted");
+      expect(
+        db
+          .prepare(
+            `SELECT status
+             FROM user_agent_assignments
+             WHERE tenant_id = ? AND user_id = ? AND tenant_agent_id = ?`,
+          )
+          .get(tenant.id, member.id, tenantAgentId)?.status,
+      ).toBe("inactive");
+      expect(
+        listAssignedAgentsForUser(
+          db,
+          { tenantId: tenant.id, userId: member.id },
+          readOpenClawAgentCatalog(sandbox.config.configPath),
+        ),
+      ).toEqual([]);
     } finally {
       closeTenantPlatformDb(db);
     }

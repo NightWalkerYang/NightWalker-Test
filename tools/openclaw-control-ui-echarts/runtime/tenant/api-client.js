@@ -185,6 +185,9 @@ export function createTenantApiClient() {
     updateTenantMemberStatus(body) {
       return requestJson("/tenant/admin/members/status", { method: "POST", body });
     },
+    deleteTenantMember(body) {
+      return requestJson("/tenant/admin/members/delete", { method: "POST", body });
+    },
     listTenantAgents() {
       return requestJson("/tenant/admin/tenant-agents");
     },

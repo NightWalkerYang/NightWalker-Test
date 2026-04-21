@@ -234,6 +234,93 @@ describe("tenant surface", () => {
     );
   });
 
+  it("deletes a tenant member from the members list and refreshes the table", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 2,
+          createdAt: "2026-04-03T08:00:00.000Z",
+        },
+      ],
+      deleteCalls: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return okJson(state.members);
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.endsWith("/tenant/admin/members/delete") && method === "POST") {
+          state.deleteCalls.push(body);
+          state.members = state.members.filter((member) => member.id !== body.userId);
+          return okJson({
+            id: body.userId,
+            username: "alice",
+            revokedAssignmentCount: 2,
+          });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const deleteButton = document.querySelector("[data-tenant-open-member-delete='member-1']");
+    expect(deleteButton?.textContent).toContain("删除成员");
+    deleteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const deleteDialog = document.querySelector("[data-tenant-member-delete-dialog]");
+    expect(deleteDialog?.open).toBe(true);
+    expect(deleteDialog?.textContent).toContain("alice");
+    expect(deleteDialog?.textContent).toContain("2 条 Agent 分配");
+
+    const deleteForm = document.querySelector("[data-tenant-member-delete-form]");
+    deleteForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.deleteCalls).toEqual([{ userId: "member-1" }]);
+    expect(document.querySelector("[data-tenant-member-delete-dialog]")?.open).toBe(false);
+    expect(document.querySelector("[data-tenant-open-member-delete='member-1']")).toBeNull();
+    expect(document.querySelector(".oc-tenant-table-empty")?.textContent).toContain("暂无成员数据");
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "成员“alice”已删除，并同步失效 2 条 Agent 分配。",
+    );
+  });
+
   it("mounts the native tenant agent assignment view", async () => {
     writeTenantSession({
       token: "tenant-token",
