@@ -115,6 +115,33 @@ function createRevokeTenantAgentDialogState() {
   };
 }
 
+function createAssignTenantAgentDialogState() {
+  return {
+    open: false,
+    loading: false,
+    busy: false,
+    tenantId: "",
+    tenantName: "",
+    agents: [],
+    assignedAgentIds: new Set(),
+    selectedAgentIds: new Set(),
+    description: "",
+    rateMultiplier: "1",
+    balancePoints: "0",
+    error: "",
+    requestToken: 0,
+  };
+}
+
+function getAssignTenantAgentDialog(controller) {
+  if (
+    !(controller?.assignTenantAgentDialog && typeof controller.assignTenantAgentDialog === "object")
+  ) {
+    controller.assignTenantAgentDialog = createAssignTenantAgentDialogState();
+  }
+  return controller.assignTenantAgentDialog;
+}
+
 function getRevokeTenantAgentDialog(controller) {
   if (
     !(
@@ -202,6 +229,71 @@ function pruneRevokeTenantAgentSelection(controller) {
   }
 }
 
+function getAssignablePlatformCatalogAgents(dialog) {
+  if (!Array.isArray(dialog?.agents)) {
+    return [];
+  }
+  const assignedAgentIds =
+    dialog?.assignedAgentIds instanceof Set ? dialog.assignedAgentIds : new Set();
+  return dialog.agents.filter((agent) => {
+    const agentId = String(agent?.id || "").trim();
+    return Boolean(agentId) && !assignedAgentIds.has(agentId);
+  });
+}
+
+function getAssignTenantAgentDisplayName(agent) {
+  for (const candidate of [
+    agent?.name,
+    agent?.agentName,
+    agent?.label,
+    agent?.description,
+    agent?.agentId,
+    agent?.id,
+  ]) {
+    const value = String(candidate || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "未知 Agent";
+}
+
+function isAssignTenantAgentSelected(controller, agentId) {
+  return getAssignTenantAgentDialog(controller).selectedAgentIds.has(String(agentId || "").trim());
+}
+
+function setAssignTenantAgentSelected(controller, agentId, selected) {
+  const normalized = String(agentId || "").trim();
+  if (!normalized) {
+    return;
+  }
+  const dialog = getAssignTenantAgentDialog(controller);
+  if (selected) {
+    dialog.selectedAgentIds.add(normalized);
+    return;
+  }
+  dialog.selectedAgentIds.delete(normalized);
+}
+
+function clearAssignTenantAgentSelection(controller) {
+  getAssignTenantAgentDialog(controller).selectedAgentIds.clear();
+}
+
+function pruneAssignTenantAgentSelection(controller) {
+  const dialog = controller?.assignTenantAgentDialog;
+  if (!dialog?.open) {
+    return;
+  }
+  const agentIds = new Set(
+    getAssignablePlatformCatalogAgents(dialog).map((agent) => String(agent.id || "").trim()),
+  );
+  for (const agentId of Array.from(dialog.selectedAgentIds)) {
+    if (!agentIds.has(agentId)) {
+      dialog.selectedAgentIds.delete(agentId);
+    }
+  }
+}
+
 function ensureController(root, session, apiClient) {
   if (root.__ocPlatformConsoleController) {
     root.__ocPlatformConsoleController.session = session;
@@ -231,6 +323,7 @@ function ensureController(root, session, apiClient) {
       localLicenseOpen: false,
     },
     activeTenant: null,
+    assignTenantAgentDialog: createAssignTenantAgentDialogState(),
     loadingRateAgents: false,
     localLicense: null,
     revokeTenantAgentDialog: createRevokeTenantAgentDialogState(),
@@ -258,6 +351,7 @@ function ensureController(root, session, apiClient) {
     }
     if (event.target.matches("[data-platform-assign-dialog]")) {
       controller.dialogs.assignOpen = false;
+      controller.assignTenantAgentDialog = createAssignTenantAgentDialogState();
     }
     if (event.target.matches("[data-platform-rate-dialog]")) {
       controller.dialogs.rateOpen = false;
@@ -545,35 +639,104 @@ function renderMemberLimitDialog(controller) {
 }
 
 function renderAssignDialog(controller) {
-  const tenant = controller.activeTenant;
+  const dialog = getAssignTenantAgentDialog(controller);
+  const selectedCount = dialog.selectedAgentIds.size;
+  const selectableAgents = getAssignablePlatformCatalogAgents(dialog);
+  const allAgentsSelected =
+    selectableAgents.length > 0 && selectedCount === selectableAgents.length;
   const localEdition = isLocalEdition(controller);
+  const statusMarkup = dialog.loading
+    ? `<div class="callout info">正在加载该租户可分配的 Agent...</div>`
+    : dialog.error
+      ? `<div class="callout info">${escapeHtml(dialog.error)}</div>`
+      : "";
+  const listMarkup =
+    !dialog.loading && selectableAgents.length
+      ? `
+        <div class="data-table-container oc-platform-revoke-agent-list">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="oc-platform-agent-select-col"></th>
+                <th>Agent</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${selectableAgents
+                .map(
+                  (agent) => `
+                    <tr>
+                      <td class="oc-platform-agent-select-cell">
+                        <input
+                          type="checkbox"
+                          data-platform-assign-agent-select="${escapeHtml(agent.id)}"
+                          aria-label="选择 ${escapeHtml(getAssignTenantAgentDisplayName(agent))}"
+                          ${dialog.busy ? "disabled" : ""}
+                          ${isAssignTenantAgentSelected(controller, agent.id) ? "checked" : ""}
+                        />
+                      </td>
+                      <td>
+                        <div class="oc-platform-revoke-agent__name">${escapeHtml(getAssignTenantAgentDisplayName(agent))}</div>
+                        <div class="oc-platform-revoke-agent__meta">${escapeHtml(agent.id || "-")}</div>
+                      </td>
+                      <td>${escapeHtml(agent.description || agent.summary || "-")}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : !dialog.loading && !dialog.error
+        ? `<div class="callout info">该租户当前没有可分配的 Agent。</div>`
+        : "";
   return `
-    <dialog class="oc-platform-modal" data-platform-assign-dialog>
-      <div class="oc-platform-modal__panel">
+    <dialog class="oc-platform-modal oc-platform-modal--wide" data-platform-assign-dialog>
+      <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
         <header class="oc-platform-modal__header">
           <h3 class="oc-platform-modal__title">分配Agent</h3>
           <button class="btn" type="button" data-platform-close-dialog="assign">关闭</button>
         </header>
         <div class="oc-platform-modal__body">
           ${
-            tenant
+            dialog.tenantId
               ? `
                 <form class="oc-platform-modal__form" data-platform-agent-form>
-                  <input type="hidden" name="tenantId" value="${escapeHtml(tenant.id)}" />
-                  <label class="field"><span>目标租户</span><input type="text" value="${escapeHtml(tenant.name)}" disabled /></label>
+                  <input type="hidden" name="tenantId" value="${escapeHtml(dialog.tenantId)}" />
+                  <label class="field"><span>目标租户</span><input type="text" value="${escapeHtml(dialog.tenantName || dialog.tenantId)}" disabled /></label>
+                  <div class="field">
+                    <span>平台已有 Agent</span>
+                    <div class="oc-platform-revoke-agent-toolbar">
+                      <label class="oc-platform-revoke-agent-toolbar__select-all">
+                        <input
+                          type="checkbox"
+                          data-platform-assign-agent-select-all
+                          aria-label="全选可分配的 Agent"
+                          ${dialog.loading || dialog.busy || !selectableAgents.length ? "disabled" : ""}
+                          ${allAgentsSelected ? "checked" : ""}
+                        />
+                        <span>全选</span>
+                      </label>
+                      <span class="oc-platform-revoke-agent-toolbar__summary">
+                        已选择 ${formatNumber(selectedCount)} 个 Agent
+                      </span>
+                    </div>
+                  </div>
+                  ${statusMarkup}
+                  ${listMarkup}
                   <label class="field">
-                    <span>OpenClaw Agent</span>
-                    <select name="agentId" required>
-                      <option value="">请选择 OpenClaw Agent</option>
-                      ${controller.catalogAgents
-                        .map(
-                          (agent) =>
-                            `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)}</option>`,
-                        )
-                        .join("")}
-                    </select>
+                    <span>简短描述</span>
+                    <input
+                      name="description"
+                      type="text"
+                      data-platform-assign-description
+                      value="${escapeHtml(dialog.description)}"
+                      placeholder="显示在租户 Agent 列表和成员分配里的描述"
+                      ${dialog.busy ? "disabled" : ""}
+                    />
                   </label>
-                  <label class="field"><span>简短描述</span><input name="description" type="text" placeholder="显示在成员 Agent 卡片上的描述" /></label>
                   ${
                     localEdition
                       ? `
@@ -581,12 +744,37 @@ function renderAssignDialog(controller) {
                         <input type="hidden" name="balancePoints" value="0" />
                       `
                       : `
-                        <label class="field"><span>计费倍率</span><input name="rateMultiplier" type="number" step="0.01" value="1" required /></label>
-                        <label class="field"><span>初始积分</span><input name="balancePoints" type="number" step="0.01" value="0" required /></label>
+                        <label class="field">
+                          <span>计费倍率</span>
+                          <input
+                            name="rateMultiplier"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            data-platform-assign-rate-multiplier
+                            value="${escapeHtml(dialog.rateMultiplier)}"
+                            ${dialog.busy ? "disabled" : ""}
+                            required
+                          />
+                        </label>
+                        <label class="field">
+                          <span>初始积分</span>
+                          <input
+                            name="balancePoints"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            data-platform-assign-balance-points
+                            value="${escapeHtml(dialog.balancePoints)}"
+                            ${dialog.busy ? "disabled" : ""}
+                            required
+                          />
+                        </label>
                       `
                   }
                   <div class="oc-platform-modal__actions">
-                    <button class="btn primary" type="submit">保存</button>
+                    <button class="btn" type="button" data-platform-close-dialog="assign">取消</button>
+                    <button class="btn primary" type="submit" ${dialog.loading || dialog.busy || selectedCount === 0 ? "disabled" : ""}>保存分配</button>
                   </div>
                 </form>
               `
@@ -896,6 +1084,29 @@ function restoreRenderFocusState(root, state) {
   }
 }
 
+function syncAssignTenantAgentSelectionState(root, controller) {
+  const dialog = controller.assignTenantAgentDialog;
+  if (controller.section !== "agent-allocation" || !dialog?.open) {
+    return;
+  }
+  const selectAll = root.querySelector("[data-platform-assign-agent-select-all]");
+  if (!(selectAll instanceof HTMLInputElement)) {
+    return;
+  }
+  const selectableAgents = getAssignablePlatformCatalogAgents(dialog);
+  const selectedAgents = selectableAgents.filter((agent) =>
+    dialog.selectedAgentIds.has(String(agent.id || "").trim()),
+  );
+  selectAll.checked =
+    selectableAgents.length > 0 &&
+    selectedAgents.length === selectableAgents.length &&
+    !dialog.loading &&
+    !dialog.busy;
+  selectAll.indeterminate =
+    selectedAgents.length > 0 && selectedAgents.length < selectableAgents.length;
+  selectAll.disabled = selectableAgents.length === 0 || dialog.loading || dialog.busy;
+}
+
 function syncRevokeTenantAgentSelectionState(root, controller) {
   const dialog = controller.revokeTenantAgentDialog;
   if (controller.section !== "agent-allocation" || !dialog?.open) {
@@ -922,6 +1133,7 @@ function syncRevokeTenantAgentSelectionState(root, controller) {
 function render(root, controller) {
   const focusState = captureRenderFocusState(root);
   if (controller.section === "agent-allocation") {
+    pruneAssignTenantAgentSelection(controller);
     pruneRevokeTenantAgentSelection(controller);
   }
   const filtered = filterTenants(controller);
@@ -973,6 +1185,7 @@ function render(root, controller) {
     openDialog(root.querySelector("[data-platform-local-license-dialog]"));
   }
   if (controller.section === "agent-allocation") {
+    syncAssignTenantAgentSelectionState(root, controller);
     syncRevokeTenantAgentSelectionState(root, controller);
   }
   restoreRenderFocusState(root, focusState);
@@ -990,6 +1203,11 @@ async function refresh(root, controller) {
   controller.tenants = tenants;
   controller.catalogAgents = catalogAgents;
   controller.localLicense = localLicense;
+  if (controller.assignTenantAgentDialog?.open) {
+    controller.assignTenantAgentDialog.agents = Array.isArray(catalogAgents)
+      ? catalogAgents.slice()
+      : [];
+  }
   if (
     controller.activeTenant &&
     !tenants.some((tenant) => tenant.id === controller.activeTenant.id)
@@ -1001,6 +1219,68 @@ async function refresh(root, controller) {
 
 function tenantById(controller, tenantId) {
   return controller.tenants.find((tenant) => tenant.id === tenantId) ?? null;
+}
+
+async function openAssignTenantAgentDialog(root, controller, tenantId) {
+  const tenant = tenantById(controller, tenantId);
+  if (!tenant) {
+    return;
+  }
+
+  controller.activeTenant = tenant;
+  const previousToken = Number(controller.assignTenantAgentDialog?.requestToken || 0);
+  controller.assignTenantAgentDialog = {
+    ...createAssignTenantAgentDialogState(),
+    open: true,
+    loading: true,
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+    agents: Array.isArray(controller.catalogAgents) ? controller.catalogAgents.slice() : [],
+    requestToken: previousToken + 1,
+  };
+  controller.dialogs.assignOpen = true;
+  render(root, controller);
+
+  const requestToken = controller.assignTenantAgentDialog.requestToken;
+  try {
+    const assignments = await controller.apiClient.listPlatformTenantAgents(tenant.id);
+    const currentDialog = controller.assignTenantAgentDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    const assignedAgentIds = new Set(
+      (Array.isArray(assignments) ? assignments : [])
+        .map((assignment) => String(assignment?.agentId || assignment?.baseAgentId || "").trim())
+        .filter(Boolean),
+    );
+    currentDialog.assignedAgentIds = assignedAgentIds;
+    currentDialog.agents = Array.isArray(controller.catalogAgents)
+      ? controller.catalogAgents.slice()
+      : [];
+    currentDialog.loading = false;
+    currentDialog.error = "";
+    pruneAssignTenantAgentSelection(controller);
+    render(root, controller);
+  } catch (error) {
+    const currentDialog = controller.assignTenantAgentDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    currentDialog.loading = false;
+    currentDialog.error = error instanceof Error ? error.message : String(error);
+    render(root, controller);
+    setFeedback(root, currentDialog.error, true);
+  }
 }
 
 async function openRateDialog(root, controller, tenantId) {
@@ -1220,6 +1500,7 @@ async function handleClick(root, controller, event) {
     }
     if (dialogKind === "assign") {
       controller.dialogs.assignOpen = false;
+      controller.assignTenantAgentDialog = createAssignTenantAgentDialogState();
       closeDialog(root.querySelector("[data-platform-assign-dialog]"));
     }
     if (dialogKind === "rate") {
@@ -1264,9 +1545,11 @@ async function handleClick(root, controller, event) {
 
   const assignTrigger = target.closest("[data-platform-open-assign]");
   if (assignTrigger instanceof HTMLElement) {
-    controller.activeTenant = tenantById(controller, assignTrigger.dataset.platformOpenAssign);
-    controller.dialogs.assignOpen = true;
-    render(root, controller);
+    await openAssignTenantAgentDialog(
+      root,
+      controller,
+      assignTrigger.dataset.platformOpenAssign || "",
+    );
     return;
   }
 
@@ -1289,6 +1572,39 @@ async function handleClick(root, controller, event) {
 function handleInput(root, controller, event) {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  if (target.hasAttribute("data-platform-assign-agent-select-all")) {
+    const dialog = getAssignTenantAgentDialog(controller);
+    const selected = target.checked;
+    clearAssignTenantAgentSelection(controller);
+    if (selected) {
+      for (const agent of getAssignablePlatformCatalogAgents(dialog)) {
+        setAssignTenantAgentSelected(controller, agent.id, true);
+      }
+    }
+    render(root, controller);
+    return;
+  }
+  if (target.hasAttribute("data-platform-assign-agent-select")) {
+    setAssignTenantAgentSelected(
+      controller,
+      target.dataset.platformAssignAgentSelect,
+      target.checked,
+    );
+    render(root, controller);
+    return;
+  }
+  if (target.hasAttribute("data-platform-assign-description")) {
+    getAssignTenantAgentDialog(controller).description = target.value;
+    return;
+  }
+  if (target.hasAttribute("data-platform-assign-rate-multiplier")) {
+    getAssignTenantAgentDialog(controller).rateMultiplier = target.value;
+    return;
+  }
+  if (target.hasAttribute("data-platform-assign-balance-points")) {
+    getAssignTenantAgentDialog(controller).balancePoints = target.value;
     return;
   }
   if (target.hasAttribute("data-platform-revoke-agent-select-all")) {
@@ -1357,15 +1673,109 @@ async function handleSubmit(root, controller, event) {
 
   if (target.matches("[data-platform-agent-form]")) {
     event.preventDefault();
+    const dialog = getAssignTenantAgentDialog(controller);
+    if (!dialog.open || dialog.loading || dialog.busy) {
+      return;
+    }
+    pruneAssignTenantAgentSelection(controller);
+    const selectedAgentIds = Array.from(dialog.selectedAgentIds);
+    if (!selectedAgentIds.length) {
+      dialog.error = "请选择要分配的 Agent。";
+      render(root, controller);
+      setFeedback(root, dialog.error, true);
+      return;
+    }
+    const formData = new FormData(target);
+    const tenantId = String(formData.get("tenantId") || dialog.tenantId || "").trim();
+    if (!tenantId) {
+      dialog.error = "tenant_id_required";
+      render(root, controller);
+      setFeedback(root, dialog.error, true);
+      return;
+    }
+    dialog.description = String(formData.get("description") || "");
+    if (!isLocalEdition(controller)) {
+      dialog.rateMultiplier = String(formData.get("rateMultiplier") || dialog.rateMultiplier || "1");
+      dialog.balancePoints = String(formData.get("balancePoints") || dialog.balancePoints || "0");
+    }
+    const tenantLabel = dialog.tenantName || dialog.tenantId || "该租户";
+    const dialogToken = Number(dialog.requestToken || 0);
+    dialog.busy = true;
+    dialog.error = "";
+    render(root, controller);
     try {
-      const payload = Object.fromEntries(new FormData(target).entries());
-      await controller.apiClient.upsertPlatformTenantAgent(payload);
-      controller.dialogs.assignOpen = false;
-      await refresh(root, controller);
-      closeDialog(root.querySelector("[data-platform-assign-dialog]"));
-      setFeedback(root, "Agent 已下发到目标租户。");
+      const sharedPayload = {
+        tenantId,
+        description: dialog.description,
+        rateMultiplier: isLocalEdition(controller) ? 1 : dialog.rateMultiplier,
+        balancePoints: isLocalEdition(controller) ? 0 : dialog.balancePoints,
+      };
+      let assignedAgentCount = 0;
+      for (const agentId of selectedAgentIds) {
+        await controller.apiClient.upsertPlatformTenantAgent({
+          ...sharedPayload,
+          agentId,
+        });
+        assignedAgentCount += 1;
+      }
+      if (assignedAgentCount > 0) {
+        const currentDialog = controller.assignTenantAgentDialog;
+        if (
+          currentDialog &&
+          currentDialog.open &&
+          currentDialog.requestToken === dialogToken &&
+          currentDialog.tenantId === dialog.tenantId
+        ) {
+          controller.assignTenantAgentDialog = null;
+          controller.dialogs.assignOpen = false;
+        }
+        try {
+          await refresh(root, controller);
+        } catch (refreshError) {
+          render(root, controller);
+          setFeedback(
+            root,
+            refreshError instanceof Error
+              ? `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent，但列表刷新失败：${refreshError.message}`
+              : `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent，但列表刷新失败。`,
+            true,
+          );
+          return;
+        }
+        setFeedback(root, `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent。`);
+        return;
+      }
+      const currentDialog = controller.assignTenantAgentDialog;
+      if (
+        currentDialog &&
+        currentDialog.open &&
+        currentDialog.requestToken === dialogToken &&
+        currentDialog.tenantId === dialog.tenantId
+      ) {
+        currentDialog.busy = false;
+        currentDialog.loading = false;
+        currentDialog.error = "未找到可分配的 Agent。";
+        render(root, controller);
+        setFeedback(root, currentDialog.error, true);
+        return;
+      }
+      render(root, controller);
+      setFeedback(root, "未找到可分配的 Agent。", true);
     } catch (error) {
-      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const currentDialog = controller.assignTenantAgentDialog;
+      if (
+        currentDialog &&
+        currentDialog.open &&
+        currentDialog.requestToken === dialogToken &&
+        currentDialog.tenantId === dialog.tenantId
+      ) {
+        currentDialog.busy = false;
+        currentDialog.loading = false;
+        currentDialog.error = errorMessage;
+      }
+      render(root, controller);
+      setFeedback(root, errorMessage, true);
     }
     return;
   }
@@ -1459,6 +1869,7 @@ export async function mountPlatformConsolePage(root, options = {}) {
   const previousSection = controller.section;
   controller.section = options.section || "tenants";
   if (previousSection !== controller.section || controller.section !== "agent-allocation") {
+    clearAssignTenantAgentSelection(controller);
     clearRevokeTenantAgentSelection(controller);
   }
   if (controller.section !== "agent-allocation") {
@@ -1466,6 +1877,7 @@ export async function mountPlatformConsolePage(root, options = {}) {
     controller.dialogs.rateOpen = false;
     controller.rateDialogAgents = [];
     controller.loadingRateAgents = false;
+    controller.assignTenantAgentDialog = createAssignTenantAgentDialogState();
     controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
   }
   const sectionLinks = root.querySelectorAll("[href]");

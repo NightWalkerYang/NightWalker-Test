@@ -212,6 +212,234 @@ describe("platform surface", () => {
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")).toBeNull();
   });
 
+  it("opens an assign dialog and batch-assigns selectable catalog agents", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=platform-agent-assignment");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      tenants: [
+        {
+          id: "tenant-1",
+          code: "alpha",
+          name: "租户 Alpha",
+          deploymentMode: "cloud",
+          memberCount: 2,
+          walletBalance: 8,
+          agentCount: 1,
+          memberLimit: 10,
+          licenseExpiresAt: null,
+          status: "active",
+        },
+      ],
+      catalogAgents: [
+        {
+          id: "subotech-finance",
+          name: "苏博泰克财务分析助手",
+          description: "财务分析",
+        },
+        {
+          id: "subotech-writing",
+          name: "文案助手",
+          description: "文案辅助",
+        },
+        {
+          id: "subotech-sales",
+          name: "销售助手",
+          description: "销售跟进",
+        },
+      ],
+      tenantAgents: {
+        "tenant-1": [
+          {
+            id: "tenant-agent-1",
+            agentId: "subotech-finance",
+            agentName: "苏博泰克财务分析助手",
+            description: "财务分析",
+            balancePoints: 12,
+            rateMultiplier: 1,
+            status: "active",
+          },
+        ],
+      } as Record<string, Array<Record<string, unknown>>>,
+      assignCalls: [] as Array<Record<string, unknown>>,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data: unknown) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/platform/tenants") && method === "GET") {
+          return okJson(state.tenants);
+        }
+        if (url.includes("/platform/catalog-agents") && method === "GET") {
+          return okJson(state.catalogAgents);
+        }
+        if (url.includes("/platform/tenant-members") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.includes("/platform/tenant-agents") && method === "GET") {
+          const parsed = new URL(url, window.location.href);
+          const tenantId = parsed.searchParams.get("tenantId") || "";
+          return okJson(state.tenantAgents[tenantId] || []);
+        }
+        if (url.endsWith("/platform/tenant-agents") && method === "POST") {
+          state.assignCalls.push(body);
+          const tenantId = String(body.tenantId || "");
+          const agentId = String(body.agentId || "");
+          const catalogAgent = state.catalogAgents.find((agent) => agent.id === agentId) || null;
+          state.tenantAgents[tenantId] = [
+            ...(state.tenantAgents[tenantId] || []),
+            {
+              id: `tenant-agent-${state.assignCalls.length + 1}`,
+              agentId,
+              agentName: catalogAgent?.name || agentId,
+              description: body.description || "",
+              balancePoints: Number(body.balancePoints || 0),
+              rateMultiplier: Number(body.rateMultiplier || 1),
+              status: "active",
+            },
+          ];
+          const tenant = state.tenants.find((item) => item.id === tenantId);
+          if (tenant) {
+            tenant.agentCount = state.tenantAgents[tenantId].length;
+          }
+          return okJson(state.tenantAgents[tenantId][state.tenantAgents[tenantId].length - 1] || null);
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootPlatformSurface();
+    await flush();
+
+    const assignButton = document.querySelector("[data-platform-open-assign='tenant-1']");
+    expect(assignButton?.textContent).toContain("分配Agent");
+    assignButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    const assignDialog = document.querySelector("[data-platform-assign-dialog]");
+    expect(assignDialog?.open).toBe(true);
+    expect(
+      assignDialog?.querySelector("[data-platform-assign-agent-select='subotech-finance']"),
+    ).toBeNull();
+    expect(
+      assignDialog?.querySelector("[data-platform-assign-agent-select='subotech-writing']"),
+    ).not.toBeNull();
+    expect(
+      assignDialog?.querySelector("[data-platform-assign-agent-select='subotech-sales']"),
+    ).not.toBeNull();
+
+    const descriptionInput = assignDialog?.querySelector("[data-platform-assign-description]");
+    if (descriptionInput instanceof HTMLInputElement) {
+      descriptionInput.value = "批量下发";
+      descriptionInput.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    const rateInput = assignDialog?.querySelector("[data-platform-assign-rate-multiplier]");
+    if (rateInput instanceof HTMLInputElement) {
+      rateInput.value = "1.5";
+      rateInput.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    const balanceInput = assignDialog?.querySelector("[data-platform-assign-balance-points]");
+    if (balanceInput instanceof HTMLInputElement) {
+      balanceInput.value = "8";
+      balanceInput.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+
+    const selectAll = assignDialog?.querySelector("[data-platform-assign-agent-select-all]");
+    expect(selectAll).not.toBeNull();
+    if (selectAll instanceof HTMLInputElement) {
+      selectAll.checked = true;
+      selectAll.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const rerenderedAssignDialog = document.querySelector("[data-platform-assign-dialog]");
+    expect(
+      rerenderedAssignDialog?.querySelector("[data-platform-assign-description]") instanceof
+        HTMLInputElement
+        ? (
+            rerenderedAssignDialog?.querySelector(
+              "[data-platform-assign-description]",
+            ) as HTMLInputElement
+          ).value
+        : "",
+    ).toBe("批量下发");
+    expect(
+      rerenderedAssignDialog?.querySelector(
+        "[data-platform-assign-rate-multiplier]",
+      ) instanceof HTMLInputElement
+        ? (
+            rerenderedAssignDialog?.querySelector(
+              "[data-platform-assign-rate-multiplier]",
+            ) as HTMLInputElement
+          ).value
+        : "",
+    ).toBe("1.5");
+    expect(
+      rerenderedAssignDialog?.querySelector(
+        "[data-platform-assign-balance-points]",
+      ) instanceof HTMLInputElement
+        ? (
+            rerenderedAssignDialog?.querySelector(
+              "[data-platform-assign-balance-points]",
+            ) as HTMLInputElement
+          ).value
+        : "",
+    ).toBe("8");
+
+    const assignForm = document.querySelector("[data-platform-agent-form]");
+    assignForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.assignCalls).toEqual([
+      {
+        tenantId: "tenant-1",
+        description: "批量下发",
+        rateMultiplier: "1.5",
+        balancePoints: "8",
+        agentId: "subotech-writing",
+      },
+      {
+        tenantId: "tenant-1",
+        description: "批量下发",
+        rateMultiplier: "1.5",
+        balancePoints: "8",
+        agentId: "subotech-sales",
+      },
+    ]);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "已向租户“租户 Alpha”下发 2 个 Agent。",
+    );
+    expect(
+      document.querySelector("[data-platform-assign-dialog]") instanceof HTMLDialogElement
+        ? document.querySelector("[data-platform-assign-dialog]")?.open
+        : false,
+    ).toBe(false);
+  });
+
   it("opens a revoke dialog and revokes selected tenant agents", async () => {
     writeTenantSession({
       token: "platform-token",
