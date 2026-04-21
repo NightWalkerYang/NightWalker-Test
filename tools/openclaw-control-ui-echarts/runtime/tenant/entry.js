@@ -14,6 +14,8 @@ import {
   TENANT_AGENT_SELECTOR_VIEW,
   TENANT_MEMBER_MANAGEMENT_ROUTE,
   TENANT_MEMBERS_VIEW,
+  TENANT_OWNED_AGENTS_ROUTE,
+  TENANT_OWNED_AGENTS_VIEW,
   TENANT_USAGE_STATS_ROUTE,
   TENANT_USAGE_STATS_VIEW,
   TENANT_STATISTICS_OVERVIEW_ROUTE,
@@ -32,9 +34,10 @@ import { writeEchartsViewToken } from "../echarts-view/context.js";
 const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
+const AGENT_SECTION_CLASS = "oc-tenant-agent-section";
 const STATS_SECTION_CLASS = "oc-tenant-stats-section";
 const MEMBER_VISUALIZATION_SECTION_CLASS = "oc-member-visualization-section";
-const NAV_SECTION_CLASSES = [MANAGEMENT_SECTION_CLASS, STATS_SECTION_CLASS];
+const NAV_SECTION_CLASSES = [MANAGEMENT_SECTION_CLASS, AGENT_SECTION_CLASS, STATS_SECTION_CLASS];
 const NAV_SECTION_SELECTOR = NAV_SECTION_CLASSES.map((name) => `.${name}`).join(", ");
 const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
@@ -187,6 +190,20 @@ function getSectionConfigForSession(session) {
               text: "Agent 分配",
               icon: ICONS.agentAllocation,
               activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
+            },
+          ],
+        },
+        {
+          className: AGENT_SECTION_CLASS,
+          label: "Agent",
+          links: [
+            {
+              className: "oc-tenant-owned-agents-link",
+              href: TENANT_OWNED_AGENTS_ROUTE,
+              title: "已有Agent",
+              text: "已有Agent",
+              icon: ICONS.agentAllocation,
+              activeView: TENANT_OWNED_AGENTS_VIEW,
             },
           ],
         },
@@ -434,6 +451,7 @@ function isManagementViewActive() {
     activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
     activeView === TENANT_MEMBERS_VIEW ||
     activeView === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    activeView === TENANT_OWNED_AGENTS_VIEW ||
     activeView === TENANT_USAGE_STATS_VIEW ||
     activeView === TENANT_STATISTICS_OVERVIEW_VIEW ||
     activeView === TENANT_AGENT_SELECTOR_VIEW

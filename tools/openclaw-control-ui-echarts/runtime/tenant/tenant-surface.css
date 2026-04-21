@@ -149,6 +149,131 @@
   padding: 28px 16px !important;
 }
 
+.oc-tenant-agent-empty {
+  margin: 0;
+}
+
+.oc-tenant-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.oc-tenant-agent-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, white 6%);
+  box-shadow: 0 12px 28px rgb(15 23 42 / 6%);
+}
+
+.oc-tenant-agent-card__header,
+.oc-tenant-agent-card__identity,
+.oc-tenant-agent-detail__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oc-tenant-agent-card__identity,
+.oc-tenant-agent-detail__hero {
+  justify-content: flex-start;
+}
+
+.oc-tenant-agent-card__visual {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated) 84%);
+  color: var(--text-strong);
+  font-size: 22px;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.oc-tenant-agent-card__visual--image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.oc-tenant-agent-card__copy,
+.oc-tenant-agent-detail__hero-copy {
+  min-width: 0;
+}
+
+.oc-tenant-agent-card__title,
+.oc-tenant-agent-detail__name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.oc-tenant-agent-card__subtitle,
+.oc-tenant-agent-detail__subtitle {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.oc-tenant-agent-card__description {
+  margin: 0;
+  min-height: 40px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.oc-tenant-agent-card__meta,
+.oc-tenant-agent-detail__grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.oc-tenant-agent-card__meta div,
+.oc-tenant-agent-detail__grid div {
+  min-width: 0;
+}
+
+.oc-tenant-agent-card__meta dt,
+.oc-tenant-agent-detail__grid dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.oc-tenant-agent-card__meta dd,
+.oc-tenant-agent-detail__grid dd {
+  margin: 4px 0 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.oc-tenant-agent-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.oc-tenant-agent-detail {
+  display: grid;
+  gap: 18px;
+}
+
+.oc-tenant-agent-detail__description {
+  grid-column: 1 / -1;
+}
+
 .oc-tenant-assignment-select-col,
 .oc-tenant-assignment-select-cell {
   width: 48px;
@@ -319,6 +444,15 @@
 
   .oc-tenant-member-actions {
     min-width: 0;
+  }
+
+  .oc-tenant-agent-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .oc-tenant-agent-card__meta,
+  .oc-tenant-agent-detail__grid {
+    grid-template-columns: 1fr;
   }
 
   .oc-tenant-list-view--scrollable {

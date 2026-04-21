@@ -25,6 +25,12 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
+function escapeAttribute(value) {
+  return escapeHtml(value)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function formatDateTime(value) {
   if (!value) {
     return "-";
@@ -90,6 +96,51 @@ function memberStatusLabel(status) {
 
 function memberStatusToggleLabel(status) {
   return String(status || "").trim() === "active" ? "禁用成员" : "启用成员";
+}
+
+function createAgentDetailDialogState() {
+  return {
+    open: false,
+    agentId: "",
+  };
+}
+
+function getAgentDetailDialog(controller) {
+  if (!(controller?.agentDetailDialog && typeof controller.agentDetailDialog === "object")) {
+    controller.agentDetailDialog = createAgentDetailDialogState();
+  }
+  return controller.agentDetailDialog;
+}
+
+function getTenantAgentDisplayName(agent) {
+  for (const candidate of [agent?.agentName, agent?.description, agent?.agentId, agent?.id]) {
+    const value = String(candidate || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "未知 Agent";
+}
+
+function getTenantAgentStatusVariant(status) {
+  return String(status || "").trim() === "active" ? "direct" : "unknown";
+}
+
+function renderTenantAgentVisual(agent) {
+  const avatar = String(agent?.avatar || "").trim();
+  const emoji = String(agent?.emoji || "").trim();
+  const label = getTenantAgentDisplayName(agent);
+  if (avatar) {
+    return `
+      <span class="oc-tenant-agent-card__visual oc-tenant-agent-card__visual--image">
+        <img src="${escapeAttribute(avatar)}" alt="${escapeAttribute(label)}" />
+      </span>
+    `;
+  }
+  if (emoji) {
+    return `<span class="oc-tenant-agent-card__visual">${escapeHtml(emoji)}</span>`;
+  }
+  return `<span class="oc-tenant-agent-card__visual">${escapeHtml(label.slice(0, 1).toUpperCase() || "A")}</span>`;
 }
 
 function createRevokeAssignmentDialogState() {
@@ -332,15 +383,18 @@ function ensureController(root, session, apiClient) {
     searchBySection: {
       members: "",
       "agent-assignment": "",
+      "owned-agents": "",
       "usage-stats": "",
     },
     pageBySection: {
       members: 1,
       "agent-assignment": 1,
+      "owned-agents": 1,
       "usage-stats": 1,
     },
     members: [],
     tenantAgents: [],
+    agentDetailDialog: createAgentDetailDialogState(),
     activeMember: null,
     assignAgentDialog: createAssignAgentDialogState(),
     passwordMember: null,
@@ -379,6 +433,9 @@ function ensureController(root, session, apiClient) {
     if (event.target.matches("[data-tenant-member-password-dialog]")) {
       controller.dialogs.changePasswordOpen = false;
       controller.passwordMember = null;
+    }
+    if (event.target.matches("[data-tenant-agent-detail-dialog]")) {
+      controller.agentDetailDialog = createAgentDetailDialogState();
     }
     if (event.target.matches("[data-tenant-revoke-assignment-dialog]")) {
       controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
@@ -432,6 +489,21 @@ function renderToolbar(controller) {
           <input
             type="search"
             placeholder="搜索成员、Agent 或模型"
+            value="${escapeHtml(getSearchValue(controller))}"
+            data-tenant-search
+          />
+        </label>
+      </div>
+    `;
+  }
+
+  if (controller.section === "owned-agents") {
+    return `
+      <div class="data-table-toolbar oc-tenant-table-toolbar">
+        <label class="data-table-search">
+          <input
+            type="search"
+            placeholder="搜索 Agent 名称、标识或说明"
             value="${escapeHtml(getSearchValue(controller))}"
             data-tenant-search
           />
@@ -575,6 +647,141 @@ function renderPagination(pagination) {
         <button type="button" data-tenant-page="next" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>下一页</button>
       </div>
     </div>
+  `;
+}
+
+function filterTenantAgents(controller) {
+  const query = getSearchValue(controller).trim().toLowerCase();
+  if (!query) {
+    return Array.isArray(controller.tenantAgents) ? controller.tenantAgents : [];
+  }
+  return (Array.isArray(controller.tenantAgents) ? controller.tenantAgents : []).filter((agent) =>
+    [agent?.agentName, agent?.agentId, agent?.description, agent?.status]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query)),
+  );
+}
+
+function renderOwnedAgentsCards(rows, controller) {
+  const localEdition = isLocalEdition(controller);
+  if (!rows.length) {
+    return `<div class="callout info oc-tenant-agent-empty">当前租户还没有可查看的 Agent。</div>`;
+  }
+  return `
+    <div class="oc-tenant-agent-grid">
+      ${rows
+        .map(
+          (agent) => `
+            <article class="oc-tenant-agent-card" data-tenant-agent-card="${escapeAttribute(agent.id)}">
+              <div class="oc-tenant-agent-card__header">
+                <div class="oc-tenant-agent-card__identity">
+                  ${renderTenantAgentVisual(agent)}
+                  <div class="oc-tenant-agent-card__copy">
+                    <h3 class="oc-tenant-agent-card__title">${escapeHtml(getTenantAgentDisplayName(agent))}</h3>
+                    <div class="oc-tenant-agent-card__subtitle">${escapeHtml(agent.agentId || agent.id || "-")}</div>
+                  </div>
+                </div>
+                <span class="data-table-badge data-table-badge--${getTenantAgentStatusVariant(agent.status)}">${escapeHtml(agent.status || "unknown")}</span>
+              </div>
+              <p class="oc-tenant-agent-card__description">${escapeHtml(agent.description || "暂无说明")}</p>
+              <dl class="oc-tenant-agent-card__meta">
+                ${
+                  localEdition
+                    ? `<div><dt>部署模式</dt><dd>本地版</dd></div>`
+                    : `<div><dt>余额积分</dt><dd>${formatCredits(agent.balancePoints)}</dd></div>`
+                }
+                <div><dt>计费倍率</dt><dd>${formatCredits(agent.rateMultiplier || 1)}</dd></div>
+                <div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(agent.updatedAt || agent.createdAt))}</dd></div>
+              </dl>
+              <div class="oc-tenant-agent-card__actions">
+                <button
+                  class="btn"
+                  type="button"
+                  data-tenant-open-agent-detail="${escapeAttribute(agent.id)}"
+                >
+                  详情
+                </button>
+              </div>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function getAgentDetailTarget(controller) {
+  const dialog = getAgentDetailDialog(controller);
+  const agentId = String(dialog.agentId || "").trim();
+  if (!agentId) {
+    return null;
+  }
+  return (
+    (Array.isArray(controller.tenantAgents) ? controller.tenantAgents : []).find(
+      (agent) => String(agent?.id || "").trim() === agentId,
+    ) || null
+  );
+}
+
+function renderAgentDetailDialog(controller) {
+  const agent = getAgentDetailTarget(controller);
+  const localEdition = isLocalEdition(controller);
+  return `
+    <dialog class="oc-tenant-modal" data-tenant-agent-detail-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">Agent 详情</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="agent-detail">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
+          ${
+            agent
+              ? `
+                <div class="oc-tenant-agent-detail">
+                  <div class="oc-tenant-agent-detail__hero">
+                    ${renderTenantAgentVisual(agent)}
+                    <div class="oc-tenant-agent-detail__hero-copy">
+                      <div class="oc-tenant-agent-detail__name">${escapeHtml(getTenantAgentDisplayName(agent))}</div>
+                      <div class="oc-tenant-agent-detail__subtitle">${escapeHtml(agent.agentId || agent.id || "-")}</div>
+                    </div>
+                  </div>
+                  <dl class="oc-tenant-agent-detail__grid">
+                    <div>
+                      <dt>租户 Agent ID</dt>
+                      <dd>${escapeHtml(agent.id || "-")}</dd>
+                    </div>
+                    <div>
+                      <dt>状态</dt>
+                      <dd>${escapeHtml(agent.status || "-")}</dd>
+                    </div>
+                    <div>
+                      <dt>计费倍率</dt>
+                      <dd>${formatCredits(agent.rateMultiplier || 1)}</dd>
+                    </div>
+                    <div>
+                      <dt>${localEdition ? "部署模式" : "余额积分"}</dt>
+                      <dd>${localEdition ? "本地版" : formatCredits(agent.balancePoints)}</dd>
+                    </div>
+                    <div>
+                      <dt>创建时间</dt>
+                      <dd>${escapeHtml(formatDateTime(agent.createdAt))}</dd>
+                    </div>
+                    <div>
+                      <dt>更新时间</dt>
+                      <dd>${escapeHtml(formatDateTime(agent.updatedAt))}</dd>
+                    </div>
+                    <div class="oc-tenant-agent-detail__description">
+                      <dt>说明</dt>
+                      <dd>${escapeHtml(agent.description || "暂无说明")}</dd>
+                    </div>
+                  </dl>
+                </div>
+              `
+              : `<div class="callout info">未找到对应的 Agent 详情。</div>`
+          }
+        </div>
+      </div>
+    </dialog>
   `;
 }
 
@@ -1009,6 +1216,7 @@ function render(root, controller) {
   const focusState = captureRenderFocusState(root);
   const isUsageStats = controller.section === "usage-stats";
   const isOverview = controller.section === "statistics-overview";
+  const isOwnedAgents = controller.section === "owned-agents";
   if (controller.section === "agent-assignment") {
     pruneRevokeAssignmentSelection(controller);
     pruneAssignAgentSelection(controller);
@@ -1016,7 +1224,10 @@ function render(root, controller) {
   const pagination =
     isUsageStats || isOverview
       ? null
-      : paginate(filterMembers(controller), getPageValue(controller));
+      : paginate(
+          isOwnedAgents ? filterTenantAgents(controller) : filterMembers(controller),
+          getPageValue(controller),
+        );
   if (pagination) {
     setPageValue(controller, pagination.page);
   }
@@ -1025,6 +1236,13 @@ function render(root, controller) {
     ? renderUsageList(controller)
     : isOverview
       ? renderTenantOverview(controller)
+      : isOwnedAgents
+        ? `
+          <div class="data-table-wrapper">
+            ${renderOwnedAgentsCards(pagination.items, controller)}
+            ${renderPagination(pagination)}
+          </div>
+        `
       : `
         <div class="data-table-wrapper">
           ${
@@ -1045,7 +1263,9 @@ function render(root, controller) {
     ${
       isUsageStats || isOverview
         ? ""
-        : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
+        : isOwnedAgents
+          ? `${renderAgentDetailDialog(controller)}`
+          : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
     }
   `;
 
@@ -1054,6 +1274,9 @@ function render(root, controller) {
   }
 
   if (!isUsageStats && !isOverview) {
+    if (isOwnedAgents && controller.agentDetailDialog?.open) {
+      openDialog(root.querySelector("[data-tenant-agent-detail-dialog]"));
+    }
     if (controller.dialogs.createMemberOpen) {
       openDialog(root.querySelector("[data-tenant-create-dialog]"));
     }
@@ -1102,6 +1325,12 @@ async function refresh(root, controller) {
 
   if (controller.section === "statistics-overview") {
     await refreshTenantOverview(root, controller);
+    render(root, controller);
+    return;
+  }
+
+  if (controller.section === "owned-agents") {
+    controller.tenantAgents = await controller.apiClient.listTenantAgents();
     render(root, controller);
     return;
   }
@@ -1393,6 +1622,16 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  const agentDetailTrigger = target.closest("[data-tenant-open-agent-detail]");
+  if (agentDetailTrigger instanceof HTMLElement) {
+    controller.agentDetailDialog = {
+      open: true,
+      agentId: String(agentDetailTrigger.dataset.tenantOpenAgentDetail || "").trim(),
+    };
+    render(root, controller);
+    return;
+  }
+
   const passwordTrigger = target.closest("[data-tenant-open-member-password]");
   if (passwordTrigger instanceof HTMLElement) {
     controller.passwordMember = memberById(
@@ -1424,6 +1663,10 @@ async function handleClick(root, controller, event) {
       controller.dialogs.changePasswordOpen = false;
       controller.passwordMember = null;
       closeDialog(root.querySelector("[data-tenant-member-password-dialog]"));
+    }
+    if (dialogKind === "agent-detail") {
+      controller.agentDetailDialog = createAgentDetailDialogState();
+      closeDialog(root.querySelector("[data-tenant-agent-detail-dialog]"));
     }
     if (dialogKind === "revoke") {
       controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
@@ -1693,6 +1936,9 @@ export async function mountTenantConsolePage(root, options = {}) {
     controller.dialogs.changePasswordOpen = false;
     controller.passwordMember = null;
   }
+  if (controller.section !== "owned-agents") {
+    controller.agentDetailDialog = createAgentDetailDialogState();
+  }
   if (controller.section !== "agent-assignment") {
     controller.dialogs.assignOpen = false;
     controller.activeMember = null;
@@ -1704,6 +1950,7 @@ export async function mountTenantConsolePage(root, options = {}) {
     controller.dialogs.assignOpen = false;
     controller.dialogs.changePasswordOpen = false;
     controller.passwordMember = null;
+    controller.agentDetailDialog = createAgentDetailDialogState();
     controller.activeMember = null;
     controller.assignAgentDialog = createAssignAgentDialogState();
     controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();

@@ -138,6 +138,8 @@ describe("zero-intrusive tenant entry", () => {
 
     const managementSection = document.querySelector(".oc-platform-management-section");
     const managementItems = managementSection?.querySelectorAll(".nav-item") ?? [];
+    const agentSection = document.querySelector(".oc-tenant-agent-section");
+    const agentItems = agentSection?.querySelectorAll(".nav-item") ?? [];
     const statsSection = document.querySelector(".oc-tenant-stats-section");
     const statsItems = statsSection?.querySelectorAll(".nav-item") ?? [];
     expect(managementSection).not.toBeNull();
@@ -148,6 +150,13 @@ describe("zero-intrusive tenant entry", () => {
     expect(managementItems[1]?.getAttribute("href")).toContain(
       "ocTenantView=tenant-agent-assignment",
     );
+    expect(agentSection).not.toBeNull();
+    expect(agentSection?.querySelector(".nav-section__label-text")?.textContent).toContain(
+      "Agent",
+    );
+    expect(agentItems).toHaveLength(1);
+    expect(agentItems[0]?.textContent).toContain("已有Agent");
+    expect(agentItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-owned-agents");
     expect(statsSection).not.toBeNull();
     expect(statsItems).toHaveLength(2);
     expect(statsItems[0]?.textContent).toContain("统计总览");
@@ -330,11 +339,16 @@ describe("zero-intrusive tenant entry", () => {
 
     const managementSection = document.querySelector(".oc-platform-management-section");
     const managementItems = managementSection?.querySelectorAll(".nav-item") ?? [];
+    const agentSection = document.querySelector(".oc-tenant-agent-section");
+    const agentItems = agentSection?.querySelectorAll(".nav-item") ?? [];
     const statsSection = document.querySelector(".oc-tenant-stats-section");
     const statsItems = statsSection?.querySelectorAll(".nav-item") ?? [];
     expect(managementItems).toHaveLength(2);
     expect(managementItems[0]?.textContent).toContain("成员管理");
     expect(managementItems[1]?.textContent).toContain("Agent 分配");
+    expect(agentSection).not.toBeNull();
+    expect(agentItems).toHaveLength(1);
+    expect(agentItems[0]?.textContent).toContain("已有Agent");
     expect(statsSection).not.toBeNull();
     expect(statsItems).toHaveLength(2);
     expect(statsItems[0]?.textContent).toContain("统计总览");

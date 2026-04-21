@@ -3,6 +3,7 @@ import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
+  TENANT_OWNED_AGENTS_VIEW,
   TENANT_AGENT_SELECTOR_VIEW,
   LOGIN_ROUTE,
   TENANT_MEMBERS_VIEW,
@@ -51,6 +52,7 @@ export function resolvePlatformAccessDecision({
     tenantSession?.session?.role === "tenant_admin" &&
     (view === TENANT_MEMBERS_VIEW ||
       view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+      view === TENANT_OWNED_AGENTS_VIEW ||
       view === TENANT_STATISTICS_OVERVIEW_VIEW ||
       view === TENANT_USAGE_STATS_VIEW)
   ) {

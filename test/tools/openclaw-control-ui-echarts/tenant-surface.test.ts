@@ -743,4 +743,71 @@ describe("tenant surface", () => {
     expect(surfaceRoot?.textContent).toContain("0.2");
     expect(surfaceRoot?.textContent).toContain("2026/04/13");
   });
+
+  it("mounts the native tenant owned-agents view and opens the detail dialog", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-owned-agents");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-agent-1",
+                    agentId: "subotech-finance",
+                    agentName: "苏博泰克财务分析助手",
+                    description: "财务分析与预算评估",
+                    status: "active",
+                    rateMultiplier: 1.5,
+                    balancePoints: 128.5,
+                    createdAt: "2026-04-01T08:00:00.000Z",
+                    updatedAt: "2026-04-14T11:30:00.000Z",
+                    emoji: "💼",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.textContent).toContain("苏博泰克财务分析助手");
+    expect(surfaceRoot?.textContent).toContain("财务分析与预算评估");
+    expect(surfaceRoot?.textContent).toContain("128.5");
+    const detailButton = surfaceRoot?.querySelector("[data-tenant-open-agent-detail]");
+    expect(detailButton?.textContent).toContain("详情");
+
+    detailButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const detailDialog = document.querySelector("[data-tenant-agent-detail-dialog]");
+    expect(detailDialog?.open).toBe(true);
+    expect(detailDialog?.textContent).toContain("Agent 详情");
+    expect(detailDialog?.textContent).toContain("subotech-finance");
+    expect(detailDialog?.textContent).toContain("1.5");
+    expect(detailDialog?.textContent).toContain("2026/04/14");
+  });
 });

@@ -125,6 +125,16 @@ describe("platform access guard", () => {
     expect(
       resolvePlatformAccessDecision({
         pathname: "/",
+        href: "https://www.hailstone.cn:18789/?ocTenantView=tenant-owned-agents",
+        edition: "cloud",
+        platformSession: null,
+        tenantSession: { token: "tenant-token", session: { role: "tenant_admin" } },
+      }),
+    ).toBe("allow");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/",
         href: "https://www.hailstone.cn:18789/?ocTenantView=tenant-usage-stats",
         edition: "cloud",
         platformSession: null,

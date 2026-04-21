@@ -3,6 +3,7 @@ import { mountTenantConsolePage } from "./tenant-console-page.js";
 import {
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_MEMBERS_VIEW,
+  TENANT_OWNED_AGENTS_VIEW,
   TENANT_USAGE_STATS_VIEW,
   TENANT_STATISTICS_OVERVIEW_VIEW,
   readTenantSession,
@@ -18,6 +19,7 @@ function isTenantManagementView(view) {
   return (
     view === TENANT_MEMBERS_VIEW ||
     view === TENANT_AGENT_ASSIGNMENT_VIEW ||
+    view === TENANT_OWNED_AGENTS_VIEW ||
     view === TENANT_USAGE_STATS_VIEW ||
     view === TENANT_STATISTICS_OVERVIEW_VIEW
   );
@@ -38,6 +40,9 @@ function sectionForView(view) {
   }
   if (view === TENANT_USAGE_STATS_VIEW) {
     return "usage-stats";
+  }
+  if (view === TENANT_OWNED_AGENTS_VIEW) {
+    return "owned-agents";
   }
   if (view === TENANT_STATISTICS_OVERVIEW_VIEW) {
     return "statistics-overview";
