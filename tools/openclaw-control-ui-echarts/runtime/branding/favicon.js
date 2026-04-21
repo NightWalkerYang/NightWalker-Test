@@ -1,6 +1,24 @@
+import { getCurrentBrandState } from "./brand-state.js";
+
 const BRAND_FAVICON_TEXT = "SPTC";
 
+function escapeSvgText(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function getResolvedTextFaviconLabel() {
+  const state = getCurrentBrandState();
+  const label = state.logoMode === "text" ? state.logoText : state.brandName;
+  return String(label || BRAND_FAVICON_TEXT).trim() || BRAND_FAVICON_TEXT;
+}
+
 export function getBrandFaviconSvg() {
+  const faviconText = escapeSvgText(getResolvedTextFaviconLabel());
   return `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
       <defs>
@@ -14,11 +32,26 @@ export function getBrandFaviconSvg() {
         </linearGradient>
       </defs>
       <rect x="5.5" y="5.5" width="53" height="53" rx="16" fill="url(#sptc-bg)" stroke="url(#sptc-stroke)" stroke-width="1.5" />
-      <text x="32" y="37" text-anchor="middle" font-size="18" font-weight="800" letter-spacing="2.2" fill="#48698d" font-family="Inter, Segoe UI, Arial, sans-serif">${BRAND_FAVICON_TEXT}</text>
+      <text x="32" y="37" text-anchor="middle" font-size="18" font-weight="800" letter-spacing="2.2" fill="#48698d" font-family="Inter, Segoe UI, Arial, sans-serif">${faviconText}</text>
     </svg>
   `.trim();
 }
 
 export function getBrandFaviconDataUrl() {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(getBrandFaviconSvg())}`;
+}
+
+export function getBrandFaviconAsset() {
+  const state = getCurrentBrandState();
+  if (state.logoMode === "image" && state.logoImage?.src) {
+    return {
+      href: state.logoImage.src,
+      type: state.logoImage.mimeType || "image/png",
+    };
+  }
+
+  return {
+    href: getBrandFaviconDataUrl(),
+    type: "image/svg+xml",
+  };
 }

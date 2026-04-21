@@ -1,38 +1,38 @@
-const LINK_SELECTOR = ".oc-knowledge-graph-link";
+import { readSessionForCurrentView } from "../tenant/tenant-context.js";
+
+const LINK_SELECTOR = ".oc-brand-settings-link";
 const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
-const GRAPH_ICON = `
+const BRAND_ICON = `
   <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M6 7.5a2.5 2.5 0 1 1 2.08 2.47v4.06a2.5 2.5 0 1 1-1.16.01V9.97A2.5 2.5 0 0 1 6 7.5Z"></path>
-    <path d="M15.5 5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"></path>
-    <path d="M17.5 14a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"></path>
-    <path d="M8.96 8.36 13.1 7.7M8.8 15.76l6.4 1.5M14.38 9.56l2.16 4.88"></path>
+    <path d="M12 3.5a3.5 3.5 0 0 1 3.47 3H19a1 1 0 1 1 0 2h-3.53A3.5 3.5 0 1 1 12 3.5Zm-6 8A3.5 3.5 0 0 1 9.47 15H19a1 1 0 1 1 0 2H9.47A3.5 3.5 0 1 1 6 11.5Z"></path>
   </svg>
 `;
 
-function resolveKnowledgeGraphHref() {
-  return new URL("./knowledge-graph.html", document.baseURI).href;
-}
-
-function createKnowledgeGraphLink() {
+function createBrandSettingsLink() {
   const link = document.createElement("a");
-  link.className = "nav-item sidebar-utility-link oc-knowledge-graph-link";
-  link.href = resolveKnowledgeGraphHref();
-  link.title = "知识图谱";
+  link.className = "nav-item sidebar-utility-link oc-brand-settings-link";
+  link.href = "#";
+  link.title = "更改品牌";
   link.innerHTML = `
-    <span class="nav-item__icon" aria-hidden="true">${GRAPH_ICON}</span>
-    <span class="nav-item__text">知识图谱</span>
+    <span class="nav-item__icon" aria-hidden="true">${BRAND_ICON}</span>
+    <span class="nav-item__text">更改品牌</span>
   `;
   return link;
 }
 
-function ensureKnowledgeGraphLink(container) {
+function ensureBrandSettingsLink(container) {
   if (!(container instanceof HTMLElement)) {
+    return;
+  }
+  const session = readSessionForCurrentView();
+  if (String(session?.session?.role || "") !== "platform_admin") {
+    container.querySelector(LINK_SELECTOR)?.remove();
     return;
   }
   if (container.querySelector(LINK_SELECTOR)) {
     return;
   }
-  container.append(createKnowledgeGraphLink());
+  container.append(createBrandSettingsLink());
 }
 
 export function bootKnowledgeGraphEntry() {
@@ -44,10 +44,10 @@ export function bootKnowledgeGraphEntry() {
   const scan = (root = document) => {
     const scope = root instanceof Element || root instanceof Document ? root : document;
     if (scope instanceof Element && scope.matches(SIDEBAR_UTILITY_SELECTOR)) {
-      ensureKnowledgeGraphLink(scope);
+      ensureBrandSettingsLink(scope);
     }
     for (const container of scope.querySelectorAll(SIDEBAR_UTILITY_SELECTOR)) {
-      ensureKnowledgeGraphLink(container);
+      ensureBrandSettingsLink(container);
     }
   };
 

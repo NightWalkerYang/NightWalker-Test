@@ -56,7 +56,10 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `tools/openclaw-control-ui-echarts/runtime/branding/auto-token.js`
 - `tools/openclaw-control-ui-echarts/runtime/branding/auto-token-preboot.js`
+- `tools/openclaw-control-ui-echarts/runtime/branding/brand-panel.css`
+- `tools/openclaw-control-ui-echarts/runtime/branding/brand-panel.js`
 - `tools/openclaw-control-ui-echarts/runtime/branding/brand-replacer.js`
+- `tools/openclaw-control-ui-echarts/runtime/branding/brand-state.js`
 - `tools/openclaw-control-ui-echarts/runtime/branding/favicon.js`
 
 ### Runtime: ECharts
@@ -141,6 +144,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/branding.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
@@ -155,7 +159,9 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `test/tools/openclaw-control-ui-echarts/adapter-registry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/auto-token-bootstrap.test.ts`
+- `test/tools/openclaw-control-ui-echarts/brand-panel.test.ts`
 - `test/tools/openclaw-control-ui-echarts/brand-replacer.test.ts`
+- `test/tools/openclaw-control-ui-echarts/brand-state.test.ts`
 - `test/tools/openclaw-control-ui-echarts/chat-ambient.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-parser.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-styles.test.ts`
@@ -176,6 +182,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/package-local-runtime.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-branding.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-usage-stats-page.test.ts`
@@ -207,6 +214,9 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap that mirrors the gateway token into both the route scope and the root scope so public routes can reuse existing stored settings.
+- Platform admins can now replace the default `知识图谱` utility entry with a zero-intrusive `更改品牌` action, open a machine-global branding panel, and save either a text logo or an uploaded image logo without touching repository files or existing OpenClaw source files; if the current brand already uses an image logo, later name/title edits can keep that machine-local image without forcing a re-upload.
+- The tenant sidecar now serves a machine-local public branding state plus an image logo asset path, while platform-admin routes can persist or restore the brand configuration under the sidecar state directory so each deployment machine keeps its own brand outside Git.
+- The branding runtime now reads dynamic brand state instead of relying on hardcoded text only, so brand name, page title, text logos, and image logos all update fixed Control UI brand slots while still leaving normal chat content untouched; favicon updates now follow the active text or image logo, and same-browser tabs sync branding changes immediately through zero-intrusive cross-tab state propagation.
 - CSP-sensitive preboot behavior now uses same-origin external scripts instead of inline bootstrap blocks.
 - The public `/echarts-view/` bridge now ships with a dedicated static entry page plus same-origin runtime assets, so the browser lands on a tokenized visualization entry instead of falling back to the main Control UI shell and its `/echarts-view/__openclaw/control-ui-config.json` probe.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.

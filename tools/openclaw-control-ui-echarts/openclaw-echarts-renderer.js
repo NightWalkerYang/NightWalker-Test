@@ -1,5 +1,6 @@
 import { bootChatAmbientBackground } from "./runtime/background/chat-ambient.js";
 import { bootBrandReplacer } from "./runtime/branding/brand-replacer.js";
+import { bootBrandPanel } from "./runtime/branding/brand-panel.js";
 import { isEchartsViewPublicPath } from "./runtime/echarts-view/context.js";
 import { bootEchartsViewSurface } from "./runtime/echarts-view/surface.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
@@ -40,6 +41,7 @@ function boot() {
     return;
   }
   bootBrandReplacer();
+  bootBrandPanel();
   bootChatAmbientBackground();
   bootToolRunCluster();
   bootVoiceInputBridge();

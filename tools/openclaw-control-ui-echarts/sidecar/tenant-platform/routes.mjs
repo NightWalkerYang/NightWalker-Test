@@ -33,6 +33,12 @@ import {
   hideTenantAgentSession,
   listTenantAgentSessions,
 } from "./db.mjs";
+import {
+  readBrandingLogoAsset,
+  readBrandingState,
+  restoreBrandingState,
+  saveBrandingState,
+} from "./branding.mjs";
 import { applyLocalRenewalCode, importLocalLicense, readLocalLicenseState } from "./license.mjs";
 
 function sendJson(request, response, statusCode, payload) {
@@ -41,9 +47,20 @@ function sendJson(request, response, statusCode, payload) {
     "cache-control": "no-store",
     "access-control-allow-origin": request.headers.origin || "*",
     "access-control-allow-headers": "content-type, authorization",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
   });
   response.end(JSON.stringify(payload));
+}
+
+function sendBinary(request, response, statusCode, body, contentType) {
+  response.writeHead(statusCode, {
+    "content-type": contentType,
+    "cache-control": "no-store",
+    "access-control-allow-origin": request.headers.origin || "*",
+    "access-control-allow-headers": "content-type, authorization",
+    "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+  });
+  response.end(body);
 }
 
 function readJsonBody(request) {
@@ -485,6 +502,24 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/public/branding") {
+      sendJson(request, response, 200, {
+        ok: true,
+        data: readBrandingState(deps.config),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/public/branding/logo") {
+      const asset = readBrandingLogoAsset(deps.config);
+      if (!asset) {
+        sendJson(request, response, 404, { ok: false, error: "branding_logo_not_found" });
+        return;
+      }
+      sendBinary(request, response, 200, asset.buffer, asset.mimeType);
+      return;
+    }
+
     if (request.method === "POST" && relativePath === "/setup/platform-admin") {
       if (deps.config.edition === "local") {
         sendJson(request, response, 400, { ok: false, error: "local_edition_uses_tenant_admin" });
@@ -591,6 +626,36 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "POST" && relativePath === "/logout") {
       sendJson(request, response, 200, { ok: true });
+      return;
+    }
+
+    if (request.method === "PUT" && relativePath === "/platform/branding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const state = saveBrandingState(deps.config, body);
+        sendJson(request, response, 200, { ok: true, data: state });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && relativePath === "/platform/branding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: restoreBrandingState(deps.config),
+      });
       return;
     }
 

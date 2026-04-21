@@ -101,6 +101,9 @@ export function createTenantApiClient() {
         retryDelayMs: 300,
       });
     },
+    getPublicBranding() {
+      return requestJson("/public/branding");
+    },
     setupPlatformAdmin(body) {
       return requestJson("/setup/platform-admin", { method: "POST", body });
     },
@@ -142,6 +145,12 @@ export function createTenantApiClient() {
     },
     listPlatformCatalogAgents() {
       return requestJson("/platform/catalog-agents");
+    },
+    savePlatformBranding(body) {
+      return requestJson("/platform/branding", { method: "PUT", body });
+    },
+    restorePlatformBranding() {
+      return requestJson("/platform/branding", { method: "DELETE" });
     },
     getLocalLicense() {
       return requestJson("/platform/local-license");
