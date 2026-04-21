@@ -602,7 +602,7 @@ function renderRateDialog(controller) {
   const tenant = controller.activeTenant;
   const agents = controller.rateDialogAgents;
   return `
-    <dialog class="oc-platform-modal" data-platform-rate-dialog>
+    <dialog class="oc-platform-modal oc-platform-modal--wide" data-platform-rate-dialog>
       <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
         <header class="oc-platform-modal__header">
           <h3 class="oc-platform-modal__title">倍率调整</h3>
@@ -722,7 +722,7 @@ function renderRevokeTenantAgentDialog(controller) {
         ? `<div class="callout info">该租户当前没有可撤回的 Agent。</div>`
         : "";
   return `
-    <dialog class="oc-platform-modal" data-platform-revoke-tenant-agent-dialog>
+    <dialog class="oc-platform-modal oc-platform-modal--wide" data-platform-revoke-tenant-agent-dialog>
       <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
         <header class="oc-platform-modal__header">
           <h3 class="oc-platform-modal__title">撤回分配</h3>
@@ -821,7 +821,7 @@ function renderLocalLicenseDialog(controller) {
   }
   const localLicense = controller.localLicense;
   return `
-    <dialog class="oc-platform-modal" data-platform-local-license-dialog>
+    <dialog class="oc-platform-modal oc-platform-modal--wide" data-platform-local-license-dialog>
       <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
         <header class="oc-platform-modal__header">
           <h3 class="oc-platform-modal__title">本地授权管理</h3>

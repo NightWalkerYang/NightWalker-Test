@@ -81,6 +81,11 @@
   max-width: 720px;
 }
 
+.oc-platform-modal--wide {
+  width: min(96vw, 920px);
+  max-width: 920px;
+}
+
 .oc-platform-modal::backdrop {
   background: color-mix(in srgb, var(--overlay) 72%, transparent);
   backdrop-filter: blur(8px);
@@ -97,8 +102,8 @@
 }
 
 .oc-platform-modal__panel--wide {
-  width: min(96vw, 920px);
-  max-width: 920px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .oc-platform-modal__header {
@@ -221,9 +226,13 @@
   }
 
   .oc-platform-modal,
-  .oc-platform-modal__panel--wide {
+  .oc-platform-modal--wide {
     width: min(96vw, 96vw);
     max-width: 96vw;
+  }
+
+  .oc-platform-modal__panel--wide {
+    width: 100%;
   }
 
   .oc-platform-revoke-agent-toolbar {
