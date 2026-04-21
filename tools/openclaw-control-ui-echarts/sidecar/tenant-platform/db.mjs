@@ -805,43 +805,115 @@ export function countTenantMembers(db, tenantId) {
 }
 
 export function createTenantMember(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const username = String(params.username || "").trim();
+  const password = String(params.password || "");
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!username) {
+    throw new Error("成员账号不能为空");
+  }
+  if (!password.trim()) {
+    throw new Error("成员密码不能为空");
+  }
   const quota = db
     .prepare("SELECT member_limit AS memberLimit FROM tenant_quotas WHERE tenant_id = ?")
-    .get(params.tenantId);
+    .get(tenantId);
   if (!quota) {
     throw new Error("租户额度不存在");
   }
-  if (countTenantMembers(db, params.tenantId) >= Number(quota.memberLimit || 0)) {
+  if (countTenantMembers(db, tenantId) >= Number(quota.memberLimit || 0)) {
     throw new Error("租户人数已达上限");
   }
 
   const userId = runInTransaction(db, () => {
     const now = nowIso();
-    const userId = createId("user");
+    const existingUser = db
+      .prepare("SELECT id, role, status FROM users WHERE username = ?")
+      .get(username);
+    if (existingUser) {
+      const memberships = db
+        .prepare(
+          `SELECT id, tenant_id AS tenantId, role, status
+           FROM tenant_memberships
+           WHERE user_id = ?
+           ORDER BY created_at ASC`,
+        )
+        .all(existingUser.id);
+      const reusableMemberships = memberships.filter(
+        (membership) =>
+          String(membership?.tenantId || "").trim() === tenantId &&
+          String(membership?.role || "").trim() === "member" &&
+          String(membership?.status || "").trim() === "deleted",
+      );
+      const reusableMembership =
+        String(existingUser.role || "").trim() === "member" &&
+        memberships.length === 1 &&
+        reusableMemberships.length === 1
+          ? reusableMemberships[0]
+          : null;
+      if (!reusableMembership) {
+        throw new Error("成员账号已存在");
+      }
+
+      db.prepare(
+        `UPDATE users
+         SET password_hash = @passwordHash,
+             role = 'member',
+             status = 'active',
+             updated_at = @updatedAt
+         WHERE id = @userId`,
+      ).run({
+        userId: existingUser.id,
+        passwordHash: hashPassword(password),
+        updatedAt: now,
+      });
+      db.prepare(
+        `UPDATE tenant_memberships
+         SET status = 'active',
+             created_at = @createdAt
+         WHERE id = @membershipId`,
+      ).run({
+        membershipId: reusableMembership.id,
+        createdAt: now,
+      });
+      return existingUser.id;
+    }
+
+    const nextUserId = createId("user");
     const membershipId = createId("membership");
 
-    db.prepare(
-      `INSERT INTO users (id, username, password_hash, role, status, created_at, updated_at)
-       VALUES (@id, @username, @passwordHash, 'member', 'active', @createdAt, @updatedAt)`,
-    ).run({
-      id: userId,
-      username: params.username.trim(),
-      passwordHash: hashPassword(params.password),
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      db.prepare(
+        `INSERT INTO users (id, username, password_hash, role, status, created_at, updated_at)
+         VALUES (@id, @username, @passwordHash, 'member', 'active', @createdAt, @updatedAt)`,
+      ).run({
+        id: nextUserId,
+        username,
+        passwordHash: hashPassword(password),
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes("unique")) {
+        throw new Error("成员账号已存在");
+      }
+      throw error;
+    }
 
     db.prepare(
       `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
        VALUES (@id, @tenantId, @userId, 'member', 'active', @createdAt)`,
     ).run({
       id: membershipId,
-      tenantId: params.tenantId,
-      userId,
+      tenantId,
+      userId: nextUserId,
       createdAt: now,
     });
 
-    return userId;
+    return nextUserId;
   });
 
   return (

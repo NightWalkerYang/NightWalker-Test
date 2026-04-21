@@ -576,6 +576,71 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("reactivates a logically deleted member when the same username is recreated in the same tenant", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "kappa",
+        name: "租户 Kappa",
+        adminUsername: "kappa-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-recreate",
+        password: "secret",
+      });
+
+      deleteTenantMember(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+
+      const recreated = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-recreate",
+        password: "renew-secret",
+      });
+
+      const userRecord = getUserByUsername(db, "member-recreate");
+      const membership = db
+        .prepare(
+          `SELECT status
+           FROM tenant_memberships
+           WHERE tenant_id = ? AND user_id = ? AND role = 'member'`,
+        )
+        .get(tenant.id, member.id);
+
+      expect(recreated?.id).toBe(member.id);
+      expect(userRecord?.status).toBe("active");
+      expect(verifyPassword("secret", String(userRecord?.password_hash || ""))).toBe(false);
+      expect(verifyPassword("renew-secret", String(userRecord?.password_hash || ""))).toBe(true);
+      expect(membership?.status).toBe("active");
+      expect(listTenantMembers(db, tenant.id)).toEqual([
+        expect.objectContaining({
+          id: member.id,
+          username: "member-recreate",
+          status: "active",
+        }),
+      ]);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("deducts agent points from synced usage records without double-charging repeats", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
