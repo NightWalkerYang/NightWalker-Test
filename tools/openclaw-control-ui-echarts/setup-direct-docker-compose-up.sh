@@ -73,6 +73,58 @@ read_dotenv_value() {
   ' "$ENV_FILE"
 }
 
+resolve_gateway_port() {
+  local port="${OPENCLAW_GATEWAY_PORT:-}"
+  if [[ -z "$port" ]]; then
+    port="$(read_dotenv_value OPENCLAW_GATEWAY_PORT || true)"
+  fi
+  port="$(trim_whitespace "$port")"
+  if [[ -z "$port" ]]; then
+    port="18789"
+  fi
+  printf '%s\n' "$port"
+}
+
+merge_control_ui_allowed_origins_json() {
+  local port="$1"
+  local raw="${2:-}"
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf '["http://127.0.0.1:%s","http://localhost:%s"]\n' "$port" "$port"
+    return 0
+  fi
+
+  python3 - "$port" "$raw" <<'PY'
+import json
+import sys
+
+port = sys.argv[1]
+raw = sys.argv[2] if len(sys.argv) > 2 else ""
+desired = [
+    f"http://127.0.0.1:{port}",
+    f"http://localhost:{port}",
+]
+existing = []
+if raw:
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            existing = parsed
+    except json.JSONDecodeError:
+        existing = []
+merged = []
+seen = set()
+for origin in existing + desired:
+    if not isinstance(origin, str):
+        continue
+    normalized = origin.strip()
+    if not normalized or normalized in seen:
+        continue
+    merged.append(normalized)
+    seen.add(normalized)
+print(json.dumps(merged))
+PY
+}
+
 resolve_auto_gateway_token() {
   local token="${OPENCLAW_GATEWAY_TOKEN:-}"
   if [[ -z "$token" ]]; then
@@ -283,6 +335,8 @@ write_override() {
 $GENERATED_MARKER
 services:
   openclaw-gateway:
+    ports: !override
+      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
     volumes:
       - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro
       - \${OPENCLAW_WORKSPACE_DIR}:/app/dist/control-ui/workspace-downloads:ro
@@ -332,6 +386,18 @@ EOF
       retries: 5
       start_period: 10s
     restart: unless-stopped
+  openclaw-gateway-proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      openclaw-gateway:
+        condition: service_started
+      openclaw-tenant-platform:
+        condition: service_healthy
+    volumes:
+      - ./tools/openclaw-control-ui-echarts/docker-local-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    restart: unless-stopped
 EOF
 
   if [[ "$#" -gt 0 ]]; then
@@ -346,6 +412,8 @@ EOF
   fi
 }
 
+# Run config CLI against the gateway image directly so setup does not depend on
+# the long-lived openclaw-cli service sharing a running gateway namespace.
 sync_gateway_control_ui_root() {
   if ! command -v docker >/dev/null 2>&1; then
     printf '%s\n' "WARN: docker not found; skip syncing gateway.controlUi.root." >&2
@@ -355,11 +423,76 @@ sync_gateway_control_ui_root() {
     printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.root." >&2
     return 0
   fi
-  if cd "$ROOT_DIR" && docker compose run --rm --no-deps openclaw-cli config set gateway.controlUi.root /app/dist/control-ui >/dev/null 2>&1; then
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.root /app/dist/control-ui >/dev/null 2>&1; then
     printf '%s\n' "Synced gateway.controlUi.root=/app/dist/control-ui"
   else
     printf '%s\n' "WARN: failed to sync gateway.controlUi.root automatically; run this manually:" >&2
-    printf '%s\n' "  docker compose run --rm --no-deps openclaw-cli config set gateway.controlUi.root /app/dist/control-ui" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.root /app/dist/control-ui" >&2
+  fi
+}
+
+sync_control_ui_allowed_origins() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf '%s\n' "WARN: docker not found; skip syncing gateway.controlUi.allowedOrigins." >&2
+    return 0
+  fi
+  if ! (cd "$ROOT_DIR" && docker compose config >/dev/null 2>&1); then
+    printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.allowedOrigins." >&2
+    return 0
+  fi
+
+  local port
+  local current_allowed_json=""
+  local merged_json=""
+  port="$(resolve_gateway_port)"
+  current_allowed_json="$(
+    cd "$ROOT_DIR" && docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js \
+      config get gateway.controlUi.allowedOrigins --json 2>/dev/null || true
+  )"
+  current_allowed_json="$(trim_whitespace "$current_allowed_json")"
+  merged_json="$(merge_control_ui_allowed_origins_json "$port" "$current_allowed_json")"
+
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.allowedOrigins "$merged_json" --strict-json >/dev/null 2>&1; then
+    printf '%s\n' "Synced gateway.controlUi.allowedOrigins=$merged_json"
+  else
+    printf '%s\n' "WARN: failed to sync gateway.controlUi.allowedOrigins automatically; run this manually:" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.allowedOrigins '$merged_json' --strict-json" >&2
+  fi
+}
+
+sync_control_ui_host_header_origin_fallback_disabled() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf '%s\n' "WARN: docker not found; skip syncing gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback." >&2
+    return 0
+  fi
+  if ! (cd "$ROOT_DIR" && docker compose config >/dev/null 2>&1); then
+    printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback." >&2
+    return 0
+  fi
+
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false --strict-json >/dev/null 2>&1; then
+    printf '%s\n' "Synced gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=false"
+  else
+    printf '%s\n' "WARN: failed to disable gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback automatically; run this manually:" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false --strict-json" >&2
+  fi
+}
+
+sync_control_ui_device_auth_bypass() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf '%s\n' "WARN: docker not found; skip syncing gateway.controlUi.dangerouslyDisableDeviceAuth." >&2
+    return 0
+  fi
+  if ! (cd "$ROOT_DIR" && docker compose config >/dev/null 2>&1); then
+    printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.dangerouslyDisableDeviceAuth." >&2
+    return 0
+  fi
+
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyDisableDeviceAuth true --strict-json >/dev/null 2>&1; then
+    printf '%s\n' "Synced gateway.controlUi.dangerouslyDisableDeviceAuth=true"
+  else
+    printf '%s\n' "WARN: failed to sync gateway.controlUi.dangerouslyDisableDeviceAuth automatically; run this manually:" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyDisableDeviceAuth true --strict-json" >&2
   fi
 }
 
@@ -386,11 +519,11 @@ sync_portable_baseline_config() {
   batch_json="$(trim_whitespace "$batch_json")"
   [[ -n "$batch_json" ]] || return 0
 
-  if cd "$ROOT_DIR" && docker compose run --rm --no-deps openclaw-cli config set --batch-json "$batch_json" >/dev/null 2>&1; then
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json "$batch_json" >/dev/null 2>&1; then
     printf '%s\n' "Synced portable baseline config from openclaw.local.example.json5"
   else
     printf '%s\n' "WARN: failed to sync portable baseline config automatically; run this manually:" >&2
-    printf '%s\n' "  docker compose run --rm --no-deps openclaw-cli config set --batch-json '<portable batch JSON>'" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json '<portable batch JSON>'" >&2
   fi
 }
 
@@ -663,6 +796,9 @@ main() {
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_portable_baseline_config
   sync_gateway_control_ui_root
+  sync_control_ui_allowed_origins
+  sync_control_ui_host_header_origin_fallback_disabled
+  sync_control_ui_device_auth_bypass
 
   printf '%s\n' "Custom Control UI root written to: $OUTPUT_DIR"
   printf '%s\n' "Wrote $OVERRIDE_PATH"

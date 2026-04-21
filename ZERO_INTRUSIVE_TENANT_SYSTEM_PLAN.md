@@ -18,6 +18,9 @@
 
 4. Docker 侧部署流程以 `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh` 为准。
    - 零侵入页面、运行时脚本和 sidecar 相关能力，默认都要经过这条部署路径。
+   - 本地 Docker 部署必须通过部署层追加同源反向代理容器，对浏览器暴露的 `18789` 端口不再直接映射原始 gateway；代理层负责把 `/tenant-platform-api/` 转发到 tenant sidecar，把其它 HTTP/WebSocket 流量转发回 gateway，从而避免修改 gateway 源码，同时避开浏览器对 `18801` 跨端口请求的 CSP 限制。
+   - 同一条部署路径还必须同步 `gateway.controlUi.allowedOrigins`，至少覆盖 proxy-facing 的 `http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}` 与 `http://localhost:${OPENCLAW_GATEWAY_PORT}`，并明确关闭 `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback`；原因是前置代理会让 Host-header fallback 在端口处理上变得脆弱，显式 Origin allowlist 才是稳定路径。
+   - 本地 Docker 的 proxy-fronted 部署还必须在配置层同步 `gateway.controlUi.dangerouslyDisableDeviceAuth=true`；因为浏览器现在是经由前置代理进入 gateway，本地 loopback 自动配对不再稳定命中，否则用户会先卡在原生 `pairing required` 页面。这个 break-glass 开关不再只绑定 `local edition`，而是绑定“本地前置代理部署”本身。
 
 5. 服务器连接信息和密码不写入仓库文档。
    - 真实连接信息由运营侧单独保管。
@@ -1530,6 +1533,21 @@
   - 运行包内会为 `file-type/core.js` 自动生成兼容入口
   - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `loopback`
   - 目标是避免 Windows 测试机出现缺包启动失败和非法 bind 值启动失败
+- direct-docker 本地部署链路已补齐同源前置代理：
+  - `docker-compose.override.yml` 现在会额外挂出 `openclaw-gateway-proxy`
+  - 浏览器访问的 `18789` 先到代理层
+  - `/tenant-platform-api/` 被代理到 `openclaw-tenant-platform:18801`
+  - 其它请求与 WebSocket 再转发到 `openclaw-gateway:18789`
+  - 这样租户登录页不再依赖浏览器直连 `18801`，也不会再把 `/tenant-platform-api/v1/*` 错误落回 Control UI HTML
+- direct-docker 本地部署链路也已补齐 Control UI Origin 固化：
+  - 部署脚本会合并 `gateway.controlUi.allowedOrigins`
+  - 至少保留 proxy-facing 的 `http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}` 与 `http://localhost:${OPENCLAW_GATEWAY_PORT}`
+  - 部署脚本会显式同步 `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=false`
+  - 目标是让 proxy-fronted 的本地浏览器会话在后续 redeploy 中继续稳定通过 WebSocket Origin 校验，而不是依赖旧的 break-glass Host 回退
+- direct-docker 本地部署链路也已补齐本地配对绕过：
+  - 只要走 direct-docker 的本地前置代理链路，部署脚本就会同步 `gateway.controlUi.dangerouslyDisableDeviceAuth=true`
+  - 目标是让 proxy-fronted 的本地浏览器会话不再卡在原生 `pairing required`
+  - 这个值现在不再跟随 tenant edition 来回切换；因为真正触发配对失效的是“本地前置代理 + 非直连 loopback”的链路形态，而不是 tenant edition 本身
 
 13. 成员级 Agent 隔离（方案 A + 部分模板继承）已落地
 

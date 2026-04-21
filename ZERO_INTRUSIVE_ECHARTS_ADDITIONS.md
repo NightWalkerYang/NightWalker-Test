@@ -32,6 +32,10 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/RUNTIME_ARCHITECTURE.md`
 - `tools/openclaw-control-ui-echarts/generated/.gitignore`
 
+### Docker Local Proxy
+
+- `tools/openclaw-control-ui-echarts/docker-local-proxy/nginx.conf`
+
 ### Local Runtime Packaging
 
 - `tools/openclaw-control-ui-echarts/local-runtime/CUSTOMER_DEPLOYMENT_GUIDE.md`
@@ -238,6 +242,10 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The non-Docker local runtime packager now vendors missing runtime-only packages, patches `file-type/core.js` compatibility inside the packaged runtime, and seeds a default `loopback` gateway bind so the packaged local edition boots without extra Control UI origin setup.
 - The non-Docker local runtime package now seeds an active `runtime.env` plus `data/.openclaw/openclaw.json` into the output, trims the starter config so it no longer emits missing-`OPENAI_API_KEY` warnings by default, and recreates the config from the bundled template if a customer deletes it.
 - The direct-docker setup helpers now sync the same portable baseline config into existing `openclaw.json` files without touching runtime-only state, then continue to sync `gateway.controlUi.root` for the generated Control UI.
+- Local Docker tenant deployment now inserts a zero-intrusive front proxy on host port `18789`; that proxy forwards `/tenant-platform-api/` to the tenant sidecar and forwards the remaining HTTP/WebSocket traffic to `openclaw-gateway`, so the tenant login view can stay same-origin without modifying gateway source files.
+- The direct-docker setup helpers now also merge `gateway.controlUi.allowedOrigins` with the proxy-facing local browser origins (`http://127.0.0.1:18789` and `http://localhost:18789` on the published gateway port), so the proxy-fronted Control UI no longer depends on dangerous Host-header origin fallback to complete its WebSocket handshake.
+- The same direct-docker setup helpers now explicitly sync `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=false`, so stale break-glass runtime configs stop overriding the safer allowlist-based path on later redeploys.
+- Local Docker proxy-fronted setup now also syncs `gateway.controlUi.dangerouslyDisableDeviceAuth=true` into the runtime config, because the proxy-fronted `18789` path no longer looks like a direct loopback browser session to the gateway and would otherwise stop on a one-time `pairing required` screen before the tenant shell can render.
 - Local edition bootstrap now bypasses platform-admin setup entirely: the first local login initializes a single local tenant admin, members continue to use the tenant login entry, and native root access redirects to the tenant flow instead of the platform-admin flow.
 - Unified `/login` now validates cached sessions before auto-redirect and logout clears both platform/tenant local sessions to prevent login-control redirect loops.
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.
