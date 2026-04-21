@@ -52,6 +52,14 @@ function buildUsageLedgerNote(openclawSessionKey, sourceFingerprint) {
   return `usage:${String(openclawSessionKey || "").trim()}:${String(sourceFingerprint || "").trim()}`;
 }
 
+function buildUsageMemberIdSql(recordAlias = "r") {
+  return `COALESCE(NULLIF(${recordAlias}.member_user_id, ''), ${recordAlias}.user_id)`;
+}
+
+function buildUsageMemberUsernameSql(recordAlias = "r", userAlias = "u", fallbackSql = "''") {
+  return `COALESCE(NULLIF(${recordAlias}.member_username, ''), ${userAlias}.username, ${fallbackSql})`;
+}
+
 function resolveUsageChargePoints(totalCost, rateMultiplier) {
   const cost = Math.max(0, toFiniteNumber(totalCost, 0));
   const multiplier = Math.max(0, toFiniteNumber(rateMultiplier, 1));
@@ -118,6 +126,136 @@ function runInTransaction(db, fn) {
   }
 }
 
+function ensureTenantUsageRecordSchemaCompatibility(db) {
+  const columns = db.prepare("PRAGMA table_info(tenant_usage_records)").all();
+  if (!columns.length) {
+    return;
+  }
+
+  const knownColumns = new Set(columns.map((row) => String(row?.name || "").trim()));
+  const hasMemberUserId = knownColumns.has("member_user_id");
+  const hasMemberUsername = knownColumns.has("member_username");
+  const userIdColumn = columns.find((row) => String(row?.name || "").trim() === "user_id");
+  const userIdNullable = Number(userIdColumn?.notnull || 0) === 0;
+  const foreignKeys = db.prepare("PRAGMA foreign_key_list(tenant_usage_records)").all();
+  const userIdForeignKey = foreignKeys.find(
+    (row) => String(row?.from || "").trim() === "user_id",
+  );
+  const userIdOnDelete = String(userIdForeignKey?.on_delete || "")
+    .trim()
+    .toUpperCase();
+  if (hasMemberUserId && hasMemberUsername && userIdNullable && userIdOnDelete === "SET NULL") {
+    return;
+  }
+
+  const legacyTableName = "tenant_usage_records_legacy_migration";
+  const legacyMemberUserIdSql = hasMemberUserId
+    ? "COALESCE(NULLIF(r.member_user_id, ''), r.user_id)"
+    : "r.user_id";
+  const legacyMemberUsernameSql = hasMemberUsername
+    ? "COALESCE(NULLIF(r.member_username, ''), u.username, '')"
+    : "COALESCE(u.username, '')";
+  const foreignKeysEnabled = Number(getScalar(db, "PRAGMA foreign_keys") || 0) > 0;
+
+  if (foreignKeysEnabled) {
+    db.exec("PRAGMA foreign_keys = OFF;");
+  }
+  try {
+    db.exec(`ALTER TABLE tenant_usage_records RENAME TO ${legacyTableName};`);
+    db.exec(
+      `CREATE TABLE tenant_usage_records (
+         id TEXT PRIMARY KEY,
+         tenant_id TEXT NOT NULL,
+         user_id TEXT,
+         member_user_id TEXT,
+         member_username TEXT NOT NULL DEFAULT '',
+         tenant_agent_id TEXT NOT NULL,
+         openclaw_session_key TEXT NOT NULL,
+         source_fingerprint TEXT NOT NULL,
+         message_timestamp TEXT NOT NULL,
+         usage_day TEXT NOT NULL,
+         provider TEXT,
+         model TEXT,
+         input_tokens INTEGER NOT NULL DEFAULT 0,
+         output_tokens INTEGER NOT NULL DEFAULT 0,
+         cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+         cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+         total_tokens INTEGER NOT NULL DEFAULT 0,
+         total_cost REAL,
+         created_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL,
+         UNIQUE(openclaw_session_key, source_fingerprint),
+         FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+         FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE
+       );`,
+    );
+    db.exec(
+      `INSERT INTO tenant_usage_records (
+         id,
+         tenant_id,
+         user_id,
+         member_user_id,
+         member_username,
+         tenant_agent_id,
+         openclaw_session_key,
+         source_fingerprint,
+         message_timestamp,
+         usage_day,
+         provider,
+         model,
+         input_tokens,
+         output_tokens,
+         cache_read_tokens,
+         cache_write_tokens,
+         total_tokens,
+         total_cost,
+         created_at,
+         updated_at
+       )
+       SELECT r.id,
+              r.tenant_id,
+              r.user_id,
+              ${legacyMemberUserIdSql},
+              ${legacyMemberUsernameSql},
+              r.tenant_agent_id,
+              r.openclaw_session_key,
+              r.source_fingerprint,
+              r.message_timestamp,
+              r.usage_day,
+              r.provider,
+              r.model,
+              r.input_tokens,
+              r.output_tokens,
+              r.cache_read_tokens,
+              r.cache_write_tokens,
+              r.total_tokens,
+              r.total_cost,
+              r.created_at,
+              r.updated_at
+       FROM ${legacyTableName} r
+       LEFT JOIN users u ON u.id = r.user_id;`,
+    );
+    db.exec(`DROP TABLE ${legacyTableName};`);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_tenant_day
+         ON tenant_usage_records (tenant_id, usage_day, message_timestamp DESC);`,
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_user_day
+         ON tenant_usage_records (user_id, usage_day, message_timestamp DESC);`,
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_agent_day
+         ON tenant_usage_records (tenant_agent_id, usage_day, message_timestamp DESC);`,
+    );
+  } finally {
+    if (foreignKeysEnabled) {
+      db.exec("PRAGMA foreign_keys = ON;");
+    }
+  }
+}
+
 function ensureSchemaCompatibility(db) {
   const columns = db.prepare("PRAGMA table_info(user_agent_assignments)").all();
   const knownColumns = new Set(columns.map((row) => String(row?.name || "").trim()));
@@ -132,6 +270,7 @@ function ensureSchemaCompatibility(db) {
        ON user_agent_assignments (derived_agent_id)
        WHERE derived_agent_id IS NOT NULL`,
   );
+  ensureTenantUsageRecordSchemaCompatibility(db);
 }
 
 function normalizeSegment(value, fallback = "x", maxLength = 24) {
@@ -495,6 +634,80 @@ function cleanupMemberDerivedWorkspaces(entries, params = {}) {
   };
 }
 
+function snapshotMemberUsageHistory(db, params) {
+  const tenantId = String(params?.tenantId || "").trim();
+  const userId = String(params?.userId || "").trim();
+  const memberUsername = String(params?.memberUsername || "").trim();
+  if (!tenantId || !userId) {
+    return 0;
+  }
+
+  return Number(
+    db
+      .prepare(
+        `UPDATE tenant_usage_records
+         SET user_id = NULL,
+             member_user_id = COALESCE(NULLIF(member_user_id, ''), @memberUserId),
+             member_username = CASE
+               WHEN TRIM(COALESCE(member_username, '')) != '' THEN member_username
+               ELSE @memberUsername
+             END,
+             updated_at = @updatedAt
+         WHERE tenant_id = @tenantId AND user_id = @userId`,
+      )
+      .run({
+        tenantId,
+        userId,
+        memberUserId: userId,
+        memberUsername,
+        updatedAt: nowIso(),
+      })?.changes || 0,
+  );
+}
+
+function purgeTenantMemberUserData(db, params = {}) {
+  const tenantId = String(params?.tenantId || "").trim();
+  const userId = String(params?.userId || "").trim();
+  const memberUsername = String(params?.memberUsername || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+
+  const cleanupEntries = collectMemberDerivedWorkspaceEntries(db, { tenantId, userId });
+  const preservedUsageCount = snapshotMemberUsageHistory(db, {
+    tenantId,
+    userId,
+    memberUsername,
+  });
+  const deletedAssignments = db.prepare(
+    `DELETE FROM user_agent_assignments
+     WHERE tenant_id = @tenantId AND user_id = @userId`,
+  ).run({
+    tenantId,
+    userId,
+  });
+  const deletedUser = db.prepare(
+    `DELETE FROM users
+     WHERE id = @userId AND role = 'member'`,
+  ).run({
+    userId,
+  });
+  if (!Number(deletedUser?.changes || 0)) {
+    throw new Error("成员不存在");
+  }
+  const cleanupResult = cleanupMemberDerivedWorkspaces(cleanupEntries, params);
+
+  return {
+    deletedAssignmentCount: Number(deletedAssignments?.changes || 0),
+    preservedUsageCount,
+    removedWorkspaceCount: Number(cleanupResult?.removedWorkspaceCount || 0),
+    removedWorkspacePathCount: Number(cleanupResult?.removedPathCount || 0),
+  };
+}
+
 function normalizeAgentIdentity(agent) {
   const identity = agent?.identity && typeof agent.identity === "object" ? agent.identity : {};
   const name =
@@ -841,44 +1054,22 @@ export function createTenantMember(db, params) {
            ORDER BY created_at ASC`,
         )
         .all(existingUser.id);
-      const reusableMemberships = memberships.filter(
-        (membership) =>
-          String(membership?.tenantId || "").trim() === tenantId &&
-          String(membership?.role || "").trim() === "member" &&
-          String(membership?.status || "").trim() === "deleted",
-      );
-      const reusableMembership =
+      const canPurgeLegacyDeletedMember =
         String(existingUser.role || "").trim() === "member" &&
         memberships.length === 1 &&
-        reusableMemberships.length === 1
-          ? reusableMemberships[0]
-          : null;
-      if (!reusableMembership) {
+        String(memberships[0]?.tenantId || "").trim() === tenantId &&
+        String(memberships[0]?.role || "").trim() === "member" &&
+        String(memberships[0]?.status || "").trim() === "deleted";
+      if (!canPurgeLegacyDeletedMember) {
         throw new Error("成员账号已存在");
       }
-
-      db.prepare(
-        `UPDATE users
-         SET password_hash = @passwordHash,
-             role = 'member',
-             status = 'active',
-             updated_at = @updatedAt
-         WHERE id = @userId`,
-      ).run({
+      purgeTenantMemberUserData(db, {
+        tenantId,
         userId: existingUser.id,
-        passwordHash: hashPassword(password),
-        updatedAt: now,
+        memberUsername: username,
+        configDir: params.configDir,
+        configPath: params.configPath,
       });
-      db.prepare(
-        `UPDATE tenant_memberships
-         SET status = 'active',
-             created_at = @createdAt
-         WHERE id = @membershipId`,
-      ).run({
-        membershipId: reusableMembership.id,
-        createdAt: now,
-      });
-      return existingUser.id;
     }
 
     const nextUserId = createId("user");
@@ -1059,48 +1250,21 @@ export function deleteTenantMember(db, params) {
     if (!current) {
       throw new Error("成员不存在");
     }
-    const cleanupEntries = collectMemberDerivedWorkspaceEntries(db, {
+    const cleanupResult = purgeTenantMemberUserData(db, {
       tenantId,
       userId,
+      memberUsername: current.username,
+      configDir: params.configDir,
+      configPath: params.configPath,
     });
-
-    const updatedAt = nowIso();
-    db.prepare(
-      `UPDATE tenant_memberships
-       SET status = 'deleted'
-       WHERE tenant_id = @tenantId
-         AND user_id = @userId
-         AND role = 'member'
-         AND status != 'deleted'`,
-    ).run({
-      tenantId,
-      userId,
-    });
-    db.prepare(
-      `UPDATE users
-       SET status = 'inactive',
-           updated_at = @updatedAt
-       WHERE id = @userId`,
-    ).run({
-      userId,
-      updatedAt,
-    });
-    const revokeAssignments = db.prepare(
-      `UPDATE user_agent_assignments
-       SET status = 'inactive'
-       WHERE tenant_id = @tenantId AND user_id = @userId AND status = 'active'`,
-    ).run({
-      tenantId,
-      userId,
-    });
-    const cleanupResult = cleanupMemberDerivedWorkspaces(cleanupEntries, params);
 
     return {
       id: current.id,
       username: current.username,
-      revokedAssignmentCount: Number(revokeAssignments?.changes || 0),
+      revokedAssignmentCount: Number(cleanupResult?.deletedAssignmentCount || 0),
+      preservedUsageCount: Number(cleanupResult?.preservedUsageCount || 0),
       removedWorkspaceCount: Number(cleanupResult?.removedWorkspaceCount || 0),
-      removedWorkspacePathCount: Number(cleanupResult?.removedPathCount || 0),
+      removedWorkspacePathCount: Number(cleanupResult?.removedWorkspacePathCount || 0),
     };
   });
 }
@@ -1186,13 +1350,15 @@ export function listTenantUsageRecords(db, params) {
   const rawPage = Number(params?.page);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
   const offset = (page - 1) * pageSize;
+  const memberUsernameSql = buildUsageMemberUsernameSql("r", "u", "''");
+  const memberIdSql = buildUsageMemberIdSql("r");
 
   const whereClauses = ["r.tenant_id = @tenantId"];
   const bindings = { tenantId };
   if (search) {
     whereClauses.push(
       `(
-        LOWER(COALESCE(u.username, '')) LIKE @search OR
+        LOWER(${memberUsernameSql}) LIKE @search OR
         LOWER(COALESCE(ta.agent_id, '')) LIKE @search OR
         LOWER(COALESCE(r.model, '')) LIKE @search OR
         LOWER(COALESCE(r.provider, '')) LIKE @search
@@ -1229,8 +1395,8 @@ export function listTenantUsageRecords(db, params) {
                 ELSE COALESCE(r.total_cost, 0) * COALESCE(ta.rate_multiplier, 1)
               END AS creditsUsed,
               r.source_fingerprint AS note,
-              r.user_id AS memberId,
-              u.username AS memberUsername,
+              ${memberIdSql} AS memberId,
+              ${memberUsernameSql} AS memberUsername,
               r.tenant_agent_id AS tenantAgentId,
               ta.agent_id AS agentId,
               r.input_tokens AS inputTokens,
@@ -1702,10 +1868,12 @@ export function syncTenantUsageRecords(db, params) {
       `SELECT ta.id,
               ta.balance_points AS balancePoints,
               ta.rate_multiplier AS rateMultiplier,
-              t.deployment_mode AS deploymentMode
+              t.deployment_mode AS deploymentMode,
+              u.username AS memberUsername
        FROM tenant_agents ta
        JOIN tenants t ON t.id = ta.tenant_id
        JOIN tenant_memberships tm ON tm.tenant_id = ta.tenant_id
+       JOIN users u ON u.id = tm.user_id
        JOIN user_agent_assignments ua
          ON ua.tenant_id = ta.tenant_id
         AND ua.tenant_agent_id = ta.id
@@ -1770,6 +1938,8 @@ export function syncTenantUsageRecords(db, params) {
          id,
          tenant_id,
          user_id,
+         member_user_id,
+         member_username,
          tenant_agent_id,
          openclaw_session_key,
          source_fingerprint,
@@ -1789,6 +1959,8 @@ export function syncTenantUsageRecords(db, params) {
          @id,
          @tenantId,
          @userId,
+         @memberUserId,
+         @memberUsername,
          @tenantAgentId,
          @openclawSessionKey,
          @sourceFingerprint,
@@ -1806,6 +1978,9 @@ export function syncTenantUsageRecords(db, params) {
          @updatedAt
        )
        ON CONFLICT(openclaw_session_key, source_fingerprint) DO UPDATE SET
+         user_id = excluded.user_id,
+         member_user_id = excluded.member_user_id,
+         member_username = excluded.member_username,
          tenant_agent_id = excluded.tenant_agent_id,
          message_timestamp = excluded.message_timestamp,
          usage_day = excluded.usage_day,
@@ -1821,7 +1996,10 @@ export function syncTenantUsageRecords(db, params) {
     );
     const updateLegacyUsageRecord = db.prepare(
       `UPDATE tenant_usage_records
-       SET source_fingerprint = @sourceFingerprint,
+       SET user_id = @userId,
+           member_user_id = @memberUserId,
+           member_username = @memberUsername,
+           source_fingerprint = @sourceFingerprint,
            tenant_agent_id = @tenantAgentId,
            message_timestamp = @messageTimestamp,
            usage_day = @usageDay,
@@ -1935,6 +2113,8 @@ export function syncTenantUsageRecords(db, params) {
           id: existing.id,
           tenantId,
           userId,
+          memberUserId: userId,
+          memberUsername: String(tenantAgent.memberUsername || "").trim(),
           tenantAgentId,
           openclawSessionKey,
           sourceFingerprint,
@@ -1954,6 +2134,9 @@ export function syncTenantUsageRecords(db, params) {
       } else if (legacyExisting?.id) {
         updateLegacyUsageRecord.run({
           id: legacyExisting.id,
+          userId,
+          memberUserId: userId,
+          memberUsername: String(tenantAgent.memberUsername || "").trim(),
           tenantAgentId,
           sourceFingerprint,
           messageTimestamp,
@@ -1973,6 +2156,8 @@ export function syncTenantUsageRecords(db, params) {
           id: createId("usage"),
           tenantId,
           userId,
+          memberUserId: userId,
+          memberUsername: String(tenantAgent.memberUsername || "").trim(),
           tenantAgentId,
           openclawSessionKey,
           sourceFingerprint,
@@ -2084,12 +2269,14 @@ export function listTenantUsageStats(db, params, configAgents = []) {
     endDate,
   };
   const configMap = new Map(configAgents.map((entry) => [entry.id, entry]));
+  const usageMemberIdSql = buildUsageMemberIdSql("r");
+  const usageMemberUsernameSql = buildUsageMemberUsernameSql("r", "u", "'已删除成员'");
 
   const totalsRow =
     db
       .prepare(
         `SELECT COUNT(*) AS responseCount,
-              COUNT(DISTINCT user_id) AS memberCount,
+              COUNT(DISTINCT COALESCE(NULLIF(member_user_id, ''), user_id)) AS memberCount,
               COUNT(DISTINCT tenant_agent_id) AS agentCount,
               COALESCE(SUM(input_tokens), 0) AS inputTokens,
               COALESCE(SUM(output_tokens), 0) AS outputTokens,
@@ -2107,8 +2294,8 @@ export function listTenantUsageStats(db, params, configAgents = []) {
 
   const byMember = db
     .prepare(
-      `SELECT r.user_id AS userId,
-              u.username,
+      `SELECT ${usageMemberIdSql} AS userId,
+              ${usageMemberUsernameSql} AS username,
               COUNT(*) AS responseCount,
               COALESCE(SUM(r.input_tokens), 0) AS inputTokens,
               COALESCE(SUM(r.output_tokens), 0) AS outputTokens,
@@ -2118,11 +2305,11 @@ export function listTenantUsageStats(db, params, configAgents = []) {
               COALESCE(SUM(r.total_cost), 0) AS totalCost,
               MAX(r.message_timestamp) AS lastUsedAt
        FROM tenant_usage_records r
-       JOIN users u ON u.id = r.user_id
+       LEFT JOIN users u ON u.id = r.user_id
        WHERE r.tenant_id = @tenantId
          AND r.usage_day >= @startDate
          AND r.usage_day <= @endDate
-       GROUP BY r.user_id, u.username
+       GROUP BY ${usageMemberIdSql}, ${usageMemberUsernameSql}
        ORDER BY totalTokens DESC, responseCount DESC, lastUsedAt DESC`,
     )
     .all(queryParams);
@@ -2321,6 +2508,8 @@ export function getTenantOverview(db, params, configAgents = []) {
   if (!tenantId) {
     throw new Error("tenant_id_required");
   }
+  const usageMemberIdSql = buildUsageMemberIdSql("r");
+  const usageMemberUsernameSql = buildUsageMemberUsernameSql("r", "u", "'已删除成员'");
 
   const now = new Date();
   const days = [];
@@ -2338,7 +2527,7 @@ export function getTenantOverview(db, params, configAgents = []) {
         SUM(output_tokens) as outputTokens,
         SUM(cache_read_tokens) as cacheReadTokens,
         SUM(cache_write_tokens) as cacheWriteTokens,
-        COUNT(DISTINCT user_id) as activeUsers,
+        COUNT(DISTINCT COALESCE(NULLIF(member_user_id, ''), user_id)) as activeUsers,
         COUNT(DISTINCT tenant_agent_id) as activeAgents
       FROM tenant_usage_records
       WHERE tenant_id = ?`,
@@ -2373,13 +2562,13 @@ export function getTenantOverview(db, params, configAgents = []) {
 
   const topMembers = db
     .prepare(
-      `SELECT u.username, SUM(r.total_tokens) as tokens
-      FROM tenant_usage_records r
-      JOIN users u ON u.id = r.user_id
-      WHERE r.tenant_id = ?
-      GROUP BY r.user_id
-      ORDER BY tokens DESC
-      LIMIT 10`,
+      `SELECT ${usageMemberUsernameSql} AS username, SUM(r.total_tokens) as tokens
+       FROM tenant_usage_records r
+       LEFT JOIN users u ON u.id = r.user_id
+       WHERE r.tenant_id = ?
+       GROUP BY ${usageMemberIdSql}, ${usageMemberUsernameSql}
+       ORDER BY tokens DESC
+       LIMIT 10`,
     )
     .all(tenantId);
 

@@ -140,7 +140,9 @@ CREATE TABLE IF NOT EXISTS tenant_agent_sessions (
 CREATE TABLE IF NOT EXISTS tenant_usage_records (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
+  user_id TEXT,
+  member_user_id TEXT,
+  member_username TEXT NOT NULL DEFAULT '',
   tenant_agent_id TEXT NOT NULL,
   openclaw_session_key TEXT NOT NULL,
   source_fingerprint TEXT NOT NULL,
@@ -158,7 +160,7 @@ CREATE TABLE IF NOT EXISTS tenant_usage_records (
   updated_at TEXT NOT NULL,
   UNIQUE(openclaw_session_key, source_fingerprint),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
   FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE
 );
 

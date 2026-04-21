@@ -508,6 +508,26 @@ describe("tenant platform database foundation", () => {
         configPath: sandbox.config.configPath,
         configDir: sandbox.config.configDir,
       });
+      const sessionKey = "agent:finance:tenant:iota:user:member-delete:chat:latest";
+      syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        records: [
+          {
+            sourceFingerprint: "assistant-delete",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "openai",
+            model: "openai/gpt-5.4",
+            inputTokens: 100,
+            outputTokens: 50,
+            totalTokens: 150,
+            totalCost: 0.15,
+          },
+        ],
+      });
       const derivedAgentId = String(
         db
           .prepare(
@@ -540,28 +560,29 @@ describe("tenant platform database foundation", () => {
         id: member.id,
         username: "member-delete",
         revokedAssignmentCount: 1,
+        preservedUsageCount: 1,
         removedWorkspaceCount: 1,
       });
       expect(listTenantMembers(db, tenant.id)).toEqual([]);
-      expect(getUserByUsername(db, "member-delete")?.status).toBe("inactive");
+      expect(getUserByUsername(db, "member-delete")).toBeNull();
       expect(
         db
           .prepare(
-            `SELECT status
+            `SELECT id
              FROM tenant_memberships
              WHERE tenant_id = ? AND user_id = ? AND role = 'member'`,
           )
-          .get(tenant.id, member.id)?.status,
-      ).toBe("deleted");
+          .get(tenant.id, member.id)?.id ?? null,
+      ).toBeNull();
       expect(
         db
           .prepare(
-            `SELECT status
+            `SELECT id
              FROM user_agent_assignments
              WHERE tenant_id = ? AND user_id = ? AND tenant_agent_id = ?`,
           )
-          .get(tenant.id, member.id, tenantAgentId)?.status,
-      ).toBe("inactive");
+          .get(tenant.id, member.id, tenantAgentId)?.id ?? null,
+      ).toBeNull();
       expect(
         listAssignedAgentsForUser(
           db,
@@ -569,6 +590,24 @@ describe("tenant platform database foundation", () => {
           readOpenClawAgentCatalog(sandbox.config.configPath),
         ),
       ).toEqual([]);
+      expect(
+        listTenantUsageRecords(db, {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 8,
+          search: "",
+        }).items[0],
+      ).toMatchObject({
+        memberId: member.id,
+        memberUsername: "member-delete",
+        agentId: "finance",
+        totalTokens: 150,
+        creditsUsed: 0.15,
+      });
+      expect(getTenantOverview(db, { tenantId: tenant.id }).topMembers[0]).toMatchObject({
+        username: "member-delete",
+        tokens: 150,
+      });
       expect(fs.existsSync(canonicalWorkspace)).toBe(false);
       expect(fs.existsSync(runtimeWorkspace)).toBe(false);
     } finally {
@@ -576,7 +615,7 @@ describe("tenant platform database foundation", () => {
     }
   });
 
-  it("reactivates a logically deleted member when the same username is recreated in the same tenant", () => {
+  it("creates a new member record when the same username is recreated after deletion", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
     try {
@@ -616,22 +655,31 @@ describe("tenant platform database foundation", () => {
       });
 
       const userRecord = getUserByUsername(db, "member-recreate");
-      const membership = db
+      const oldMembership = db
+        .prepare(
+          `SELECT id
+           FROM tenant_memberships
+           WHERE tenant_id = ? AND user_id = ? AND role = 'member'`,
+        )
+        .get(tenant.id, member.id);
+      const newMembership = db
         .prepare(
           `SELECT status
            FROM tenant_memberships
            WHERE tenant_id = ? AND user_id = ? AND role = 'member'`,
         )
-        .get(tenant.id, member.id);
+        .get(tenant.id, recreated.id);
 
-      expect(recreated?.id).toBe(member.id);
+      expect(recreated?.id).not.toBe(member.id);
       expect(userRecord?.status).toBe("active");
+      expect(userRecord?.id).toBe(recreated?.id);
       expect(verifyPassword("secret", String(userRecord?.password_hash || ""))).toBe(false);
       expect(verifyPassword("renew-secret", String(userRecord?.password_hash || ""))).toBe(true);
-      expect(membership?.status).toBe("active");
+      expect(oldMembership?.id ?? null).toBeNull();
+      expect(newMembership?.status).toBe("active");
       expect(listTenantMembers(db, tenant.id)).toEqual([
         expect.objectContaining({
-          id: member.id,
+          id: recreated.id,
           username: "member-recreate",
           status: "active",
         }),

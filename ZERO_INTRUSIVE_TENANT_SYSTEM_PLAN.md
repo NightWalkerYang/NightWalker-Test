@@ -214,14 +214,15 @@ Logo 规则固定为：
 - 一个租户只允许一个管理员
 - 租户成员账号第一阶段只保留账号和密码
 - 成员停用后禁止登录，但保留历史
-- 成员删除采用逻辑删除：
-  - `tenant_memberships.status = deleted`
-  - `users.status = inactive`
-  - 同步把该成员当前有效的 `user_agent_assignments` 标记为 `inactive`
+- 成员删除采用“物理删除成员账号 + 保留历史耗量快照”的方式：
+  - 物理删除 `users` 中该成员账号
+  - 依赖外键级联物理删除该成员对应的 `tenant_memberships`
+  - 物理删除该成员对应的 `user_agent_assignments`
+  - 物理删除该成员对应的 `tenant_agent_sessions`
   - 同步清理该成员派生出来的专属 Agent 工作空间目录，包括 `workspace-agents/<derivedAgentId>` 与 `workspace-<derivedAgentId>`
-  - 如果后续在同一租户内用相同账号重新创建成员，且该账号只对应这条已删除的成员关系，则直接复用原 `users` / `tenant_memberships` 记录并重新激活，同时更新密码，避免撞唯一约束且继续保留历史
-  - 历史记录、耗量和审计保留不删
-  - 租户管理员与平台管理员的成员列表默认不展示已删除成员
+  - `tenant_usage_records` 不删除；删除成员前会把历史耗量固化为成员快照字段，后续仍可按原成员名称查看耗量统计
+  - `tenant_wallet_ledger`、`audit_logs` 等历史记录默认保留；其中用户外键引用按数据库约束自动置空
+  - 后续在同一租户内用相同账号重新创建成员时，直接创建一条新的成员账号记录，不再复用旧 `users` 行
 
 ### 4. 租户成员入口与聊天页
 
