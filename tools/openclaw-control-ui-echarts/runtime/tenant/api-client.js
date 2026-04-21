@@ -170,6 +170,9 @@ export function createTenantApiClient() {
     upsertPlatformTenantAgent(body) {
       return requestJson("/platform/tenant-agents", { method: "POST", body });
     },
+    revokePlatformTenantAgents(body) {
+      return requestJson("/platform/revoke-tenant-agents", { method: "POST", body });
+    },
     listTenantMembers() {
       return requestJson("/tenant/admin/members");
     },

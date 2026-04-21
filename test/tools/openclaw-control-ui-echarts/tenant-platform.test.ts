@@ -9,10 +9,12 @@ import {
   createTenantWithAdmin,
   createTenantMember,
   getUserByUsername,
+  listTenantAgents,
   listTenantMembers,
   readOpenClawAgentCatalog,
   upsertTenantAgent,
   assignTenantAgentToUser,
+  revokePlatformTenantAgents,
   listAssignedAgentsForUser,
   listAssignedAgentVisualizationsForUser,
   getTenantOverview,
@@ -273,6 +275,135 @@ describe("tenant platform database foundation", () => {
           memberLimit: 0,
         }),
       ).toThrow("member_limit_invalid");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("revokes tenant-distributed agents and invalidates related member assignments", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "lambda",
+        name: "租户 Lambda",
+        adminUsername: "lambda-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const memberA = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+      const memberB = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-b",
+        password: "secret",
+      });
+      const catalog = readOpenClawAgentCatalog(sandbox.config.configPath);
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1.2,
+        balancePoints: 18,
+        status: "active",
+      });
+
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: memberA.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: memberB.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const result = revokePlatformTenantAgents(db, {
+        tenantId: tenant.id,
+        tenantAgentIds: [tenantAgentId],
+      });
+      expect(result).toMatchObject({
+        revokedTenantAgentCount: 1,
+        revokedAssignmentCount: 2,
+        affectedMemberCount: 2,
+      });
+      expect(result.tenantAgentIds).toEqual([tenantAgentId]);
+      expect(result.affectedUserIds.toSorted()).toEqual([memberA.id, memberB.id].toSorted());
+
+      expect(listTenantAgents(db, tenant.id, catalog)).toHaveLength(0);
+      expect(
+        listAssignedAgentsForUser(
+          db,
+          {
+            tenantId: tenant.id,
+            userId: memberA.id,
+            configPath: sandbox.config.configPath,
+            configDir: sandbox.config.configDir,
+          },
+          catalog,
+        ),
+      ).toHaveLength(0);
+      expect(
+        listAssignedAgentsForUser(
+          db,
+          {
+            tenantId: tenant.id,
+            userId: memberB.id,
+            configPath: sandbox.config.configPath,
+            configDir: sandbox.config.configDir,
+          },
+          catalog,
+        ),
+      ).toHaveLength(0);
+
+      expect(() =>
+        assignTenantAgentToUser(db, {
+          tenantId: tenant.id,
+          userId: memberA.id,
+          tenantAgentId,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        }),
+      ).toThrow("tenant_agent_inactive");
+
+      expect(() =>
+        syncTenantUsageRecords(db, {
+          tenantId: tenant.id,
+          userId: memberA.id,
+          tenantAgentId,
+          openclawSessionKey: "agent:finance:tenant:lambda:user:member-a:chat:latest",
+          records: [
+            {
+              sourceFingerprint: "assistant-1",
+              messageTimestamp: "2026-04-13T09:30:00.000Z",
+              usageDay: "2026-04-13",
+              provider: "openai",
+              model: "openai/gpt-5.4",
+              inputTokens: 20,
+              outputTokens: 8,
+              totalTokens: 28,
+              totalCost: 0.01,
+            },
+          ],
+        }),
+      ).toThrow("tenant_agent_not_found");
     } finally {
       closeTenantPlatformDb(db);
     }

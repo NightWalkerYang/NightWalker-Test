@@ -900,14 +900,15 @@ export function upsertTenantAgent(db, params) {
   return tenantAgentId;
 }
 
-export function listTenantAgents(db, tenantId, configAgents = []) {
+export function listTenantAgents(db, tenantId, configAgents = [], options = {}) {
   const configMap = new Map(configAgents.map((entry) => [entry.id, entry]));
+  const includeInactive = Boolean(options?.includeInactive);
   return db
     .prepare(
       `SELECT id, agent_id AS agentId, description, rate_multiplier AS rateMultiplier,
               status, balance_points AS balancePoints, created_at AS createdAt, updated_at AS updatedAt
        FROM tenant_agents
-       WHERE tenant_id = ?
+       WHERE tenant_id = ? ${includeInactive ? "" : "AND status = 'active'"}
        ORDER BY created_at DESC`,
     )
     .all(tenantId)
@@ -1014,7 +1015,7 @@ export function listTenantUsageRecords(db, params) {
 function assignTenantAgentToUserCore(db, params) {
   const tenantAgent = db
     .prepare(
-      `SELECT id, tenant_id AS tenantId, agent_id AS baseAgentId
+      `SELECT id, tenant_id AS tenantId, agent_id AS baseAgentId, status
        FROM tenant_agents
        WHERE id = ?`,
     )
@@ -1024,6 +1025,9 @@ function assignTenantAgentToUserCore(db, params) {
   }
   if (String(tenantAgent.tenantId || "").trim() !== String(params.tenantId || "").trim()) {
     throw new Error("tenant_mismatch");
+  }
+  if (String(tenantAgent.status || "").trim() !== "active") {
+    throw new Error("tenant_agent_inactive");
   }
   const membership = db
     .prepare(
@@ -1148,6 +1152,84 @@ export function assignTenantAgentsToUser(db, params) {
       assignmentIds,
       derivedAgentIds,
       assignedAssignmentCount: assignmentIds.length,
+      affectedUserIds,
+      affectedMemberCount: affectedUserIds.length,
+    };
+  });
+}
+
+export function revokePlatformTenantAgents(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const tenantAgentIds = Array.isArray(params.tenantAgentIds)
+    ? [
+        ...new Set(
+          params.tenantAgentIds
+            .map((tenantAgentId) => String(tenantAgentId || "").trim())
+            .filter(Boolean),
+        ),
+      ]
+    : String(params.tenantAgentId || "").trim()
+      ? [String(params.tenantAgentId || "").trim()]
+      : [];
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!tenantAgentIds.length) {
+    throw new Error("tenant_agent_ids_required");
+  }
+
+  return runInTransaction(db, () => {
+    const placeholders = tenantAgentIds.map(() => "?").join(", ");
+    const selectedTenantAgents = db
+      .prepare(
+        `SELECT id
+         FROM tenant_agents
+         WHERE tenant_id = ? AND status = 'active' AND id IN (${placeholders})`,
+      )
+      .all(tenantId, ...tenantAgentIds);
+
+    if (!selectedTenantAgents.length) {
+      return {
+        revokedTenantAgentCount: 0,
+        revokedAssignmentCount: 0,
+        tenantAgentIds: [],
+        affectedUserIds: [],
+        affectedMemberCount: 0,
+      };
+    }
+
+    const revokedTenantAgentIds = selectedTenantAgents
+      .map((tenantAgent) => String(tenantAgent.id || "").trim())
+      .filter(Boolean);
+    const resolvedPlaceholders = revokedTenantAgentIds.map(() => "?").join(", ");
+    const revokedAssignments = db
+      .prepare(
+        `SELECT id, user_id AS userId
+         FROM user_agent_assignments
+         WHERE tenant_id = ? AND status = 'active' AND tenant_agent_id IN (${resolvedPlaceholders})`,
+      )
+      .all(tenantId, ...revokedTenantAgentIds);
+
+    db.prepare(
+      `UPDATE tenant_agents
+       SET status = 'inactive',
+           updated_at = ?
+       WHERE tenant_id = ? AND status = 'active' AND id IN (${resolvedPlaceholders})`,
+    ).run(nowIso(), tenantId, ...revokedTenantAgentIds);
+
+    if (revokedAssignments.length) {
+      db.prepare(
+        `UPDATE user_agent_assignments
+         SET status = 'inactive'
+         WHERE tenant_id = ? AND status = 'active' AND tenant_agent_id IN (${resolvedPlaceholders})`,
+      ).run(tenantId, ...revokedTenantAgentIds);
+    }
+
+    const affectedUserIds = [...new Set(revokedAssignments.map((assignment) => assignment.userId))];
+    return {
+      revokedTenantAgentCount: revokedTenantAgentIds.length,
+      revokedAssignmentCount: revokedAssignments.length,
+      tenantAgentIds: revokedTenantAgentIds,
       affectedUserIds,
       affectedMemberCount: affectedUserIds.length,
     };
@@ -1373,11 +1455,17 @@ export function syncTenantUsageRecords(db, params) {
        FROM tenant_agents ta
        JOIN tenants t ON t.id = ta.tenant_id
        JOIN tenant_memberships tm ON tm.tenant_id = ta.tenant_id
+       JOIN user_agent_assignments ua
+         ON ua.tenant_id = ta.tenant_id
+        AND ua.tenant_agent_id = ta.id
+        AND ua.user_id = tm.user_id
        WHERE ta.id = @tenantAgentId
          AND ta.tenant_id = @tenantId
+         AND ta.status = 'active'
          AND tm.user_id = @userId
          AND tm.role = 'member'
          AND tm.status = 'active'
+         AND ua.status = 'active'
        LIMIT 1`,
     )
     .get({

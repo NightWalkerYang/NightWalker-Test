@@ -24,6 +24,7 @@ import {
   logAudit,
   readOpenClawAgentCatalog,
   registerTenantAgentSession,
+  revokePlatformTenantAgents,
   revokeTenantAgentAssignments,
   syncTenantUsageRecords,
   updateTenantMemberLimit,
@@ -169,6 +170,14 @@ function readUserIds(value) {
 }
 
 function readAssignmentIds(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
+  }
+  const normalized = String(value || "").trim();
+  return normalized ? [normalized] : [];
+}
+
+function readTenantAgentIds(value) {
   if (Array.isArray(value)) {
     return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
   }
@@ -906,6 +915,51 @@ export function createTenantPlatformRouter(deps) {
           (item) => item.id === tenantAgentId,
         );
         sendJson(request, response, 200, { ok: true, data: agent ?? null });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/revoke-tenant-agents") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenantId = readTenantId(body.tenantId);
+        if (!tenantId) {
+          sendJson(request, response, 400, { ok: false, error: "tenant_id_required" });
+          return;
+        }
+        const tenantAgentIds = readTenantAgentIds(body.tenantAgentIds ?? body.tenantAgentId);
+        const result = revokePlatformTenantAgents(deps.db, {
+          tenantId,
+          tenantAgentIds,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId,
+          action: "platform.tenant_agent.revoke",
+          resourceType: "tenant",
+          resourceId: tenantId,
+          payloadJson: {
+            tenantId,
+            tenantAgentIds,
+            revokedTenantAgentIds: result.tenantAgentIds,
+            revokedTenantAgentCount: result.revokedTenantAgentCount,
+            revokedAssignmentCount: result.revokedAssignmentCount,
+            affectedUserIds: result.affectedUserIds,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,

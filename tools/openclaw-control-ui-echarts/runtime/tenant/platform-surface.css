@@ -45,6 +45,28 @@
   gap: 8px;
 }
 
+.oc-platform-agent-select-col,
+.oc-platform-agent-select-cell {
+  width: 48px;
+  text-align: center;
+}
+
+.oc-platform-agent-select-col input,
+.oc-platform-agent-select-cell input {
+  width: 16px;
+  height: 16px;
+}
+
+.oc-platform-destructive-action {
+  color: var(--oc-tenant-danger);
+  border-color: color-mix(in srgb, var(--oc-tenant-danger) 42%, var(--border) 58%);
+  background: color-mix(in srgb, var(--oc-tenant-danger) 10%, var(--bg-elevated) 90%);
+}
+
+.oc-platform-destructive-action:hover {
+  background: color-mix(in srgb, var(--oc-tenant-danger) 16%, var(--bg-elevated) 84%);
+}
+
 .oc-platform-table-empty {
   text-align: center;
   color: var(--muted);
@@ -108,6 +130,81 @@
   margin-top: 8px;
 }
 
+.oc-platform-revoke-agent-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.oc-platform-revoke-agent-toolbar__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+}
+
+.oc-platform-revoke-agent-toolbar__select-all input {
+  width: 16px;
+  height: 16px;
+}
+
+.oc-platform-revoke-agent-toolbar__summary {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.oc-platform-revoke-agent-list {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+}
+
+.oc-platform-revoke-agent__name {
+  font-weight: 600;
+}
+
+.oc-platform-revoke-agent__meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.oc-platform-revoke-confirm {
+  display: grid;
+  gap: 10px;
+}
+
+.oc-platform-revoke-confirm__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.oc-platform-revoke-confirm__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.oc-platform-revoke-confirm__list li {
+  word-break: break-all;
+}
+
+.oc-platform-revoke-confirm__name {
+  font-weight: 600;
+}
+
+.oc-platform-revoke-confirm__meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .oc-platform-rate-input {
   width: 112px;
   min-width: 112px;
@@ -127,6 +224,14 @@
   .oc-platform-modal__panel--wide {
     width: min(96vw, 96vw);
     max-width: 96vw;
+  }
+
+  .oc-platform-revoke-agent-toolbar {
+    align-items: stretch;
+  }
+
+  .oc-platform-revoke-agent-toolbar__summary {
+    white-space: normal;
   }
 
   .oc-tenant-feedback-toast-root {

@@ -81,13 +81,124 @@ function openDialog(dialog) {
     return;
   }
   if (!dialog.open) {
-    dialog.showModal();
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+      return;
+    }
+    dialog.setAttribute("open", "");
   }
 }
 
 function closeDialog(dialog) {
   if (dialog instanceof HTMLDialogElement && dialog.open) {
-    dialog.close();
+    if (typeof dialog.close === "function") {
+      dialog.close();
+      return;
+    }
+    dialog.removeAttribute("open");
+  }
+}
+
+function createRevokeTenantAgentDialogState() {
+  return {
+    open: false,
+    loading: false,
+    busy: false,
+    confirmOpen: false,
+    confirmSelectedTenantAgentIds: [],
+    tenantId: "",
+    tenantName: "",
+    agents: [],
+    selectedTenantAgentIds: new Set(),
+    error: "",
+    requestToken: 0,
+  };
+}
+
+function getRevokeTenantAgentDialog(controller) {
+  if (
+    !(
+      controller?.revokeTenantAgentDialog &&
+      typeof controller.revokeTenantAgentDialog === "object"
+    )
+  ) {
+    controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
+  }
+  return controller.revokeTenantAgentDialog;
+}
+
+function isTenantRevokeSelectionTarget(tenant) {
+  return Number(tenant?.agentCount || 0) > 0;
+}
+
+function getRevokeTenantAgentSelectableAgents(dialog) {
+  if (!Array.isArray(dialog?.agents)) {
+    return [];
+  }
+  return dialog.agents.filter((agent) => Boolean(String(agent?.id || "").trim()));
+}
+
+function getRevokeTenantAgentDisplayName(agent) {
+  for (const candidate of [agent?.agentName, agent?.description, agent?.agentId, agent?.id]) {
+    const value = String(candidate || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "未知 Agent";
+}
+
+function getRevokeTenantAgentConfirmAgents(dialog) {
+  const selectedTenantAgentIds = new Set(
+    Array.isArray(dialog?.confirmSelectedTenantAgentIds)
+      ? dialog.confirmSelectedTenantAgentIds
+          .map((tenantAgentId) => String(tenantAgentId || "").trim())
+          .filter(Boolean)
+      : [],
+  );
+  if (!selectedTenantAgentIds.size) {
+    return [];
+  }
+  return getRevokeTenantAgentSelectableAgents(dialog).filter((agent) =>
+    selectedTenantAgentIds.has(String(agent.id || "").trim()),
+  );
+}
+
+function isRevokeTenantAgentSelected(controller, tenantAgentId) {
+  return getRevokeTenantAgentDialog(controller).selectedTenantAgentIds.has(
+    String(tenantAgentId || "").trim(),
+  );
+}
+
+function setRevokeTenantAgentSelected(controller, tenantAgentId, selected) {
+  const normalized = String(tenantAgentId || "").trim();
+  if (!normalized) {
+    return;
+  }
+  const dialog = getRevokeTenantAgentDialog(controller);
+  if (selected) {
+    dialog.selectedTenantAgentIds.add(normalized);
+    return;
+  }
+  dialog.selectedTenantAgentIds.delete(normalized);
+}
+
+function clearRevokeTenantAgentSelection(controller) {
+  getRevokeTenantAgentDialog(controller).selectedTenantAgentIds.clear();
+}
+
+function pruneRevokeTenantAgentSelection(controller) {
+  const dialog = controller?.revokeTenantAgentDialog;
+  if (!dialog?.open) {
+    return;
+  }
+  const tenantAgentIds = new Set(
+    getRevokeTenantAgentSelectableAgents(dialog).map((agent) => String(agent.id || "").trim()),
+  );
+  for (const tenantAgentId of Array.from(dialog.selectedTenantAgentIds)) {
+    if (!tenantAgentIds.has(tenantAgentId)) {
+      dialog.selectedTenantAgentIds.delete(tenantAgentId);
+    }
   }
 }
 
@@ -122,6 +233,7 @@ function ensureController(root, session, apiClient) {
     activeTenant: null,
     loadingRateAgents: false,
     localLicense: null,
+    revokeTenantAgentDialog: createRevokeTenantAgentDialogState(),
   };
 
   root.__ocPlatformConsoleController = controller;
@@ -153,6 +265,14 @@ function ensureController(root, session, apiClient) {
     }
     if (event.target.matches("[data-platform-local-license-dialog]")) {
       controller.dialogs.localLicenseOpen = false;
+    }
+    if (event.target.matches("[data-platform-revoke-tenant-agent-dialog]")) {
+      controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
+    }
+    if (event.target.matches("[data-platform-revoke-confirm-dialog]")) {
+      const dialog = getRevokeTenantAgentDialog(controller);
+      dialog.confirmOpen = false;
+      dialog.confirmSelectedTenantAgentIds = [];
     }
     render(root, controller);
   });
@@ -315,6 +435,14 @@ function renderAgentAssignmentTable(controller, rows) {
                         <td>
                           <div class="oc-platform-table-actions">
                             <button class="btn" type="button" data-platform-open-assign="${escapeHtml(tenant.id)}">分配Agent</button>
+                            <button
+                              class="btn oc-platform-destructive-action"
+                              type="button"
+                              data-platform-open-revoke="${escapeHtml(tenant.id)}"
+                              ${isTenantRevokeSelectionTarget(tenant) ? "" : "disabled"}
+                            >
+                              撤回分配
+                            </button>
                             ${localEdition ? "" : `<button class="btn" type="button" data-platform-open-rate="${escapeHtml(tenant.id)}">倍率调整</button>`}
                           </div>
                         </td>
@@ -538,6 +666,155 @@ function renderRateDialog(controller) {
   `;
 }
 
+function renderRevokeTenantAgentDialog(controller) {
+  const dialog = getRevokeTenantAgentDialog(controller);
+  const selectedCount = dialog.selectedTenantAgentIds.size;
+  const selectableAgents = getRevokeTenantAgentSelectableAgents(dialog);
+  const allAgentsSelected =
+    selectableAgents.length > 0 && selectedCount === selectableAgents.length;
+  const statusMarkup = dialog.loading
+    ? `<div class="callout info">正在加载该租户已下发的 Agent...</div>`
+    : dialog.error
+      ? `<div class="callout info">${escapeHtml(dialog.error)}</div>`
+      : "";
+  const listMarkup =
+    !dialog.loading && dialog.agents.length
+      ? `
+        <div class="data-table-container oc-platform-revoke-agent-list">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="oc-platform-agent-select-col"></th>
+                <th>Agent</th>
+                <th>说明</th>
+                <th>当前积分</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dialog.agents
+                .map(
+                  (agent) => `
+                    <tr>
+                      <td class="oc-platform-agent-select-cell">
+                        <input
+                          type="checkbox"
+                          data-platform-revoke-agent-select="${escapeHtml(agent.id)}"
+                          aria-label="选择 ${escapeHtml(getRevokeTenantAgentDisplayName(agent))}"
+                          ${dialog.busy ? "disabled" : ""}
+                          ${isRevokeTenantAgentSelected(controller, agent.id) ? "checked" : ""}
+                        />
+                      </td>
+                      <td>
+                        <div class="oc-platform-revoke-agent__name">${escapeHtml(getRevokeTenantAgentDisplayName(agent))}</div>
+                        <div class="oc-platform-revoke-agent__meta">${escapeHtml(agent.agentId || agent.id || "-")}</div>
+                      </td>
+                      <td>${escapeHtml(agent.description || "-")}</td>
+                      <td>${formatNumber(agent.balancePoints)}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : !dialog.loading && !dialog.error
+        ? `<div class="callout info">该租户当前没有可撤回的 Agent。</div>`
+        : "";
+  return `
+    <dialog class="oc-platform-modal" data-platform-revoke-tenant-agent-dialog>
+      <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
+        <header class="oc-platform-modal__header">
+          <h3 class="oc-platform-modal__title">撤回分配</h3>
+          <button class="btn" type="button" data-platform-close-dialog="revoke">关闭</button>
+        </header>
+        <div class="oc-platform-modal__body">
+          <form class="oc-platform-modal__form" data-platform-revoke-tenant-agent-form>
+            <input type="hidden" name="tenantId" value="${escapeHtml(dialog.tenantId)}" />
+            <label class="field">
+              <span>目标租户</span>
+              <input type="text" value="${escapeHtml(dialog.tenantName || dialog.tenantId)}" disabled />
+            </label>
+            <div class="oc-platform-revoke-agent-toolbar">
+              <label class="oc-platform-revoke-agent-toolbar__select-all">
+                <input
+                  type="checkbox"
+                  data-platform-revoke-agent-select-all
+                  aria-label="全选该租户已下发的 Agent"
+                  ${dialog.loading || dialog.busy || !selectableAgents.length ? "disabled" : ""}
+                  ${allAgentsSelected ? "checked" : ""}
+                />
+                <span>全选</span>
+              </label>
+              <span class="oc-platform-revoke-agent-toolbar__summary">
+                已选择 ${formatNumber(selectedCount)} 个 Agent
+              </span>
+            </div>
+            ${statusMarkup}
+            ${listMarkup}
+            <div class="oc-platform-modal__actions">
+              <button class="btn" type="button" data-platform-close-dialog="revoke">取消</button>
+              <button class="btn primary" type="submit" ${dialog.loading || dialog.busy || selectedCount === 0 ? "disabled" : ""}>下一步</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderRevokeTenantAgentConfirmDialog(controller) {
+  const dialog = getRevokeTenantAgentDialog(controller);
+  if (!dialog.confirmOpen) {
+    return "";
+  }
+  const selectedAgents = getRevokeTenantAgentConfirmAgents(dialog);
+  const tenantLabel = dialog.tenantName || dialog.tenantId || "该租户";
+  const selectedCount = selectedAgents.length || dialog.confirmSelectedTenantAgentIds.length;
+  return `
+    <dialog class="oc-platform-modal" data-platform-revoke-confirm-dialog>
+      <div class="oc-platform-modal__panel">
+        <header class="oc-platform-modal__header">
+          <h3 class="oc-platform-modal__title">确认撤回</h3>
+          <button class="btn" type="button" data-platform-close-dialog="revoke-confirm">关闭</button>
+        </header>
+        <div class="oc-platform-modal__body">
+          <div class="callout info">
+            确认后将立即撤回租户“${escapeHtml(tenantLabel)}”已选中的 ${formatNumber(selectedCount)} 个 Agent，并同步失效该租户成员上的相关分配。
+          </div>
+          ${
+            selectedAgents.length
+              ? `
+                <section class="oc-platform-revoke-confirm">
+                  <div class="oc-platform-revoke-confirm__title">将撤回的 Agent</div>
+                  <ul class="oc-platform-revoke-confirm__list">
+                    ${selectedAgents
+                      .map(
+                        (agent) => `
+                          <li>
+                            <div class="oc-platform-revoke-confirm__name">${escapeHtml(getRevokeTenantAgentDisplayName(agent))}</div>
+                            <div class="oc-platform-revoke-confirm__meta">${escapeHtml(agent.agentId || agent.id || "-")}</div>
+                          </li>
+                        `,
+                      )
+                      .join("")}
+                  </ul>
+                </section>
+              `
+              : ""
+          }
+          <form class="oc-platform-modal__form" data-platform-revoke-confirm-form>
+            <div class="oc-platform-modal__actions">
+              <button class="btn" type="button" data-platform-close-dialog="revoke-confirm">返回</button>
+              <button class="btn primary" type="submit" ${dialog.busy ? "disabled" : ""}>确认撤回</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
 function renderLocalLicenseDialog(controller) {
   if (!isLocalEdition(controller)) {
     return "";
@@ -619,8 +896,34 @@ function restoreRenderFocusState(root, state) {
   }
 }
 
+function syncRevokeTenantAgentSelectionState(root, controller) {
+  const dialog = controller.revokeTenantAgentDialog;
+  if (controller.section !== "agent-allocation" || !dialog?.open) {
+    return;
+  }
+  const selectAll = root.querySelector("[data-platform-revoke-agent-select-all]");
+  if (!(selectAll instanceof HTMLInputElement)) {
+    return;
+  }
+  const selectableAgents = getRevokeTenantAgentSelectableAgents(dialog);
+  const selectedAgents = selectableAgents.filter((agent) =>
+    dialog.selectedTenantAgentIds.has(String(agent.id || "").trim()),
+  );
+  selectAll.checked =
+    selectableAgents.length > 0 &&
+    selectedAgents.length === selectableAgents.length &&
+    !dialog.loading &&
+    !dialog.busy;
+  selectAll.indeterminate =
+    selectedAgents.length > 0 && selectedAgents.length < selectableAgents.length;
+  selectAll.disabled = selectableAgents.length === 0 || dialog.loading || dialog.busy;
+}
+
 function render(root, controller) {
   const focusState = captureRenderFocusState(root);
+  if (controller.section === "agent-allocation") {
+    pruneRevokeTenantAgentSelection(controller);
+  }
   const filtered = filterTenants(controller);
   const pagination = paginate(filtered, getPageValue(controller));
   setPageValue(controller, pagination.page);
@@ -643,6 +946,8 @@ function render(root, controller) {
     ${renderMemberLimitDialog(controller)}
     ${renderAssignDialog(controller)}
     ${renderRateDialog(controller)}
+    ${renderRevokeTenantAgentDialog(controller)}
+    ${renderRevokeTenantAgentConfirmDialog(controller)}
     ${renderLocalLicenseDialog(controller)}
   `;
 
@@ -658,8 +963,17 @@ function render(root, controller) {
   if (controller.dialogs.rateOpen) {
     openDialog(root.querySelector("[data-platform-rate-dialog]"));
   }
+  if (controller.revokeTenantAgentDialog?.open) {
+    openDialog(root.querySelector("[data-platform-revoke-tenant-agent-dialog]"));
+  }
+  if (controller.revokeTenantAgentDialog?.confirmOpen) {
+    openDialog(root.querySelector("[data-platform-revoke-confirm-dialog]"));
+  }
   if (controller.dialogs.localLicenseOpen) {
     openDialog(root.querySelector("[data-platform-local-license-dialog]"));
+  }
+  if (controller.section === "agent-allocation") {
+    syncRevokeTenantAgentSelectionState(root, controller);
   }
   restoreRenderFocusState(root, focusState);
 }
@@ -707,6 +1021,171 @@ async function openRateDialog(root, controller, tenantId) {
   }
 }
 
+async function openRevokeTenantAgentDialog(root, controller, tenantId) {
+  const tenant = tenantById(controller, tenantId);
+  if (!tenant || !isTenantRevokeSelectionTarget(tenant)) {
+    return;
+  }
+
+  controller.activeTenant = tenant;
+  const previousToken = Number(controller.revokeTenantAgentDialog?.requestToken || 0);
+  controller.revokeTenantAgentDialog = {
+    ...createRevokeTenantAgentDialogState(),
+    open: true,
+    loading: true,
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+    requestToken: previousToken + 1,
+  };
+  render(root, controller);
+
+  const requestToken = controller.revokeTenantAgentDialog.requestToken;
+  try {
+    const agents = await controller.apiClient.listPlatformTenantAgents(tenant.id);
+    const currentDialog = controller.revokeTenantAgentDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    currentDialog.agents = Array.isArray(agents) ? agents : [];
+    currentDialog.loading = false;
+    currentDialog.error = "";
+    pruneRevokeTenantAgentSelection(controller);
+    render(root, controller);
+  } catch (error) {
+    const currentDialog = controller.revokeTenantAgentDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    currentDialog.loading = false;
+    currentDialog.error = error instanceof Error ? error.message : String(error);
+    render(root, controller);
+    setFeedback(root, currentDialog.error, true);
+  }
+}
+
+async function openRevokeTenantAgentConfirmDialog(root, controller) {
+  const dialog = controller.revokeTenantAgentDialog;
+  if (!dialog?.open || dialog.loading || dialog.busy) {
+    return;
+  }
+
+  pruneRevokeTenantAgentSelection(controller);
+  const selectedTenantAgentIds = Array.from(dialog.selectedTenantAgentIds);
+  if (!selectedTenantAgentIds.length) {
+    setFeedback(root, "请选择要撤回的 Agent。", true);
+    return;
+  }
+
+  dialog.confirmOpen = true;
+  dialog.confirmSelectedTenantAgentIds = selectedTenantAgentIds;
+  dialog.error = "";
+  render(root, controller);
+}
+
+async function revokeSelectedTenantAgents(root, controller) {
+  const dialog = controller.revokeTenantAgentDialog;
+  if (!dialog?.open || dialog.loading || dialog.busy || !dialog.confirmOpen) {
+    return;
+  }
+
+  const dialogToken = Number(dialog.requestToken || 0);
+  const selectedTenantAgentIds = Array.from(dialog.confirmSelectedTenantAgentIds || []);
+  if (!selectedTenantAgentIds.length) {
+    dialog.confirmOpen = false;
+    dialog.confirmSelectedTenantAgentIds = [];
+    render(root, controller);
+    setFeedback(root, "请选择要撤回的 Agent。", true);
+    return;
+  }
+
+  const tenantLabel = dialog.tenantName || dialog.tenantId || "该租户";
+  dialog.busy = true;
+  render(root, controller);
+  try {
+    const result = await controller.apiClient.revokePlatformTenantAgents({
+      tenantId: dialog.tenantId,
+      tenantAgentIds: selectedTenantAgentIds,
+    });
+    const revokedTenantAgentCount = Number(result?.revokedTenantAgentCount || 0);
+    const revokedAssignmentCount = Number(result?.revokedAssignmentCount || 0);
+    if (revokedTenantAgentCount > 0) {
+      const currentDialog = controller.revokeTenantAgentDialog;
+      if (
+        currentDialog &&
+        currentDialog.open &&
+        currentDialog.requestToken === dialogToken &&
+        currentDialog.tenantId === dialog.tenantId
+      ) {
+        controller.revokeTenantAgentDialog = null;
+      }
+      try {
+        await refresh(root, controller);
+      } catch (refreshError) {
+        render(root, controller);
+        setFeedback(
+          root,
+          refreshError instanceof Error
+            ? `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent，但列表刷新失败：${refreshError.message}`
+            : `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent，但列表刷新失败。`,
+          true,
+        );
+        return;
+      }
+      const successMessage =
+        revokedAssignmentCount > 0
+          ? `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent，并同步失效 ${formatNumber(revokedAssignmentCount)} 条成员分配。`
+          : `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent。`;
+      setFeedback(root, successMessage);
+      return;
+    }
+    const currentDialog = controller.revokeTenantAgentDialog;
+    if (
+      currentDialog &&
+      currentDialog.open &&
+      currentDialog.requestToken === dialogToken &&
+      currentDialog.tenantId === dialog.tenantId
+    ) {
+      currentDialog.busy = false;
+      currentDialog.confirmOpen = false;
+      currentDialog.confirmSelectedTenantAgentIds = [];
+      currentDialog.loading = false;
+      currentDialog.error = "未找到可撤回的 Agent。";
+      render(root, controller);
+      setFeedback(root, currentDialog.error, true);
+      return;
+    }
+    render(root, controller);
+    setFeedback(root, "未找到可撤回的 Agent。", true);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const currentDialog = controller.revokeTenantAgentDialog;
+    if (
+      currentDialog &&
+      currentDialog.open &&
+      currentDialog.requestToken === dialogToken &&
+      currentDialog.tenantId === dialog.tenantId
+    ) {
+      currentDialog.busy = false;
+      currentDialog.confirmOpen = false;
+      currentDialog.confirmSelectedTenantAgentIds = [];
+      currentDialog.loading = false;
+      currentDialog.error = errorMessage;
+    }
+    render(root, controller);
+    setFeedback(root, errorMessage, true);
+  }
+}
+
 async function handleClick(root, controller, event) {
   const target = event.target;
   if (!(target instanceof Element)) {
@@ -748,6 +1227,16 @@ async function handleClick(root, controller, event) {
       controller.rateDialogAgents = [];
       closeDialog(root.querySelector("[data-platform-rate-dialog]"));
     }
+    if (dialogKind === "revoke") {
+      controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
+      closeDialog(root.querySelector("[data-platform-revoke-tenant-agent-dialog]"));
+    }
+    if (dialogKind === "revoke-confirm") {
+      const dialog = getRevokeTenantAgentDialog(controller);
+      dialog.confirmOpen = false;
+      dialog.confirmSelectedTenantAgentIds = [];
+      closeDialog(root.querySelector("[data-platform-revoke-confirm-dialog]"));
+    }
     if (dialogKind === "local-license") {
       controller.dialogs.localLicenseOpen = false;
       closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
@@ -781,6 +1270,16 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  const revokeTrigger = target.closest("[data-platform-open-revoke]");
+  if (revokeTrigger instanceof HTMLElement) {
+    await openRevokeTenantAgentDialog(
+      root,
+      controller,
+      revokeTrigger.dataset.platformOpenRevoke || "",
+    );
+    return;
+  }
+
   const rateTrigger = target.closest("[data-platform-open-rate]");
   if (rateTrigger instanceof HTMLElement) {
     await openRateDialog(root, controller, rateTrigger.dataset.platformOpenRate || "");
@@ -790,6 +1289,27 @@ async function handleClick(root, controller, event) {
 function handleInput(root, controller, event) {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  if (target.hasAttribute("data-platform-revoke-agent-select-all")) {
+    const dialog = getRevokeTenantAgentDialog(controller);
+    const selected = target.checked;
+    clearRevokeTenantAgentSelection(controller);
+    if (selected) {
+      for (const agent of getRevokeTenantAgentSelectableAgents(dialog)) {
+        setRevokeTenantAgentSelected(controller, agent.id, true);
+      }
+    }
+    render(root, controller);
+    return;
+  }
+  if (target.hasAttribute("data-platform-revoke-agent-select")) {
+    setRevokeTenantAgentSelected(
+      controller,
+      target.dataset.platformRevokeAgentSelect,
+      target.checked,
+    );
+    render(root, controller);
     return;
   }
   if (target.hasAttribute("data-platform-search")) {
@@ -882,6 +1402,18 @@ async function handleSubmit(root, controller, event) {
     return;
   }
 
+  if (target.matches("[data-platform-revoke-tenant-agent-form]")) {
+    event.preventDefault();
+    await openRevokeTenantAgentConfirmDialog(root, controller);
+    return;
+  }
+
+  if (target.matches("[data-platform-revoke-confirm-form]")) {
+    event.preventDefault();
+    await revokeSelectedTenantAgents(root, controller);
+    return;
+  }
+
   if (target.matches("[data-platform-license-import-form]")) {
     event.preventDefault();
     try {
@@ -924,7 +1456,18 @@ export async function mountPlatformConsolePage(root, options = {}) {
 
   const apiClient = createTenantApiClient();
   const controller = ensureController(root, session, apiClient);
+  const previousSection = controller.section;
   controller.section = options.section || "tenants";
+  if (previousSection !== controller.section || controller.section !== "agent-allocation") {
+    clearRevokeTenantAgentSelection(controller);
+  }
+  if (controller.section !== "agent-allocation") {
+    controller.dialogs.assignOpen = false;
+    controller.dialogs.rateOpen = false;
+    controller.rateDialogAgents = [];
+    controller.loadingRateAgents = false;
+    controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
+  }
   const sectionLinks = root.querySelectorAll("[href]");
   for (const link of sectionLinks) {
     if (!(link instanceof HTMLAnchorElement)) {

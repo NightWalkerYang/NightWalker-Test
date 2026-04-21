@@ -15,6 +15,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function flush() {
+  await Promise.resolve();
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  await Promise.resolve();
+}
+
 describe("platform surface", () => {
   it("mounts the native single-entry platform management view into the content area", async () => {
     writeTenantSession({
@@ -199,10 +205,178 @@ describe("platform surface", () => {
     expect(document.querySelector("[data-platform-open-create]")).toBeNull();
     expect(document.querySelector(".data-table")).not.toBeNull();
     expect(tableBody?.textContent).toContain("分配Agent");
+    expect(tableBody?.textContent).toContain("撤回分配");
     expect(tableBody?.textContent).toContain("倍率调整");
     expect(tableBody?.textContent).not.toContain("人数调整");
     expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")).toBeNull();
+  });
+
+  it("opens a revoke dialog and revokes selected tenant agents", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=platform-agent-assignment");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      tenants: [
+        {
+          id: "tenant-1",
+          code: "alpha",
+          name: "租户 Alpha",
+          deploymentMode: "cloud",
+          memberCount: 2,
+          walletBalance: 8,
+          agentCount: 2,
+          memberLimit: 10,
+          licenseExpiresAt: null,
+          status: "active",
+        },
+      ],
+      tenantAgents: {
+        "tenant-1": [
+          {
+            id: "tenant-agent-1",
+            agentId: "subotech-finance",
+            agentName: "苏博泰克财务分析助手",
+            description: "财务分析",
+            balancePoints: 12,
+            rateMultiplier: 1,
+            status: "active",
+          },
+          {
+            id: "tenant-agent-2",
+            agentId: "subotech-writing",
+            agentName: "文案助手",
+            description: "文案辅助",
+            balancePoints: 5,
+            rateMultiplier: 1.1,
+            status: "active",
+          },
+        ],
+      },
+      revokeCalls: [],
+    };
+    const confirmSpy = vi.fn(() => {
+      throw new Error("window.confirm should not be called");
+    });
+    vi.stubGlobal("confirm", confirmSpy);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/platform/tenants") && method === "GET") {
+          return okJson(state.tenants);
+        }
+        if (url.includes("/platform/catalog-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.includes("/platform/tenant-agents") && method === "GET") {
+          const parsed = new URL(url, window.location.href);
+          const tenantId = parsed.searchParams.get("tenantId") || "";
+          return okJson(state.tenantAgents[tenantId] || []);
+        }
+        if (url.endsWith("/platform/revoke-tenant-agents") && method === "POST") {
+          state.revokeCalls.push(body);
+          const tenantAgentIds = Array.isArray(body.tenantAgentIds) ? body.tenantAgentIds : [];
+          state.tenantAgents[body.tenantId] = (state.tenantAgents[body.tenantId] || []).filter(
+            (agent) => !tenantAgentIds.includes(agent.id),
+          );
+          const tenant = state.tenants.find((item) => item.id === body.tenantId);
+          if (tenant) {
+            tenant.agentCount = state.tenantAgents[body.tenantId].length;
+          }
+          return okJson({
+            revokedTenantAgentCount: tenantAgentIds.length,
+            revokedAssignmentCount: 3,
+            tenantAgentIds,
+            affectedUserIds: ["member-1", "member-2"],
+            affectedMemberCount: 2,
+          });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootPlatformSurface();
+    await flush();
+
+    const revokeButton = document.querySelector("[data-platform-open-revoke='tenant-1']");
+    expect(revokeButton?.textContent).toContain("撤回分配");
+    revokeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    const revokeDialog = document.querySelector("[data-platform-revoke-tenant-agent-dialog]");
+    expect(revokeDialog?.open).toBe(true);
+    expect(
+      revokeDialog?.querySelector("[data-platform-revoke-agent-select='tenant-agent-1']"),
+    ).not.toBeNull();
+    expect(
+      revokeDialog?.querySelector("[data-platform-revoke-agent-select='tenant-agent-2']"),
+    ).not.toBeNull();
+
+    const selectAll = revokeDialog?.querySelector("[data-platform-revoke-agent-select-all]");
+    expect(selectAll).not.toBeNull();
+    if (selectAll instanceof HTMLInputElement) {
+      selectAll.checked = true;
+      selectAll.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const revokeForm = document.querySelector("[data-platform-revoke-tenant-agent-form]");
+    revokeForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    const confirmDialog = document.querySelector("[data-platform-revoke-confirm-dialog]");
+    expect(confirmDialog?.open).toBe(true);
+    expect(confirmDialog?.textContent).toContain("确认撤回");
+    expect(confirmDialog?.textContent).toContain("租户 Alpha");
+    expect(confirmDialog?.textContent).toContain("已选中的 2 个 Agent");
+
+    const confirmForm = document.querySelector("[data-platform-revoke-confirm-form]");
+    confirmForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.revokeCalls).toEqual([
+      {
+        tenantId: "tenant-1",
+        tenantAgentIds: ["tenant-agent-1", "tenant-agent-2"],
+      },
+    ]);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "已撤回租户“租户 Alpha”的 2 个 Agent，并同步失效 3 条成员分配。",
+    );
+    expect(
+      document.querySelector("[data-platform-revoke-tenant-agent-dialog]") instanceof
+        HTMLDialogElement
+        ? document.querySelector("[data-platform-revoke-tenant-agent-dialog]")?.open
+        : false,
+    ).toBe(false);
+    expect(document.querySelector("[data-platform-open-revoke='tenant-1']")?.disabled).toBe(true);
   });
 
   it("keeps the management search input focused while filtering", async () => {
