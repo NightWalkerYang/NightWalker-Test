@@ -248,7 +248,7 @@ Logo 规则固定为：
 
 ### 4.1 可视化展示公共页
 
-租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view/?token=...`，该路由由独立静态入口页承载，页面本身只负责加载可视化桥接脚本并通过签名 token 请求对应 workspace HTML，再将其挂载到全页 iframe 中；在装载前，服务端会把 workspace HTML 里的内联 `<script>` 外提成同源的生成脚本文件（放到对应 Agent 的 `Echarts/__openclaw_echarts_view__/...` 下），并把相对资源路径重写成绝对的同源 workspace 地址；外提脚本里凡是 `fetch`、`open`、`href/src` 之类的相对 URL 也会被改写，`*_index.html` 之间的跳转则回到对应的公开 `/echarts-view/?token=...` 路由，从而绕开 `srcdoc` 与 `base-uri 'none'` 对相对资源解析的 CSP 限制，避免外层控制台壳干扰可视化脚本。同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
+租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view/?token=...`，该路由由独立静态入口页承载，页面本身只负责加载可视化桥接脚本并通过签名 token 请求对应 workspace HTML，再将其挂载到全页 iframe 中；在装载前，服务端会把 workspace HTML 里的内联 `<script>` 外提成同源的生成脚本文件（放到对应 Agent 的 `Echarts/__openclaw_echarts_view__/...` 下），并把相对资源路径重写成绝对的同源 workspace 地址；其中带中文、空格、括号等不安全文件名的相对资源，还必须同步复制成 `__openclaw_echarts_view__` 目录下的 ASCII/hash 别名资源，再把 HTML / 外提脚本里的引用改到这些别名上，避免浏览器编码后的静态文件请求命中 `404`。外提脚本里凡是 `fetch`、`open`、`href/src` 之类的相对 URL 也会被改写，`*_index.html` 之间的跳转则回到对应的公开 `/echarts-view/?token=...` 路由，从而绕开 `srcdoc` 与 `base-uri 'none'` 对相对资源解析的 CSP 限制，避免外层控制台壳干扰可视化脚本。同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
 
 `/echarts-view/` 的独立入口页必须落在 `echarts-view/index.html`，这样控制台网关会直接返回这份静态页而不是回落到主壳；`/echarts-view` 这个旧式裸路径仍可以作为兼容性别名继续保留在路由归一化里，但分享链接和成员菜单都应统一使用带 trailing slash 的 token 化链接。
 

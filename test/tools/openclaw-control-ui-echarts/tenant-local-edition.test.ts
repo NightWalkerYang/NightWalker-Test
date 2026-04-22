@@ -689,6 +689,162 @@ describe("tenant platform local edition", () => {
     expect(generatedScriptContent).toContain("document.getElementById('viz').textContent");
   });
 
+  it("aliases non-ASCII external visualization assets into ASCII workspace files", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-non-ascii",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const assignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const visualizationDir = path.join(
+      sandbox.config.configDir,
+      "workspace-agents",
+      String(assignment.derivedAgentId),
+      "Echarts",
+    );
+    fs.mkdirSync(visualizationDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(visualizationDir, "资金风险监控大屏_index.html"),
+      [
+        "<!doctype html>",
+        "<html>",
+        "  <head>",
+        "    <title>资金风险监控</title>",
+        '    <script src="/assets/vendor/echarts.min.js"></script>',
+        '    <script src="./双屏联动数据_1776828040.js"></script>',
+        "  </head>",
+        "  <body>",
+        '    <main id="viz"></main>',
+        "  </body>",
+        "</html>",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "双屏联动数据_1776828040.js"),
+      [
+        "window.__DUAL_DASHBOARD__ = { updatedAt: '2026-04-22 03:20 UTC' };",
+        "async function loadRiskData() {",
+        "  const response = await fetch('经营详情.json');",
+        "  window.__DUAL_DASHBOARD_DETAIL__ = await response.json();",
+        "}",
+        "loadRiskData();",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "经营详情.json"),
+      JSON.stringify({
+        summary: {
+          totalAssets: 123,
+        },
+      }),
+      "utf8",
+    );
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-non-ascii",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const listResponse = await requestJson(baseUrl, "/member/visualizations", {
+      token: memberLogin.payload.data.token,
+    });
+    const riskVisualization = listResponse.payload.data.find(
+      (item) => item.visualizationName === "资金风险监控大屏",
+    );
+    expect(riskVisualization).toBeDefined();
+
+    const resolveResponse = await requestJson(
+      baseUrl,
+      `/member/visualizations/resolve?token=${encodeURIComponent(String(riskVisualization?.token || ""))}`,
+    );
+    expect(resolveResponse.status).toBe(200);
+    expect(resolveResponse.payload.data.html).not.toContain("双屏联动数据_1776828040.js");
+    expect(resolveResponse.payload.data.html).not.toContain("经营详情.json");
+
+    const assetPrefix = new RegExp(
+      `^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+    );
+    const generatedAssetMatches = [
+      ...resolveResponse.payload.data.html.matchAll(
+        /<script\b[^>]*src="([^"]*__openclaw_echarts_view__-[^"]*asset-[a-f0-9]{12}\.js)"[^>]*><\/script>/gi,
+      ),
+    ];
+    expect(generatedAssetMatches.length).toBeGreaterThanOrEqual(1);
+
+    const generatedScriptHref = generatedAssetMatches[0]?.[1] || "";
+    expect(generatedScriptHref).toMatch(assetPrefix);
+    const generatedScriptPath = path.join(
+      visualizationDir,
+      generatedScriptHref.replace(assetPrefix, ""),
+    );
+    expect(fs.existsSync(generatedScriptPath)).toBe(true);
+    expect(path.basename(generatedScriptPath)).toMatch(/^asset-[a-f0-9]{12}\.js$/);
+
+    const generatedScriptContent = fs.readFileSync(generatedScriptPath, "utf8");
+    expect(generatedScriptContent).toContain("window.__DUAL_DASHBOARD__");
+    expect(generatedScriptContent).not.toContain("fetch('经营详情.json')");
+
+    const generatedJsonPathMatch = generatedScriptContent.match(
+      /\/workspace-agent-downloads\/[^"'`]*__openclaw_echarts_view__-[^"'`]*asset-[a-f0-9]{12}\.json/,
+    );
+    expect(generatedJsonPathMatch).not.toBeNull();
+    const generatedJsonPath = path.join(
+      visualizationDir,
+      String(generatedJsonPathMatch?.[0] || "").replace(assetPrefix, ""),
+    );
+    expect(fs.existsSync(generatedJsonPath)).toBe(true);
+    expect(path.basename(generatedJsonPath)).toMatch(/^asset-[a-f0-9]{12}\.json$/);
+  });
+
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {
     const sandbox = createSandbox();
     const { baseUrl, db } = await startSandboxServer(sandbox);

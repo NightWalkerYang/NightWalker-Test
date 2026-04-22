@@ -197,6 +197,8 @@ function buildEchartsViewHref(token) {
 const ECHARTS_VIEW_INLINE_SCRIPT_DIR = "__openclaw_echarts_view__";
 const ECHARTS_VIEW_INLINE_SCRIPT_PREFIX = "inline-script";
 const VISUALIZATION_RESOURCE_ATTRIBUTES = new Set(["src", "href", "data", "poster"]);
+const VISUALIZATION_ALIAS_SAFE_PATH_RE = /^[A-Za-z0-9._/-]+$/;
+const VISUALIZATION_SCRIPT_RESOURCE_EXTENSIONS = new Set([".js", ".mjs", ".cjs"]);
 const EXECUTABLE_SCRIPT_TYPES = new Set([
   "",
   "module",
@@ -286,6 +288,61 @@ function buildWorkspaceAssetHref(workspaceBaseHref, relativePath) {
   return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }
 
+function isPathInsideRoot(targetPath, rootPath) {
+  const relativePath = path.relative(rootPath, targetPath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function normalizeVisualizationRelativePath(resourcePath) {
+  return path.posix.normalize(String(resourcePath || "").trim()).replace(/^(\.\/)+/, "");
+}
+
+function needsVisualizationResourceAlias(resourcePath) {
+  const normalizedPath = normalizeVisualizationRelativePath(resourcePath);
+  if (!normalizedPath) {
+    return false;
+  }
+  return !VISUALIZATION_ALIAS_SAFE_PATH_RE.test(normalizedPath);
+}
+
+function shouldForceVisualizationResourceAlias(nodeName, attributeName) {
+  const normalizedNodeName = String(nodeName || "").trim().toLowerCase();
+  const normalizedAttributeName = String(attributeName || "").trim().toLowerCase();
+  return normalizedNodeName === "script" && normalizedAttributeName === "src";
+}
+
+function createVisualizationRewriteContext(
+  workspaceBaseHref,
+  generatedScriptDir,
+  visualizationFileName,
+  visualizationHrefMap = new Map(),
+) {
+  const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
+  return {
+    generatedSubdir,
+    generatedPathRoot: path.join(generatedScriptDir, generatedSubdir),
+    generatedScriptDir,
+    workspaceBaseHref: String(workspaceBaseHref || "").trim(),
+    workspaceRootDir: path.dirname(generatedScriptDir),
+    visualizationHrefMap,
+    resourceAliasHrefMap: new Map(),
+  };
+}
+
+function createVisualizationResourceAliasFileName(resourcePath) {
+  const normalizedPath = normalizeVisualizationRelativePath(resourcePath);
+  const extension = path.extname(normalizedPath).toLowerCase();
+  const digest = crypto
+    .createHash("sha256")
+    .update(normalizedPath, "utf8")
+    .digest("hex")
+    .slice(0, 12);
+  return `asset-${digest}${extension}`;
+}
+
 function splitHrefSuffix(value) {
   const normalizedValue = String(value || "").trim();
   if (!normalizedValue) {
@@ -302,7 +359,55 @@ function splitHrefSuffix(value) {
   };
 }
 
-function resolveVisualizationResourceHref(resourceHref, workspaceBaseHref, visualizationHrefMap = new Map()) {
+function materializeVisualizationResourceAlias(resourceHref, context) {
+  const normalizedHref = String(resourceHref || "").trim();
+  if (!normalizedHref) {
+    return "";
+  }
+  const { path: hrefPath, suffix } = splitHrefSuffix(normalizedHref);
+  const normalizedResourcePath = normalizeVisualizationRelativePath(hrefPath);
+  if (!normalizedResourcePath) {
+    return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
+  }
+  const cachedAliasHref = context.resourceAliasHrefMap.get(normalizedResourcePath);
+  if (cachedAliasHref) {
+    return `${cachedAliasHref}${suffix}`;
+  }
+
+  const sourcePath = path.resolve(context.generatedScriptDir, hrefPath);
+  if (!isPathInsideRoot(sourcePath, context.workspaceRootDir)) {
+    return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
+  }
+
+  let sourceStat;
+  try {
+    sourceStat = fs.statSync(sourcePath);
+  } catch {
+    return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
+  }
+  if (!sourceStat.isFile()) {
+    return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
+  }
+
+  const aliasFileName = createVisualizationResourceAliasFileName(normalizedResourcePath);
+  const aliasHref = buildWorkspaceAssetHref(
+    context.workspaceBaseHref,
+    path.posix.join(context.generatedSubdir, aliasFileName),
+  );
+  context.resourceAliasHrefMap.set(normalizedResourcePath, aliasHref);
+
+  const extension = path.extname(normalizedResourcePath).toLowerCase();
+  const sourceBuffer = fs.readFileSync(sourcePath);
+  const outputBuffer = VISUALIZATION_SCRIPT_RESOURCE_EXTENSIONS.has(extension)
+    ? Buffer.from(rewriteVisualizationScriptContent(sourceBuffer.toString("utf8"), context), "utf8")
+    : sourceBuffer;
+
+  fs.mkdirSync(context.generatedPathRoot, { recursive: true });
+  fs.writeFileSync(path.join(context.generatedPathRoot, aliasFileName), outputBuffer);
+  return `${aliasHref}${suffix}`;
+}
+
+function resolveVisualizationResourceHref(resourceHref, context, options = {}) {
   const normalizedHref = String(resourceHref || "").trim();
   if (!normalizedHref) {
     return "";
@@ -314,19 +419,22 @@ function resolveVisualizationResourceHref(resourceHref, workspaceBaseHref, visua
   const targetFileName = path.posix.basename(hrefPath);
   if (
     targetFileName.toLowerCase().endsWith(".html") &&
-    visualizationHrefMap instanceof Map &&
-    visualizationHrefMap.has(targetFileName)
+    context.visualizationHrefMap instanceof Map &&
+    context.visualizationHrefMap.has(targetFileName)
   ) {
-    return `${visualizationHrefMap.get(targetFileName)}${suffix}`;
+    return `${context.visualizationHrefMap.get(targetFileName)}${suffix}`;
   }
-  return buildWorkspaceAssetHref(workspaceBaseHref, normalizedHref);
+  if (options.forceAlias || needsVisualizationResourceAlias(hrefPath)) {
+    return materializeVisualizationResourceAlias(normalizedHref, context);
+  }
+  return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
 }
 
-function rewriteVisualizationScriptContent(scriptContent, workspaceBaseHref, visualizationHrefMap = new Map()) {
+function rewriteVisualizationScriptContent(scriptContent, context) {
   let rewrittenScriptContent = String(scriptContent || "");
   const rewriteQuotedUrl = (pattern) =>
     rewrittenScriptContent.replace(pattern, (match, prefix, quote, url) => {
-      const resolvedHref = resolveVisualizationResourceHref(url, workspaceBaseHref, visualizationHrefMap);
+      const resolvedHref = resolveVisualizationResourceHref(url, context);
       return `${prefix}${quote}${resolvedHref}${quote}`;
     });
 
@@ -357,15 +465,19 @@ function rewriteVisualizationHtml(
   visualizationHrefMap = new Map(),
 ) {
   const document = parse5.parse(String(html || ""));
-  const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
-  const generatedPathRoot = path.join(generatedScriptDir, generatedSubdir);
-  const normalizedWorkspaceBaseHref = String(workspaceBaseHref || "").trim();
+  const context = createVisualizationRewriteContext(
+    workspaceBaseHref,
+    generatedScriptDir,
+    visualizationFileName,
+    visualizationHrefMap,
+  );
   let inlineScriptIndex = 0;
 
   const rewriteAttributes = (node) => {
     if (!Array.isArray(node?.attrs) || node.attrs.length === 0) {
       return;
     }
+    const nodeName = String(node?.nodeName || "").trim().toLowerCase();
     for (const attr of node.attrs) {
       const attributeName = String(attr?.name || "").trim().toLowerCase();
       if (!VISUALIZATION_RESOURCE_ATTRIBUTES.has(attributeName)) {
@@ -373,8 +485,10 @@ function rewriteVisualizationHtml(
       }
       attr.value = resolveVisualizationResourceHref(
         attr.value,
-        normalizedWorkspaceBaseHref,
-        visualizationHrefMap,
+        context,
+        {
+          forceAlias: shouldForceVisualizationResourceAlias(nodeName, attributeName),
+        },
       );
     }
   };
@@ -391,22 +505,22 @@ function rewriteVisualizationHtml(
       const child = node.childNodes[index];
       if (isExecutableInlineScript(child)) {
         const scriptContent = readScriptText(child).replace(/\r\n?/g, "\n");
-        const rewrittenScriptContent = rewriteVisualizationScriptContent(
-          scriptContent,
-          normalizedWorkspaceBaseHref,
-          visualizationHrefMap,
-        );
+        const rewrittenScriptContent = rewriteVisualizationScriptContent(scriptContent, context);
         const scriptHash = crypto
           .createHash("sha256")
           .update(rewrittenScriptContent, "utf8")
           .digest("hex")
           .slice(0, 12);
         const scriptFileName = `${ECHARTS_VIEW_INLINE_SCRIPT_PREFIX}-${inlineScriptIndex + 1}-${scriptHash}.js`;
-        fs.mkdirSync(generatedPathRoot, { recursive: true });
-        fs.writeFileSync(path.join(generatedPathRoot, scriptFileName), rewrittenScriptContent, "utf8");
+        fs.mkdirSync(context.generatedPathRoot, { recursive: true });
+        fs.writeFileSync(
+          path.join(context.generatedPathRoot, scriptFileName),
+          rewrittenScriptContent,
+          "utf8",
+        );
         const scriptHref = buildWorkspaceAssetHref(
-          normalizedWorkspaceBaseHref,
-          path.posix.join(generatedSubdir, scriptFileName),
+          context.workspaceBaseHref,
+          path.posix.join(context.generatedSubdir, scriptFileName),
         );
         const nextAttrs = [];
         for (const attr of Array.isArray(child.attrs) ? child.attrs : []) {
