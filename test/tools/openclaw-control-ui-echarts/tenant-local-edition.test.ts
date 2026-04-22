@@ -583,10 +583,11 @@ describe("tenant platform local edition", () => {
         "  <head>",
         "    <title>销售数据</title>",
         '    <script src="/assets/vendor/echarts.min.js"></script>',
-        '    <a href="资金大屏可视化_index.html">切换到资金大屏</a>',
         '    <script src="financial_data.js"></script>',
         "  </head>",
         "  <body>",
+        '    <a href="资金大屏可视化_index.html">切换到资金大屏</a>',
+        '    <button onclick="window.location.href=\'资金大屏可视化_index.html\'">按钮跳转</button>',
         '    <main id="viz"></main>',
         "    <script>",
         "      async function loadData() {",
@@ -658,6 +659,8 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
     expect(resolveResponse.payload.data.html).toContain('/echarts-view/?token=');
     expect(resolveResponse.payload.data.html).not.toContain('href="资金大屏可视化_index.html"');
+    expect(resolveResponse.payload.data.html).toContain('target="_top"');
+    expect(resolveResponse.payload.data.html).toContain("window.top.location.href =");
     expect(resolveResponse.payload.data.html).toContain(
       `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/financial_data.js`,
     );

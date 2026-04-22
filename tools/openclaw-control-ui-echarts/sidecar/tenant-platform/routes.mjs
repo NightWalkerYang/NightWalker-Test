@@ -430,12 +430,55 @@ function resolveVisualizationResourceHref(resourceHref, context, options = {}) {
   return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
 }
 
+function isVisualizationNavigationHref(resourceHref, context) {
+  const normalizedHref = String(resourceHref || "").trim();
+  if (!normalizedHref || isAbsoluteOrSpecialHref(normalizedHref)) {
+    return false;
+  }
+  const { path: hrefPath } = splitHrefSuffix(normalizedHref);
+  const targetFileName = path.posix.basename(hrefPath);
+  return (
+    targetFileName.toLowerCase().endsWith(".html") &&
+    context.visualizationHrefMap instanceof Map &&
+    context.visualizationHrefMap.has(targetFileName)
+  );
+}
+
+function upsertNodeAttribute(node, attributeName, attributeValue) {
+  const normalizedAttributeName = String(attributeName || "").trim().toLowerCase();
+  if (!normalizedAttributeName) {
+    return;
+  }
+  if (!Array.isArray(node?.attrs)) {
+    node.attrs = [];
+  }
+  const existingAttribute = node.attrs.find(
+    (attribute) =>
+      String(attribute?.name || "")
+        .trim()
+        .toLowerCase() === normalizedAttributeName,
+  );
+  if (existingAttribute) {
+    existingAttribute.value = String(attributeValue || "");
+    return;
+  }
+  node.attrs.push({
+    name: attributeName,
+    value: String(attributeValue || ""),
+  });
+}
+
 function rewriteVisualizationScriptContent(scriptContent, context) {
   let rewrittenScriptContent = String(scriptContent || "");
-  const rewriteQuotedUrl = (pattern) =>
+  const rewriteQuotedUrl = (pattern, prefixTransformer = null) =>
     rewrittenScriptContent.replace(pattern, (match, prefix, quote, url) => {
+      const isVisualizationNavigation = isVisualizationNavigationHref(url, context);
       const resolvedHref = resolveVisualizationResourceHref(url, context);
-      return `${prefix}${quote}${resolvedHref}${quote}`;
+      const rewrittenPrefix =
+        typeof prefixTransformer === "function"
+          ? prefixTransformer(prefix, isVisualizationNavigation)
+          : prefix;
+      return `${rewrittenPrefix}${quote}${resolvedHref}${quote}`;
     });
 
   // Keep executable inline scripts self-contained: resolve common URL-based APIs
@@ -444,12 +487,23 @@ function rewriteVisualizationScriptContent(scriptContent, context) {
   rewrittenScriptContent = rewriteQuotedUrl(/((?:window\.)?open\s*\(\s*)(['"])([^'"]+)\2/g);
   rewrittenScriptContent = rewriteQuotedUrl(
     /((?:window\.)?(?:location|document\.location)\.assign\s*\(\s*)(['"])([^'"]+)\2/g,
+    (prefix, isVisualizationNavigation) =>
+      isVisualizationNavigation ? "window.top.location.assign(" : prefix,
   );
   rewrittenScriptContent = rewriteQuotedUrl(
     /((?:window\.)?(?:location|document\.location)\.replace\s*\(\s*)(['"])([^'"]+)\2/g,
+    (prefix, isVisualizationNavigation) =>
+      isVisualizationNavigation ? "window.top.location.replace(" : prefix,
+  );
+  rewrittenScriptContent = rewriteQuotedUrl(
+    /((?:window\.)?(?:location|document\.location)\.href\s*=\s*)(['"])([^'"]+)\2/g,
+    (prefix, isVisualizationNavigation) =>
+      isVisualizationNavigation ? "window.top.location.href = " : prefix,
   );
   rewrittenScriptContent = rewriteQuotedUrl(
     /((?:window\.)?(?:location|document\.location)\s*=\s*)(['"])([^'"]+)\2/g,
+    (prefix, isVisualizationNavigation) =>
+      isVisualizationNavigation ? "window.top.location = " : prefix,
   );
   rewrittenScriptContent = rewriteQuotedUrl(/((?:[\w$]+\.)+href\s*=\s*)(['"])([^'"]+)\2/g);
   rewrittenScriptContent = rewriteQuotedUrl(/((?:[\w$]+\.)+src\s*=\s*)(['"])([^'"]+)\2/g);
@@ -480,16 +534,28 @@ function rewriteVisualizationHtml(
     const nodeName = String(node?.nodeName || "").trim().toLowerCase();
     for (const attr of node.attrs) {
       const attributeName = String(attr?.name || "").trim().toLowerCase();
+      if (attributeName.startsWith("on")) {
+        attr.value = rewriteVisualizationScriptContent(attr.value, context);
+        continue;
+      }
       if (!VISUALIZATION_RESOURCE_ATTRIBUTES.has(attributeName)) {
         continue;
       }
+      const originalValue = String(attr?.value || "");
       attr.value = resolveVisualizationResourceHref(
-        attr.value,
+        originalValue,
         context,
         {
           forceAlias: shouldForceVisualizationResourceAlias(nodeName, attributeName),
         },
       );
+      if (
+        nodeName === "a" &&
+        attributeName === "href" &&
+        isVisualizationNavigationHref(originalValue, context)
+      ) {
+        upsertNodeAttribute(node, "target", "_top");
+      }
     }
   };
 
