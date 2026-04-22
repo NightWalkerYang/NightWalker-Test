@@ -22,16 +22,47 @@ function stubVisualizationFetch(items = []) {
   );
 }
 
+function stubVisualizationFetchSequence(sequence = [[]]) {
+  let callCount = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      const index = Math.min(callCount, Math.max(0, sequence.length - 1));
+      const items = Array.isArray(sequence[index]) ? sequence[index] : [];
+      callCount += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          data: items,
+        }),
+      };
+    }),
+  );
+}
+
 function flushAsync() {
   return new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 afterEach(() => {
   document.body.innerHTML = "";
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
+  const visualizationPollTimer = window.__openclawMemberVisualizationPollTimer;
+  if (typeof visualizationPollTimer === "number") {
+    window.clearInterval(visualizationPollTimer);
+  }
+  delete window.__openclawMemberVisualizationPollTimer;
   delete window.__openclawTenantEntryBooted;
   delete window.__openclawTenantRouteSyncBooted;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -309,6 +340,57 @@ describe("zero-intrusive tenant entry", () => {
     expect(items[0]?.getAttribute("href")).toContain("echarts-view/?token=");
     expect(document.querySelector('[data-native-group="chat"]')?.hidden).toBe(true);
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
+  });
+
+  it("refreshes member visualizations without a full page reload", async () => {
+    vi.useFakeTimers();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+    stubVisualizationFetchSequence([
+      [],
+      [
+        {
+          id: "tenant-agent-1:销售数据可视化_index.html",
+          href: "/echarts-view/?token=member-visualization-token",
+          agentId: "tenant-agent-1",
+          agentName: "苏博泰克财务分析助手",
+          visualizationName: "销售数据可视化",
+          visualizationFileName: "销售数据可视化_index.html",
+          title: "销售数据可视化 · 苏博泰克财务分析助手",
+          token: "member-visualization-token",
+        },
+      ],
+    ]);
+
+    bootTenantEntry();
+    await flushMicrotasks();
+
+    expect(document.querySelector(".oc-member-visualization-section")).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await flushMicrotasks();
+
+    const visualizationSection = document.querySelector(".oc-member-visualization-section");
+    const items = visualizationSection?.querySelectorAll(".nav-item") ?? [];
+    expect(visualizationSection).not.toBeNull();
+    expect(items).toHaveLength(1);
+    expect(items[0]?.textContent).toContain("销售数据可视化");
+    expect(items[0]?.getAttribute("href")).toContain("echarts-view/?token=");
   });
 
   it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {

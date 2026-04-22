@@ -59,6 +59,7 @@ async function requestJson(path, options = {}) {
       try {
         const response = await fetch(`${baseUrl}${path}`, {
           method: options.method || "GET",
+          cache: options.cache,
           headers,
           body: options.body ? JSON.stringify(options.body) : undefined,
         });
@@ -216,7 +217,9 @@ export function createTenantApiClient() {
       return requestJson("/member/agents");
     },
     listMemberVisualizations() {
-      return requestJson("/member/visualizations");
+      return requestJson("/member/visualizations", {
+        cache: "no-store",
+      });
     },
     resolveMemberVisualization(token) {
       return requestJson(withQuery("/member/visualizations/resolve", { token }));

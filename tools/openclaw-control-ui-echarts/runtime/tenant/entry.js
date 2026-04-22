@@ -55,6 +55,8 @@ const TOPBAR_DIALOG_CONFIRM_LOGOUT_SELECTOR = "[data-oc-platform-confirm-logout]
 const TENANT_ROLE_CONTEXT_ATTR = "data-oc-tenant-role-context";
 const MEMBER_VISUALIZATION_CACHE = new Map();
 const MEMBER_VISUALIZATION_SIGNATURE_ATTR = "data-oc-member-visualization-signature";
+const MEMBER_VISUALIZATION_POLL_INTERVAL_MS = 5000;
+const MEMBER_VISUALIZATION_POLL_TIMER_KEY = "__openclawMemberVisualizationPollTimer";
 
 const ICONS = {
   tenants: `
@@ -395,6 +397,53 @@ async function syncMemberVisualizationSection(container) {
   });
   section.setAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR, signature);
   insertVisualizationSection(container, section);
+}
+
+function syncAllMemberVisualizationSections(root = document) {
+  const scope = root instanceof Element || root instanceof Document ? root : document;
+  if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
+    void syncMemberVisualizationSection(scope);
+  }
+  for (const container of scope.querySelectorAll(SIDEBAR_NAV_SELECTOR)) {
+    void syncMemberVisualizationSection(container);
+  }
+}
+
+function clearMemberVisualizationPolling() {
+  const timerId = window[MEMBER_VISUALIZATION_POLL_TIMER_KEY];
+  if (typeof timerId === "number" && Number.isFinite(timerId)) {
+    window.clearInterval(timerId);
+  }
+  delete window[MEMBER_VISUALIZATION_POLL_TIMER_KEY];
+}
+
+function pollMemberVisualizationSections() {
+  if (document.visibilityState === "hidden") {
+    return;
+  }
+  const session = readSessionForCurrentView();
+  const role = String(session?.session?.role || "");
+  if (role !== "member" || isTenantAuthViewActive()) {
+    clearMemberVisualizationPolling();
+    return;
+  }
+  syncAllMemberVisualizationSections(document);
+}
+
+function ensureMemberVisualizationPolling() {
+  const session = readSessionForCurrentView();
+  const role = String(session?.session?.role || "");
+  if (role !== "member" || isTenantAuthViewActive()) {
+    clearMemberVisualizationPolling();
+    return;
+  }
+  if (typeof window[MEMBER_VISUALIZATION_POLL_TIMER_KEY] === "number") {
+    return;
+  }
+  window[MEMBER_VISUALIZATION_POLL_TIMER_KEY] = window.setInterval(
+    pollMemberVisualizationSections,
+    MEMBER_VISUALIZATION_POLL_INTERVAL_MS,
+  );
 }
 
 function updateManagementSectionState(section) {
@@ -937,6 +986,7 @@ export function bootTenantEntry() {
     const role = String(session?.session?.role || "");
     const scope = root instanceof Element || root instanceof Document ? root : document;
     syncTenantRoleContext(role);
+    ensureMemberVisualizationPolling();
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
     } else if (role === "platform_admin" || role === "tenant_admin" || role === "member") {
