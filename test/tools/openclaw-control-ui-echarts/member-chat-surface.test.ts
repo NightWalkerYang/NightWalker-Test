@@ -48,6 +48,8 @@ function createAppStub(overrides = {}) {
   app.settings = {};
   app.sessionKey = "main";
   app.tab = "overview";
+  app.chatMessages = [];
+  app.chatQueue = [];
   app.setTab = vi.fn((next) => {
     app.tab = next;
   });
@@ -55,6 +57,7 @@ function createAppStub(overrides = {}) {
     app.settings = next;
   });
   app.loadAssistantIdentity = vi.fn(async () => {});
+  app.requestUpdate = vi.fn(() => {});
   return app;
 }
 
@@ -408,6 +411,227 @@ describe("member chat surface", () => {
     expect(apiState.sessions[0]?.title).toBe("这是成员发送的第一条消息需要被截取成标题...");
   });
 
+  it("filters assistant NO_REPLY history with the same semantics as the native chat view", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    const app = createAppStub({
+      request: async (method, params) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: sessionKey,
+                title: "本周分析",
+                updatedAt: Date.now(),
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          expect(params).toEqual({ sessionKey, limit: 200 });
+          return {
+            messages: [
+              { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
+              { role: "assistant", text: "  NO_REPLY  " },
+              { role: "assistant", text: "真实回复" },
+              { role: "user", content: [{ type: "text", text: "NO_REPLY" }] },
+            ],
+          };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    expect(app.chatMessages).toEqual([
+      { role: "assistant", text: "真实回复" },
+      { role: "user", content: [{ type: "text", text: "NO_REPLY" }] },
+    ]);
+  });
+
+  it("prefers the persisted current member session over newer db-only session rows", async () => {
+    installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:db-only",
+          title: "侧库占位会话",
+          updatedAt: new Date(Date.now() + 60_000).toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    const app = createAppStub({
+      request: async (method) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: sessionKey,
+                title: "本周分析",
+                updatedAt: Date.now(),
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    app.sessionKey = sessionKey;
+    app.settings = {
+      sessionKey,
+      lastActiveSessionKey: sessionKey,
+    };
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    expect(decodeURIComponent(window.location.search)).toContain(`session=${sessionKey}`);
+    expect(decodeURIComponent(window.location.search)).not.toContain("chat:db-only");
+    expect(app.sessionKey).toBe(sessionKey);
+  });
+
+  it("rehydrates the same member session again after leaving and re-entering chat", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    window.history.replaceState(
+      {},
+      "",
+      `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    let historyLoads = 0;
+    const historyRequest = vi.fn(async (method) => {
+      if (method === "sessions.list") {
+        return {
+          sessions: [
+            {
+              key: sessionKey,
+              title: "本周分析",
+              updatedAt: Date.now(),
+            },
+          ],
+        };
+      }
+      if (method === "chat.history") {
+        historyLoads += 1;
+        return {
+          messages: [{ role: "assistant", text: `历史重载 ${historyLoads}` }],
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+    const app = createAppStub({ request: historyRequest });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const initialHistoryLoads = historyLoads;
+    expect(initialHistoryLoads).toBeGreaterThan(0);
+    expect(app.chatMessages).toEqual([{ role: "assistant", text: `历史重载 ${initialHistoryLoads}` }]);
+
+    app.chatMessages = [{ role: "assistant", text: "陈旧缓存" }];
+    window.history.replaceState({}, "", "/");
+    await window.syncMemberChatSurface();
+    await flush();
+
+    window.history.replaceState(
+      {},
+      "",
+      `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
+    );
+    await window.syncMemberChatSurface();
+    await flush();
+
+    expect(historyLoads).toBeGreaterThan(initialHistoryLoads);
+    expect(app.chatMessages).toEqual([{ role: "assistant", text: `历史重载 ${historyLoads}` }]);
+  });
+
   it("syncs assistant usage records from chat history to the tenant platform", async () => {
     const apiState = installTenantApiFetchStub();
     writeTenantSession({
@@ -740,7 +964,7 @@ describe("member chat surface", () => {
       "已经是新的会话了",
     );
 
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(3000);
     await Promise.resolve();
 
     expect(document.querySelector("[data-oc-member-chat-toast]")).toBeNull();

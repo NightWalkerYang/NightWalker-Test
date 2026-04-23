@@ -29,6 +29,7 @@ const APP_SELECTOR = "openclaw-app";
 const SIDEBAR_SELECTOR = ".sidebar-nav";
 const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
 const SECTION_CLASS = "nav-section oc-member-chat-section";
+const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
   const normalizedPath = String(pathname || "/").trim() || "/";
@@ -154,13 +155,36 @@ function extractTextFragments(value) {
   return fragments;
 }
 
-function buildSessionTitleFromText(value) {
-  const text = extractTextFragments(value)
+function extractNormalizedMessageText(value) {
+  return extractTextFragments(value)
     .map((fragment) => String(fragment || "").trim())
     .filter(Boolean)
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isSilentReplyText(value) {
+  return SILENT_REPLY_PATTERN.test(String(value ?? ""));
+}
+
+function isAssistantSilentReply(message) {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const role = typeof message.role === "string" ? message.role.toLowerCase() : "";
+  if (role !== "assistant") {
+    return false;
+  }
+  if (typeof message.text === "string") {
+    return isSilentReplyText(message.text);
+  }
+  const text = extractNormalizedMessageText(message);
+  return Boolean(text) && isSilentReplyText(text);
+}
+
+function buildSessionTitleFromText(value) {
+  const text = extractNormalizedMessageText(value);
   if (!text) {
     return "";
   }
@@ -609,18 +633,47 @@ function ensureVisibleCurrentSession(sessions, currentSessionKey) {
   ) {
     return sessions;
   }
-  return [{ key: normalizedCurrent, label: "新会话", updatedAt: Date.now() }, ...sessions];
+  return [
+    { key: normalizedCurrent, label: "新会话", updatedAt: Date.now(), hasGatewaySession: false },
+    ...sessions,
+  ];
 }
 
-function findTargetSessionKey(selectedAgent, session, href, sessions) {
+function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
   const url = new URL(href, document.baseURI);
-  const fromQuery = url.searchParams.get("session")?.trim() || "";
-  if (fromQuery && isTenantMemberSessionKey(fromQuery, session, selectedAgent)) {
-    return fromQuery.toLowerCase();
+  const resolveCandidate = (value) => {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase();
+    if (!normalized || !isTenantMemberSessionKey(normalized, session, selectedAgent)) {
+      return "";
+    }
+    const existingRow = sessions.find(
+      (row) =>
+        String(row?.key || "")
+          .trim()
+          .toLowerCase() === normalized,
+    );
+    return existingRow?.key ? String(existingRow.key).trim().toLowerCase() : normalized;
+  };
+  const fromQuery = resolveCandidate(url.searchParams.get("session"));
+  if (fromQuery) {
+    return fromQuery;
   }
-  const latest = sessions[0]?.key?.trim();
-  if (latest && isTenantMemberSessionKey(latest, session, selectedAgent)) {
-    return latest.toLowerCase();
+  for (const candidate of [
+    app?.sessionKey,
+    app?.settings?.lastActiveSessionKey,
+    app?.settings?.sessionKey,
+  ]) {
+    const persisted = resolveCandidate(candidate);
+    if (persisted) {
+      return persisted;
+    }
+  }
+  const latestGatewayRow = sessions.find((row) => row?.hasGatewaySession !== false);
+  const latestGateway = resolveCandidate(latestGatewayRow?.key);
+  if (latestGateway) {
+    return latestGateway;
   }
   const legacy = buildTenantMemberLegacySessionKey(selectedAgent);
   if (legacy) {
@@ -723,6 +776,7 @@ async function loadMemberSessions(app, selectedAgent, session) {
       ...gatewayRow,
       title: nextTitle,
       label: nextTitle !== "新会话" ? nextTitle : gatewayRow.label,
+      hasGatewaySession: true,
     });
   }
 
@@ -736,6 +790,7 @@ async function loadMemberSessions(app, selectedAgent, session) {
         key: dbRow.openclawSessionKey,
         label: dbRow.title || "新会话",
         updatedAt: new Date(dbRow.updatedAt).getTime(),
+        hasGatewaySession: false,
       });
     }
   }
@@ -967,10 +1022,12 @@ function pinMemberChatSession(app, sessionKey) {
   if (!app.__openclawTenantMemberPatched) {
     if (typeof app.setTab === "function") {
       const originalSetTab = app.setTab.bind(app);
+      app.__openclawTenantMemberOriginalSetTab = originalSetTab;
       app.setTab = () => originalSetTab("chat");
     }
     if (typeof app.applySettings === "function") {
       const originalApplySettings = app.applySettings.bind(app);
+      app.__openclawTenantMemberOriginalApplySettings = originalApplySettings;
       // Use app.__ocPinnedSessionKey (mutable) so switching sessions works correctly.
       // Do NOT capture `sessionKey` from the closure here - it would be stale on re-calls.
       app.applySettings = (next) =>
@@ -987,41 +1044,58 @@ function pinMemberChatSession(app, sessionKey) {
     app.setTab("chat");
   }
 
-  if (app.sessionKey !== sessionKey) {
-    // Clear old state immediately for snappy UX
+  const shouldHydrateHistory =
+    app.sessionKey !== sessionKey ||
+    (app.__ocPinnedSessionHydratedKey !== sessionKey &&
+      app.__ocPinnedSessionHydratingKey !== sessionKey);
+
+  if (shouldHydrateHistory) {
+    // Reset session-scoped view state before rehydrating persisted history.
     app.chatMessages = [];
+    if (Array.isArray(app.chatQueue)) {
+      app.chatQueue = [];
+    }
     app.chatThinkingLevel = null;
+    app.chatRunId = null;
     app.chatStreamStartedAt = null;
     app.chatStream = null;
+    app.lastError = null;
     app.chatLoading = true;
     if (typeof app.resetToolStream === "function") {
       app.resetToolStream();
     }
     app.requestUpdate?.();
 
-    // Set the new session key directly (bypass overridden applySettings for this)
-    app.sessionKey = sessionKey;
+    if (app.sessionKey !== sessionKey) {
+      app.sessionKey = sessionKey;
+      if (typeof app.applySettings === "function" && app.settings) {
+        app.applySettings({
+          ...app.settings,
+          sessionKey,
+          lastActiveSessionKey: sessionKey,
+        });
+      }
+    }
 
     if (typeof app.loadAssistantIdentity === "function") {
       void app.loadAssistantIdentity();
     }
 
-    // Load chat history for the new session directly via the client
+    app.__ocPinnedSessionHydratingKey = sessionKey;
+
+    // Load chat history for the pinned session directly via the client.
     const targetKey = sessionKey;
     app.client
       .request("chat.history", { sessionKey: targetKey, limit: 200 })
       .then((res) => {
+        if (app.__ocPinnedSessionHydratingKey === targetKey) {
+          app.__ocPinnedSessionHydratingKey = "";
+        }
         if (app.__ocPinnedSessionKey === targetKey) {
           const msgs = Array.isArray(res?.messages) ? res.messages : [];
-          app.chatMessages = msgs.filter((m) => {
-            // Filter out silent replies (openclaw internal)
-            if (m?.role !== "assistant") {
-              return true;
-            }
-            const text = typeof m?.text === "string" ? m.text : "";
-            return !text.startsWith("<|openclaw-silent|");
-          });
+          app.chatMessages = msgs.filter((message) => !isAssistantSilentReply(message));
           app.chatThinkingLevel = res?.thinkingLevel ?? null;
+          app.chatRunId = null;
           app.chatStream = null;
           app.chatStreamStartedAt = null;
           if (typeof app.resetToolStream === "function") {
@@ -1031,6 +1105,7 @@ function pinMemberChatSession(app, sessionKey) {
             app.resetChatScroll();
           }
           app.chatLoading = false;
+          app.__ocPinnedSessionHydratedKey = targetKey;
           app.requestUpdate?.();
           if (window._ocMemberChatSurfaceController?.currentSessionKey === targetKey) {
             void syncMemberUsageRecords(window._ocMemberChatSurfaceController, targetKey, msgs);
@@ -1038,9 +1113,13 @@ function pinMemberChatSession(app, sessionKey) {
         }
       })
       .catch(() => {
+        if (app.__ocPinnedSessionHydratingKey === targetKey) {
+          app.__ocPinnedSessionHydratingKey = "";
+        }
         if (app.__ocPinnedSessionKey === targetKey) {
           app.chatMessages = [];
           app.chatThinkingLevel = null;
+          app.__ocPinnedSessionHydratedKey = "";
           app.chatLoading = false;
           app.requestUpdate?.();
         }
@@ -1230,6 +1309,12 @@ function renderTopAction(controller) {
 
 async function syncMemberChatSurface() {
   if (!isMemberChatRoute()) {
+    const app = document.querySelector(APP_SELECTOR);
+    if (app instanceof HTMLElement) {
+      delete app.__ocPinnedSessionHydratedKey;
+      delete app.__ocPinnedSessionHydratingKey;
+    }
+    delete window._ocMemberChatSurfaceController;
     document.documentElement.removeAttribute(DOC_ATTR);
     document.body?.removeAttribute(DOC_ATTR);
     document.querySelector(`[${SECTION_ATTR}]`)?.remove();
@@ -1263,6 +1348,7 @@ async function syncMemberChatSurface() {
 
   const sessionsFromGateway = await loadMemberSessions(app, selectedAgent, session);
   const currentSessionKey = findTargetSessionKey(
+    app,
     selectedAgent,
     session,
     window.location.href,
