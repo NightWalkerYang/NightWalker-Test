@@ -9,16 +9,36 @@ import {
   writeTenantSession,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 
+function readRequestUrl(input) {
+  if (input instanceof Request) {
+    return new URL(input.url, "http://localhost");
+  }
+  return new URL(String(input || ""), "http://localhost");
+}
+
+function jsonResponse(data) {
+  return {
+    ok: true,
+    json: async () => ({
+      ok: true,
+      data,
+    }),
+  };
+}
+
 function stubVisualizationFetch(items = []) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        ok: true,
-        data: items,
-      }),
-    })),
+    vi.fn(async (input) => {
+      const url = readRequestUrl(input);
+      if (url.pathname.endsWith("/member/visualizations")) {
+        return jsonResponse(items);
+      }
+      if (url.pathname.endsWith("/changelogs")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse([]);
+    }),
   );
 }
 
@@ -26,19 +46,88 @@ function stubVisualizationFetchSequence(sequence = [[]]) {
   let callCount = 0;
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => {
-      const index = Math.min(callCount, Math.max(0, sequence.length - 1));
-      const items = Array.isArray(sequence[index]) ? sequence[index] : [];
-      callCount += 1;
-      return {
-        ok: true,
-        json: async () => ({
-          ok: true,
-          data: items,
-        }),
-      };
+    vi.fn(async (input) => {
+      const url = readRequestUrl(input);
+      if (url.pathname.endsWith("/member/visualizations")) {
+        const index = Math.min(callCount, Math.max(0, sequence.length - 1));
+        const items = Array.isArray(sequence[index]) ? sequence[index] : [];
+        callCount += 1;
+        return jsonResponse(items);
+      }
+      if (url.pathname.endsWith("/changelogs")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse([]);
     }),
   );
+}
+
+function stubUpdateLogCrud(initialLogs = []) {
+  const state = {
+    logs: initialLogs.map((entry) => ({ ...entry })),
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input, options = {}) => {
+      const url = readRequestUrl(input);
+      const method = String(options?.method || (input instanceof Request ? input.method : "GET"))
+        .trim()
+        .toUpperCase();
+      if (url.pathname.endsWith("/changelogs") && method === "GET") {
+        return jsonResponse(
+          [...state.logs].sort((left, right) =>
+            String(right.publishedAt || right.createdAt || "").localeCompare(
+              String(left.publishedAt || left.createdAt || ""),
+            ),
+          ),
+        );
+      }
+      if (url.pathname.endsWith("/platform/changelogs") && method === "POST") {
+        const payload = JSON.parse(String(options?.body || "{}"));
+        const createdAt = "2026-04-23T08:00:00.000Z";
+        const next = {
+          id: `update-${state.logs.length + 1}`,
+          versionLabel: payload.versionLabel,
+          title: payload.title,
+          content: payload.content,
+          excerpt: String(payload.content || "").replace(/\s+/g, " ").trim().slice(0, 40),
+          createdByUsername: "platform-root",
+          publishedAt: createdAt,
+          createdAt,
+          updatedAt: createdAt,
+        };
+        state.logs = [next, ...state.logs];
+        return jsonResponse(next);
+      }
+      if (url.pathname.endsWith("/platform/changelogs") && method === "PUT") {
+        const payload = JSON.parse(String(options?.body || "{}"));
+        state.logs = state.logs.map((entry) =>
+          entry.id === payload.id
+            ? {
+                ...entry,
+                versionLabel: payload.versionLabel,
+                title: payload.title,
+                content: payload.content,
+                excerpt: String(payload.content || "").replace(/\s+/g, " ").trim().slice(0, 40),
+                updatedAt: "2026-04-23T09:30:00.000Z",
+              }
+            : entry,
+        );
+        return jsonResponse(state.logs.find((entry) => entry.id === payload.id) || null);
+      }
+      if (url.pathname.endsWith("/platform/changelogs") && method === "DELETE") {
+        const targetId = url.searchParams.get("id");
+        const target = state.logs.find((entry) => entry.id === targetId) || null;
+        state.logs = state.logs.filter((entry) => entry.id !== targetId);
+        return jsonResponse(target);
+      }
+      if (url.pathname.endsWith("/member/visualizations")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse([]);
+    }),
+  );
+  return state;
 }
 
 function createDeferred() {
@@ -73,6 +162,8 @@ afterEach(() => {
   delete window.__openclawMemberVisualizationPollTimer;
   delete window.__openclawTenantEntryBooted;
   delete window.__openclawTenantRouteSyncBooted;
+  delete window.__openclawUpdateLogState;
+  document.head.querySelector("[data-oc-update-log-style]")?.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -656,6 +747,213 @@ describe("zero-intrusive tenant entry", () => {
     const dialog = document.querySelector("[data-oc-platform-logout-dialog]");
     expect(dialog?.hasAttribute("open") || dialog?.open).toBe(true);
     expect(dialog?.textContent).toContain("确认退出");
+  });
+
+  it("opens the latest update log automatically for tenant admins after login", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+        userId: "tenant-admin-id",
+        tenantId: "tenant-alpha",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-statistics-overview");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.23</a>
+      </div>
+    `;
+    stubUpdateLogCrud([
+      {
+        id: "update-1",
+        versionLabel: "v2026.4.23",
+        title: "更新日志展示上线",
+        content: "1. 登录后自动弹窗。\n2. 支持右下角版本查看历史。",
+        excerpt: "1. 登录后自动弹窗。 2. 支持右下角版本查看历史。",
+        createdByUsername: "platform-root",
+        publishedAt: "2026-04-23T07:00:00.000Z",
+        createdAt: "2026-04-23T07:00:00.000Z",
+        updatedAt: "2026-04-23T07:00:00.000Z",
+      },
+    ]);
+
+    bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
+
+    const dialog = document.querySelector("[data-oc-update-log-history-dialog]");
+    expect(dialog?.hasAttribute("open") || dialog?.open).toBe(true);
+    expect(dialog?.textContent).toContain("更新日志展示上线");
+    expect(dialog?.textContent).toContain("登录后自动弹窗");
+  });
+
+  it("lets platform admins create, edit, and delete update logs from the version dialog", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+        userId: "platform-root-id",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.23</a>
+      </div>
+    `;
+    const updateLogState = stubUpdateLogCrud([
+      {
+        id: "update-1",
+        versionLabel: "v2026.4.22",
+        title: "旧版更新",
+        content: "初始版本内容",
+        excerpt: "初始版本内容",
+        createdByUsername: "platform-root",
+        publishedAt: "2026-04-22T07:00:00.000Z",
+        createdAt: "2026-04-22T07:00:00.000Z",
+        updatedAt: "2026-04-22T07:00:00.000Z",
+      },
+    ]);
+
+    bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
+
+    const versionLink = document.querySelector("[data-oc-utility-version]");
+    expect(versionLink).not.toBeNull();
+    versionLink?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const historyDialog = document.querySelector("[data-oc-update-log-history-dialog]");
+    expect(historyDialog?.textContent).toContain("旧版更新");
+    expect(historyDialog?.textContent).toContain("新建更新");
+    expect(historyDialog?.textContent).toContain("修改");
+
+    const createButton = document.querySelector("[data-oc-update-log-open-create]");
+    createButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const editorForm = document.querySelector("[data-oc-update-log-editor-form]");
+    expect(editorForm).not.toBeNull();
+    const versionLabelInput = editorForm?.querySelector('input[name="versionLabel"]');
+    const titleInput = editorForm?.querySelector('input[name="title"]');
+    const contentInput = editorForm?.querySelector('textarea[name="content"]');
+    if (
+      versionLabelInput instanceof HTMLInputElement &&
+      titleInput instanceof HTMLInputElement &&
+      contentInput instanceof HTMLTextAreaElement
+    ) {
+      versionLabelInput.value = "v2026.4.23";
+      titleInput.value = "新增更新日志中心";
+      contentInput.value = "1. 支持平台管理员发布更新。\n2. 租户登录后可看到更新弹窗。";
+    }
+    editorForm?.dispatchEvent(
+      new Event("submit", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+    await flushAsync();
+
+    expect(updateLogState.logs[0]?.title).toBe("新增更新日志中心");
+    expect(document.querySelector("[data-oc-update-log-history-dialog]")?.textContent).toContain(
+      "新增更新日志中心",
+    );
+
+    const manageButton = document.querySelector("[data-oc-update-log-open-manage]");
+    manageButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const editButton = document.querySelector('[data-oc-update-log-edit="update-1"]');
+    editButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const editForm = document.querySelector("[data-oc-update-log-editor-form]");
+    const editVersionLabelInput = editForm?.querySelector('input[name="versionLabel"]');
+    const editTitleInput = editForm?.querySelector('input[name="title"]');
+    const editContentInput = editForm?.querySelector('textarea[name="content"]');
+    if (
+      editVersionLabelInput instanceof HTMLInputElement &&
+      editTitleInput instanceof HTMLInputElement &&
+      editContentInput instanceof HTMLTextAreaElement
+    ) {
+      editVersionLabelInput.value = "v2026.4.22-hotfix1";
+      editTitleInput.value = "旧版更新热修复";
+      editContentInput.value = "1. 修复历史搜索。\n2. 修复详情展示。";
+    }
+    editForm?.dispatchEvent(
+      new Event("submit", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+    await flushAsync();
+
+    expect(updateLogState.logs.find((entry) => entry.id === "update-1")?.title).toBe(
+      "旧版更新热修复",
+    );
+
+    const reopenManageButton = document.querySelector("[data-oc-update-log-open-manage]");
+    reopenManageButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const deleteButton = document.querySelector('[data-oc-update-log-delete="update-1"]');
+    deleteButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const confirmDeleteButton = document.querySelector("[data-oc-update-log-confirm-delete]");
+    confirmDeleteButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+    await flushAsync();
+
+    expect(updateLogState.logs.some((entry) => entry.id === "update-1")).toBe(false);
   });
 
   it("applies tenant-admin sidebar trimming to utility links added after boot", async () => {

@@ -189,6 +189,72 @@ Logo 规则固定为：
   - `SPTC` 文字 Logo
   - 当前标题与 favicon 行为
 
+### 2.2 平台级更新日志中心
+
+当前还需要补一套“更新日志中心”，用于说明每次零侵入改造到底更新了什么。
+
+实际实现约束明确为：
+
+- 不新起单独服务
+- 不新接外部数据库
+- 直接复用 tenant sidecar 现有 SQLite 底座
+- 在 sidecar SQLite 内新增一张专用更新日志表来存放：
+  - 版本号
+  - 标题
+  - 更新内容
+  - 发布人
+  - 发布时间
+  - 更新时间
+
+登录后展示规则明确为：
+
+- 平台管理员登录后：
+  - 进入工作视图后自动弹出最新更新日志
+  - 右下角点击 `版本` 后可查看历史更新
+- 租户管理员登录后：
+  - 进入工作视图后自动弹出最新更新日志
+  - 右下角点击 `版本` 后可查看历史更新
+- 租户成员登录后：
+  - 进入工作视图后自动弹出最新更新日志
+  - 右下角点击 `版本` 后可查看历史更新
+
+当前自动弹窗的实际实现不做服务端“全局已读表”，而是按“浏览器 + 当前登录用户”本地记住最近一次已读的 `更新日志 id + updatedAt` 签名：
+
+- 同一用户同一浏览器重复进入时，不会一直重复弹同一条
+- 如果平台管理员新建了新的更新日志，则下次登录会弹出新条目
+- 如果平台管理员改动了当前最新那条更新日志内容，则会按新的 `updatedAt` 再次弹出
+
+平台管理员右下角 `版本` 弹窗需要额外具备：
+
+- `新建更新`
+  - 打开新增更新日志弹窗
+  - 填写版本号、标题、更新内容
+  - 保存后直接写入 sidecar SQLite
+- `修改`
+  - 打开历史更新日志管理弹窗
+  - 弹窗里必须有搜索框和列表
+  - 平台管理员点击某一条历史更新后进入编辑弹窗
+- `删除`
+  - 在历史更新日志管理弹窗里提供删除入口
+  - 删除后租户侧历史记录同步消失
+
+租户侧要求明确为：
+
+- 只读查看，不允许新建、修改、删除
+- 登录后自动弹出的就是当前最新发布的一条
+- 右下角 `版本` 可以回看历史
+
+零侵入运行时落点固定为：
+
+- `runtime/tenant/update-log-dialog.js`
+- `runtime/tenant/update-log-dialog.css`
+
+sidecar 落点固定为：
+
+- `sidecar/tenant-platform/routes.mjs`
+- `sidecar/tenant-platform/db.mjs`
+- `sidecar/tenant-platform/migrations/001_init.sql`
+
 ### 3. 租户管理员页
 
 租户管理员进入后，需要能做这些事：
@@ -254,7 +320,17 @@ Logo 规则固定为：
 
 `/echarts-view/` 的独立入口页必须落在 `echarts-view/index.html`，这样控制台网关会直接返回这份静态页而不是回落到主壳；`/echarts-view` 这个旧式裸路径仍可以作为兼容性别名继续保留在路由归一化里，但分享链接和成员菜单都应统一使用带 trailing slash 的 token 化链接。
 
-大屏可视化 HTML 自身需要直接引用同源静态资产里的 ECharts，不允许再写 `https://cdn.jsdelivr.net/npm/echarts...` 这类外链。服务器当前可用的公开路径是 `/assets/vendor/echarts.min.js`，其落盘位置对应 `tools/openclaw-control-ui-echarts/generated/control-ui/assets/vendor/echarts.min.js`；如需兼容旧产物，也可以回退到 `/assets/runtime/echarts/echarts.min.js`。生成出的 HTML 只应告知用户“已生成什么可视化内容，并可在侧边栏 `可视化展示` 中查看”，不要暴露文件名；同时不要依赖 `base` 标签来解决相对路径，必须把相对资源改写成绝对同源路径。
+大屏可视化 HTML 自身需要直接引用同源静态资产，不允许再写 `https://cdn.jsdelivr.net/npm/echarts...` 这类外链。当前默认可直接使用的公开路径是 `/assets/vendor/echarts.min.js`，其落盘位置对应 `tools/openclaw-control-ui-echarts/generated/control-ui/assets/vendor/echarts.min.js`；如需兼容旧产物，也可以回退到 `/assets/runtime/echarts/echarts.min.js`。如果后续要引入 `Three.js`、`Babylon.js`、`PixiJS`、`GSAP`、`ECharts-GL` 等额外可视化库，也必须按同样原则落为同源静态资源或预打包 bundle，不允许依赖公网 CDN。生成出的 HTML 只应告知用户“已生成什么可视化内容，并可在侧边栏 `可视化展示` 中查看”，不要暴露文件名；同时不要依赖 `base` 标签来解决相对路径，必须把相对资源改写成绝对同源路径。
+
+当前桥接层的实际稳定边界还需要明确为：
+
+- `可视化展示` 菜单当前只扫描工作区 `Echarts/` 根目录下的 `*_index.html`，因此每张大屏都必须保留一个位于 `Echarts/` 根目录的静态入口页
+- 当前桥接层会重写普通 `src/href/data/poster` 资源引用，并会把内联脚本外提成同源生成脚本，但它不是 bundler，不会自动接管整个 ESM 模块图
+- 当前桥接层默认会改写内联脚本中的 `fetch`、`open`、`location.*`、`.href=`、`.src=` 等相对 URL；但 `import ... from "./x.js"`、`dynamic import("./x.js")`、`new Worker("./x.js")`、`new URL("./x", import.meta.url)` 这类模式不在默认重写名单内
+- 因此 3D / 粒子大屏的推荐交付形态不是“未打包源码工程”，而是“单 HTML 入口 + 单 bundle 或少量稳定同源脚本 + 本地静态资源”
+- 如果 AI 先产出 React / Vue / Three.js / Babylon.js 工程，最终落盘到工作区时也必须先预打包成静态可部署产物，再放进 `Echarts/` 目录，不允许把 dev server、裸模块导入、动态分包、service worker 直接带进成员公开页链路
+
+3D / 粒子 / 高级可视化大屏的完整交付规范以 `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md` 为准。
 
 当前要求：
 
@@ -1477,6 +1553,17 @@ Logo 规则固定为：
    - 租户列表展示
    - 平台管理员向租户下发 Agent
    - 平台管理员撤回租户已接收的 Agent，并同步失效相关成员分配
+
+6.1 平台级更新日志中心已落地
+   - sidecar SQLite 已新增专用更新日志表
+   - 平台管理员现在可以在右下角 `版本` 弹窗中：
+     - 查看历史更新
+     - 新建更新
+     - 通过“修改”入口打开带搜索的历史列表
+     - 对历史更新进行修改与删除
+   - 租户管理员和租户成员现在可以在右下角 `版本` 弹窗中查看历史更新
+   - 平台管理员、租户管理员和租户成员登录进入工作视图后，会自动弹出当前最新更新日志
+   - 当前自动弹窗按浏览器本地已读签名控制，不额外引入服务端已读状态表
 
 7. 租户管理员基础能力已落地
    - 租户管理员登录

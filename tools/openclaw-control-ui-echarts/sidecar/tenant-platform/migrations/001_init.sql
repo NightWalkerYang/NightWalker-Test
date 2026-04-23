@@ -164,6 +164,19 @@ CREATE TABLE IF NOT EXISTS tenant_usage_records (
   FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS platform_update_logs (
+  id TEXT PRIMARY KEY,
+  version_label TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_by_user_id TEXT,
+  created_by_username TEXT NOT NULL DEFAULT '',
+  published_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
   tenant_id TEXT,
@@ -200,3 +213,6 @@ CREATE INDEX IF NOT EXISTS idx_tenant_wallet_ledger_usage_note
 
 CREATE INDEX IF NOT EXISTS idx_payment_orders_tenant_status
   ON payment_orders (tenant_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_platform_update_logs_published
+  ON platform_update_logs (published_at DESC, updated_at DESC);

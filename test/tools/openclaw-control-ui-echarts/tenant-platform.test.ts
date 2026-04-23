@@ -5,11 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   openTenantPlatformDb,
   closeTenantPlatformDb,
+  createPlatformUpdateLog,
   createBootstrapPlatformAdmin,
   deleteTenantMember,
+  deletePlatformUpdateLog,
   createTenantWithAdmin,
   createTenantMember,
   getUserByUsername,
+  listPlatformUpdateLogs,
   listTenantAgents,
   listTenantMembers,
   readOpenClawAgentCatalog,
@@ -21,6 +24,7 @@ import {
   getTenantOverview,
   listTenantUsageRecords,
   syncTenantUsageRecords,
+  updatePlatformUpdateLog,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
@@ -94,6 +98,61 @@ describe("tenant platform database foundation", () => {
       expect(platformAdmin?.role).toBe("platform_admin");
       expect(tenant?.code).toBe("alpha");
       expect(tenant?.memberLimit).toBe(8);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("creates, updates, lists, and deletes platform update logs", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const created = createPlatformUpdateLog(db, {
+        versionLabel: "v2026.4.23",
+        title: "新增更新日志中心",
+        content: "1. 平台管理员可以发布更新日志。\n2. 租户侧登录后会弹出最新更新。",
+        createdByUserId: platformAdmin?.id,
+        createdByUsername: platformAdmin?.username,
+      });
+
+      expect(created).toMatchObject({
+        versionLabel: "v2026.4.23",
+        title: "新增更新日志中心",
+        createdByUsername: "platform-root",
+      });
+
+      const updated = updatePlatformUpdateLog(db, {
+        id: created?.id,
+        versionLabel: "v2026.4.23-hotfix1",
+        title: "更新日志中心热修复",
+        content: "1. 修复自动弹窗。\n2. 修复历史搜索。",
+      });
+      expect(updated).toMatchObject({
+        id: created?.id,
+        versionLabel: "v2026.4.23-hotfix1",
+        title: "更新日志中心热修复",
+      });
+
+      const listed = listPlatformUpdateLogs(db);
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toMatchObject({
+        id: created?.id,
+        versionLabel: "v2026.4.23-hotfix1",
+        title: "更新日志中心热修复",
+      });
+      expect(listed[0]?.excerpt).toContain("修复自动弹窗");
+
+      const deleted = deletePlatformUpdateLog(db, { id: created?.id });
+      expect(deleted).toMatchObject({
+        id: created?.id,
+        title: "更新日志中心热修复",
+      });
+      expect(listPlatformUpdateLogs(db)).toEqual([]);
     } finally {
       closeTenantPlatformDb(db);
     }

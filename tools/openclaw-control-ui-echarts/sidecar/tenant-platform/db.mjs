@@ -93,6 +93,64 @@ function normalizeIsoTimestamp(value, fallback = nowIso()) {
   return new Date(parsed).toISOString();
 }
 
+function normalizeUpdateLogText(value, { maxLength = 4000, preserveNewlines = false } = {}) {
+  const raw = String(value ?? "");
+  const normalized = preserveNewlines
+    ? raw.replace(/\r\n?/g, "\n").trim()
+    : raw.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.slice(0, maxLength);
+}
+
+function buildUpdateLogExcerpt(content, maxLength = 120) {
+  const normalized = normalizeUpdateLogText(content, {
+    maxLength: Math.max(1, maxLength * 3),
+    preserveNewlines: false,
+  });
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function normalizeUpdateLogVersionLabel(value) {
+  return normalizeUpdateLogText(value, { maxLength: 64, preserveNewlines: false });
+}
+
+function normalizeUpdateLogTitle(value) {
+  return normalizeUpdateLogText(value, { maxLength: 120, preserveNewlines: false });
+}
+
+function normalizeUpdateLogContent(value) {
+  return normalizeUpdateLogText(value, { maxLength: 8000, preserveNewlines: true });
+}
+
+function ensurePlatformUpdateLogSchemaCompatibility(db) {
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS platform_update_logs (
+       id TEXT PRIMARY KEY,
+       version_label TEXT NOT NULL,
+       title TEXT NOT NULL,
+       content TEXT NOT NULL,
+       created_by_user_id TEXT,
+       created_by_username TEXT NOT NULL DEFAULT '',
+       published_at TEXT NOT NULL,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+     );`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_platform_update_logs_published
+       ON platform_update_logs (published_at DESC, updated_at DESC);`,
+  );
+}
+
 function getScalar(db, sql, params) {
   const stmt = db.prepare(sql);
   let row;
@@ -271,6 +329,7 @@ function ensureSchemaCompatibility(db) {
        WHERE derived_agent_id IS NOT NULL`,
   );
   ensureTenantUsageRecordSchemaCompatibility(db);
+  ensurePlatformUpdateLogSchemaCompatibility(db);
 }
 
 function normalizeSegment(value, fallback = "x", maxLength = 24) {
@@ -867,6 +926,163 @@ export function getUserByUsername(db, username) {
     membershipRole: tenantContext?.membershipRole ?? null,
     membershipStatus: tenantContext?.membershipStatus ?? null,
   };
+}
+
+function mapPlatformUpdateLogRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id || "").trim(),
+    versionLabel: String(row.versionLabel || "").trim(),
+    title: String(row.title || "").trim(),
+    content: String(row.content || ""),
+    excerpt: buildUpdateLogExcerpt(row.content),
+    createdByUserId: String(row.createdByUserId || "").trim() || null,
+    createdByUsername: String(row.createdByUsername || "").trim() || "平台管理员",
+    publishedAt: String(row.publishedAt || "").trim(),
+    createdAt: String(row.createdAt || "").trim(),
+    updatedAt: String(row.updatedAt || "").trim(),
+  };
+}
+
+export function listPlatformUpdateLogs(db) {
+  return db
+    .prepare(
+      `SELECT id,
+              version_label AS versionLabel,
+              title,
+              content,
+              created_by_user_id AS createdByUserId,
+              created_by_username AS createdByUsername,
+              published_at AS publishedAt,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM platform_update_logs
+       ORDER BY published_at DESC, updated_at DESC, created_at DESC`,
+    )
+    .all()
+    .map(mapPlatformUpdateLogRow)
+    .filter(Boolean);
+}
+
+export function createPlatformUpdateLog(db, params) {
+  const versionLabel = normalizeUpdateLogVersionLabel(params?.versionLabel);
+  const title = normalizeUpdateLogTitle(params?.title);
+  const content = normalizeUpdateLogContent(params?.content);
+  if (!versionLabel) {
+    throw new Error("update_log_version_required");
+  }
+  if (!title) {
+    throw new Error("update_log_title_required");
+  }
+  if (!content) {
+    throw new Error("update_log_content_required");
+  }
+  const now = nowIso();
+  const id = createId("update_log");
+  db.prepare(
+    `INSERT INTO platform_update_logs (
+       id,
+       version_label,
+       title,
+       content,
+       created_by_user_id,
+       created_by_username,
+       published_at,
+       created_at,
+       updated_at
+     )
+     VALUES (
+       @id,
+       @versionLabel,
+       @title,
+       @content,
+       @createdByUserId,
+       @createdByUsername,
+       @publishedAt,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id,
+    versionLabel,
+    title,
+    content,
+    createdByUserId: String(params?.createdByUserId || "").trim() || null,
+    createdByUsername:
+      normalizeUpdateLogText(params?.createdByUsername, { maxLength: 64, preserveNewlines: false }) ||
+      "平台管理员",
+    publishedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return listPlatformUpdateLogs(db).find((row) => row.id === id) ?? null;
+}
+
+export function updatePlatformUpdateLog(db, params) {
+  const id = String(params?.id || "").trim();
+  if (!id) {
+    throw new Error("update_log_id_required");
+  }
+  const existing = db.prepare("SELECT id FROM platform_update_logs WHERE id = ?").get(id);
+  if (!existing) {
+    throw new Error("update_log_not_found");
+  }
+  const versionLabel = normalizeUpdateLogVersionLabel(params?.versionLabel);
+  const title = normalizeUpdateLogTitle(params?.title);
+  const content = normalizeUpdateLogContent(params?.content);
+  if (!versionLabel) {
+    throw new Error("update_log_version_required");
+  }
+  if (!title) {
+    throw new Error("update_log_title_required");
+  }
+  if (!content) {
+    throw new Error("update_log_content_required");
+  }
+  db.prepare(
+    `UPDATE platform_update_logs
+     SET version_label = @versionLabel,
+         title = @title,
+         content = @content,
+         updated_at = @updatedAt
+     WHERE id = @id`,
+  ).run({
+    id,
+    versionLabel,
+    title,
+    content,
+    updatedAt: nowIso(),
+  });
+  return listPlatformUpdateLogs(db).find((row) => row.id === id) ?? null;
+}
+
+export function deletePlatformUpdateLog(db, params) {
+  const id = String(params?.id || "").trim();
+  if (!id) {
+    throw new Error("update_log_id_required");
+  }
+  const existing = db
+    .prepare(
+      `SELECT id,
+              version_label AS versionLabel,
+              title,
+              content,
+              created_by_user_id AS createdByUserId,
+              created_by_username AS createdByUsername,
+              published_at AS publishedAt,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM platform_update_logs
+       WHERE id = ?`,
+    )
+    .get(id);
+  if (!existing) {
+    throw new Error("update_log_not_found");
+  }
+  db.prepare("DELETE FROM platform_update_logs WHERE id = ?").run(id);
+  return mapPlatformUpdateLogRow(existing);
 }
 
 export function getTenantSummary(db, tenantId) {

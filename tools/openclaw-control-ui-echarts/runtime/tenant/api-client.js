@@ -135,6 +135,18 @@ export function createTenantApiClient() {
       }
       return requestJson("/logout", { method: "POST", session });
     },
+    listUpdateLogs() {
+      return requestJson("/changelogs", { cache: "no-store" });
+    },
+    createUpdateLog(body) {
+      return requestJson("/platform/changelogs", { method: "POST", body });
+    },
+    updateUpdateLog(body) {
+      return requestJson("/platform/changelogs", { method: "PUT", body });
+    },
+    deleteUpdateLog(id) {
+      return requestJson(withQuery("/platform/changelogs", { id }), { method: "DELETE" });
+    },
     listPlatformTenants() {
       return requestJson("/platform/tenants");
     },

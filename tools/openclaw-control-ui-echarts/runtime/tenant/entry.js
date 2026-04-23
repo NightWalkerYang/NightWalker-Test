@@ -2,6 +2,7 @@ import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/con
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
+import { bootUpdateLogDialogs } from "./update-log-dialog.js";
 import {
   LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
@@ -1001,6 +1002,7 @@ export function bootTenantEntry() {
   window.__openclawTenantEntryBooted = true;
   bootTenantRouteSync();
   ensureTopbarLogoutHandler();
+  bootUpdateLogDialogs();
 
   const scan = (root = document) => {
     const session = readSessionForCurrentView();

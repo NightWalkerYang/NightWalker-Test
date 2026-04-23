@@ -1,0 +1,349 @@
+.oc-update-log-dialog {
+  width: min(1120px, calc(100vw - 32px));
+  max-width: 1120px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.oc-update-log-dialog::backdrop {
+  background: rgba(8, 17, 29, 0.52);
+  backdrop-filter: blur(10px);
+}
+
+.oc-update-log-dialog__panel {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border-radius: 26px;
+  border: 1px solid rgba(118, 145, 176, 0.2);
+  background: linear-gradient(180deg, rgba(249, 252, 255, 0.98), rgba(240, 246, 252, 0.95));
+  color: #17324b;
+  box-shadow: 0 30px 90px rgba(17, 37, 58, 0.22);
+}
+
+.oc-update-log-dialog__panel--wide {
+  min-height: min(78vh, 760px);
+}
+
+.oc-update-log-dialog__panel--compact {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.oc-update-log-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.oc-update-log-dialog__title-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oc-update-log-dialog__eyebrow {
+  margin: 0;
+  color: #3b74c9;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.oc-update-log-dialog__title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.oc-update-log-dialog__subtitle {
+  margin: 0;
+  color: #5f7389;
+  line-height: 1.7;
+}
+
+.oc-update-log-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.oc-update-log-dialog__body {
+  display: grid;
+  gap: 18px;
+}
+
+.oc-update-log-dialog__body--split {
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.oc-update-log-dialog__sidebar,
+.oc-update-log-dialog__detail,
+.oc-update-log-manage-list,
+.oc-update-log-form {
+  border-radius: 22px;
+  border: 1px solid rgba(118, 145, 176, 0.18);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.oc-update-log-dialog__sidebar,
+.oc-update-log-dialog__detail {
+  min-height: 0;
+}
+
+.oc-update-log-dialog__sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.oc-update-log-dialog__search {
+  display: grid;
+  gap: 8px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid rgba(118, 145, 176, 0.16);
+}
+
+.oc-update-log-dialog__search span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4e647d;
+}
+
+.oc-update-log-dialog__search input,
+.oc-update-log-form__field input,
+.oc-update-log-form__field textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(118, 145, 176, 0.24);
+  background: rgba(248, 251, 255, 0.94);
+  color: #17324b;
+}
+
+.oc-update-log-dialog__search input:focus,
+.oc-update-log-form__field input:focus,
+.oc-update-log-form__field textarea:focus {
+  outline: 0;
+  border-color: rgba(59, 116, 201, 0.45);
+  box-shadow: 0 0 0 4px rgba(59, 116, 201, 0.12);
+}
+
+.oc-update-log-dialog__list,
+.oc-update-log-manage-list {
+  overflow: auto;
+}
+
+.oc-update-log-list-item {
+  width: 100%;
+  padding: 16px 18px;
+  display: grid;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid rgba(118, 145, 176, 0.12);
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.oc-update-log-list-item:last-child {
+  border-bottom: 0;
+}
+
+.oc-update-log-list-item:hover,
+.oc-update-log-list-item.is-active {
+  background: rgba(59, 116, 201, 0.08);
+}
+
+.oc-update-log-list-item__version,
+.oc-update-log-manage-item__version {
+  color: #3b74c9;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.oc-update-log-list-item__title,
+.oc-update-log-manage-item__title {
+  font-size: 16px;
+}
+
+.oc-update-log-list-item__excerpt,
+.oc-update-log-list-item__meta,
+.oc-update-log-manage-item__excerpt {
+  color: #5f7389;
+  line-height: 1.65;
+}
+
+.oc-update-log-list-item__meta {
+  font-size: 12px;
+}
+
+.oc-update-log-dialog__detail {
+  padding: 24px;
+  overflow: auto;
+}
+
+.oc-update-log-detail {
+  display: grid;
+  gap: 18px;
+}
+
+.oc-update-log-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  color: #5f7389;
+  font-size: 12px;
+}
+
+.oc-update-log-detail__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(59, 116, 201, 0.1);
+  color: #3b74c9;
+  font-weight: 700;
+}
+
+.oc-update-log-detail__title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.oc-update-log-detail__content {
+  min-height: 240px;
+  color: #263d56;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.oc-update-log-manage-list {
+  display: grid;
+  gap: 0;
+  overflow: auto;
+}
+
+.oc-update-log-manage-item {
+  padding: 16px 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid rgba(118, 145, 176, 0.12);
+}
+
+.oc-update-log-manage-item:last-child {
+  border-bottom: 0;
+}
+
+.oc-update-log-manage-item__main {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.oc-update-log-manage-item__main:hover .oc-update-log-manage-item__title {
+  color: #225fb5;
+}
+
+.oc-update-log-form {
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.oc-update-log-form__field {
+  display: grid;
+  gap: 8px;
+}
+
+.oc-update-log-form__field span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4e647d;
+}
+
+.oc-update-log-form__field textarea {
+  resize: vertical;
+  min-height: 240px;
+  font: inherit;
+  line-height: 1.7;
+}
+
+.oc-update-log-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.oc-update-log-dialog__confirm-text,
+.oc-update-log-empty {
+  margin: 0;
+  color: #5f7389;
+  line-height: 1.75;
+}
+
+.oc-update-log-empty {
+  padding: 26px;
+  text-align: center;
+}
+
+.oc-update-log-empty--danger {
+  color: #bf4e5f;
+}
+
+@media (max-width: 960px) {
+  .oc-update-log-dialog__body--split {
+    grid-template-columns: 1fr;
+  }
+
+  .oc-update-log-dialog__panel--wide {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .oc-update-log-dialog {
+    width: calc(100vw - 20px);
+  }
+
+  .oc-update-log-dialog__panel {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .oc-update-log-dialog__header,
+  .oc-update-log-manage-item {
+    grid-template-columns: 1fr;
+  }
+
+  .oc-update-log-dialog__actions,
+  .oc-update-log-form__actions {
+    justify-content: stretch;
+  }
+
+  .oc-update-log-dialog__actions .btn,
+  .oc-update-log-form__actions .btn,
+  .oc-update-log-manage-item .btn {
+    width: 100%;
+  }
+
+  .oc-update-log-detail__title {
+    font-size: 22px;
+  }
+}

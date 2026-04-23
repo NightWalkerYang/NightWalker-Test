@@ -6,8 +6,10 @@ import { issueSessionToken, readSessionToken, verifyPassword } from "./auth.mjs"
 import {
   createBootstrapLocalTenantAdmin,
   assignTenantAgentToUser,
+  createPlatformUpdateLog,
   createBootstrapPlatformAdmin,
   deleteTenantMember,
+  deletePlatformUpdateLog,
   createTenantMember,
   createTenantWithAdmin,
   getBootstrapStatus,
@@ -16,6 +18,7 @@ import {
   assignTenantAgentsToUser,
   listAssignedAgentsForUser,
   listAssignedAgentVisualizationsForUser,
+  listPlatformUpdateLogs,
   listTenants,
   listTenantAgents,
   listTenantMembers,
@@ -28,6 +31,7 @@ import {
   revokePlatformTenantAgents,
   revokeTenantAgentAssignments,
   syncTenantUsageRecords,
+  updatePlatformUpdateLog,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
@@ -199,6 +203,50 @@ const ECHARTS_VIEW_INLINE_SCRIPT_PREFIX = "inline-script";
 const VISUALIZATION_RESOURCE_ATTRIBUTES = new Set(["src", "href", "data", "poster"]);
 const VISUALIZATION_ALIAS_SAFE_PATH_RE = /^[A-Za-z0-9._/-]+$/;
 const VISUALIZATION_SCRIPT_RESOURCE_EXTENSIONS = new Set([".js", ".mjs", ".cjs"]);
+const VISUALIZATION_CSS_RESOURCE_EXTENSIONS = new Set([".css"]);
+const VISUALIZATION_GENERIC_RESOURCE_EXTENSIONS = new Set([
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".css",
+  ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".avif",
+  ".ico",
+  ".bmp",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".m4a",
+  ".mp4",
+  ".webm",
+  ".mov",
+  ".glb",
+  ".gltf",
+  ".bin",
+  ".hdr",
+  ".exr",
+  ".ktx2",
+  ".basis",
+  ".obj",
+  ".mtl",
+  ".fbx",
+  ".stl",
+  ".dae",
+  ".ply",
+  ".wasm",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
+  ".html",
+]);
 const EXECUTABLE_SCRIPT_TYPES = new Set([
   "",
   "module",
@@ -243,7 +291,7 @@ function isExecutableInlineScript(node) {
   return isExecutableScriptType(readAttributeValue(node, "type"));
 }
 
-function readScriptText(node) {
+function readNodeText(node) {
   if (!Array.isArray(node?.childNodes) || node.childNodes.length === 0) {
     return "";
   }
@@ -256,9 +304,25 @@ function readScriptText(node) {
       ) {
         return String(child.value || "");
       }
-      return readScriptText(child);
+      return readNodeText(child);
     })
     .join("");
+}
+
+function readScriptText(node) {
+  return readNodeText(node);
+}
+
+function writeNodeText(node, textContent) {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+  node.childNodes = [
+    {
+      nodeName: "#text",
+      value: String(textContent || ""),
+    },
+  ];
 }
 
 function createVisualizationAssetSubdir(visualizationFileName) {
@@ -300,6 +364,26 @@ function normalizeVisualizationRelativePath(resourcePath) {
   return path.posix.normalize(String(resourcePath || "").trim()).replace(/^(\.\/)+/, "");
 }
 
+function normalizeVisualizationResourceBaseDir(resourceBaseDir) {
+  const normalized = normalizeVisualizationRelativePath(resourceBaseDir);
+  if (!normalized || normalized === ".") {
+    return "";
+  }
+  return normalized.replace(/\/+$/, "");
+}
+
+function resolveVisualizationRelativeResourcePath(resourceHref, context) {
+  const { path: hrefPath } = splitHrefSuffix(resourceHref);
+  const normalizedHrefPath = normalizeVisualizationRelativePath(hrefPath);
+  if (!normalizedHrefPath) {
+    return "";
+  }
+  const baseDir = normalizeVisualizationResourceBaseDir(context?.resourceBaseDir || "");
+  return normalizeVisualizationRelativePath(
+    baseDir ? path.posix.join(baseDir, normalizedHrefPath) : normalizedHrefPath,
+  );
+}
+
 function needsVisualizationResourceAlias(resourcePath) {
   const normalizedPath = normalizeVisualizationRelativePath(resourcePath);
   if (!normalizedPath) {
@@ -319,6 +403,7 @@ function createVisualizationRewriteContext(
   generatedScriptDir,
   visualizationFileName,
   visualizationHrefMap = new Map(),
+  resourceBaseDir = "",
 ) {
   const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
   return {
@@ -329,6 +414,14 @@ function createVisualizationRewriteContext(
     workspaceRootDir: path.dirname(generatedScriptDir),
     visualizationHrefMap,
     resourceAliasHrefMap: new Map(),
+    resourceBaseDir: normalizeVisualizationResourceBaseDir(resourceBaseDir),
+  };
+}
+
+function createVisualizationNestedRewriteContext(context, resourcePath) {
+  return {
+    ...context,
+    resourceBaseDir: normalizeVisualizationResourceBaseDir(path.posix.dirname(resourcePath)),
   };
 }
 
@@ -365,7 +458,7 @@ function materializeVisualizationResourceAlias(resourceHref, context) {
     return "";
   }
   const { path: hrefPath, suffix } = splitHrefSuffix(normalizedHref);
-  const normalizedResourcePath = normalizeVisualizationRelativePath(hrefPath);
+  const normalizedResourcePath = resolveVisualizationRelativeResourcePath(hrefPath, context);
   if (!normalizedResourcePath) {
     return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
   }
@@ -374,7 +467,7 @@ function materializeVisualizationResourceAlias(resourceHref, context) {
     return `${cachedAliasHref}${suffix}`;
   }
 
-  const sourcePath = path.resolve(context.generatedScriptDir, hrefPath);
+  const sourcePath = path.resolve(context.generatedScriptDir, normalizedResourcePath);
   if (!isPathInsideRoot(sourcePath, context.workspaceRootDir)) {
     return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
   }
@@ -398,9 +491,18 @@ function materializeVisualizationResourceAlias(resourceHref, context) {
 
   const extension = path.extname(normalizedResourcePath).toLowerCase();
   const sourceBuffer = fs.readFileSync(sourcePath);
+  const nestedContext = createVisualizationNestedRewriteContext(context, normalizedResourcePath);
   const outputBuffer = VISUALIZATION_SCRIPT_RESOURCE_EXTENSIONS.has(extension)
-    ? Buffer.from(rewriteVisualizationScriptContent(sourceBuffer.toString("utf8"), context), "utf8")
-    : sourceBuffer;
+    ? Buffer.from(
+        rewriteVisualizationScriptContent(sourceBuffer.toString("utf8"), nestedContext),
+        "utf8",
+      )
+    : VISUALIZATION_CSS_RESOURCE_EXTENSIONS.has(extension)
+      ? Buffer.from(
+          rewriteVisualizationCssContent(sourceBuffer.toString("utf8"), nestedContext),
+          "utf8",
+        )
+      : sourceBuffer;
 
   fs.mkdirSync(context.generatedPathRoot, { recursive: true });
   fs.writeFileSync(path.join(context.generatedPathRoot, aliasFileName), outputBuffer);
@@ -416,7 +518,8 @@ function resolveVisualizationResourceHref(resourceHref, context, options = {}) {
     return normalizedHref;
   }
   const { path: hrefPath, suffix } = splitHrefSuffix(normalizedHref);
-  const targetFileName = path.posix.basename(hrefPath);
+  const resolvedResourcePath = resolveVisualizationRelativeResourcePath(hrefPath, context);
+  const targetFileName = path.posix.basename(resolvedResourcePath || hrefPath);
   if (
     targetFileName.toLowerCase().endsWith(".html") &&
     context.visualizationHrefMap instanceof Map &&
@@ -424,10 +527,10 @@ function resolveVisualizationResourceHref(resourceHref, context, options = {}) {
   ) {
     return `${context.visualizationHrefMap.get(targetFileName)}${suffix}`;
   }
-  if (options.forceAlias || needsVisualizationResourceAlias(hrefPath)) {
+  if (options.forceAlias || needsVisualizationResourceAlias(resolvedResourcePath || hrefPath)) {
     return materializeVisualizationResourceAlias(normalizedHref, context);
   }
-  return buildWorkspaceAssetHref(context.workspaceBaseHref, normalizedHref);
+  return buildWorkspaceAssetHref(context.workspaceBaseHref, resolvedResourcePath || normalizedHref);
 }
 
 function isVisualizationNavigationHref(resourceHref, context) {
@@ -435,8 +538,9 @@ function isVisualizationNavigationHref(resourceHref, context) {
   if (!normalizedHref || isAbsoluteOrSpecialHref(normalizedHref)) {
     return false;
   }
-  const { path: hrefPath } = splitHrefSuffix(normalizedHref);
-  const targetFileName = path.posix.basename(hrefPath);
+  const targetFileName = path.posix.basename(
+    resolveVisualizationRelativeResourcePath(normalizedHref, context) || normalizedHref,
+  );
   return (
     targetFileName.toLowerCase().endsWith(".html") &&
     context.visualizationHrefMap instanceof Map &&
@@ -468,12 +572,64 @@ function upsertNodeAttribute(node, attributeName, attributeValue) {
   });
 }
 
+function isLikelyVisualizationResourceLiteral(value) {
+  const normalizedValue = String(value || "").trim();
+  if (!normalizedValue || isAbsoluteOrSpecialHref(normalizedValue) || /\s/.test(normalizedValue)) {
+    return false;
+  }
+  const { path: hrefPath } = splitHrefSuffix(normalizedValue);
+  if (!hrefPath) {
+    return false;
+  }
+  if (hrefPath.endsWith("/")) {
+    return hrefPath.startsWith("./") || hrefPath.startsWith("../") || hrefPath.includes("/");
+  }
+  const extension = path.extname(path.posix.basename(hrefPath)).toLowerCase();
+  return VISUALIZATION_GENERIC_RESOURCE_EXTENSIONS.has(extension);
+}
+
+function rewriteVisualizationCssContent(cssContent, context) {
+  let rewrittenCssContent = String(cssContent || "");
+  rewrittenCssContent = rewrittenCssContent.replace(
+    /url\(\s*(["']?)([^"')]+)\1\s*\)/g,
+    (match, quote, url) => {
+      const normalizedUrl = String(url || "").trim();
+      if (!normalizedUrl || isAbsoluteOrSpecialHref(normalizedUrl) || normalizedUrl.startsWith("data:")) {
+        return match;
+      }
+      const resolvedHref = resolveVisualizationResourceHref(normalizedUrl, context);
+      return `url(${quote || ""}${resolvedHref}${quote || ""})`;
+    },
+  );
+  rewrittenCssContent = rewrittenCssContent.replace(
+    /(@import\s+(?:url\(\s*)?)(['"])([^'"]+)\2(\s*\)?)/g,
+    (match, prefix, quote, url, suffix) => {
+      const normalizedUrl = String(url || "").trim();
+      if (!normalizedUrl || isAbsoluteOrSpecialHref(normalizedUrl) || normalizedUrl.startsWith("data:")) {
+        return match;
+      }
+      return `${prefix}${quote}${resolveVisualizationResourceHref(normalizedUrl, context)}${quote}${suffix}`;
+    },
+  );
+  return rewrittenCssContent;
+}
+
 function rewriteVisualizationScriptContent(scriptContent, context) {
   let rewrittenScriptContent = String(scriptContent || "");
   const rewriteQuotedUrl = (pattern, prefixTransformer = null) =>
     rewrittenScriptContent.replace(pattern, (match, prefix, quote, url) => {
       const isVisualizationNavigation = isVisualizationNavigationHref(url, context);
       const resolvedHref = resolveVisualizationResourceHref(url, context);
+      const rewrittenPrefix =
+        typeof prefixTransformer === "function"
+          ? prefixTransformer(prefix, isVisualizationNavigation)
+          : prefix;
+      return `${rewrittenPrefix}${quote}${resolvedHref}${quote}`;
+    });
+  const rewriteQuotedModuleUrl = (pattern, prefixTransformer = null) =>
+    rewrittenScriptContent.replace(pattern, (match, prefix, quote, url) => {
+      const isVisualizationNavigation = isVisualizationNavigationHref(url, context);
+      const resolvedHref = resolveVisualizationResourceHref(url, context, { forceAlias: true });
       const rewrittenPrefix =
         typeof prefixTransformer === "function"
           ? prefixTransformer(prefix, isVisualizationNavigation)
@@ -505,8 +661,28 @@ function rewriteVisualizationScriptContent(scriptContent, context) {
     (prefix, isVisualizationNavigation) =>
       isVisualizationNavigation ? "window.top.location = " : prefix,
   );
+  rewrittenScriptContent = rewriteQuotedModuleUrl(
+    /((?:import|export)\s+[^'"]*?\sfrom\s*)(['"])([^'"]+)\2/g,
+  );
+  rewrittenScriptContent = rewriteQuotedModuleUrl(/(\bimport\s*)(['"])([^'"]+)\2/g);
+  rewrittenScriptContent = rewriteQuotedModuleUrl(/(\bimport\s*\(\s*)(['"])([^'"]+)\2/g);
+  rewrittenScriptContent = rewriteQuotedModuleUrl(
+    /(\bnew\s+(?:Worker|SharedWorker)\s*\(\s*)(['"])([^'"]+)\2/g,
+  );
+  rewrittenScriptContent = rewriteQuotedUrl(
+    /(\bnew\s+URL\s*\(\s*)(['"])([^'"]+)\2(?=\s*,\s*import\.meta\.url\s*\))/g,
+  );
   rewrittenScriptContent = rewriteQuotedUrl(/((?:[\w$]+\.)+href\s*=\s*)(['"])([^'"]+)\2/g);
   rewrittenScriptContent = rewriteQuotedUrl(/((?:[\w$]+\.)+src\s*=\s*)(['"])([^'"]+)\2/g);
+  rewrittenScriptContent = rewrittenScriptContent.replace(
+    /(['"])([^"'\\\r\n]+)\1/g,
+    (match, quote, url) => {
+      if (!isLikelyVisualizationResourceLiteral(url)) {
+        return match;
+      }
+      return `${quote}${resolveVisualizationResourceHref(url, context)}${quote}`;
+    },
+  );
 
   return rewrittenScriptContent;
 }
@@ -538,6 +714,10 @@ function rewriteVisualizationHtml(
         attr.value = rewriteVisualizationScriptContent(attr.value, context);
         continue;
       }
+      if (attributeName === "style") {
+        attr.value = rewriteVisualizationCssContent(attr.value, context);
+        continue;
+      }
       if (!VISUALIZATION_RESOURCE_ATTRIBUTES.has(attributeName)) {
         continue;
       }
@@ -562,6 +742,13 @@ function rewriteVisualizationHtml(
   const visit = (node) => {
     if (node?.content) {
       visit(node.content);
+    }
+    if (
+      String(node?.tagName || "")
+        .trim()
+        .toLowerCase() === "style"
+    ) {
+      writeNodeText(node, rewriteVisualizationCssContent(readNodeText(node), context));
     }
     rewriteAttributes(node);
     if (!Array.isArray(node?.childNodes) || node.childNodes.length === 0) {
@@ -869,6 +1056,117 @@ export function createTenantPlatformRouter(deps) {
           localLicense,
         },
       });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/changelogs") {
+      const session = requireSession(request, response, deps);
+      if (
+        !session ||
+        !requireRole(request, response, session, ["platform_admin", "tenant_admin", "member"])
+      ) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listPlatformUpdateLogs(deps.db),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/changelogs") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const updateLog = createPlatformUpdateLog(deps.db, {
+          versionLabel: body.versionLabel,
+          title: body.title,
+          content: body.content,
+          createdByUserId: session.userId,
+          createdByUsername: session.username,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.update_log.create",
+          resourceType: "update_log",
+          resourceId: updateLog?.id || null,
+          payloadJson: {
+            versionLabel: updateLog?.versionLabel || null,
+            title: updateLog?.title || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: updateLog });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "PUT" && relativePath === "/platform/changelogs") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const updateLog = updatePlatformUpdateLog(deps.db, {
+          id: body.id,
+          versionLabel: body.versionLabel,
+          title: body.title,
+          content: body.content,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.update_log.update",
+          resourceType: "update_log",
+          resourceId: updateLog?.id || String(body.id || "").trim() || null,
+          payloadJson: {
+            versionLabel: updateLog?.versionLabel || null,
+            title: updateLog?.title || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: updateLog });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && relativePath === "/platform/changelogs") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const updateLog = deletePlatformUpdateLog(deps.db, {
+          id: url.searchParams.get("id"),
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.update_log.delete",
+          resourceType: "update_log",
+          resourceId: updateLog?.id || String(url.searchParams.get("id") || "").trim() || null,
+          payloadJson: {
+            versionLabel: updateLog?.versionLabel || null,
+            title: updateLog?.title || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: updateLog });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 

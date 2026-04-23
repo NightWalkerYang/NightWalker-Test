@@ -9,6 +9,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Root-Level Planning Docs
 
 - `ZERO_INTRUSIVE_ECHARTS_ADDITIONS.md`
+- `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md`
 - `ZERO_INTRUSIVE_TENANT_SYSTEM_PLAN.md`
 - `ZERO_INTRUSIVE_KNOWLEDGE_GRAPH_TENANT_PLAN.md`
 
@@ -139,6 +140,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/update-log-dialog.css`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/update-log-dialog.js`
 
 ### Sidecar: Tenant Platform
 
@@ -228,6 +231,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - The native Control UI now supports a public `/echarts-view/?token=...` bridge route with a dedicated static entry page, and tenant members now get a current-member-only `可视化展示` dropdown populated from their assigned Agent workspaces' `Echarts/*_index.html` files. The bridge route resolves a signed token, falls back to the last same-browser token when the query string is missing, and mounts the target workspace HTML inside a full-page iframe, with no placeholder shell. Any executable inline `<script>` blocks are externalized into same-origin generated assets under the target Agent's `Echarts/__openclaw_echarts_view__/...` directory before the iframe loads, relative resource URLs are rewritten to absolute same-origin workspace paths, and any relative JS/JSON/image-like asset names that contain Chinese or other unsafe URL characters are copied to ASCII/hash alias files under that same generated directory before the HTML is served, so the browser no longer 404s on percent-encoded workspace asset names. Same-workspace `*_index.html` links are re-pointed back to the public `/echarts-view/?token=...` route, so the page stays CSP-safe without relying on a `<base>` tag while keeping cross-html navigation inside the supported public bridge.
+- The same public `/echarts-view/` bridge now also rewrites inline style blocks, `style=` attributes, aliased CSS files, module-import specifiers, `dynamic import(...)`, worker entry URLs, and `new URL(..., import.meta.url)` relative assets against the original workspace file location instead of the generated alias directory, so AI-generated 3D/particle dashboards with bundled module graphs and local style/image/model assets are far less likely to white-screen after the zero-intrusive rewrite step.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Platform-admin Agent allocation now opens a tenant-scoped wide multi-select dialog aligned with the tenant-admin assignment flow: it first loads the tenant's existing Agents, hides already assigned catalog Agents, supports per-Agent multi-select plus select-all, and submits the remaining catalog Agents in one batch while reusing a shared description / rate / initial-points payload for that batch.
 - Platform-admin Agent allocation now also supports a tenant-scoped `撤回分配` dialog with per-Agent multi-select, select-all, and an in-page confirmation modal. Revoking tenant-level Agents now marks the matching `tenant_agents` rows inactive and simultaneously invalidates related `user_agent_assignments`, so tenant-admin assignment lists, member Agent lists, and stale usage-sync calls stop accepting revoked Agents without deleting history.
@@ -242,6 +246,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tenant members now get a short `已经是新的会话了` toast instead of generating another unsent draft session when they click `新建会话` while already in a brand-new draft chat.
 - Platform-admin identity and logout status now occupy the native topbar search slot globally across the root control UI.
 - Tenant-admin and tenant-member identity and logout status now occupy that same native topbar search slot on their native control-shell views, and role-scoped CSS plus runtime markers force their sidebar/footer down to only the injected management or Agent entry plus the version block.
+- Logged-in platform admins, tenant admins, and tenant members can now click the native right-bottom `版本` utility item to open a zero-intrusive update-log history dialog. The latest published entry auto-pops once per browser/user signature after login, while platform admins see extra `新建更新` and `修改` actions that open dedicated management dialogs for creating, editing, and deleting entries backed by the tenant sidecar SQLite store.
 - Tenant platform entry now rescans late-rendered native shell nodes so topbar and sidebar role-trimming still applies after Control UI rerenders.
 - Tenant-admin shell trimming now keeps only the injected `管理` / `Agent` / `统计` dropdowns plus the version block, while local-edition tenant API calls retry bootstrap and fall back across loopback/base-url candidates to avoid transient `Failed to fetch` startup errors.
 - Tenant-admin shell now also sets a role-scoped root attribute and uses injected CSS to force-hide all native sidebar sections outside the injected `管理` / `Agent` / `统计` groups, avoiding native shell rerender leaks.
@@ -250,7 +255,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tenant Agent assignment now opens a wide multi-select dialog with select-all support, hides already assigned Agents from the picker, and submits the selected Agent ids in one batch so members can receive several new Agents at once without duplicate choices.
 - Tenant-admin Agent assignment now opens a member-scoped `撤回分配` dialog that lists the selected member's assigned Agents with per-Agent multi-select and select-all; clicking `下一步` now opens an in-page confirmation modal before the revoke request is sent, and the sidecar still marks matching `user_agent_assignments` rows inactive so member Agent lists and assignment counts stay in sync without deleting history. The display name resolution now prefers catalog names, then assignment descriptions, instead of surfacing raw placeholder values such as `not_found`.
 - File-card parsing now accepts absolute and relative `workspace-<agentId>/...` paths, normalizes them to agent-workspace scope, and keeps download-card behavior compatible with derived member workspaces.
-- The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, trims the sidebar down to the native chat section only, hides assistant avatars (including branded `SPTC` logo avatars), and locks the model/session controls.
+- The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, forces that session model to `openai/gpt-5.4`, filters the route-scoped model catalog down to GPT-only entries, strips stale non-GPT history model badges, trims the sidebar down to the native chat section only, hides assistant avatars (including branded `SPTC` logo avatars), and locks the model/session controls.
 - A non-Docker local runtime package can now be staged with prebuilt gateway assets, the tenant sidecar, launch scripts, runtime env templates, and local-license bootstrap wiring.
 - The non-Docker local runtime package now includes a customer-facing deployment guide alongside the operator/runtime templates.
 - The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a portable baseline config seeded from the real deployment shape.
