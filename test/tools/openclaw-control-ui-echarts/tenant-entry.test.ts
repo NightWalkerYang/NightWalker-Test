@@ -791,6 +791,72 @@ describe("zero-intrusive tenant entry", () => {
     expect(dialog?.hasAttribute("open") || dialog?.open).toBe(true);
     expect(dialog?.textContent).toContain("更新日志展示上线");
     expect(dialog?.textContent).toContain("登录后自动弹窗");
+    expect(dialog?.textContent).toContain('点击页面左下角"版本"可打开更新日志');
+    const createButton = document.querySelector("[data-oc-update-log-open-create]");
+    const manageButton = document.querySelector("[data-oc-update-log-open-manage]");
+    expect(createButton instanceof HTMLButtonElement ? createButton.hidden : false).toBe(true);
+    expect(manageButton instanceof HTMLButtonElement ? manageButton.hidden : false).toBe(true);
+    expect(createButton?.textContent ?? "").toBe("");
+    expect(manageButton?.textContent ?? "").toBe("");
+  });
+
+  it("keeps update-log management actions hidden for members", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "member-user-id",
+        tenantId: "tenant-alpha",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.23</a>
+      </div>
+    `;
+    stubUpdateLogCrud([
+      {
+        id: "update-1",
+        versionLabel: "v2026.4.23",
+        title: "更新日志展示上线",
+        content: "1. 登录后自动弹窗。\n2. 支持右下角版本查看历史。",
+        excerpt: "1. 登录后自动弹窗。 2. 支持右下角版本查看历史。",
+        createdByUsername: "platform-root",
+        publishedAt: "2026-04-23T07:00:00.000Z",
+        createdAt: "2026-04-23T07:00:00.000Z",
+        updatedAt: "2026-04-23T07:00:00.000Z",
+      },
+    ]);
+
+    bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
+
+    const versionLink = document.querySelector("[data-oc-utility-version]");
+    versionLink?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const dialog = document.querySelector("[data-oc-update-log-history-dialog]");
+    expect(dialog?.hasAttribute("open") || dialog?.open).toBe(true);
+    expect(dialog?.textContent).toContain('点击页面左下角"版本"可打开更新日志');
+    expect(dialog?.textContent).not.toContain("新建更新");
+    expect(dialog?.textContent).not.toContain("修改");
+    const createButton = document.querySelector("[data-oc-update-log-open-create]");
+    const manageButton = document.querySelector("[data-oc-update-log-open-manage]");
+    expect(createButton instanceof HTMLButtonElement ? createButton.hidden : false).toBe(true);
+    expect(manageButton instanceof HTMLButtonElement ? manageButton.hidden : false).toBe(true);
+    expect(createButton?.textContent ?? "").toBe("");
+    expect(manageButton?.textContent ?? "").toBe("");
   });
 
   it("lets platform admins create, edit, and delete update logs from the version dialog", async () => {
@@ -841,6 +907,7 @@ describe("zero-intrusive tenant entry", () => {
 
     const historyDialog = document.querySelector("[data-oc-update-log-history-dialog]");
     expect(historyDialog?.textContent).toContain("旧版更新");
+    expect(historyDialog?.textContent).toContain('点击页面左下角"版本"可打开更新日志');
     expect(historyDialog?.textContent).toContain("新建更新");
     expect(historyDialog?.textContent).toContain("修改");
 

@@ -12,6 +12,7 @@ const DELETE_DIALOG_SELECTOR = "[data-oc-update-log-delete-dialog]";
 const HISTORY_SEARCH_SELECTOR = "[data-oc-update-log-history-search]";
 const MANAGE_SEARCH_SELECTOR = "[data-oc-update-log-manage-search]";
 const SEEN_STORAGE_KEY = "openclaw:tenant-platform:update-log-seen:v1";
+const HISTORY_DIALOG_GUIDE_TEXT = '点击页面左下角"版本"可打开更新日志。';
 
 function createInitialState() {
   return {
@@ -592,17 +593,19 @@ function renderHistoryDialog() {
   if (subtitle instanceof HTMLElement) {
     const versionLabel = state.footerVersionLabel || resolveFooterVersionLabel();
     subtitle.textContent = versionLabel
-      ? `当前入口：${versionLabel}。点击列表可查看历次更新。`
-      : "点击列表可查看历次更新。";
+      ? `当前入口：${versionLabel}。点击列表可查看历次更新。${HISTORY_DIALOG_GUIDE_TEXT}`
+      : `点击列表可查看历次更新。${HISTORY_DIALOG_GUIDE_TEXT}`;
   }
 
   const createButton = getRoot().querySelector("[data-oc-update-log-open-create]");
   const manageButton = getRoot().querySelector("[data-oc-update-log-open-manage]");
   if (createButton instanceof HTMLButtonElement) {
     createButton.hidden = !canManage;
+    createButton.textContent = canManage ? "新建更新" : "";
   }
   if (manageButton instanceof HTMLButtonElement) {
     manageButton.hidden = !canManage;
+    manageButton.textContent = canManage ? "修改" : "";
   }
 
   const searchInput = getRoot().querySelector(HISTORY_SEARCH_SELECTOR);
