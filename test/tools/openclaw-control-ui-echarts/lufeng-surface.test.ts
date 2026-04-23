@@ -81,9 +81,8 @@ describe("lufeng public chat surface", () => {
           sessions: [
             {
               key: "agent:subotech-finance:lufeng",
-              modelProvider: "zhipu",
-              providerOverride: "zhipu",
-              model: "glm-5",
+              modelProvider: "cleannetworkspace",
+              model: "gpt-5.4",
             },
           ],
         };
@@ -91,6 +90,14 @@ describe("lufeng public chat surface", () => {
       if (method === "chat.history") {
         return {
           messages: [
+            {
+              role: "assistant",
+              provider: "volcengine-plan",
+              model: "ark-code-latest",
+              errorMessage:
+                "400 Your account (2106283101) does not have a valid coding plan subscription, or your subscription has expired.",
+              content: [],
+            },
             { role: "assistant", model: "glm-5", content: [{ type: "text", text: "旧回答" }] },
             {
               role: "assistant",
@@ -120,13 +127,20 @@ describe("lufeng public chat surface", () => {
       sessions: [
         {
           key: "agent:subotech-finance:lufeng",
-          modelProvider: "zhipu",
-          providerOverride: "zhipu",
-          model: "glm-5",
+          modelProvider: "cleannetworkspace",
+          model: "gpt-5.4",
         },
       ],
     };
     app.chatMessages = [
+      {
+        role: "assistant",
+        provider: "volcengine-plan",
+        model: "ark-code-latest",
+        errorMessage:
+          "400 Your account (2106283101) does not have a valid coding plan subscription, or your subscription has expired.",
+        content: [],
+      },
       { role: "assistant", model: "glm-5", content: [{ type: "text", text: "旧回答" }] },
       {
         role: "assistant",
@@ -134,6 +148,8 @@ describe("lufeng public chat surface", () => {
         content: [{ type: "text", text: "新回答" }],
       },
     ];
+    app.lastError =
+      "400 Your account (2106283101) does not have a valid coding plan subscription, or your subscription has expired.";
     app.requestUpdate = requestUpdate;
     document.body.append(app);
 
@@ -216,6 +232,7 @@ describe("lufeng public chat surface", () => {
         content: [{ type: "text", text: "新回答" }],
       },
     ]);
+    expect(app.lastError).toBeNull();
 
     const modelsResult = await app.client.request("models.list", {});
     expect(modelsResult).toEqual({

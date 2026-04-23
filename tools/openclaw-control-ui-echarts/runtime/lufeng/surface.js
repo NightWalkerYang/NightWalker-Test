@@ -18,6 +18,8 @@ const LUFENG_PINNED_MODEL_ENTRY = {
   name: "GPT-5.4",
   provider: LUFENG_PINNED_MODEL_PROVIDER,
 };
+const LUFENG_STALE_STARTUP_ERROR_PATTERN =
+  /does not have a valid coding plan subscription|subscription has expired/i;
 
 function ensureStyle() {
   let link = document.head.querySelector(`[${STYLE_ATTR}]`);
@@ -242,6 +244,51 @@ function isPinnedLufengModel(value) {
   return normalized === LUFENG_MODEL_VALUE || normalized === "gpt-5.4";
 }
 
+function extractLufengMessageText(message) {
+  if (!message || typeof message !== "object") {
+    return "";
+  }
+  if (typeof message.errorMessage === "string" && message.errorMessage.trim()) {
+    return message.errorMessage.trim();
+  }
+  if (typeof message.text === "string" && message.text.trim()) {
+    return message.text.trim();
+  }
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((item) =>
+        item && typeof item === "object" && item.type === "text" && typeof item.text === "string"
+          ? item.text.trim()
+          : "",
+      )
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+function isStaleLufengStartupError(message) {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const role = String(message.role || "").trim().toLowerCase();
+  if (role !== "assistant") {
+    return false;
+  }
+  const text = extractLufengMessageText(message);
+  if (!LUFENG_STALE_STARTUP_ERROR_PATTERN.test(text)) {
+    return false;
+  }
+  const provider = String(message.provider || message.modelProvider || "").trim().toLowerCase();
+  const model = String(message.model || "").trim().toLowerCase();
+  return (
+    provider === "volcengine-plan" ||
+    provider === "byteplus-plan" ||
+    model === "ark-code-latest" ||
+    model === "volcengine-plan/ark-code-latest"
+  );
+}
+
 function isAllowedLufengModelValue(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) {
@@ -322,6 +369,9 @@ function sanitizeLufengHistoryMessage(message) {
   if (!message || typeof message !== "object") {
     return message;
   }
+  if (isStaleLufengStartupError(message)) {
+    return null;
+  }
   const role = String(message.role || "").trim().toLowerCase();
   const model = typeof message.model === "string" ? message.model.trim() : "";
   if (role !== "assistant" || !model || model === "gateway-injected") {
@@ -342,7 +392,9 @@ function normalizeLufengChatHistoryResult(result) {
   const messages = Array.isArray(result.messages) ? result.messages : [];
   return {
     ...result,
-    messages: messages.map(sanitizeLufengHistoryMessage),
+    messages: messages
+      .map(sanitizeLufengHistoryMessage)
+      .filter((message) => message && typeof message === "object"),
   };
 }
 
@@ -358,25 +410,6 @@ function normalizeLufengSessionsPatchResult(result) {
       modelProvider: LUFENG_PINNED_MODEL_PROVIDER,
     },
   };
-}
-
-function resolvePinnedLufengModel(app) {
-  const cachedOverride = app?.chatModelOverrides?.[LUFENG_SESSION_KEY];
-  const cachedValue = String(cachedOverride?.value || "").trim();
-  if (cachedValue) {
-    return cachedValue;
-  }
-
-  const activeSession = Array.isArray(app?.sessionsResult?.sessions)
-    ? app.sessionsResult.sessions.find((session) => String(session?.key || "").trim() === LUFENG_SESSION_KEY)
-    : null;
-  const sessionModel = String(activeSession?.model || "").trim();
-  if (!sessionModel) {
-    return "";
-  }
-  const sessionProvider =
-    String(activeSession?.modelProvider || activeSession?.providerOverride || "").trim();
-  return sessionProvider ? `${sessionProvider}/${sessionModel}` : sessionModel;
 }
 
 function setPinnedLufengModelOverride(app, override) {
@@ -493,17 +526,28 @@ function syncLufengChatMessages(app) {
     return false;
   }
   let changed = false;
-  const next = current.map((message) => {
-    const normalized = sanitizeLufengHistoryMessage(message);
-    if (normalized !== message) {
-      changed = true;
-    }
-    return normalized;
-  });
+  const next = current
+    .map((message) => {
+      const normalized = sanitizeLufengHistoryMessage(message);
+      if (normalized !== message) {
+        changed = true;
+      }
+      return normalized;
+    })
+    .filter((message) => message && typeof message === "object");
   if (!changed) {
     return false;
   }
   app.chatMessages = next;
+  return true;
+}
+
+function syncLufengLastError(app) {
+  const current = String(app?.lastError || "").trim();
+  if (!current || !LUFENG_STALE_STARTUP_ERROR_PATTERN.test(current)) {
+    return false;
+  }
+  app.lastError = null;
   return true;
 }
 
@@ -514,7 +558,8 @@ function syncLufengAppState(app) {
   const changedCatalog = syncLufengChatModelCatalog(app);
   const changedSessions = syncLufengSessionsState(app);
   const changedMessages = syncLufengChatMessages(app);
-  const changed = changedCatalog || changedSessions || changedMessages;
+  const changedError = syncLufengLastError(app);
+  const changed = changedCatalog || changedSessions || changedMessages || changedError;
   if (changed && typeof app.requestUpdate === "function") {
     app.requestUpdate();
   }
@@ -527,7 +572,7 @@ async function ensurePinnedLufengModel(app) {
   if (app.__openclawLufengModelSyncPending) {
     return;
   }
-  if (isPinnedLufengModel(resolvePinnedLufengModel(app))) {
+  if (app.__openclawLufengModelPinnedFor === app.client) {
     return;
   }
   if (!app.client || typeof app.client.request !== "function") {
@@ -546,6 +591,7 @@ async function ensurePinnedLufengModel(app) {
       key: LUFENG_SESSION_KEY,
       model: LUFENG_MODEL_VALUE,
     });
+    app.__openclawLufengModelPinnedFor = app.client;
   } catch {
     setPinnedLufengModelOverride(app, previousOverride);
   } finally {
