@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyLufengPublicBootstrap,
@@ -63,5 +64,15 @@ describe("lufeng public bootstrap", () => {
       firstPass.indexOf("./assets/index-realhash.js"),
     );
     expect(secondPass.match(/data-openclaw-lufeng-bootstrap/g)).toHaveLength(1);
+  });
+
+  it("keeps the shipped preboot script aligned with the isolated lufeng session", () => {
+    const preboot = readFileSync(
+      "tools/openclaw-control-ui-echarts/runtime/lufeng/preboot.js",
+      "utf8",
+    );
+
+    expect(preboot).toContain('const SESSION_KEY = "agent:subotech-finance:lufeng";');
+    expect(preboot).not.toContain('const SESSION_KEY = "agent:subotech-finance:main";');
   });
 });

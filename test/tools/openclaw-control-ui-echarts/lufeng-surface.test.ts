@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe("lufeng public chat surface", () => {
-  it("locks the native app to chat, keeps an isolated finance session, and trims the sidebar", () => {
+  it("locks the native app to chat, keeps an isolated finance session, pins gpt-5.4, and trims the sidebar", async () => {
     window.history.replaceState({}, "", "/lufeng");
     vi.stubGlobal("setInterval", vi.fn(() => 1));
 
@@ -61,12 +61,84 @@ describe("lufeng public chat surface", () => {
       app.sessionKey = next.sessionKey;
     });
     const loadAssistantIdentity = vi.fn(async () => {});
+    const request = vi.fn(async (method) => {
+      if (method === "sessions.patch") {
+        return { ok: true };
+      }
+      if (method === "models.list") {
+        return {
+          models: [
+            { id: "ark-code-latest", name: "Coding Plan", provider: "volcengine-plan" },
+            { id: "glm-5", name: "GLM-5", provider: "zhipu" },
+            { id: "gpt-5.4", name: "GPT-5.4", provider: "openai" },
+            { id: "gpt-5-mini", name: "GPT-5 Mini", provider: "openai" },
+          ],
+        };
+      }
+      if (method === "sessions.list") {
+        return {
+          defaults: { modelProvider: "volcengine-plan", model: "ark-code-latest" },
+          sessions: [
+            {
+              key: "agent:subotech-finance:lufeng",
+              modelProvider: "zhipu",
+              providerOverride: "zhipu",
+              model: "glm-5",
+            },
+          ],
+        };
+      }
+      if (method === "chat.history") {
+        return {
+          messages: [
+            { role: "assistant", model: "glm-5", content: [{ type: "text", text: "旧回答" }] },
+            {
+              role: "assistant",
+              model: "openai/gpt-5.4",
+              content: [{ type: "text", text: "新回答" }],
+            },
+          ],
+          thinkingLevel: null,
+        };
+      }
+      return {};
+    });
+    const requestUpdate = vi.fn(() => {});
     app.setTab = setTab;
     app.applySettings = applySettings;
     app.loadAssistantIdentity = loadAssistantIdentity;
+    app.client = { request };
+    app.chatModelOverrides = {};
+    app.chatModelCatalog = [
+      { id: "ark-code-latest", name: "Coding Plan", provider: "volcengine-plan" },
+      { id: "glm-5", name: "GLM-5", provider: "zhipu" },
+      { id: "gpt-5.4", name: "GPT-5.4", provider: "openai" },
+      { id: "gpt-5-mini", name: "GPT-5 Mini", provider: "openai" },
+    ];
+    app.sessionsResult = {
+      defaults: { modelProvider: "volcengine-plan", model: "ark-code-latest" },
+      sessions: [
+        {
+          key: "agent:subotech-finance:lufeng",
+          modelProvider: "zhipu",
+          providerOverride: "zhipu",
+          model: "glm-5",
+        },
+      ],
+    };
+    app.chatMessages = [
+      { role: "assistant", model: "glm-5", content: [{ type: "text", text: "旧回答" }] },
+      {
+        role: "assistant",
+        model: "openai/gpt-5.4",
+        content: [{ type: "text", text: "新回答" }],
+      },
+    ];
+    app.requestUpdate = requestUpdate;
     document.body.append(app);
 
     bootLufengSurface();
+    await Promise.resolve();
 
     expect(document.documentElement.getAttribute("data-oc-lufeng-route")).toBe("true");
     expect(document.body.getAttribute("data-oc-lufeng-route")).toBe("true");
@@ -97,6 +169,11 @@ describe("lufeng public chat surface", () => {
     const modelSelect = document.querySelector('select[data-chat-model-select="true"]');
     expect(modelSelect?.getAttribute("data-oc-lufeng-model")).toBe("locked");
     expect(modelSelect?.disabled).toBe(true);
+    expect(modelSelect?.value).toBe("openai/gpt-5.4");
+    expect([...(modelSelect?.querySelectorAll("option") ?? [])].map((option) => option.textContent)).toEqual([
+      "GPT-5.4 · openai",
+    ]);
+    expect(modelSelect?.getAttribute("title")).toBe("模型已固定为 GPT-5.4 · openai");
     expect(app.tab).toBe("chat");
     expect(app.sessionKey).toBe("agent:subotech-finance:lufeng");
     expect(applySettings).toHaveBeenCalledWith(
@@ -106,5 +183,73 @@ describe("lufeng public chat surface", () => {
       }),
     );
     expect(loadAssistantIdentity).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith("sessions.patch", {
+      key: "agent:subotech-finance:lufeng",
+      model: "openai/gpt-5.4",
+    });
+    expect(app.chatModelOverrides).toEqual({
+      "agent:subotech-finance:lufeng": {
+        kind: "qualified",
+        value: "openai/gpt-5.4",
+      },
+    });
+    expect(app.chatModelCatalog).toEqual([
+      { id: "gpt-5.4", name: "GPT-5.4", provider: "openai" },
+      { id: "gpt-5-mini", name: "GPT-5 Mini", provider: "openai" },
+    ]);
+    expect(app.sessionsResult).toEqual({
+      defaults: { modelProvider: "openai", model: "gpt-5.4" },
+      sessions: [
+        {
+          key: "agent:subotech-finance:lufeng",
+          modelProvider: "openai",
+          providerOverride: "openai",
+          model: "gpt-5.4",
+        },
+      ],
+    });
+    expect(app.chatMessages).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "旧回答" }] },
+      {
+        role: "assistant",
+        model: "openai/gpt-5.4",
+        content: [{ type: "text", text: "新回答" }],
+      },
+    ]);
+
+    const modelsResult = await app.client.request("models.list", {});
+    expect(modelsResult).toEqual({
+      models: [
+        { id: "gpt-5.4", name: "GPT-5.4", provider: "openai" },
+        { id: "gpt-5-mini", name: "GPT-5 Mini", provider: "openai" },
+      ],
+    });
+    const sessionsResult = await app.client.request("sessions.list", {});
+    expect(sessionsResult).toEqual({
+      defaults: { modelProvider: "openai", model: "gpt-5.4" },
+      sessions: [
+        {
+          key: "agent:subotech-finance:lufeng",
+          modelProvider: "openai",
+          providerOverride: "openai",
+          model: "gpt-5.4",
+        },
+      ],
+    });
+    const historyResult = await app.client.request("chat.history", {
+      sessionKey: "agent:subotech-finance:lufeng",
+    });
+    expect(historyResult).toEqual({
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: "旧回答" }] },
+        {
+          role: "assistant",
+          model: "openai/gpt-5.4",
+          content: [{ type: "text", text: "新回答" }],
+        },
+      ],
+      thinkingLevel: null,
+    });
+    expect(requestUpdate).toHaveBeenCalled();
   });
 });

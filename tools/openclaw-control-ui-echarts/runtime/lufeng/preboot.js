@@ -7,7 +7,7 @@
   const rawToken = currentScript?.dataset?.gatewayToken ?? "";
   const ROUTE = "/lufeng";
   const CHAT_ROUTE = "/lufeng/chat";
-  const SESSION_KEY = "agent:subotech-finance:main";
+  const SESSION_KEY = "agent:subotech-finance:lufeng";
 
   const normalizePath = (value) => {
     const raw = String(value ?? "").trim() || "/";
