@@ -660,7 +660,8 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).toContain('/echarts-view/?token=');
     expect(resolveResponse.payload.data.html).not.toContain('href="资金大屏可视化_index.html"');
     expect(resolveResponse.payload.data.html).toContain('target="_top"');
-    expect(resolveResponse.payload.data.html).toContain("window.top.location.href =");
+    expect(resolveResponse.payload.data.html).not.toContain("onclick=");
+    expect(resolveResponse.payload.data.html).toContain("data-openclaw-inline-handler-1");
     expect(resolveResponse.payload.data.html).toContain(
       `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/financial_data.js`,
     );
@@ -690,6 +691,24 @@ describe("tenant platform local edition", () => {
       `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/dashboard_data.json`,
     );
     expect(generatedScriptContent).toContain("document.getElementById('viz').textContent");
+
+    const generatedHandlerScriptMatch = resolveResponse.payload.data.html.match(
+      /<script\b[^>]*src="([^"]*\/workspace-agent-downloads\/[^"]*__openclaw_echarts_view__-[^"]*inline-handler-[^"]+)"[^>]*><\/script>/i,
+    );
+    expect(generatedHandlerScriptMatch).not.toBeNull();
+    const generatedHandlerScriptPath = path.join(
+      visualizationDir,
+      String(generatedHandlerScriptMatch?.[1] || "").replace(
+        new RegExp(
+          `^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+        ),
+        "",
+      ),
+    );
+    expect(fs.existsSync(generatedHandlerScriptPath)).toBe(true);
+    const generatedHandlerScriptContent = fs.readFileSync(generatedHandlerScriptPath, "utf8");
+    expect(generatedHandlerScriptContent).toContain('addEventListener("click"');
+    expect(generatedHandlerScriptContent).toContain("window.top.location.href =");
   });
 
   it("aliases non-ASCII external visualization assets into ASCII workspace files", async () => {
@@ -846,6 +865,235 @@ describe("tenant platform local edition", () => {
     );
     expect(fs.existsSync(generatedJsonPath)).toBe(true);
     expect(path.basename(generatedJsonPath)).toMatch(/^asset-[a-f0-9]{12}\.json$/);
+  });
+
+  it("rewrites module graphs and style assets so AI-generated 3D visualizations stay renderable", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-runtime-spec",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-runtime-spec",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const assignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const visualizationDir = path.join(
+      sandbox.config.configDir,
+      "workspace-agents",
+      String(assignment.derivedAgentId),
+      "Echarts",
+    );
+    fs.mkdirSync(path.join(visualizationDir, "styles"), { recursive: true });
+    fs.mkdirSync(path.join(visualizationDir, "scripts", "helpers"), { recursive: true });
+    fs.mkdirSync(path.join(visualizationDir, "scripts", "workers"), { recursive: true });
+    fs.mkdirSync(path.join(visualizationDir, "scripts", "images"), { recursive: true });
+    fs.mkdirSync(path.join(visualizationDir, "images"), { recursive: true });
+    fs.mkdirSync(path.join(visualizationDir, "models"), { recursive: true });
+
+    fs.writeFileSync(
+      path.join(visualizationDir, "宇宙驾驶舱_index.html"),
+      [
+        "<!doctype html>",
+        "<html>",
+        "  <head>",
+        "    <title>宇宙驾驶舱</title>",
+        '    <link rel="stylesheet" href="./styles/控制舱主题.css">',
+        "    <style>",
+        "      body { background-image: url('./images/背景 星空.png'); }",
+        "    </style>",
+        "  </head>",
+        "  <body>",
+        '    <main id="stage" style="background-image:url(\'./images/背景 星空.png\')">3D 舞台</main>',
+        "    <script type=\"module\">",
+        "      import { mountStage } from './scripts/scene.module.js';",
+        "      mountStage();",
+        "    </script>",
+        "  </body>",
+        "</html>",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "styles", "控制舱主题.css"),
+      [
+        "@import url('./base.css');",
+        "#stage::before {",
+        "  content: '';",
+        "  background-image: url('../images/粒子 背景.png');",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "styles", "base.css"),
+      "#stage { color: #7fd1ff; }",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "scripts", "scene.module.js"),
+      [
+        "import { createStage } from './helpers/create-stage.js';",
+        "const stageWorker = new Worker('./workers/render.worker.js', { type: 'module' });",
+        "const modelUrl = new URL('../models/command-center.glb', import.meta.url);",
+        "const textureUrl = './images/hud-ring.png';",
+        "export function mountStage() {",
+        "  window.__stageAssets = {",
+        "    stage: typeof createStage,",
+        "    worker: Boolean(stageWorker),",
+        "    modelUrl: String(modelUrl),",
+        "    textureUrl,",
+        "  };",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "scripts", "helpers", "create-stage.js"),
+      "export function createStage() { return 'stage'; }",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "scripts", "workers", "render.worker.js"),
+      "self.onmessage = () => self.postMessage('ok');",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "scripts", "images", "hud-ring.png"),
+      "png-placeholder",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "images", "背景 星空.png"),
+      "background-placeholder",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "images", "粒子 背景.png"),
+      "particle-placeholder",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "models", "command-center.glb"),
+      "glb-placeholder",
+      "utf8",
+    );
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-runtime-spec",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const listResponse = await requestJson(baseUrl, "/member/visualizations", {
+      token: memberLogin.payload.data.token,
+    });
+    const cockpitVisualization = listResponse.payload.data.find(
+      (item) => item.visualizationName === "宇宙驾驶舱",
+    );
+    expect(cockpitVisualization).toBeDefined();
+
+    const resolveResponse = await requestJson(
+      baseUrl,
+      `/member/visualizations/resolve?token=${encodeURIComponent(String(cockpitVisualization?.token || ""))}`,
+    );
+    expect(resolveResponse.status).toBe(200);
+    expect(resolveResponse.payload.data.html).toContain("宇宙驾驶舱");
+    expect(resolveResponse.payload.data.html).not.toContain("./images/背景 星空.png");
+    expect(resolveResponse.payload.data.html).not.toContain("./styles/控制舱主题.css");
+
+    const assetPrefix = new RegExp(
+      `^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+    );
+    const generatedInlineModuleMatch = resolveResponse.payload.data.html.match(
+      /<script\b[^>]*src="([^"]*__openclaw_echarts_view__-[^"]*inline-script-[^"]+\.js)"[^>]*><\/script>/i,
+    );
+    expect(generatedInlineModuleMatch).not.toBeNull();
+    const generatedInlineModulePath = path.join(
+      visualizationDir,
+      String(generatedInlineModuleMatch?.[1] || "").replace(assetPrefix, ""),
+    );
+    expect(fs.existsSync(generatedInlineModulePath)).toBe(true);
+    const generatedInlineModuleContent = fs.readFileSync(generatedInlineModulePath, "utf8");
+    expect(generatedInlineModuleContent).not.toContain("./scripts/scene.module.js");
+    expect(generatedInlineModuleContent).toMatch(/asset-[a-f0-9]{12}\.js/);
+
+    const generatedModuleAliasMatch = generatedInlineModuleContent.match(
+      /\/workspace-agent-downloads\/[^"'`]*__openclaw_echarts_view__-[^"'`]*asset-[a-f0-9]{12}\.js/,
+    );
+    expect(generatedModuleAliasMatch).not.toBeNull();
+    const generatedModuleAliasPath = path.join(
+      visualizationDir,
+      String(generatedModuleAliasMatch?.[0] || "").replace(assetPrefix, ""),
+    );
+    expect(fs.existsSync(generatedModuleAliasPath)).toBe(true);
+    const generatedModuleAliasContent = fs.readFileSync(generatedModuleAliasPath, "utf8");
+    expect(generatedModuleAliasContent).not.toContain("./helpers/create-stage.js");
+    expect(generatedModuleAliasContent).not.toContain("new Worker('./workers/render.worker.js'");
+    expect(generatedModuleAliasContent).toMatch(/asset-[a-f0-9]{12}\.js/);
+    expect(generatedModuleAliasContent).toContain(
+      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/models/command-center.glb`,
+    );
+    expect(generatedModuleAliasContent).toContain(
+      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/scripts/images/hud-ring.png`,
+    );
+
+    const generatedCssMatch = resolveResponse.payload.data.html.match(
+      /<link\b[^>]*href="([^"]*__openclaw_echarts_view__-[^"]*asset-[a-f0-9]{12}\.css)"[^>]*>/i,
+    );
+    expect(generatedCssMatch).not.toBeNull();
+    const generatedCssPath = path.join(
+      visualizationDir,
+      String(generatedCssMatch?.[1] || "").replace(assetPrefix, ""),
+    );
+    expect(fs.existsSync(generatedCssPath)).toBe(true);
+    const generatedCssContent = fs.readFileSync(generatedCssPath, "utf8");
+    expect(generatedCssContent).not.toContain("../images/粒子 背景.png");
+    expect(generatedCssContent).not.toContain("./base.css");
+    expect(generatedCssContent).toMatch(/asset-[a-f0-9]{12}\.png/);
+    expect(generatedCssContent).toContain("/workspace-agent-downloads/");
   });
 
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {

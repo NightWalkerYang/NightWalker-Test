@@ -29,6 +29,7 @@ import {
   updateTenantMemberPassword,
   updateTenantMemberStatus,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
+import { rewriteVisualizationHtml } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 
 const cleanupRoots = new Set();
@@ -295,6 +296,70 @@ describe("tenant platform database foundation", () => {
     } finally {
       closeTenantPlatformDb(db);
     }
+  });
+
+  it("externalizes inline HTML handlers so echarts-view modal close buttons stay clickable", () => {
+    const sandbox = createTempSandbox();
+    const visualizationDir = path.join(
+      sandbox.config.configDir,
+      "workspace-agents",
+      "finance",
+      "Echarts",
+    );
+    fs.mkdirSync(visualizationDir, { recursive: true });
+
+    const rewrittenHtml = rewriteVisualizationHtml(
+      [
+        "<!doctype html>",
+        "<html>",
+        "  <body>",
+        '    <div id="modalMask" style="display:block">',
+        '      <button class="modal-close" onclick="closeDrill()">关闭</button>',
+        '      <button class="modal-next" onclick="window.location.href=\'next_index.html\'; return false;">下一页</button>',
+        "    </div>",
+        "    <script>",
+        "      function closeDrill() {",
+        "        document.getElementById('modalMask').style.display = 'none';",
+        "      }",
+        "    </script>",
+        "  </body>",
+        "</html>",
+      ].join("\n"),
+      "/workspace-agent-downloads/finance/Echarts/",
+      visualizationDir,
+      "集团经营分析总览大屏_index.html",
+      new Map([["next_index.html", "/echarts-view/?token=next-token"]]),
+    );
+
+    expect(rewrittenHtml).not.toContain("onclick=");
+    expect(rewrittenHtml).toContain("data-openclaw-inline-handler-1");
+    expect(rewrittenHtml).toContain("data-openclaw-inline-handler-2");
+
+    const assetPrefix = /^\/workspace-agent-downloads\/finance\/Echarts\//;
+    const generatedInlineScriptMatch = rewrittenHtml.match(
+      /<script\b[^>]*src="([^"]*inline-script-[^"]+\.js)"[^>]*><\/script>/i,
+    );
+    expect(generatedInlineScriptMatch).not.toBeNull();
+
+    const generatedHandlerScriptMatch = rewrittenHtml.match(
+      /<script\b[^>]*src="([^"]*inline-handler-[^"]+\.js)"[^>]*><\/script>/i,
+    );
+    expect(generatedHandlerScriptMatch).not.toBeNull();
+
+    const generatedHandlerScriptPath = path.join(
+      visualizationDir,
+      String(generatedHandlerScriptMatch?.[1] || "").replace(assetPrefix, ""),
+    );
+    expect(fs.existsSync(generatedHandlerScriptPath)).toBe(true);
+
+    const generatedHandlerScriptContent = fs.readFileSync(generatedHandlerScriptPath, "utf8");
+    expect(generatedHandlerScriptContent).toContain('addEventListener("click"');
+    expect(generatedHandlerScriptContent).toContain("closeDrill()");
+    expect(generatedHandlerScriptContent).toContain("event.preventDefault()");
+    expect(generatedHandlerScriptContent).toContain("event.stopPropagation()");
+    expect(generatedHandlerScriptContent).toContain(
+      "window.top.location.href = '/echarts-view/?token=next-token'",
+    );
   });
 
   it("updates tenant member limits without breaking current member counts", () => {

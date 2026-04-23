@@ -200,6 +200,8 @@ function buildEchartsViewHref(token) {
 
 const ECHARTS_VIEW_INLINE_SCRIPT_DIR = "__openclaw_echarts_view__";
 const ECHARTS_VIEW_INLINE_SCRIPT_PREFIX = "inline-script";
+const ECHARTS_VIEW_INLINE_HANDLER_PREFIX = "inline-handler";
+const ECHARTS_VIEW_INLINE_HANDLER_MARKER_PREFIX = "data-openclaw-inline-handler";
 const VISUALIZATION_RESOURCE_ATTRIBUTES = new Set(["src", "href", "data", "poster"]);
 const VISUALIZATION_ALIAS_SAFE_PATH_RE = /^[A-Za-z0-9._/-]+$/;
 const VISUALIZATION_SCRIPT_RESOURCE_EXTENSIONS = new Set([".js", ".mjs", ".cjs"]);
@@ -572,6 +574,89 @@ function upsertNodeAttribute(node, attributeName, attributeValue) {
   });
 }
 
+function findFirstHtmlElement(node, tagName) {
+  const normalizedTagName = String(tagName || "").trim().toLowerCase();
+  if (!normalizedTagName || !node || typeof node !== "object") {
+    return null;
+  }
+  const currentTagName = String(node?.tagName || "").trim().toLowerCase();
+  if (currentTagName === normalizedTagName) {
+    return node;
+  }
+  if (node?.content) {
+    const nestedMatch = findFirstHtmlElement(node.content, normalizedTagName);
+    if (nestedMatch) {
+      return nestedMatch;
+    }
+  }
+  if (!Array.isArray(node?.childNodes) || node.childNodes.length === 0) {
+    return null;
+  }
+  for (const child of node.childNodes) {
+    const nestedMatch = findFirstHtmlElement(child, normalizedTagName);
+    if (nestedMatch) {
+      return nestedMatch;
+    }
+  }
+  return null;
+}
+
+function appendVisualizationGeneratedScript(document, scriptHref) {
+  const targetNode =
+    findFirstHtmlElement(document, "body") ||
+    findFirstHtmlElement(document, "html") ||
+    document;
+  if (!Array.isArray(targetNode?.childNodes)) {
+    targetNode.childNodes = [];
+  }
+  const fragment = parse5.parseFragment(
+    `<script src="${String(scriptHref || "").replace(/"/g, "&quot;")}"></script>`,
+  );
+  for (const childNode of Array.isArray(fragment.childNodes) ? fragment.childNodes : []) {
+    childNode.parentNode = targetNode;
+    targetNode.childNodes.push(childNode);
+  }
+}
+
+function indentVisualizationGeneratedScriptBlock(scriptContent, indentSize) {
+  const indent = " ".repeat(Math.max(0, Number(indentSize) || 0));
+  return String(scriptContent || "")
+    .split("\n")
+    .map((line) => `${indent}${line}`)
+    .join("\n");
+}
+
+function createVisualizationInlineHandlerScriptContent(bindings) {
+  const normalizedBindings = Array.isArray(bindings) ? bindings.filter(Boolean) : [];
+  if (normalizedBindings.length === 0) {
+    return "";
+  }
+  return [
+    '"use strict";',
+    ...normalizedBindings.map((binding) =>
+      [
+        "{",
+        `  const element = document.querySelector(${JSON.stringify(`[${binding.markerAttributeName}]`)});`,
+        "  if (element instanceof Element) {",
+        `    element.removeAttribute(${JSON.stringify(binding.markerAttributeName)});`,
+        `    element.addEventListener(${JSON.stringify(binding.eventName)}, function(event) {`,
+        "      const result = (function(event) {",
+        indentVisualizationGeneratedScriptBlock(binding.handlerCode, 8),
+        "      }).call(this, event);",
+        "      if (result === false) {",
+        "        event.preventDefault();",
+        "        event.stopPropagation();",
+        "      }",
+        "      return result;",
+        "    });",
+        "  }",
+        "}",
+      ].join("\n"),
+    ),
+    "",
+  ].join("\n");
+}
+
 function isLikelyVisualizationResourceLiteral(value) {
   const normalizedValue = String(value || "").trim();
   if (!normalizedValue || isAbsoluteOrSpecialHref(normalizedValue) || /\s/.test(normalizedValue)) {
@@ -687,7 +772,7 @@ function rewriteVisualizationScriptContent(scriptContent, context) {
   return rewrittenScriptContent;
 }
 
-function rewriteVisualizationHtml(
+export function rewriteVisualizationHtml(
   html,
   workspaceBaseHref,
   generatedScriptDir,
@@ -702,27 +787,51 @@ function rewriteVisualizationHtml(
     visualizationHrefMap,
   );
   let inlineScriptIndex = 0;
+  const inlineHandlerBindings = [];
 
   const rewriteAttributes = (node) => {
     if (!Array.isArray(node?.attrs) || node.attrs.length === 0) {
       return;
     }
     const nodeName = String(node?.nodeName || "").trim().toLowerCase();
+    const nextAttrs = [];
+    let shouldTargetTop = false;
     for (const attr of node.attrs) {
+      const rawAttributeName = String(attr?.name || "").trim();
       const attributeName = String(attr?.name || "").trim().toLowerCase();
-      if (attributeName.startsWith("on")) {
-        attr.value = rewriteVisualizationScriptContent(attr.value, context);
+      if (attributeName.startsWith("on") && attributeName.length > 2) {
+        const handlerCode = rewriteVisualizationScriptContent(attr.value, context).trim();
+        if (!handlerCode) {
+          continue;
+        }
+        const markerAttributeName =
+          `${ECHARTS_VIEW_INLINE_HANDLER_MARKER_PREFIX}-${inlineHandlerBindings.length + 1}`;
+        inlineHandlerBindings.push({
+          eventName: attributeName.slice(2),
+          handlerCode,
+          markerAttributeName,
+        });
+        nextAttrs.push({
+          name: markerAttributeName,
+          value: "",
+        });
         continue;
       }
+      const nextAttribute = {
+        name: rawAttributeName || attributeName,
+        value: String(attr?.value || ""),
+      };
       if (attributeName === "style") {
-        attr.value = rewriteVisualizationCssContent(attr.value, context);
+        nextAttribute.value = rewriteVisualizationCssContent(attr.value, context);
+        nextAttrs.push(nextAttribute);
         continue;
       }
       if (!VISUALIZATION_RESOURCE_ATTRIBUTES.has(attributeName)) {
+        nextAttrs.push(nextAttribute);
         continue;
       }
       const originalValue = String(attr?.value || "");
-      attr.value = resolveVisualizationResourceHref(
+      nextAttribute.value = resolveVisualizationResourceHref(
         originalValue,
         context,
         {
@@ -734,8 +843,13 @@ function rewriteVisualizationHtml(
         attributeName === "href" &&
         isVisualizationNavigationHref(originalValue, context)
       ) {
-        upsertNodeAttribute(node, "target", "_top");
+        shouldTargetTop = true;
       }
+      nextAttrs.push(nextAttribute);
+    }
+    node.attrs = nextAttrs;
+    if (shouldTargetTop) {
+      upsertNodeAttribute(node, "target", "_top");
     }
   };
 
@@ -800,6 +914,30 @@ function rewriteVisualizationHtml(
   };
 
   visit(document);
+  if (inlineHandlerBindings.length > 0) {
+    const inlineHandlerScriptContent =
+      createVisualizationInlineHandlerScriptContent(inlineHandlerBindings);
+    const inlineHandlerScriptHash = crypto
+      .createHash("sha256")
+      .update(inlineHandlerScriptContent, "utf8")
+      .digest("hex")
+      .slice(0, 12);
+    const inlineHandlerScriptFileName =
+      `${ECHARTS_VIEW_INLINE_HANDLER_PREFIX}-${inlineHandlerScriptHash}.js`;
+    fs.mkdirSync(context.generatedPathRoot, { recursive: true });
+    fs.writeFileSync(
+      path.join(context.generatedPathRoot, inlineHandlerScriptFileName),
+      inlineHandlerScriptContent,
+      "utf8",
+    );
+    appendVisualizationGeneratedScript(
+      document,
+      buildWorkspaceAssetHref(
+        context.workspaceBaseHref,
+        path.posix.join(context.generatedSubdir, inlineHandlerScriptFileName),
+      ),
+    );
+  }
   return parse5.serialize(document);
 }
 
