@@ -41,6 +41,17 @@ function stubVisualizationFetchSequence(sequence = [[]]) {
   );
 }
 
+function createDeferred() {
+  let resolve;
+  const promise = new Promise((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return {
+    promise,
+    resolve,
+  };
+}
+
 function flushAsync() {
   return new Promise((resolve) => window.setTimeout(resolve, 0));
 }
@@ -391,6 +402,65 @@ describe("zero-intrusive tenant entry", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.textContent).toContain("销售数据可视化");
     expect(items[0]?.getAttribute("href")).toContain("echarts-view/?token=");
+  });
+
+  it("deduplicates the visualization menu when concurrent scans finish together", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+
+    const deferred = createDeferred();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => deferred.promise),
+    );
+
+    bootTenantEntry();
+    await flushMicrotasks();
+
+    document
+      .querySelector(".sidebar-nav")
+      ?.append(document.createElement("div"));
+    await flushMicrotasks();
+
+    deferred.resolve({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: [
+          {
+            id: "tenant-agent-1:销售数据可视化_index.html",
+            href: "/echarts-view/?token=member-visualization-token",
+            agentId: "tenant-agent-1",
+            agentName: "苏博泰克财务分析助手",
+            visualizationName: "销售数据可视化",
+            visualizationFileName: "销售数据可视化_index.html",
+            title: "销售数据可视化 · 苏博泰克财务分析助手",
+            token: "member-visualization-token",
+          },
+        ],
+      }),
+    });
+    await flushAsync();
+    await flushMicrotasks();
+
+    const sections = document.querySelectorAll(".oc-member-visualization-section");
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.textContent).toContain("销售数据可视化");
   });
 
   it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {

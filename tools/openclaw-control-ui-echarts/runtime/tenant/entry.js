@@ -340,21 +340,35 @@ function insertVisualizationSection(container, section) {
   container.insertBefore(section, firstSection ?? null);
 }
 
+function listDirectMemberVisualizationSections(container) {
+  if (!(container instanceof HTMLElement)) {
+    return [];
+  }
+  return [...container.querySelectorAll(`:scope > .${MEMBER_VISUALIZATION_SECTION_CLASS}`)].filter(
+    (section) => section instanceof HTMLElement,
+  );
+}
+
 async function syncMemberVisualizationSection(container) {
   if (!(container instanceof HTMLElement)) {
     return;
   }
   const session = readSessionForCurrentView();
   const role = String(session?.session?.role || "");
-  const existing = container.querySelector(`:scope > .${MEMBER_VISUALIZATION_SECTION_CLASS}`);
+  const existingSections = listDirectMemberVisualizationSections(container);
+  const existing = existingSections[0] ?? null;
   if (role !== "member") {
-    existing?.remove();
+    for (const section of existingSections) {
+      section.remove();
+    }
     return;
   }
 
   const sessionKey = readMemberVisualizationSessionKey(session);
   if (!sessionKey) {
-    existing?.remove();
+    for (const section of existingSections) {
+      section.remove();
+    }
     return;
   }
 
@@ -374,22 +388,29 @@ async function syncMemberVisualizationSection(container) {
   }
 
   if (!Array.isArray(visualizations) || visualizations.length === 0) {
-    existing?.remove();
+    for (const section of listDirectMemberVisualizationSections(container)) {
+      section.remove();
+    }
     return;
   }
 
   const links = buildMemberVisualizationLinks(visualizations);
   const signature = getMemberVisualizationSignature(visualizations);
+  const latestExistingSections = listDirectMemberVisualizationSections(container);
+  const latestExisting = latestExistingSections[0] ?? null;
+  for (const duplicateSection of latestExistingSections.slice(1)) {
+    duplicateSection.remove();
+  }
   if (
-    existing instanceof HTMLElement &&
-    existing.getAttribute("data-oc-management-role") === role &&
-    existing.getAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR) === signature
+    latestExisting instanceof HTMLElement &&
+    latestExisting.getAttribute("data-oc-management-role") === role &&
+    latestExisting.getAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR) === signature
   ) {
-    updateManagementSectionState(existing);
+    updateManagementSectionState(latestExisting);
     return;
   }
 
-  existing?.remove();
+  latestExisting?.remove();
   const section = createNavSection(session, {
     className: MEMBER_VISUALIZATION_SECTION_CLASS,
     label: "可视化展示",
