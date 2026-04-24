@@ -176,22 +176,101 @@ function startClock(root) {
   return window.setInterval(update, 1000);
 }
 
+function hasVisiblePanels(manifest, slotKeys = []) {
+  return slotKeys.some((slotKey) => manifest.blocks?.[slotKey]?.visible !== false);
+}
+
+function buildSideColumnWidth(manifest, side) {
+  if (side === "left") {
+    return `minmax(${manifest.layout.leftColumnMin}px, ${manifest.layout.leftColumnMax}px)`;
+  }
+  return `minmax(${manifest.layout.rightColumnMin}px, ${manifest.layout.rightColumnMax}px)`;
+}
+
+function buildMainColumns(manifest) {
+  const hasLeft = hasVisiblePanels(manifest, ["leftTop", "leftBottom"]);
+  const hasRight = hasVisiblePanels(manifest, ["rightTop", "rightBottom"]);
+  const hasScene = manifest.blocks?.scene?.visible !== false;
+  if (hasScene) {
+    const segments = [];
+    if (hasLeft) {
+      segments.push(buildSideColumnWidth(manifest, "left"));
+    }
+    segments.push("minmax(0, 1fr)");
+    if (hasRight) {
+      segments.push(buildSideColumnWidth(manifest, "right"));
+    }
+    return segments.join(" ");
+  }
+  if (hasLeft && hasRight) {
+    return "minmax(0, 1fr) minmax(0, 1fr)";
+  }
+  return "1fr";
+}
+
+function buildFooterColumns(manifest) {
+  const visibleSections = ["timeline", "alerts"]
+    .filter((key) => manifest.blocks?.[key]?.visible !== false)
+    .sort(
+      (left, right) =>
+        (manifest.blocks?.[left]?.order || 0) - (manifest.blocks?.[right]?.order || 0),
+    );
+  if (visibleSections.length <= 1) {
+    return "1fr";
+  }
+  return visibleSections.map((key) => `${manifest.blocks[key].weight}fr`).join(" ");
+}
+
 function applyTheme(root, manifest) {
-  root.style.setProperty("--oc-dashboard-background", manifest.theme.background);
-  root.style.setProperty("--oc-dashboard-surface", manifest.theme.surface);
-  root.style.setProperty("--oc-dashboard-surface-strong", manifest.theme.surfaceStrong);
-  root.style.setProperty("--oc-dashboard-accent", manifest.theme.accent);
-  root.style.setProperty("--oc-dashboard-accent-soft", manifest.theme.accentSoft);
-  root.style.setProperty("--oc-dashboard-success", manifest.theme.success);
-  root.style.setProperty("--oc-dashboard-warning", manifest.theme.warning);
-  root.style.setProperty("--oc-dashboard-danger", manifest.theme.danger);
-  root.style.setProperty("--oc-dashboard-text", manifest.theme.text);
-  root.style.setProperty("--oc-dashboard-muted", manifest.theme.muted);
-  root.style.setProperty("--oc-dashboard-grid", manifest.theme.grid);
+  const variableTargets = [document.documentElement, root];
+  const setVariable = (name, value) => {
+    for (const target of variableTargets) {
+      target.style.setProperty(name, value);
+    }
+  };
+  setVariable("--oc-dashboard-background", manifest.theme.background);
+  setVariable("--oc-dashboard-surface", manifest.theme.surface);
+  setVariable("--oc-dashboard-surface-strong", manifest.theme.surfaceStrong);
+  setVariable("--oc-dashboard-accent", manifest.theme.accent);
+  setVariable("--oc-dashboard-accent-soft", manifest.theme.accentSoft);
+  setVariable("--oc-dashboard-success", manifest.theme.success);
+  setVariable("--oc-dashboard-warning", manifest.theme.warning);
+  setVariable("--oc-dashboard-danger", manifest.theme.danger);
+  setVariable("--oc-dashboard-text", manifest.theme.text);
+  setVariable("--oc-dashboard-muted", manifest.theme.muted);
+  setVariable("--oc-dashboard-grid", manifest.theme.grid);
+  setVariable("--oc-dashboard-font-family", manifest.theme.fontFamily);
+  setVariable("--oc-dashboard-title-font-family", manifest.theme.titleFontFamily);
+  setVariable(
+    "--oc-dashboard-title-letter-spacing",
+    String(manifest.theme.titleLetterSpacing || "0.04em"),
+  );
+  setVariable(
+    "--oc-dashboard-backdrop-opacity",
+    `${Number(manifest.theme.backdropOpacity || 0.34)}`,
+  );
+  setVariable("--oc-dashboard-grid-opacity", `${Number(manifest.theme.gridOpacity || 0.8)}`);
+  setVariable("--oc-dashboard-shell-gap", `${manifest.layout.shellGap}px`);
+  setVariable("--oc-dashboard-shell-padding", manifest.layout.shellPadding);
+  setVariable(
+    "--oc-dashboard-metrics-columns",
+    `repeat(${Math.max(1, Math.min(manifest.layout.metricsColumns, manifest.metrics.length || 1))}, minmax(0, 1fr))`,
+  );
+  setVariable("--oc-dashboard-main-gap", `${manifest.layout.mainGap}px`);
+  setVariable("--oc-dashboard-main-columns", buildMainColumns(manifest));
+  setVariable("--oc-dashboard-panel-gap", `${manifest.layout.panelGap}px`);
+  setVariable("--oc-dashboard-footer-gap", `${manifest.layout.footerGap}px`);
+  setVariable("--oc-dashboard-footer-columns", buildFooterColumns(manifest));
+  setVariable("--oc-dashboard-panel-radius", `${manifest.layout.panelRadius}px`);
+  setVariable("--oc-dashboard-metric-radius", `${manifest.layout.metricRadius}px`);
+  setVariable("--oc-dashboard-scene-overlay-width", `${manifest.layout.sceneOverlayWidth}px`);
+  setVariable("--oc-dashboard-scene-min-height", `${manifest.layout.sceneMinHeight}px`);
 
   const backdrop = root.querySelector(".oc-dashboard-backdrop");
   if (backdrop instanceof HTMLElement && manifest.backgroundImage) {
     backdrop.style.backgroundImage = `linear-gradient(180deg, rgba(4, 11, 22, 0.18), rgba(4, 11, 22, 0.82)), url("${manifest.backgroundImage}")`;
+  } else if (backdrop instanceof HTMLElement) {
+    backdrop.style.backgroundImage = "none";
   }
 }
 
@@ -485,7 +564,8 @@ async function bootParticles(root, manifest) {
 
 function animateDashboard(root) {
   const gsap = globalThis.gsap;
-  if (!gsap?.from) {
+  const manifest = root?.[DASHBOARD_RUNTIME_STATE_KEY]?.manifest;
+  if (!gsap?.from || !manifest || manifest.motion?.level === "off") {
     return;
   }
   gsap.from(
@@ -495,20 +575,36 @@ function animateDashboard(root) {
     {
       opacity: 0,
       y: 22,
-      duration: 0.8,
+      duration: manifest.motion.revealDuration,
       ease: "power2.out",
-      stagger: 0.05,
+      stagger: manifest.motion.stagger,
     },
   );
   const rings = root.querySelectorAll(".oc-dashboard-scene-ring");
   if (rings.length >= 1) {
-    gsap.to(rings[0], { rotate: 360, duration: 22, ease: "none", repeat: -1 });
+    gsap.to(rings[0], {
+      rotate: 360,
+      duration: 22 * manifest.motion.ringDurationMultiplier,
+      ease: "none",
+      repeat: -1,
+    });
   }
   if (rings.length >= 2) {
-    gsap.to(rings[1], { rotate: -360, duration: 28, ease: "none", repeat: -1 });
+    gsap.to(rings[1], {
+      rotate: -360,
+      duration: 28 * manifest.motion.ringDurationMultiplier,
+      ease: "none",
+      repeat: -1,
+    });
   }
-  if (rings.length >= 3) {
-    gsap.to(rings[2], { scale: 1.08, duration: 2.6, yoyo: true, repeat: -1, ease: "sine.inOut" });
+  if (rings.length >= 3 && manifest.motion.ringPulseEnabled) {
+    gsap.to(rings[2], {
+      scale: 1.08,
+      duration: 2.6 * Math.max(0.5, manifest.motion.ringDurationMultiplier),
+      yoyo: true,
+      repeat: -1,
+      ease: "sine.inOut",
+    });
   }
 }
 
@@ -576,6 +672,12 @@ export async function renderDashboardManifest({ root, manifest: rawManifest, con
   renderHtmlPanels(root, normalized);
 
   const clockTimer = startClock(root);
+  root[DASHBOARD_RUNTIME_STATE_KEY] = {
+    chartInstances: [],
+    resizeObserver: null,
+    clockTimer,
+    manifest: normalized,
+  };
   try {
     await ensureVendorLibraries(normalized, context);
     const chartInstances = [];
@@ -588,6 +690,7 @@ export async function renderDashboardManifest({ root, manifest: rawManifest, con
       chartInstances,
       resizeObserver,
       clockTimer,
+      manifest: normalized,
     };
     return normalized;
   } catch (error) {

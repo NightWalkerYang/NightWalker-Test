@@ -188,6 +188,90 @@ Echarts/
 - `dataSource`
   可以是同工作区下的本地 JSON 路径，由 runtime 在浏览器侧同源加载并合并到 manifest
   也可以是对象型内嵌元数据，此时 runtime 不会发起额外 fetch，而是直接按当前 manifest 继续渲染
+- `styleProfile`
+  当前内置稳定预设：
+  `financial-command-center-v1`
+  `cinematic-finance`
+  `gold-command`
+  `minimal-premium`
+- `density`
+  当前稳定值：
+  `compact`
+  `standard`
+  `immersive`
+- `motion`
+  可以直接写字符串级别，也可以写对象
+  当前稳定级别：
+  `off`
+  `low`
+  `normal`
+  `high`
+  主要控制入场动画、环形场景节奏、粒子开关与粒子密度
+- `layout`
+  当前稳定子字段包括：
+  `shellGap`
+  `shellPadding`
+  `metricsColumns`
+  `mainGap`
+  `panelGap`
+  `footerGap`
+  `leftColumnMin`
+  `leftColumnMax`
+  `rightColumnMin`
+  `rightColumnMax`
+  `sceneMinHeight`
+  `sceneOverlayWidth`
+  `panelRadius`
+  `metricRadius`
+  `cardMode`
+  `footerWeights.timeline`
+  `footerWeights.alerts`
+- `blocks`
+  当前稳定 block 包括：
+  `metrics`
+  `scene`
+  `leftTop`
+  `leftBottom`
+  `rightTop`
+  `rightBottom`
+  `timeline`
+  `alerts`
+  每个 block 当前稳定可控字段包括：
+  `visible`
+  `title`
+  `kicker`
+  `order`
+  `weight`
+  `id`
+
+当前这条 manifest 链路的稳定边界已经明确为：
+
+- 允许 AI 调整风格、密度、动效、布局参数、block 显隐、图表内容、主题色、数据文件
+- 不允许把任意 DOM / 任意 HTML 片段直接塞进 manifest 作为通用扩展面
+- 当前没有稳定开放 `rawHtml`、任意 DOM 注入、任意脚本片段直通这类能力
+- 如果需求已经超出这套固定壳可表达范围，才回退到预打包的 `*_index.html` 兼容链路
+
+### A.1 推荐的二次编辑方式
+
+从当前实际可运行方案开始，推荐把“二次改样式、二次改布局、二次改内容”的默认动作固定为：
+
+1. 首次生成时创建一个位于 `Echarts/` 根目录的 `xxx_index.dashboard.json`
+2. 后续继续编辑同一个 manifest 文件，而不是每次重写一份新的整页 HTML
+3. 优先修改：
+   - `styleProfile`
+   - `density`
+   - `motion`
+   - `layout`
+   - `blocks`
+   - `theme`
+   - `metrics`
+   - `charts`
+   - `scene`
+   - `timeline`
+   - `alerts`
+4. 如用户要求“黑金一点”“稀疏一点”“动效更克制”“中间场景更大”“去掉右下图表”“底部时间线更宽”，优先落到上述字段，不要先切回自由 HTML
+
+这样做的目的不是限制 AI，而是把“高质量 + 可二次编辑 + 可稳定渲染”都收敛到同一个零侵入协议面上。
 
 ### B. 第二推荐：单 HTML + 单 JS Bundle
 
@@ -341,13 +425,15 @@ Echarts/
 
 ### 页面结构契约
 
-- 入口文件名必须为 `*_index.html`
+- manifest 链路入口文件名必须为 `*_index.dashboard.json`
+- HTML 兼容链路入口文件名必须为 `*_index.html`
 - 入口文件位于 `Echarts/` 根目录
 - 页面尺寸默认 `1920x1080`
-- 页面必须能在单文件静态环境中启动
+- manifest 或页面必须能在当前静态公开链路中直接启动
 
 ### 脚本契约
 
+- 对于 manifest 链路，这部分由零侵入 runtime 接管，AI 默认不需要自己组织页面脚本壳
 - 优先普通 `<script src="...">`
 - 优先单 bundle
 - 不使用 CDN
@@ -429,7 +515,7 @@ Echarts/
 
 AI 生成并落盘后，至少核对下面这些项：
 
-1. `Echarts/` 根目录是否存在 `*_index.html`
+1. `Echarts/` 根目录是否存在 `*_index.dashboard.json` 或 `*_index.html`
 2. 页面是否完全脱离 CDN
 3. 是否存在裸 `import`、`dynamic import()`、`new Worker()`、service worker
 4. 静态资源是否都能在工作区找到
@@ -442,6 +528,7 @@ AI 生成并落盘后，至少核对下面这些项：
    - 面板切换或钻取是否可用
 8. 多张大屏之间跳转是否正常
 9. 分享链接在无登录态下是否仍能打开
+10. 若进行了二次编辑，是否仍然复用同一个 manifest 入口文件且样式/布局变更实际生效
 
 ## 十、当前默认标准
 

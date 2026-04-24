@@ -131,4 +131,99 @@ describe("dashboard manifest renderer runtime URL resolution", () => {
     expect(setOptionCalls.length).toBeGreaterThanOrEqual(2);
     clearDashboardRuntimeArtifacts(root);
   });
+
+  it("applies layout variables and block-driven shell metadata for manifest edits", async () => {
+    installLoadedVendorScript("/assets/vendor/echarts.min.js");
+    installLoadedVendorScript("/assets/vendor/echarts-gl.min.js");
+    installLoadedVendorScript("/assets/vendor/gsap.min.js");
+
+    const root = document.createElement("div");
+    document.body.append(root);
+
+    const liveInstances = new Map();
+    testGlobal.echarts = {
+      getInstanceByDom(container) {
+        return liveInstances.get(container) || null;
+      },
+      init(container) {
+        const chart = {
+          setOption() {},
+          resize() {},
+          dispose() {
+            liveInstances.delete(container);
+          },
+        };
+        liveInstances.set(container, chart);
+        return chart;
+      },
+    };
+
+    const normalized = await renderDashboardManifest({
+      root,
+      manifest: {
+        version: 1,
+        title: "布局编辑驾驶舱",
+        styleProfile: "cinematic-finance",
+        density: "compact",
+        motion: "off",
+        particles: false,
+        layout: {
+          shellGap: 30,
+          shellPadding: { top: 12, right: 16, bottom: 20, left: 18 },
+          leftColumnMin: 250,
+          leftColumnMax: 300,
+          footerWeights: {
+            timeline: 1.8,
+            alerts: 0.7,
+          },
+          cardMode: "solid",
+        },
+        blocks: {
+          rightTop: { visible: false },
+          rightBottom: { visible: false },
+          scene: { kicker: "DATA CORE" },
+          timeline: { weight: 1.8 },
+          alerts: { weight: 0.7 },
+        },
+        metrics: [
+          { label: "营收", value: 18.6, unit: "亿元" },
+          { label: "利润", value: 3.2, unit: "亿元" },
+        ],
+        charts: {
+          leftTop: {
+            type: "line",
+            categories: ["1月", "2月"],
+            series: [{ name: "营收", data: [16, 18.6] }],
+          },
+          leftBottom: {
+            type: "bar",
+            categories: ["投资", "成本"],
+            series: [{ name: "金额", data: [12, 9] }],
+          },
+        },
+      },
+    });
+
+    expect(normalized.motion.level).toBe("off");
+    expect(root.style.getPropertyValue("--oc-dashboard-shell-gap")).toBe("30px");
+    expect(root.style.getPropertyValue("--oc-dashboard-shell-padding")).toBe("12px 16px 20px 18px");
+    expect(root.style.getPropertyValue("--oc-dashboard-main-columns")).toBe(
+      "minmax(250px, 300px) minmax(0, 1fr)",
+    );
+    expect(root.style.getPropertyValue("--oc-dashboard-footer-columns")).toBe("1.8fr 0.7fr");
+    expect(document.documentElement.style.getPropertyValue("--oc-dashboard-shell-gap")).toBe(
+      "30px",
+    );
+
+    const shell = root.querySelector(".oc-dashboard-shell");
+    expect(shell?.getAttribute("data-style-profile")).toBe("cinematic-finance");
+    expect(shell?.getAttribute("data-density")).toBe("compact");
+    expect(shell?.getAttribute("data-motion")).toBe("off");
+    expect(shell?.getAttribute("data-card-mode")).toBe("solid");
+    expect(root.innerHTML).toContain("DATA CORE");
+    expect(root.innerHTML).not.toContain('data-block-id="right-top"');
+    expect(root.innerHTML).not.toContain('data-block-id="right-bottom"');
+
+    clearDashboardRuntimeArtifacts(root);
+  });
 });

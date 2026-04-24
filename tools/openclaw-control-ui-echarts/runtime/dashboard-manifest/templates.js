@@ -19,6 +19,190 @@ const DEFAULT_THEME = {
   text: "#e5fbff",
   muted: "#87a5c4",
   grid: "rgba(98, 230, 255, 0.18)",
+  fontFamily: 'Bahnschrift, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+  titleFontFamily: '"Segoe UI Semibold", Bahnschrift, "PingFang SC", "Microsoft YaHei", sans-serif',
+  titleLetterSpacing: "0.04em",
+  backdropOpacity: 0.34,
+  gridOpacity: 0.8,
+};
+
+const DEFAULT_LAYOUT = {
+  shellGap: 18,
+  shellPadding: "22px 28px 24px",
+  metricsColumns: 4,
+  mainGap: 22,
+  panelGap: 22,
+  footerGap: 22,
+  leftColumnMin: 280,
+  leftColumnMax: 320,
+  rightColumnMin: 280,
+  rightColumnMax: 320,
+  sceneMinHeight: 0,
+  sceneOverlayWidth: 420,
+  panelRadius: 22,
+  metricRadius: 18,
+  cardMode: "glass",
+  footerWeights: {
+    timeline: 1.2,
+    alerts: 0.9,
+  },
+};
+
+const DEFAULT_MOTION = {
+  level: "normal",
+  revealDuration: 0.8,
+  stagger: 0.05,
+  ringDurationMultiplier: 1,
+  ringPulseEnabled: true,
+  particlesEnabled: true,
+  particleMultiplier: 1,
+};
+
+const STYLE_PROFILE_PRESETS = {
+  "financial-command-center-v1": {
+    theme: {},
+    layout: {},
+    motion: {},
+  },
+  "cinematic-finance": {
+    theme: {
+      background: "#061120",
+      surface: "rgba(8, 20, 38, 0.6)",
+      surfaceStrong: "rgba(10, 24, 44, 0.9)",
+      accent: "#4af6d2",
+      accentSoft: "#1ba3ff",
+      success: "#4af6d2",
+      warning: "#7af0ff",
+      danger: "#ff7f9d",
+      text: "#effcff",
+      muted: "#91b8d6",
+      grid: "rgba(74, 246, 210, 0.18)",
+      titleLetterSpacing: "0.06em",
+      backdropOpacity: 0.42,
+      gridOpacity: 0.92,
+    },
+    layout: {
+      panelRadius: 24,
+      metricRadius: 20,
+      sceneOverlayWidth: 460,
+      mainGap: 24,
+      panelGap: 24,
+      sceneMinHeight: 340,
+    },
+    motion: {
+      level: "high",
+      revealDuration: 0.92,
+      stagger: 0.045,
+      ringDurationMultiplier: 0.9,
+      particleMultiplier: 1.15,
+    },
+  },
+  "gold-command": {
+    theme: {
+      background: "#120d09",
+      surface: "rgba(28, 21, 14, 0.76)",
+      surfaceStrong: "rgba(36, 27, 18, 0.92)",
+      accent: "#f6c766",
+      accentSoft: "#f59f3a",
+      success: "#7fe0b8",
+      warning: "#ffd27d",
+      danger: "#ff7a78",
+      text: "#fff5da",
+      muted: "#c7b494",
+      grid: "rgba(246, 199, 102, 0.18)",
+      titleLetterSpacing: "0.07em",
+      backdropOpacity: 0.28,
+      gridOpacity: 0.56,
+    },
+    layout: {
+      panelRadius: 18,
+      metricRadius: 16,
+      cardMode: "solid",
+      sceneOverlayWidth: 400,
+    },
+    motion: {
+      level: "low",
+      revealDuration: 0.72,
+      stagger: 0.04,
+      ringDurationMultiplier: 1.12,
+      particleMultiplier: 0.8,
+    },
+  },
+  "minimal-premium": {
+    theme: {
+      background: "#0b1420",
+      surface: "rgba(12, 20, 34, 0.58)",
+      surfaceStrong: "rgba(17, 27, 43, 0.86)",
+      accent: "#9dd7ff",
+      accentSoft: "#67b5ff",
+      success: "#72ddb2",
+      warning: "#f7c97a",
+      danger: "#ff8d97",
+      text: "#f4f8fc",
+      muted: "#9ab0c5",
+      grid: "rgba(157, 215, 255, 0.12)",
+      titleLetterSpacing: "0.03em",
+      backdropOpacity: 0.18,
+      gridOpacity: 0.42,
+    },
+    layout: {
+      panelRadius: 16,
+      metricRadius: 14,
+      cardMode: "bleed",
+      mainGap: 18,
+      panelGap: 18,
+      footerGap: 18,
+    },
+    motion: {
+      level: "low",
+      revealDuration: 0.64,
+      stagger: 0.035,
+      ringPulseEnabled: false,
+      particleMultiplier: 0.45,
+    },
+  },
+};
+
+const DENSITY_PRESETS = {
+  compact: {
+    layout: {
+      shellGap: 14,
+      shellPadding: "18px 20px 18px",
+      mainGap: 18,
+      panelGap: 18,
+      footerGap: 18,
+      metricsColumns: 5,
+    },
+  },
+  standard: {
+    layout: {},
+  },
+  immersive: {
+    layout: {
+      shellGap: 20,
+      shellPadding: "24px 28px 24px",
+      mainGap: 26,
+      panelGap: 24,
+      footerGap: 24,
+      sceneMinHeight: 420,
+      sceneOverlayWidth: 500,
+    },
+    motion: {
+      level: "high",
+      particleMultiplier: 1.2,
+    },
+  },
+};
+
+const BLOCK_IDS = {
+  metrics: "kpi-strip",
+  scene: "scene-main",
+  leftTop: "left-top",
+  leftBottom: "left-bottom",
+  rightTop: "right-top",
+  rightBottom: "right-bottom",
+  timeline: "timeline",
+  alerts: "alerts",
 };
 
 function isPlainObject(value) {
@@ -67,6 +251,189 @@ export function deepMerge(baseValue, overrideValue) {
     merged[key] = deepMerge(base[key], value);
   }
   return merged;
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numeric = toFiniteNumber(value, fallback);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, numeric));
+}
+
+function normalizeEnum(value, allowedValues, fallback) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return allowedValues.includes(normalized) ? normalized : fallback;
+}
+
+function toCssLength(value, fallback) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${value}px`;
+  }
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  if (/^-?\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%)$/.test(normalized)) {
+    return normalized;
+  }
+  return fallback;
+}
+
+function normalizePaddingValue(value, fallback) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${value}px`;
+  }
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (isPlainObject(value)) {
+    const top = toCssLength(value.top, "22px");
+    const right = toCssLength(value.right, "28px");
+    const bottom = toCssLength(value.bottom, "24px");
+    const left = toCssLength(value.left, right);
+    return `${top} ${right} ${bottom} ${left}`;
+  }
+  return fallback;
+}
+
+function normalizeStyleProfile(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return STYLE_PROFILE_PRESETS[normalized] ? normalized : "financial-command-center-v1";
+}
+
+function normalizeDensity(value) {
+  return normalizeEnum(value, Object.keys(DENSITY_PRESETS), "standard");
+}
+
+function normalizeMotion(value, presetMotion = {}) {
+  const source = typeof value === "string" ? { level: value } : isPlainObject(value) ? value : {};
+  const merged = deepMerge(DEFAULT_MOTION, deepMerge(presetMotion, source));
+  const level = normalizeEnum(merged.level, ["off", "low", "normal", "high"], "normal");
+  const levelDefaults = {
+    off: {
+      revealDuration: 0,
+      stagger: 0,
+      ringDurationMultiplier: 1,
+      ringPulseEnabled: false,
+      particlesEnabled: false,
+      particleMultiplier: 0,
+    },
+    low: {
+      revealDuration: 0.62,
+      stagger: 0.03,
+      ringDurationMultiplier: 1.08,
+      ringPulseEnabled: false,
+      particlesEnabled: true,
+      particleMultiplier: 0.65,
+    },
+    normal: {
+      revealDuration: 0.8,
+      stagger: 0.05,
+      ringDurationMultiplier: 1,
+      ringPulseEnabled: true,
+      particlesEnabled: true,
+      particleMultiplier: 1,
+    },
+    high: {
+      revealDuration: 0.95,
+      stagger: 0.045,
+      ringDurationMultiplier: 0.82,
+      ringPulseEnabled: true,
+      particlesEnabled: true,
+      particleMultiplier: 1.22,
+    },
+  };
+  return {
+    level,
+    revealDuration: clampNumber(merged.revealDuration, 0, 2.5, levelDefaults[level].revealDuration),
+    stagger: clampNumber(merged.stagger, 0, 0.4, levelDefaults[level].stagger),
+    ringDurationMultiplier: clampNumber(
+      merged.ringDurationMultiplier,
+      0.2,
+      3,
+      levelDefaults[level].ringDurationMultiplier,
+    ),
+    ringPulseEnabled:
+      merged.ringPulseEnabled !== false && Boolean(levelDefaults[level].ringPulseEnabled),
+    particlesEnabled:
+      merged.particlesEnabled !== false && Boolean(levelDefaults[level].particlesEnabled),
+    particleMultiplier: clampNumber(
+      merged.particleMultiplier,
+      0,
+      3,
+      levelDefaults[level].particleMultiplier,
+    ),
+  };
+}
+
+function normalizeLayout(value, presetLayout = {}, densityLayout = {}) {
+  const merged = deepMerge(
+    DEFAULT_LAYOUT,
+    deepMerge(presetLayout, deepMerge(densityLayout, value)),
+  );
+  return {
+    shellGap: clampNumber(merged.shellGap, 8, 40, DEFAULT_LAYOUT.shellGap),
+    shellPadding: normalizePaddingValue(merged.shellPadding, DEFAULT_LAYOUT.shellPadding),
+    metricsColumns: clampNumber(merged.metricsColumns, 1, 6, DEFAULT_LAYOUT.metricsColumns),
+    mainGap: clampNumber(merged.mainGap, 12, 36, DEFAULT_LAYOUT.mainGap),
+    panelGap: clampNumber(merged.panelGap, 10, 36, DEFAULT_LAYOUT.panelGap),
+    footerGap: clampNumber(merged.footerGap, 10, 36, DEFAULT_LAYOUT.footerGap),
+    leftColumnMin: clampNumber(merged.leftColumnMin, 220, 420, DEFAULT_LAYOUT.leftColumnMin),
+    leftColumnMax: clampNumber(
+      Math.max(merged.leftColumnMin, merged.leftColumnMax),
+      240,
+      460,
+      DEFAULT_LAYOUT.leftColumnMax,
+    ),
+    rightColumnMin: clampNumber(merged.rightColumnMin, 220, 420, DEFAULT_LAYOUT.rightColumnMin),
+    rightColumnMax: clampNumber(
+      Math.max(merged.rightColumnMin, merged.rightColumnMax),
+      240,
+      460,
+      DEFAULT_LAYOUT.rightColumnMax,
+    ),
+    sceneMinHeight: clampNumber(merged.sceneMinHeight, 0, 860, DEFAULT_LAYOUT.sceneMinHeight),
+    sceneOverlayWidth: clampNumber(
+      merged.sceneOverlayWidth,
+      220,
+      640,
+      DEFAULT_LAYOUT.sceneOverlayWidth,
+    ),
+    panelRadius: clampNumber(merged.panelRadius, 0, 36, DEFAULT_LAYOUT.panelRadius),
+    metricRadius: clampNumber(merged.metricRadius, 0, 30, DEFAULT_LAYOUT.metricRadius),
+    cardMode: normalizeEnum(merged.cardMode, ["glass", "solid", "bleed"], DEFAULT_LAYOUT.cardMode),
+    footerWeights: {
+      timeline: clampNumber(
+        merged.footerWeights?.timeline,
+        0.5,
+        3,
+        DEFAULT_LAYOUT.footerWeights.timeline,
+      ),
+      alerts: clampNumber(
+        merged.footerWeights?.alerts,
+        0.5,
+        3,
+        DEFAULT_LAYOUT.footerWeights.alerts,
+      ),
+    },
+  };
+}
+
+function normalizeBlockConfig(key, value, defaults = {}) {
+  const block = isPlainObject(value) ? value : {};
+  return {
+    id: String(block.id || defaults.id || BLOCK_IDS[key] || key).trim() || BLOCK_IDS[key] || key,
+    visible: block.visible !== false && defaults.visible !== false,
+    title: String(block.title || defaults.title || "").trim(),
+    kicker: String(block.kicker || defaults.kicker || "").trim(),
+    order: clampNumber(block.order, 0, 20, defaults.order ?? 0),
+    weight: clampNumber(block.weight, 0.5, 3, defaults.weight ?? 1),
+  };
 }
 
 function normalizeMetric(metric, index) {
@@ -300,6 +667,11 @@ function normalizeNavigationItem(item, index, context) {
 
 export function normalizeDashboardManifest(rawManifest, context = {}) {
   const manifest = isPlainObject(rawManifest) ? rawManifest : {};
+  const styleProfile = normalizeStyleProfile(manifest.styleProfile || manifest.template);
+  const density = normalizeDensity(manifest.density || manifest.layout?.density);
+  const stylePreset =
+    STYLE_PROFILE_PRESETS[styleProfile] || STYLE_PROFILE_PRESETS["financial-command-center-v1"];
+  const densityPreset = DENSITY_PRESETS[density] || DENSITY_PRESETS.standard;
   const metrics = toArray(manifest.metrics || manifest.kpis)
     .map(normalizeMetric)
     .filter(Boolean);
@@ -316,22 +688,83 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
     result[slotKey] = normalizeChart(chartSource[slotKey], slotKey, meta.type, meta.title);
     return result;
   }, {});
-  const theme = deepMerge(DEFAULT_THEME, isPlainObject(manifest.theme) ? manifest.theme : {});
+  const theme = deepMerge(
+    deepMerge(DEFAULT_THEME, isPlainObject(stylePreset.theme) ? stylePreset.theme : {}),
+    isPlainObject(manifest.theme) ? manifest.theme : {},
+  );
+  const motion = normalizeMotion(
+    deepMerge(
+      isPlainObject(densityPreset.motion) ? densityPreset.motion : {},
+      isPlainObject(manifest.motion) ? manifest.motion : manifest.motion,
+    ),
+    isPlainObject(stylePreset.motion) ? stylePreset.motion : {},
+  );
+  const layout = normalizeLayout(
+    isPlainObject(manifest.layout) ? manifest.layout : {},
+    isPlainObject(stylePreset.layout) ? stylePreset.layout : {},
+    isPlainObject(densityPreset.layout) ? densityPreset.layout : {},
+  );
   const navigation = toArray(manifest.navigation)
     .map((item, index) => normalizeNavigationItem(item, index, context))
     .filter(Boolean);
+  const blockSource = isPlainObject(manifest.blocks) ? manifest.blocks : {};
+  const blocks = {
+    metrics: normalizeBlockConfig("metrics", blockSource.metrics, {
+      id: BLOCK_IDS.metrics,
+      visible: true,
+    }),
+    scene: normalizeBlockConfig("scene", blockSource.scene, {
+      id: BLOCK_IDS.scene,
+      visible: true,
+      kicker: "CORE SCENE",
+    }),
+    leftTop: normalizeBlockConfig("leftTop", blockSource.leftTop, {
+      id: BLOCK_IDS.leftTop,
+      visible: true,
+    }),
+    leftBottom: normalizeBlockConfig("leftBottom", blockSource.leftBottom, {
+      id: BLOCK_IDS.leftBottom,
+      visible: true,
+    }),
+    rightTop: normalizeBlockConfig("rightTop", blockSource.rightTop, {
+      id: BLOCK_IDS.rightTop,
+      visible: true,
+    }),
+    rightBottom: normalizeBlockConfig("rightBottom", blockSource.rightBottom, {
+      id: BLOCK_IDS.rightBottom,
+      visible: true,
+    }),
+    timeline: normalizeBlockConfig("timeline", blockSource.timeline, {
+      id: BLOCK_IDS.timeline,
+      visible: true,
+      title: "动态时间线",
+      order: 1,
+      weight: layout.footerWeights.timeline,
+    }),
+    alerts: normalizeBlockConfig("alerts", blockSource.alerts, {
+      id: BLOCK_IDS.alerts,
+      visible: true,
+      title: "风险提示",
+      order: 2,
+      weight: layout.footerWeights.alerts,
+    }),
+  };
   return {
     version: toFiniteNumber(manifest.version, 1),
     template:
       String(manifest.template || "")
         .trim()
         .toLowerCase() || "financial-command-center-v1",
+    styleProfile,
+    density,
     title:
       String(manifest.title || manifest.name || context.visualizationName || "可视化展示").trim() ||
       "可视化展示",
     subtitle: String(manifest.subtitle || manifest.description || "").trim(),
     description: String(manifest.description || "").trim(),
     theme,
+    layout,
+    motion,
     backgroundImage: resolveDashboardAssetHref(
       context.workspaceBaseHref,
       manifest.backgroundImage || manifest.background?.image,
@@ -366,12 +799,13 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
       : buildDefaultAlerts(),
     particles: deepMerge(
       {
-        enabled: manifest.particles !== false,
-        number: 40,
+        enabled: manifest.particles !== false && motion.particlesEnabled,
+        number: Math.max(8, Math.round(40 * motion.particleMultiplier)),
         color: theme.accent,
       },
       isPlainObject(manifest.particles) ? manifest.particles : {},
     ),
+    blocks,
     navigation,
     dataSource:
       typeof manifest.dataSource === "string"
@@ -418,7 +852,7 @@ function buildMetricMarkup(metric) {
 function buildPanelMarkup(chart) {
   const renderMode = isHtmlPanelType(chart) ? "html" : "chart";
   return [
-    `<section class="oc-dashboard-panel" data-panel-slot="${escapeHtmlAttribute(chart.slotKey)}">`,
+    `<section class="oc-dashboard-panel" data-panel-slot="${escapeHtmlAttribute(chart.slotKey)}" data-block-id="${escapeHtmlAttribute(BLOCK_IDS[chart.slotKey] || chart.slotKey)}">`,
     '  <div class="oc-dashboard-panel-head">',
     `    <div class="oc-dashboard-panel-title">${escapeHtml(chart.title)}</div>`,
     chart.subtitle
@@ -480,7 +914,86 @@ function buildNavigationMarkup(items) {
             </button>`,
         )
         .join("")}
-    </nav>`;
+      </nav>`;
+}
+
+function isVisibleBlock(block) {
+  return Boolean(block?.visible !== false);
+}
+
+function buildPanelColumnMarkup(manifest, side, slotKeys) {
+  const visibleCharts = slotKeys
+    .filter((slotKey) => isVisibleBlock(manifest.blocks?.[slotKey]))
+    .map((slotKey) => manifest.charts?.[slotKey])
+    .filter(Boolean);
+  if (!visibleCharts.length) {
+    return "";
+  }
+  return `
+    <section class="oc-dashboard-column ${escapeHtmlAttribute(side)}" data-column-side="${escapeHtmlAttribute(side)}" data-panel-count="${visibleCharts.length}">
+      ${visibleCharts.map((chart) => buildPanelMarkup(chart)).join("")}
+    </section>`;
+}
+
+function buildSceneMarkup(manifest, context = {}) {
+  if (!isVisibleBlock(manifest.blocks?.scene)) {
+    return "";
+  }
+  const sceneTitle = manifest.scene.title || manifest.title;
+  const sceneSubtitle =
+    manifest.scene.subtitle || manifest.subtitle || context.agentName || "零侵入仪表盘运行时";
+  const sceneKicker = manifest.blocks?.scene?.kicker || "CORE SCENE";
+  return `
+    <section class="oc-dashboard-scene-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.scene.id)}">
+      <div class="oc-dashboard-scene-overlay">
+        ${sceneKicker ? `<div class="oc-dashboard-scene-kicker">${escapeHtml(sceneKicker)}</div>` : ""}
+        <div class="oc-dashboard-scene-title">${escapeHtml(sceneTitle)}</div>
+        <div class="oc-dashboard-scene-subtitle">${escapeHtml(sceneSubtitle)}</div>
+      </div>
+      <div class="oc-dashboard-scene-grid"></div>
+      <div class="oc-dashboard-scene-ring ring-a"></div>
+      <div class="oc-dashboard-scene-ring ring-b"></div>
+      <div class="oc-dashboard-scene-ring ring-c"></div>
+      <div class="oc-dashboard-scene-chart" data-dashboard-scene></div>
+    </section>`;
+}
+
+function buildFooterSectionMarkup(type, manifest) {
+  if (type === "timeline") {
+    return `
+      <section class="oc-dashboard-footer-section" data-block-id="${escapeHtmlAttribute(manifest.blocks.timeline.id)}">
+        <div class="oc-dashboard-footer-title">${escapeHtml(manifest.blocks.timeline.title || "动态时间线")}</div>
+        <ul class="oc-dashboard-feed-list">
+          ${buildTimelineMarkup(manifest.timeline)}
+        </ul>
+      </section>`;
+  }
+  if (type === "alerts") {
+    return `
+      <section class="oc-dashboard-footer-section" data-block-id="${escapeHtmlAttribute(manifest.blocks.alerts.id)}">
+        <div class="oc-dashboard-footer-title">${escapeHtml(manifest.blocks.alerts.title || "风险提示")}</div>
+        <ul class="oc-dashboard-alert-list">
+          ${buildAlertsMarkup(manifest.alerts)}
+        </ul>
+      </section>`;
+  }
+  return "";
+}
+
+function buildFooterMarkup(manifest) {
+  const footerSections = ["timeline", "alerts"]
+    .filter((type) => isVisibleBlock(manifest.blocks?.[type]))
+    .sort(
+      (left, right) =>
+        (manifest.blocks?.[left]?.order || 0) - (manifest.blocks?.[right]?.order || 0),
+    );
+  if (!footerSections.length) {
+    return "";
+  }
+  return `
+    <footer class="oc-dashboard-footer" data-footer-count="${footerSections.length}">
+      ${footerSections.map((type) => buildFooterSectionMarkup(type, manifest)).join("")}
+    </footer>`;
 }
 
 export function isHtmlPanelType(chart) {
@@ -963,11 +1476,29 @@ export function buildPanelOption(chart, manifest) {
 }
 
 export function buildDashboardMarkup(manifest, context = {}) {
-  const sceneTitle = manifest.scene.title || manifest.title;
-  const sceneSubtitle =
-    manifest.scene.subtitle || manifest.subtitle || context.agentName || "零侵入仪表盘运行时";
+  const metricsMarkup = isVisibleBlock(manifest.blocks?.metrics)
+    ? `
+      <section class="oc-dashboard-metrics" data-block-id="${escapeHtmlAttribute(manifest.blocks.metrics.id)}">
+        ${manifest.metrics.map(buildMetricMarkup).join("")}
+      </section>`
+    : "";
+  const mainMarkup = [
+    buildPanelColumnMarkup(manifest, "left", ["leftTop", "leftBottom"]),
+    buildSceneMarkup(manifest, context),
+    buildPanelColumnMarkup(manifest, "right", ["rightTop", "rightBottom"]),
+  ]
+    .filter(Boolean)
+    .join("");
+  const footerMarkup = buildFooterMarkup(manifest);
   return `
-    <div class="oc-dashboard-shell" data-template="${escapeHtmlAttribute(manifest.template)}">
+    <div
+      class="oc-dashboard-shell"
+      data-template="${escapeHtmlAttribute(manifest.template)}"
+      data-style-profile="${escapeHtmlAttribute(manifest.styleProfile)}"
+      data-density="${escapeHtmlAttribute(manifest.density)}"
+      data-motion="${escapeHtmlAttribute(manifest.motion.level)}"
+      data-card-mode="${escapeHtmlAttribute(manifest.layout.cardMode)}"
+    >
       <div class="oc-dashboard-particles" id="oc-dashboard-particles"></div>
       <div class="oc-dashboard-backdrop"></div>
       <header class="oc-dashboard-header">
@@ -994,44 +1525,8 @@ export function buildDashboardMarkup(manifest, context = {}) {
           ${buildNavigationMarkup(manifest.navigation)}
         </div>
       </header>
-      <section class="oc-dashboard-metrics">
-        ${manifest.metrics.map(buildMetricMarkup).join("")}
-      </section>
-      <main class="oc-dashboard-main">
-        <section class="oc-dashboard-column left">
-          ${buildPanelMarkup(manifest.charts.leftTop)}
-          ${buildPanelMarkup(manifest.charts.leftBottom)}
-        </section>
-        <section class="oc-dashboard-scene-shell">
-          <div class="oc-dashboard-scene-overlay">
-            <div class="oc-dashboard-scene-kicker">CORE SCENE</div>
-            <div class="oc-dashboard-scene-title">${escapeHtml(sceneTitle)}</div>
-            <div class="oc-dashboard-scene-subtitle">${escapeHtml(sceneSubtitle)}</div>
-          </div>
-          <div class="oc-dashboard-scene-grid"></div>
-          <div class="oc-dashboard-scene-ring ring-a"></div>
-          <div class="oc-dashboard-scene-ring ring-b"></div>
-          <div class="oc-dashboard-scene-ring ring-c"></div>
-          <div class="oc-dashboard-scene-chart" data-dashboard-scene></div>
-        </section>
-        <section class="oc-dashboard-column right">
-          ${buildPanelMarkup(manifest.charts.rightTop)}
-          ${buildPanelMarkup(manifest.charts.rightBottom)}
-        </section>
-      </main>
-      <footer class="oc-dashboard-footer">
-        <section class="oc-dashboard-footer-section">
-          <div class="oc-dashboard-footer-title">动态时间线</div>
-          <ul class="oc-dashboard-feed-list">
-            ${buildTimelineMarkup(manifest.timeline)}
-          </ul>
-        </section>
-        <section class="oc-dashboard-footer-section">
-          <div class="oc-dashboard-footer-title">风险提示</div>
-          <ul class="oc-dashboard-alert-list">
-            ${buildAlertsMarkup(manifest.alerts)}
-          </ul>
-        </section>
-      </footer>
+      ${metricsMarkup}
+      ${mainMarkup ? `<main class="oc-dashboard-main">${mainMarkup}</main>` : ""}
+      ${footerMarkup}
     </div>`;
 }

@@ -33,6 +33,20 @@ describe("dashboard manifest runtime templates", () => {
         version: 1,
         title: "财务总览驾驶舱",
         backgroundImage: "images/背景 星空.png",
+        styleProfile: "gold-command",
+        density: "compact",
+        motion: "low",
+        layout: {
+          metricsColumns: 3,
+          sceneMinHeight: 360,
+          cardMode: "solid",
+        },
+        blocks: {
+          timeline: {
+            title: "关键动态",
+            weight: 1.6,
+          },
+        },
         dataSource: {
           type: "embedded",
           company: "禄丰国控",
@@ -53,6 +67,13 @@ describe("dashboard manifest runtime templates", () => {
     );
 
     expect(manifest.title).toBe("财务总览驾驶舱");
+    expect(manifest.styleProfile).toBe("gold-command");
+    expect(manifest.density).toBe("compact");
+    expect(manifest.motion.level).toBe("low");
+    expect(manifest.layout.metricsColumns).toBe(3);
+    expect(manifest.layout.cardMode).toBe("solid");
+    expect(manifest.blocks.timeline.title).toBe("关键动态");
+    expect(manifest.blocks.timeline.weight).toBe(1.6);
     expect(manifest.metrics[0]?.label).toBe("总资产");
     expect(manifest.dataSource).toEqual({
       type: "embedded",
@@ -104,6 +125,37 @@ describe("dashboard manifest runtime templates", () => {
     expect(panelOption.series?.[0]?.type).toBe("pie");
     expect(markup).toContain('data-chart-slot="rightTop"');
     expect(markup).toContain("财务分析助手");
+  });
+
+  it("renders block visibility and style profile metadata into the fixed runtime shell", () => {
+    const manifest = normalizeDashboardManifest({
+      version: 1,
+      title: "样式编辑大屏",
+      styleProfile: "minimal-premium",
+      density: "immersive",
+      layout: {
+        cardMode: "bleed",
+      },
+      blocks: {
+        metrics: { visible: false },
+        leftBottom: { visible: false },
+        alerts: { visible: false },
+        scene: { kicker: "DATA CORE" },
+      },
+    });
+
+    const markup = buildDashboardMarkup(manifest, {
+      agentName: "风格编辑助手",
+    });
+
+    expect(markup).toContain('data-style-profile="minimal-premium"');
+    expect(markup).toContain('data-density="immersive"');
+    expect(markup).toContain('data-card-mode="bleed"');
+    expect(markup).toContain("DATA CORE");
+    expect(markup).not.toContain('data-block-id="kpi-strip"');
+    expect(markup).not.toContain('data-block-id="left-bottom"');
+    expect(markup).not.toContain('data-block-id="alerts"');
+    expect(markup).toContain('data-footer-count="1"');
   });
 
   it("exports the renderer entry for runtime bootstrapping", () => {
