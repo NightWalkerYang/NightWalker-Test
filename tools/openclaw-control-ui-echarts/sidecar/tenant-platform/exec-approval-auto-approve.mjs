@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
+import { Buffer } from "node:buffer";
 import { WebSocket } from "ws";
 
 const PROTOCOL_VERSION = 3;
@@ -41,6 +42,22 @@ function normalizePathForMatch(value) {
     .trim()
     .replace(/\\/g, "/")
     .toLowerCase();
+}
+
+export function rawGatewayDataToString(data) {
+  if (typeof data === "string") {
+    return data;
+  }
+  if (Buffer.isBuffer(data)) {
+    return data.toString("utf8");
+  }
+  if (Array.isArray(data)) {
+    return Buffer.concat(data).toString("utf8");
+  }
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data).toString("utf8");
+  }
+  return Buffer.from(String(data)).toString("utf8");
 }
 
 function isTenantDerivedAgentId(value) {
@@ -217,7 +234,7 @@ function createGatewayApprovalsClient(params) {
   const handleMessage = (raw) => {
     let parsed;
     try {
-      parsed = JSON.parse(typeof raw === "string" ? raw : raw.toString("utf8"));
+      parsed = JSON.parse(rawGatewayDataToString(raw));
     } catch {
       return;
     }

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { resolveTenantPlatformConfig } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs";
 import {
   createTenantExecApprovalAutoApprover,
+  rawGatewayDataToString,
   shouldAutoApproveTenantExecRequest,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs";
 
@@ -23,6 +24,15 @@ describe("tenant platform exec auto-approve config", () => {
 });
 
 describe("tenant platform exec auto-approve matching", () => {
+  it("normalizes raw ws payload variants into strings", () => {
+    const text = '{"ok":true}';
+    const bytes = Buffer.from(text, "utf8");
+
+    expect(rawGatewayDataToString(bytes)).toBe(text);
+    expect(rawGatewayDataToString([bytes])).toBe(text);
+    expect(rawGatewayDataToString(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))).toBe(text);
+  });
+
   it("matches derived tenant agents directly", () => {
     expect(
       shouldAutoApproveTenantExecRequest({
