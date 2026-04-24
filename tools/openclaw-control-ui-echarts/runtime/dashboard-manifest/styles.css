@@ -19,15 +19,15 @@
   --oc-dashboard-shell-gap: 14px;
   --oc-dashboard-shell-padding: 18px 22px 20px;
   --oc-dashboard-metrics-columns: repeat(6, minmax(0, 1fr));
-  --oc-dashboard-main-gap: 16px;
-  --oc-dashboard-main-columns: minmax(228px, 258px) minmax(0, 1fr) minmax(228px, 258px);
+  --oc-dashboard-main-gap: 12px;
+  --oc-dashboard-main-columns: minmax(186px, 214px) minmax(0, 1fr) minmax(186px, 214px);
   --oc-dashboard-panel-gap: 16px;
   --oc-dashboard-footer-gap: 16px;
   --oc-dashboard-footer-columns: 1.2fr 0.9fr;
   --oc-dashboard-panel-radius: 22px;
   --oc-dashboard-metric-radius: 18px;
-  --oc-dashboard-scene-overlay-width: 320px;
-  --oc-dashboard-scene-min-height: 360px;
+  --oc-dashboard-scene-overlay-width: 420px;
+  --oc-dashboard-scene-min-height: 384px;
 }
 
 html,
@@ -451,6 +451,73 @@ body {
   grid-template-columns: var(--oc-dashboard-main-columns);
   gap: var(--oc-dashboard-main-gap);
   min-height: 0;
+  align-items: stretch;
+  position: relative;
+  padding: 10px 0 12px;
+  isolation: isolate;
+}
+
+.oc-dashboard-main::before,
+.oc-dashboard-main::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.oc-dashboard-main::before {
+  left: 14%;
+  right: 14%;
+  top: 16%;
+  bottom: 12%;
+  border-top: 1px solid rgba(98, 230, 255, 0.08);
+  border-bottom: 1px solid rgba(98, 230, 255, 0.05);
+  opacity: 0.5;
+}
+
+.oc-dashboard-main::after {
+  left: 50%;
+  top: 10%;
+  bottom: 12%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, transparent, rgba(98, 230, 255, 0.2), transparent);
+  opacity: 0.7;
+}
+
+.oc-dashboard-main[data-layout-mode="cockpit-stage"] {
+  padding: 18px 0 20px;
+}
+
+.oc-dashboard-main[data-layout-mode="cockpit-stage"]::before {
+  left: clamp(96px, 10vw, 170px);
+  right: clamp(96px, 10vw, 170px);
+  top: 4%;
+  bottom: 6%;
+  border: 1px solid rgba(98, 230, 255, 0.1);
+  border-bottom-color: rgba(98, 230, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(98, 230, 255, 0.04), transparent 24%),
+    radial-gradient(circle at 50% 58%, rgba(74, 246, 210, 0.08), transparent 52%);
+  clip-path: polygon(8% 0, 92% 0, 100% 20%, 100% 82%, 92% 100%, 8% 100%, 0 82%, 0 20%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 20px 42px rgba(0, 0, 0, 0.18);
+  opacity: 1;
+}
+
+.oc-dashboard-main[data-layout-mode="cockpit-stage"]::after {
+  left: 50%;
+  top: 18%;
+  bottom: auto;
+  width: min(46vw, 720px);
+  height: min(28vw, 260px);
+  transform: translateX(-50%);
+  border: 1px solid rgba(98, 230, 255, 0.08);
+  background:
+    radial-gradient(circle at 50% 54%, rgba(74, 246, 210, 0.08), transparent 56%),
+    linear-gradient(180deg, rgba(98, 230, 255, 0.04), transparent 48%);
+  clip-path: polygon(10% 0, 90% 0, 100% 20%, 100% 70%, 76% 100%, 24% 100%, 0 70%, 0 20%);
+  opacity: 0.82;
 }
 
 .oc-dashboard-column {
@@ -458,10 +525,97 @@ body {
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: var(--oc-dashboard-panel-gap);
   min-height: 0;
+  position: relative;
+  z-index: 1;
+  padding: 12px 0 18px;
+}
+
+.oc-dashboard-column::before {
+  content: "";
+  position: absolute;
+  top: 24%;
+  bottom: 22%;
+  width: 42px;
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.oc-dashboard-column[data-column-side="left"] {
+  transform: perspective(1600px) rotateY(7deg) translateX(14px);
+  transform-origin: center right;
+}
+
+.oc-dashboard-column[data-column-side="left"]::before {
+  right: -18px;
+  background: linear-gradient(90deg, rgba(98, 230, 255, 0.16), transparent);
+  clip-path: polygon(0 12%, 100% 0, 100% 100%, 0 88%);
+}
+
+.oc-dashboard-column[data-column-side="right"] {
+  transform: perspective(1600px) rotateY(-7deg) translateX(-14px);
+  transform-origin: center left;
+}
+
+.oc-dashboard-column[data-column-side="right"]::before {
+  left: -18px;
+  background: linear-gradient(270deg, rgba(98, 230, 255, 0.16), transparent);
+  clip-path: polygon(0 0, 100% 12%, 100% 88%, 0 100%);
+}
+
+.oc-dashboard-column-rail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 18px;
+  padding: 0 10px;
+}
+
+.oc-dashboard-column-rail::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(98, 230, 255, 0.3), transparent);
+  opacity: 0.7;
+}
+
+.oc-dashboard-column-label {
+  color: var(--oc-dashboard-accent);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.oc-dashboard-main[data-layout-mode="cockpit-stage"] > .oc-dashboard-scene-shell {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  margin: 0 clamp(108px, 10.5vw, 176px);
+  min-height: max(420px, var(--oc-dashboard-scene-min-height));
+}
+
+.oc-dashboard-main[data-layout-mode="cockpit-stage"]
+  > .oc-dashboard-column[data-column-side="left"] {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: stretch;
+  margin: 30px -20px 22px 0;
+  padding-right: 16px;
+  transform: perspective(1800px) rotateY(16deg) translateX(24px) translateY(8px);
+  z-index: 3;
+}
+
+.oc-dashboard-main[data-layout-mode="cockpit-stage"]
+  > .oc-dashboard-column[data-column-side="right"] {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: stretch;
+  margin: 30px 0 22px -20px;
+  padding-left: 16px;
+  transform: perspective(1800px) rotateY(-16deg) translateX(-24px) translateY(8px);
+  z-index: 3;
 }
 
 .oc-dashboard-panel,
-.oc-dashboard-scene-shell,
 .oc-dashboard-footer-section {
   position: relative;
   min-height: 0;
@@ -489,27 +643,70 @@ body {
   );
 }
 
-.oc-dashboard-scene-shell {
-  clip-path: polygon(
-    0 24px,
-    20px 0,
-    calc(100% - 20px) 0,
-    100% 24px,
-    100% calc(100% - 18px),
-    calc(100% - 18px) 100%,
-    18px 100%,
-    0 calc(100% - 18px)
-  );
-}
-
 .oc-dashboard-panel::before,
-.oc-dashboard-scene-shell::before,
 .oc-dashboard-footer-section::before {
   content: "";
   position: absolute;
   inset: 10px;
   border: 1px solid rgba(98, 230, 255, 0.07);
   clip-path: inherit;
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-shell {
+  position: relative;
+  min-height: 0;
+  border: 1px solid rgba(98, 230, 255, 0.16);
+  border-radius: 0;
+  overflow: hidden;
+  clip-path: polygon(
+    0 32px,
+    34px 0,
+    calc(100% - 34px) 0,
+    100% 32px,
+    100% calc(100% - 24px),
+    calc(100% - 30px) 100%,
+    30px 100%,
+    0 calc(100% - 24px)
+  );
+  background:
+    radial-gradient(circle at 50% 56%, rgba(74, 246, 210, 0.18), transparent 36%),
+    radial-gradient(circle at 50% 64%, rgba(98, 230, 255, 0.12), transparent 48%),
+    linear-gradient(180deg, rgba(98, 230, 255, 0.08), transparent 24%),
+    linear-gradient(135deg, rgba(43, 141, 255, 0.12), transparent 24%), rgba(5, 16, 31, 0.86);
+  box-shadow:
+    0 28px 64px rgba(0, 0, 0, 0.28),
+    0 0 56px rgba(74, 246, 210, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.oc-dashboard-scene-shell::before {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(98, 230, 255, 0.08);
+  clip-path: polygon(
+    0 22px,
+    22px 0,
+    calc(100% - 22px) 0,
+    100% 22px,
+    100% calc(100% - 18px),
+    calc(100% - 18px) 100%,
+    18px 100%,
+    0 calc(100% - 18px)
+  );
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-shell::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 16px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(98, 230, 255, 0.38), transparent);
+  opacity: 0.76;
   pointer-events: none;
 }
 
@@ -645,12 +842,9 @@ body {
 }
 
 .oc-dashboard-scene-shell {
-  min-height: 360px;
   min-height: var(--oc-dashboard-scene-min-height);
-  background:
-    radial-gradient(circle at 50% 56%, rgba(74, 246, 210, 0.14), transparent 36%),
-    radial-gradient(circle at 50% 64%, rgba(98, 230, 255, 0.1), transparent 48%),
-    linear-gradient(180deg, rgba(98, 230, 255, 0.07), transparent 28%), rgba(6, 18, 34, 0.8);
+  z-index: 2;
+  margin: -2px 0 -4px;
 }
 
 .oc-dashboard-scene-chart,
@@ -659,7 +853,11 @@ body {
 .oc-dashboard-scene-overlay,
 .oc-dashboard-scene-frame,
 .oc-dashboard-scene-hud,
-.oc-dashboard-scene-core-glow {
+.oc-dashboard-scene-core-glow,
+.oc-dashboard-scene-anchor,
+.oc-dashboard-scene-vector,
+.oc-dashboard-scene-platform,
+.oc-dashboard-scene-target {
   position: absolute;
 }
 
@@ -667,32 +865,44 @@ body {
   position: relative;
   display: grid;
   min-height: 100%;
-  padding: 12px;
+  padding: 14px;
   box-sizing: border-box;
 }
 
 .oc-dashboard-scene-frame::before {
   content: "";
   position: absolute;
-  inset: 12px;
+  inset: 14px;
   border: 1px solid rgba(98, 230, 255, 0.08);
   clip-path: polygon(
-    0 18px,
-    18px 0,
-    calc(100% - 18px) 0,
-    100% 18px,
-    100% calc(100% - 14px),
-    calc(100% - 14px) 100%,
-    14px 100%,
-    0 calc(100% - 14px)
+    0 22px,
+    22px 0,
+    calc(100% - 22px) 0,
+    100% 22px,
+    100% calc(100% - 18px),
+    calc(100% - 18px) 100%,
+    18px 100%,
+    0 calc(100% - 18px)
   );
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-frame::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 18px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(98, 230, 255, 0.3), transparent);
+  opacity: 0.8;
   pointer-events: none;
 }
 
 .oc-dashboard-scene-status {
   position: absolute;
-  top: 18px;
-  right: 24px;
+  top: 22px;
+  right: 30px;
   z-index: 3;
   display: flex;
   gap: 8px;
@@ -737,6 +947,7 @@ body {
   height: 100%;
   border: 1px solid rgba(98, 230, 255, 0.08);
   background:
+    radial-gradient(circle at 50% 54%, rgba(74, 246, 210, 0.08), transparent 34%),
     linear-gradient(180deg, rgba(9, 25, 44, 0.44), rgba(6, 18, 33, 0.14)),
     linear-gradient(90deg, rgba(98, 230, 255, 0.03), transparent 50%);
   clip-path: polygon(
@@ -757,6 +968,11 @@ body {
   inset: 0;
 }
 
+.oc-dashboard-scene-chart {
+  inset: 8% 9% 16%;
+  filter: drop-shadow(0 0 18px rgba(98, 230, 255, 0.12));
+}
+
 .oc-dashboard-scene-grid {
   background:
     linear-gradient(transparent 49%, rgba(98, 230, 255, 0.06) 50%, transparent 51%) center / 100%
@@ -771,6 +987,59 @@ body {
     transparent
   );
   opacity: var(--oc-dashboard-grid-opacity);
+}
+
+.oc-dashboard-scene-anchor {
+  width: 68px;
+  height: 68px;
+  border: 1px solid rgba(98, 230, 255, 0.12);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-anchor.anchor-nw {
+  left: 18px;
+  top: 18px;
+  clip-path: polygon(0 0, 100% 0, 100% 18%, 18% 18%, 18% 100%, 0 100%);
+}
+
+.oc-dashboard-scene-anchor.anchor-ne {
+  right: 18px;
+  top: 18px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 82% 100%, 82% 18%, 0 18%);
+}
+
+.oc-dashboard-scene-anchor.anchor-sw {
+  left: 18px;
+  bottom: 18px;
+  clip-path: polygon(0 0, 18% 0, 18% 82%, 100% 82%, 100% 100%, 0 100%);
+}
+
+.oc-dashboard-scene-anchor.anchor-se {
+  right: 18px;
+  bottom: 18px;
+  clip-path: polygon(82% 0, 100% 0, 100% 100%, 0 100%, 0 82%, 82% 82%);
+}
+
+.oc-dashboard-scene-vector {
+  top: 57%;
+  width: 22%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(98, 230, 255, 0.3), transparent);
+  opacity: 0.68;
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-vector.vector-left {
+  left: 8%;
+  transform: rotate(-16deg);
+  transform-origin: left center;
+}
+
+.oc-dashboard-scene-vector.vector-right {
+  right: 8%;
+  transform: rotate(16deg);
+  transform-origin: right center;
 }
 
 .oc-dashboard-scene-hud {
@@ -796,16 +1065,45 @@ body {
 .oc-dashboard-scene-core-glow {
   left: 50%;
   top: 56%;
-  width: min(36vw, 440px);
-  height: min(36vw, 440px);
+  width: min(42vw, 520px);
+  height: min(42vw, 520px);
   transform: translate(-50%, -50%);
   background: radial-gradient(
     circle,
-    rgba(74, 246, 210, 0.18),
-    rgba(74, 246, 210, 0.06) 34%,
+    rgba(74, 246, 210, 0.24),
+    rgba(74, 246, 210, 0.08) 32%,
     transparent 68%
   );
-  filter: blur(10px);
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-platform {
+  left: 50%;
+  bottom: 9%;
+  width: min(44vw, 540px);
+  height: 112px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(98, 230, 255, 0.14);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(74, 246, 210, 0.12), transparent 44%),
+    radial-gradient(circle at 50% 56%, rgba(98, 230, 255, 0.08), transparent 62%);
+  box-shadow:
+    0 0 24px rgba(74, 246, 210, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-target {
+  left: 50%;
+  top: 56%;
+  width: min(16vw, 190px);
+  height: min(16vw, 190px);
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 1px solid rgba(98, 230, 255, 0.18);
+  background: linear-gradient(180deg, rgba(98, 230, 255, 0.04), transparent 54%);
+  box-shadow: 0 0 24px rgba(98, 230, 255, 0.08);
   pointer-events: none;
 }
 
@@ -830,17 +1128,17 @@ body {
 }
 
 .oc-dashboard-scene-ring.ring-a {
-  width: min(50vh, 50vw);
-  height: min(50vh, 50vw);
-  margin-left: calc(min(50vh, 50vw) / -2);
-  margin-top: calc(min(50vh, 50vw) / -2);
+  width: min(46vh, 46vw);
+  height: min(46vh, 46vw);
+  margin-left: calc(min(46vh, 46vw) / -2);
+  margin-top: calc(min(46vh, 46vw) / -2);
 }
 
 .oc-dashboard-scene-ring.ring-b {
-  width: min(38vh, 38vw);
-  height: min(38vh, 38vw);
-  margin-left: calc(min(38vh, 38vw) / -2);
-  margin-top: calc(min(38vh, 38vw) / -2);
+  width: min(34vh, 34vw);
+  height: min(34vh, 34vw);
+  margin-left: calc(min(34vh, 34vw) / -2);
+  margin-top: calc(min(34vh, 34vw) / -2);
   border-style: dashed;
 }
 
@@ -853,10 +1151,10 @@ body {
 }
 
 .oc-dashboard-scene-overlay {
-  left: clamp(18px, 2vw, 26px);
-  top: 18px;
+  left: clamp(30px, 2.6vw, 42px);
+  top: 36px;
   z-index: 3;
-  max-width: min(32%, var(--oc-dashboard-scene-overlay-width));
+  max-width: min(42%, var(--oc-dashboard-scene-overlay-width));
 }
 
 .oc-dashboard-scene-kicker,
@@ -885,7 +1183,7 @@ body {
 
 .oc-dashboard-scene-title {
   margin-top: 6px;
-  font-size: clamp(20px, 2vw, 30px);
+  font-size: clamp(24px, 2.4vw, 34px);
   line-height: 1.12;
   text-shadow: 0 0 20px rgba(98, 230, 255, 0.08);
 }
@@ -893,7 +1191,7 @@ body {
 .oc-dashboard-scene-subtitle {
   margin-top: 10px;
   color: var(--oc-dashboard-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1092,7 +1390,6 @@ body {
 }
 
 .oc-dashboard-shell[data-card-mode="solid"] .oc-dashboard-panel,
-.oc-dashboard-shell[data-card-mode="solid"] .oc-dashboard-scene-shell,
 .oc-dashboard-shell[data-card-mode="solid"] .oc-dashboard-footer-section,
 .oc-dashboard-shell[data-card-mode="solid"] .oc-dashboard-metric {
   background:
@@ -1101,7 +1398,6 @@ body {
 }
 
 .oc-dashboard-shell[data-card-mode="bleed"] .oc-dashboard-panel,
-.oc-dashboard-shell[data-card-mode="bleed"] .oc-dashboard-scene-shell,
 .oc-dashboard-shell[data-card-mode="bleed"] .oc-dashboard-footer-section {
   border-color: rgba(255, 255, 255, 0.05);
   box-shadow:
@@ -1204,6 +1500,20 @@ body {
   .oc-dashboard-title-group {
     max-width: min(74vw, 840px);
   }
+
+  .oc-dashboard-main[data-layout-mode="cockpit-stage"] > .oc-dashboard-scene-shell {
+    margin: 0 92px;
+  }
+
+  .oc-dashboard-main[data-layout-mode="cockpit-stage"]
+    > .oc-dashboard-column[data-column-side="left"] {
+    margin-right: -14px;
+  }
+
+  .oc-dashboard-main[data-layout-mode="cockpit-stage"]
+    > .oc-dashboard-column[data-column-side="right"] {
+    margin-left: -14px;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -1241,13 +1551,53 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .oc-dashboard-main::before,
+  .oc-dashboard-main::after {
+    display: none;
+  }
+
   .oc-dashboard-column {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: none;
+    transform: none;
+    padding: 0;
+  }
+
+  .oc-dashboard-column-rail {
+    display: none;
+  }
+
+  .oc-dashboard-column::before {
+    display: none;
+  }
+
+  .oc-dashboard-main[data-layout-mode="cockpit-stage"] > .oc-dashboard-scene-shell,
+  .oc-dashboard-main[data-layout-mode="cockpit-stage"]
+    > .oc-dashboard-column[data-column-side="left"],
+  .oc-dashboard-main[data-layout-mode="cockpit-stage"]
+    > .oc-dashboard-column[data-column-side="right"] {
+    grid-column: 1;
+    grid-row: auto;
+    margin: 0;
+    padding: 0;
+    transform: none;
   }
 
   .oc-dashboard-scene-shell {
     min-height: max(360px, var(--oc-dashboard-scene-min-height));
+  }
+
+  .oc-dashboard-scene-chart {
+    inset: 12% 6% 18%;
+  }
+
+  .oc-dashboard-scene-platform {
+    width: min(72vw, 460px);
+  }
+
+  .oc-dashboard-scene-target {
+    width: min(26vw, 170px);
+    height: min(26vw, 170px);
   }
 
   .oc-dashboard-footer {

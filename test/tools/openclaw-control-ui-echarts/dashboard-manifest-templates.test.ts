@@ -124,8 +124,10 @@ describe("dashboard manifest runtime templates", () => {
     });
 
     expect(sceneOption.series?.length).toBeGreaterThan(0);
-    expect(sceneOption.series?.every((series) => series.type === "scatter3D")).toBe(true);
-    expect(fallbackSceneOption.series?.every((series) => series.type === "scatter3D")).toBe(true);
+    expect(sceneOption.series?.some((series) => series.type === "lines3D")).toBe(true);
+    expect(sceneOption.series?.some((series) => series.type === "scatter3D")).toBe(true);
+    expect(fallbackSceneOption.series?.some((series) => series.type === "lines3D")).toBe(true);
+    expect(fallbackSceneOption.series?.some((series) => series.type === "scatter3D")).toBe(true);
     expect(collectFunctionPaths(sceneOption)).toEqual([]);
     expect(collectFunctionPaths(fallbackSceneOption)).toEqual([]);
     expect(lineOption.xAxis?.axisLabel?.fontSize).toBe(10);
@@ -134,6 +136,8 @@ describe("dashboard manifest runtime templates", () => {
     expect(panelOption.series?.[0]?.type).toBe("pie");
     expect(panelOption.series?.[0]?.label?.fontSize).toBe(10);
     expect(typeof panelOption.series?.[0]?.label?.formatter).toBe("function");
+    expect(markup).toContain('data-layout-mode="cockpit-stage"');
+    expect(markup).toContain("LEFT BAY");
     expect(markup).toContain('data-chart-slot="rightTop"');
     expect(markup).toContain("财务分析助手");
   });

@@ -30,15 +30,15 @@ const DEFAULT_LAYOUT = {
   shellGap: 14,
   shellPadding: "18px 22px 20px",
   metricsColumns: 6,
-  mainGap: 16,
+  mainGap: 12,
   panelGap: 16,
   footerGap: 16,
-  leftColumnMin: 228,
-  leftColumnMax: 258,
-  rightColumnMin: 228,
-  rightColumnMax: 258,
-  sceneMinHeight: 360,
-  sceneOverlayWidth: 320,
+  leftColumnMin: 186,
+  leftColumnMax: 214,
+  rightColumnMin: 186,
+  rightColumnMax: 214,
+  sceneMinHeight: 384,
+  sceneOverlayWidth: 420,
   panelRadius: 22,
   metricRadius: 18,
   cardMode: "glass",
@@ -84,7 +84,7 @@ const STYLE_PROFILE_PRESETS = {
     layout: {
       panelRadius: 24,
       metricRadius: 20,
-      sceneOverlayWidth: 340,
+      sceneOverlayWidth: 460,
       mainGap: 24,
       panelGap: 24,
       sceneMinHeight: 380,
@@ -377,6 +377,25 @@ function normalizeLayout(value, presetLayout = {}, densityLayout = {}) {
     DEFAULT_LAYOUT,
     deepMerge(presetLayout, deepMerge(densityLayout, value)),
   );
+  const leftColumnMin = clampNumber(merged.leftColumnMin, 160, 420, DEFAULT_LAYOUT.leftColumnMin);
+  const rightColumnMin = clampNumber(
+    merged.rightColumnMin,
+    160,
+    420,
+    DEFAULT_LAYOUT.rightColumnMin,
+  );
+  const leftColumnMax = clampNumber(
+    merged.leftColumnMax,
+    leftColumnMin,
+    460,
+    Math.max(DEFAULT_LAYOUT.leftColumnMax, leftColumnMin),
+  );
+  const rightColumnMax = clampNumber(
+    merged.rightColumnMax,
+    rightColumnMin,
+    460,
+    Math.max(DEFAULT_LAYOUT.rightColumnMax, rightColumnMin),
+  );
   return {
     shellGap: clampNumber(merged.shellGap, 8, 40, DEFAULT_LAYOUT.shellGap),
     shellPadding: normalizePaddingValue(merged.shellPadding, DEFAULT_LAYOUT.shellPadding),
@@ -384,20 +403,10 @@ function normalizeLayout(value, presetLayout = {}, densityLayout = {}) {
     mainGap: clampNumber(merged.mainGap, 12, 36, DEFAULT_LAYOUT.mainGap),
     panelGap: clampNumber(merged.panelGap, 10, 36, DEFAULT_LAYOUT.panelGap),
     footerGap: clampNumber(merged.footerGap, 10, 36, DEFAULT_LAYOUT.footerGap),
-    leftColumnMin: clampNumber(merged.leftColumnMin, 220, 420, DEFAULT_LAYOUT.leftColumnMin),
-    leftColumnMax: clampNumber(
-      Math.max(merged.leftColumnMin, merged.leftColumnMax),
-      240,
-      460,
-      DEFAULT_LAYOUT.leftColumnMax,
-    ),
-    rightColumnMin: clampNumber(merged.rightColumnMin, 220, 420, DEFAULT_LAYOUT.rightColumnMin),
-    rightColumnMax: clampNumber(
-      Math.max(merged.rightColumnMin, merged.rightColumnMax),
-      240,
-      460,
-      DEFAULT_LAYOUT.rightColumnMax,
-    ),
+    leftColumnMin,
+    leftColumnMax,
+    rightColumnMin,
+    rightColumnMax,
     sceneMinHeight: clampNumber(merged.sceneMinHeight, 0, 860, DEFAULT_LAYOUT.sceneMinHeight),
     sceneOverlayWidth: clampNumber(
       merged.sceneOverlayWidth,
@@ -942,8 +951,12 @@ function buildPanelColumnMarkup(manifest, side, slotKeys) {
   if (!visibleCharts.length) {
     return "";
   }
+  const railLabel = side === "left" ? "LEFT BAY" : "RIGHT BAY";
   return `
     <section class="oc-dashboard-column ${escapeHtmlAttribute(side)}" data-column-side="${escapeHtmlAttribute(side)}" data-panel-count="${visibleCharts.length}">
+      <div class="oc-dashboard-column-rail">
+        <span class="oc-dashboard-column-label">${escapeHtml(railLabel)}</span>
+      </div>
       ${visibleCharts.map((chart) => buildPanelMarkup(chart)).join("")}
     </section>`;
 }
@@ -981,6 +994,12 @@ function buildSceneMarkup(manifest, context = {}) {
             .join("")}
         </div>
         <div class="oc-dashboard-scene-bay">
+          <div class="oc-dashboard-scene-anchor anchor-nw"></div>
+          <div class="oc-dashboard-scene-anchor anchor-ne"></div>
+          <div class="oc-dashboard-scene-anchor anchor-sw"></div>
+          <div class="oc-dashboard-scene-anchor anchor-se"></div>
+          <div class="oc-dashboard-scene-vector vector-left"></div>
+          <div class="oc-dashboard-scene-vector vector-right"></div>
           <div class="oc-dashboard-scene-hud hud-left"></div>
           <div class="oc-dashboard-scene-hud hud-right"></div>
           <div class="oc-dashboard-scene-grid"></div>
@@ -988,6 +1007,8 @@ function buildSceneMarkup(manifest, context = {}) {
           <div class="oc-dashboard-scene-ring ring-b"></div>
           <div class="oc-dashboard-scene-ring ring-c"></div>
           <div class="oc-dashboard-scene-core-glow"></div>
+          <div class="oc-dashboard-scene-platform"></div>
+          <div class="oc-dashboard-scene-target"></div>
           <div class="oc-dashboard-scene-beam"></div>
           <div class="oc-dashboard-scene-chart" data-dashboard-scene></div>
         </div>
@@ -1420,6 +1441,47 @@ function createScatterSceneSeries({
   ].filter((series) => series.data.length);
 }
 
+function createSceneLinkSeries({ metricPoints, orbitPoints = [], corePoints, theme, metricColor }) {
+  const coreAnchor = corePoints[corePoints.length - 1] || [0, 0, 0];
+  const spokeLines = metricPoints.map((point) => ({
+    coords: [coreAnchor, point],
+  }));
+  const orbitLines = orbitPoints.length
+    ? orbitPoints.map((point, index) => ({
+        coords: [point, orbitPoints[(index + 1) % orbitPoints.length]],
+      }))
+    : [];
+  return [
+    {
+      type: "lines3D",
+      blendMode: "lighter",
+      effect: {
+        show: true,
+        trailWidth: 2,
+        trailLength: 0.14,
+        trailOpacity: 0.45,
+        constantSpeed: 18,
+      },
+      lineStyle: {
+        color: theme.accent,
+        width: 2,
+        opacity: 0.42,
+      },
+      data: spokeLines,
+    },
+    {
+      type: "lines3D",
+      blendMode: "lighter",
+      lineStyle: {
+        color: metricColor,
+        width: 1.4,
+        opacity: 0.3,
+      },
+      data: orbitLines,
+    },
+  ].filter((series) => series.data.length);
+}
+
 function buildCapitalReactorScene(manifest) {
   const theme = manifest.theme;
   const metrics = manifest.metrics;
@@ -1441,19 +1503,33 @@ function buildCapitalReactorScene(manifest) {
         beta: 42,
       },
     ),
-    series: createScatterSceneSeries({
-      haloPoints: stripScenePointSize([
-        ...createSceneRingPoints(18, 44, 8, 0.2),
-        ...createSceneRingPoints(28, 52, 12, 0.7, 1.15),
-        ...createSceneRingPoints(38, 60, 16, 1.3, 1.35),
-      ]),
-      orbitPoints: createMetricAnchorPoints(metrics, 22, 6, 4.5, 0.35),
-      metricPoints: createMetricAnchorPoints(metrics, 34, 10, 3, 0.1),
-      corePoints: createCoreColumnPoints([0, 10, 18, 28]),
-      theme,
-      metricColor: theme.warning,
-      coreColor: theme.text,
-    }),
+    series: (() => {
+      const orbitPoints = createMetricAnchorPoints(metrics, 22, 6, 4.5, 0.35);
+      const metricPoints = createMetricAnchorPoints(metrics, 34, 10, 3, 0.1);
+      const corePoints = createCoreColumnPoints([0, 10, 18, 28]);
+      return [
+        ...createSceneLinkSeries({
+          metricPoints,
+          orbitPoints,
+          corePoints,
+          theme,
+          metricColor: theme.warning,
+        }),
+        ...createScatterSceneSeries({
+          haloPoints: stripScenePointSize([
+            ...createSceneRingPoints(18, 44, 8, 0.2),
+            ...createSceneRingPoints(28, 52, 12, 0.7, 1.15),
+            ...createSceneRingPoints(38, 60, 16, 1.3, 1.35),
+          ]),
+          orbitPoints,
+          metricPoints,
+          corePoints,
+          theme,
+          metricColor: theme.warning,
+          coreColor: theme.text,
+        }),
+      ];
+    })(),
   };
 }
 
@@ -1478,19 +1554,33 @@ function buildAssetRingScene(manifest) {
         beta: 50,
       },
     ),
-    series: createScatterSceneSeries({
-      haloPoints: stripScenePointSize([
-        ...createSceneRingPoints(22, 40, 4, 0.1),
-        ...createSceneRingPoints(34, 54, 8, 0.8),
-        ...createSceneRingPoints(46, 66, 12, 1.5),
-      ]),
-      orbitPoints: createMetricAnchorPoints(metrics, 30, 8, 4.2, 0.55),
-      metricPoints: createMetricAnchorPoints(metrics, 46, 14, 2.5, 0.15),
-      corePoints: createCoreColumnPoints([0, 8, 16, 24]),
-      theme,
-      metricColor: theme.success,
-      coreColor: theme.warning,
-    }),
+    series: (() => {
+      const orbitPoints = createMetricAnchorPoints(metrics, 30, 8, 4.2, 0.55);
+      const metricPoints = createMetricAnchorPoints(metrics, 46, 14, 2.5, 0.15);
+      const corePoints = createCoreColumnPoints([0, 8, 16, 24]);
+      return [
+        ...createSceneLinkSeries({
+          metricPoints,
+          orbitPoints,
+          corePoints,
+          theme,
+          metricColor: theme.success,
+        }),
+        ...createScatterSceneSeries({
+          haloPoints: stripScenePointSize([
+            ...createSceneRingPoints(22, 40, 4, 0.1),
+            ...createSceneRingPoints(34, 54, 8, 0.8),
+            ...createSceneRingPoints(46, 66, 12, 1.5),
+          ]),
+          orbitPoints,
+          metricPoints,
+          corePoints,
+          theme,
+          metricColor: theme.success,
+          coreColor: theme.warning,
+        }),
+      ];
+    })(),
   };
 }
 
@@ -1524,18 +1614,31 @@ function buildRadarCoreScene(manifest) {
         beta: 32,
       },
     ),
-    series: createScatterSceneSeries({
-      haloPoints: stripScenePointSize([
-        ...createSceneRingPoints(24, 48, 8, 0.5),
-        ...createSceneRingPoints(36, 60, 10, 1.4),
-      ]),
-      orbitPoints: polygon,
-      metricPoints: createMetricAnchorPoints(metrics, 28, 10, 3.4, 0.4),
-      corePoints: createCoreColumnPoints([0, 7, 14, 21]),
-      theme,
-      metricColor: theme.danger,
-      coreColor: theme.accent,
-    }),
+    series: (() => {
+      const metricPoints = createMetricAnchorPoints(metrics, 28, 10, 3.4, 0.4);
+      const corePoints = createCoreColumnPoints([0, 7, 14, 21]);
+      return [
+        ...createSceneLinkSeries({
+          metricPoints,
+          orbitPoints: polygon,
+          corePoints,
+          theme,
+          metricColor: theme.danger,
+        }),
+        ...createScatterSceneSeries({
+          haloPoints: stripScenePointSize([
+            ...createSceneRingPoints(24, 48, 8, 0.5),
+            ...createSceneRingPoints(36, 60, 10, 1.4),
+          ]),
+          orbitPoints: polygon,
+          metricPoints,
+          corePoints,
+          theme,
+          metricColor: theme.danger,
+          coreColor: theme.accent,
+        }),
+      ];
+    })(),
   };
 }
 
@@ -1560,18 +1663,32 @@ export function buildSceneFallbackOption(manifest) {
         beta: 34,
       },
     ),
-    series: createScatterSceneSeries({
-      haloPoints: stripScenePointSize([
-        ...createSceneRingPoints(18, 36, 5, 0.1),
-        ...createSceneRingPoints(30, 48, 8, 1),
-      ]),
-      orbitPoints: createMetricAnchorPoints(metrics, 24, 6, 4.8, 0.25),
-      metricPoints: createMetricAnchorPoints(metrics, 36, 10, 3.2, 0),
-      corePoints: createCoreColumnPoints([0, 8, 16, 24]),
-      theme,
-      metricColor: theme.warning,
-      coreColor: theme.text,
-    }),
+    series: (() => {
+      const orbitPoints = createMetricAnchorPoints(metrics, 24, 6, 4.8, 0.25);
+      const metricPoints = createMetricAnchorPoints(metrics, 36, 10, 3.2, 0);
+      const corePoints = createCoreColumnPoints([0, 8, 16, 24]);
+      return [
+        ...createSceneLinkSeries({
+          metricPoints,
+          orbitPoints,
+          corePoints,
+          theme,
+          metricColor: theme.warning,
+        }),
+        ...createScatterSceneSeries({
+          haloPoints: stripScenePointSize([
+            ...createSceneRingPoints(18, 36, 5, 0.1),
+            ...createSceneRingPoints(30, 48, 8, 1),
+          ]),
+          orbitPoints,
+          metricPoints,
+          corePoints,
+          theme,
+          metricColor: theme.warning,
+          coreColor: theme.text,
+        }),
+      ];
+    })(),
   };
 }
 
@@ -1612,6 +1729,13 @@ export function buildPanelOption(chart, manifest) {
 }
 
 export function buildDashboardMarkup(manifest, context = {}) {
+  const leftColumnMarkup = buildPanelColumnMarkup(manifest, "left", ["leftTop", "leftBottom"]);
+  const rightColumnMarkup = buildPanelColumnMarkup(manifest, "right", ["rightTop", "rightBottom"]);
+  const sceneMarkup = buildSceneMarkup(manifest, context);
+  const hasLeftColumn = Boolean(leftColumnMarkup);
+  const hasRightColumn = Boolean(rightColumnMarkup);
+  const hasScene = Boolean(sceneMarkup);
+  const mainLayoutMode = hasScene && hasLeftColumn && hasRightColumn ? "cockpit-stage" : "standard";
   const metricsMarkup = isVisibleBlock(manifest.blocks?.metrics)
     ? `
       <section class="oc-dashboard-metrics-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.metrics.id)}" data-metric-count="${escapeHtmlAttribute(manifest.metrics.length)}">
@@ -1624,11 +1748,11 @@ export function buildDashboardMarkup(manifest, context = {}) {
         </div>
       </section>`
     : "";
-  const mainMarkup = [
-    buildPanelColumnMarkup(manifest, "left", ["leftTop", "leftBottom"]),
-    buildSceneMarkup(manifest, context),
-    buildPanelColumnMarkup(manifest, "right", ["rightTop", "rightBottom"]),
-  ]
+  const mainMarkup = (
+    mainLayoutMode === "cockpit-stage"
+      ? [sceneMarkup, leftColumnMarkup, rightColumnMarkup]
+      : [leftColumnMarkup, sceneMarkup, rightColumnMarkup]
+  )
     .filter(Boolean)
     .join("");
   const footerMarkup = buildFooterMarkup(manifest);
@@ -1668,7 +1792,11 @@ export function buildDashboardMarkup(manifest, context = {}) {
         </div>
       </header>
       ${metricsMarkup}
-      ${mainMarkup ? `<main class="oc-dashboard-main">${mainMarkup}</main>` : ""}
+      ${
+        mainMarkup
+          ? `<main class="oc-dashboard-main" data-layout-mode="${escapeHtmlAttribute(mainLayoutMode)}">${mainMarkup}</main>`
+          : ""
+      }
       ${footerMarkup}
     </div>`;
 }
