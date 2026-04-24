@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { Buffer } from "node:buffer";
+import fs from "node:fs";
 import { WebSocket } from "ws";
 
 const PROTOCOL_VERSION = 3;
@@ -8,6 +9,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_CHALLENGE_TIMEOUT_MS = 5_000;
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 function createDefaultLogger() {
   return {
@@ -58,6 +60,92 @@ export function rawGatewayDataToString(data) {
     return Buffer.from(data).toString("utf8");
   }
   return Buffer.from(String(data)).toString("utf8");
+}
+
+function base64UrlEncode(buffer) {
+  return buffer.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+}
+
+function derivePublicKeyRaw(publicKeyPem) {
+  const key = crypto.createPublicKey(publicKeyPem);
+  const spki = key.export({ type: "spki", format: "der" });
+  if (
+    spki.length === ED25519_SPKI_PREFIX.length + 32 &&
+    spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
+  ) {
+    return spki.subarray(ED25519_SPKI_PREFIX.length);
+  }
+  return spki;
+}
+
+function fingerprintPublicKey(publicKeyPem) {
+  return crypto.createHash("sha256").update(derivePublicKeyRaw(publicKeyPem)).digest("hex");
+}
+
+function publicKeyRawBase64UrlFromPem(publicKeyPem) {
+  return base64UrlEncode(derivePublicKeyRaw(publicKeyPem));
+}
+
+function signDevicePayload(privateKeyPem, payload) {
+  return base64UrlEncode(
+    crypto.sign(null, Buffer.from(payload, "utf8"), crypto.createPrivateKey(privateKeyPem)),
+  );
+}
+
+function loadOrCreateDeviceIdentity(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (
+        parsed &&
+        typeof parsed.deviceId === "string" &&
+        typeof parsed.publicKeyPem === "string" &&
+        typeof parsed.privateKeyPem === "string"
+      ) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Fall through and regenerate a fresh identity.
+  }
+
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const identity = {
+    version: 1,
+    deviceId: fingerprintPublicKey(publicKeyPem),
+    publicKeyPem,
+    privateKeyPem,
+    createdAtMs: Date.now(),
+  };
+  if (filePath) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 });
+  }
+  return identity;
+}
+
+function normalizeDeviceMetadataForAuth(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[A-Z]/g, (character) => String.fromCharCode(character.charCodeAt(0) + 32));
+}
+
+function buildDeviceAuthPayloadV3(params) {
+  return [
+    "v3",
+    params.deviceId,
+    params.clientId,
+    params.clientMode,
+    params.role,
+    params.scopes.join(","),
+    String(params.signedAtMs),
+    params.token ?? "",
+    params.nonce,
+    normalizeDeviceMetadataForAuth(params.platform),
+    normalizeDeviceMetadataForAuth(params.deviceFamily),
+  ].join("|");
 }
 
 function isTenantDerivedAgentId(value) {
@@ -191,6 +279,35 @@ function createGatewayApprovalsClient(params) {
 
   const sendConnect = () => {
     clearConnectTimer();
+    const signedAtMs = Date.now();
+    const scopes = ["operator.approvals"];
+    const identity = params.deviceIdentityPath
+      ? loadOrCreateDeviceIdentity(params.deviceIdentityPath)
+      : null;
+    const device =
+      identity && params.token
+        ? {
+            id: identity.deviceId,
+            publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),
+            signature: signDevicePayload(
+              identity.privateKeyPem,
+              buildDeviceAuthPayloadV3({
+                deviceId: identity.deviceId,
+                clientId: "gateway-client",
+                clientMode: "backend",
+                role: "operator",
+                scopes,
+                signedAtMs,
+                token: params.token,
+                nonce: params.connectNonce,
+                platform: process.platform,
+                deviceFamily: "tenant-platform",
+              }),
+            ),
+            signedAt: signedAtMs,
+            nonce: params.connectNonce,
+          }
+        : undefined;
     void sendFrameRequest(
       "connect",
       {
@@ -205,7 +322,7 @@ function createGatewayApprovalsClient(params) {
         },
         caps: [],
         role: "operator",
-        scopes: ["operator.approvals"],
+        scopes,
         auth:
           params.token || params.password
             ? {
@@ -213,6 +330,7 @@ function createGatewayApprovalsClient(params) {
                 password: params.password || undefined,
               }
             : undefined,
+        device,
       },
       { requireConnected: false },
     )
@@ -249,6 +367,7 @@ function createGatewayApprovalsClient(params) {
           } catch {}
           return;
         }
+        params.connectNonce = nonce;
         sendConnect();
         return;
       }
@@ -404,6 +523,11 @@ export function createTenantExecApprovalAutoApprover(params = {}) {
         url: config.gatewayUrl,
         token: config.gatewayToken,
         password: config.gatewayPassword,
+        deviceIdentityPath: path.join(
+          String(config.stateDir || config.configDir || "."),
+          "identity",
+          "tenant-platform-gateway-client.json",
+        ),
         logger,
         onEvent: (event) => {
           void handleEvent(event).catch((error) => {
@@ -412,9 +536,12 @@ export function createTenantExecApprovalAutoApprover(params = {}) {
             );
           });
         },
-        onConnect: () => {
+        onConnect: (payload) => {
+          const grantedScopes = Array.isArray(payload?.auth?.scopes)
+            ? payload.auth.scopes.join(",")
+            : "";
           logger.info(
-            `[tenant-platform exec-auto-approve] connected ${String(config.gatewayUrl || "")}`,
+            `[tenant-platform exec-auto-approve] connected ${String(config.gatewayUrl || "")}${grantedScopes ? ` scopes=${grantedScopes}` : ""}`,
           );
         },
         onError: (error) => {
