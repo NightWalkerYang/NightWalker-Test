@@ -180,8 +180,10 @@ That script:
 2. writes a root-level `docker-compose.override.yml`
 3. mounts the generated UI directly to `/app/dist/control-ui` inside `openclaw-gateway`
 4. mounts `${OPENCLAW_WORKSPACE_DIR}` read-only into `/app/dist/control-ui/workspace-downloads` so fenced `file` cards can download workspace files through the same origin
-5. mounts `docs/reference/templates` to `/app/docs/reference/templates` so agent workspace bootstrap files are available even when an image is missing those docs assets
-6. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
+5. mounts `${OPENCLAW_CONFIG_DIR}/workspace-agents` read-only into `/app/dist/control-ui/workspace-agent-downloads` so refreshed public visualization pages can still load their rewritten same-origin JS/CSS assets
+6. mounts `docs/reference/templates` to `/app/docs/reference/templates` so agent workspace bootstrap files are available even when an image is missing those docs assets
+7. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
+8. runs `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy` so the new bind mounts are actually applied instead of leaving the old gateway/proxy containers running
 
 Because the mount replaces the container's default Control UI asset directory, this path does not need `gateway.controlUi.root`.
 
@@ -192,11 +194,13 @@ The shell variant also works when the host has no `dist/control-ui` yet:
 - if that image does not exist yet, it builds `openclaw:local` from `Dockerfile` or pulls `OPENCLAW_IMAGE` when you set a non-default image
 - the injected chart runtime stays CSP-safe by loading same-origin `assets/vendor/*.js` files extracted from the tracked offline bundle
 
-After that, from the same repo root, this is enough:
+If you only want to refresh generated files and `docker-compose.override.yml` without restarting the related containers, set:
 
 ```bash
-docker compose up -d
+OPENCLAW_SKIP_COMPOSE_UP=1
 ```
+
+Without that flag, the setup script already applies the targeted `docker compose up`.
 
 If you want files committed under the repo, such as `excel_Test`, to appear inside the agent workspace, add this to `.env` before rerunning the setup script:
 
