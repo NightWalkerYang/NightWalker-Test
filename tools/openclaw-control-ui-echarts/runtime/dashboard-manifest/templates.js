@@ -311,6 +311,28 @@ function normalizeDensity(value) {
   return normalizeEnum(value, Object.keys(DENSITY_PRESETS), "standard");
 }
 
+function normalizeThemeOverrides(value) {
+  const theme = isPlainObject(value) ? value : {};
+  return {
+    background: String(theme.background || theme.bg || "").trim() || undefined,
+    surface: String(theme.surface || "").trim() || undefined,
+    surfaceStrong: String(theme.surfaceStrong || "").trim() || undefined,
+    accent: String(theme.accent || theme.primary || "").trim() || undefined,
+    accentSoft: String(theme.accentSoft || theme.primary || "").trim() || undefined,
+    success: String(theme.success || theme.accent || "").trim() || undefined,
+    warning: String(theme.warning || theme.warn || "").trim() || undefined,
+    danger: String(theme.danger || theme.error || "").trim() || undefined,
+    text: String(theme.text || "").trim() || undefined,
+    muted: String(theme.muted || "").trim() || undefined,
+    grid: String(theme.grid || "").trim() || undefined,
+    fontFamily: String(theme.fontFamily || "").trim() || undefined,
+    titleFontFamily: String(theme.titleFontFamily || "").trim() || undefined,
+    titleLetterSpacing: String(theme.titleLetterSpacing || "").trim() || undefined,
+    backdropOpacity: theme.backdropOpacity,
+    gridOpacity: theme.gridOpacity,
+  };
+}
+
 function normalizeMotion(value, presetMotion = {}) {
   const source = typeof value === "string" ? { level: value } : isPlainObject(value) ? value : {};
   const merged = deepMerge(DEFAULT_MOTION, deepMerge(presetMotion, source));
@@ -399,7 +421,7 @@ function normalizeLayout(value, presetLayout = {}, densityLayout = {}) {
   return {
     shellGap: clampNumber(merged.shellGap, 8, 40, DEFAULT_LAYOUT.shellGap),
     shellPadding: normalizePaddingValue(merged.shellPadding, DEFAULT_LAYOUT.shellPadding),
-    metricsColumns: clampNumber(merged.metricsColumns, 1, 6, DEFAULT_LAYOUT.metricsColumns),
+    metricsColumns: clampNumber(merged.metricsColumns, 1, 8, DEFAULT_LAYOUT.metricsColumns),
     mainGap: clampNumber(merged.mainGap, 12, 36, DEFAULT_LAYOUT.mainGap),
     panelGap: clampNumber(merged.panelGap, 10, 36, DEFAULT_LAYOUT.panelGap),
     footerGap: clampNumber(merged.footerGap, 10, 36, DEFAULT_LAYOUT.footerGap),
@@ -595,9 +617,9 @@ function normalizeChart(rawChart, slotKey, fallbackType, fallbackTitle) {
 function normalizeTimelineItem(item, index) {
   if (isPlainObject(item)) {
     return {
-      time: String(item.time || item.when || "").trim() || `T${index + 1}`,
+      time: String(item.time || item.when || item.period || "").trim() || `T${index + 1}`,
       label: String(item.label || item.title || item.name || "").trim() || `动态 ${index + 1}`,
-      value: String(item.value || item.note || "").trim(),
+      value: String(item.value || item.note || item.description || item.text || "").trim(),
     };
   }
   return {
@@ -614,8 +636,11 @@ function normalizeAlertItem(item, index) {
         String(item.level || item.status || "")
           .trim()
           .toLowerCase() || "info",
-      title: String(item.title || item.label || item.name || "").trim() || `提醒 ${index + 1}`,
-      value: String(item.value || item.note || "").trim(),
+      title:
+        String(
+          item.title || item.label || item.name || item.text || item.description || "",
+        ).trim() || `提醒 ${index + 1}`,
+      value: String(item.value || item.note || item.detail || "").trim(),
     };
   }
   return {
@@ -668,6 +693,7 @@ function normalizeNavigationItem(item, index, context) {
     label:
       String(item.label || item.title || item.name || `分屏 ${index + 1}`).trim() ||
       `分屏 ${index + 1}`,
+    value: String(item.value || item.note || item.description || "").trim(),
     href,
     active:
       String(targetFileName || explicitHref).trim() ===
@@ -698,9 +724,10 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
     result[slotKey] = normalizeChart(chartSource[slotKey], slotKey, meta.type, meta.title);
     return result;
   }, {});
+  const themeOverrides = normalizeThemeOverrides(manifest.theme);
   const theme = deepMerge(
     deepMerge(DEFAULT_THEME, isPlainObject(stylePreset.theme) ? stylePreset.theme : {}),
-    isPlainObject(manifest.theme) ? manifest.theme : {},
+    themeOverrides,
   );
   const motion = normalizeMotion(
     deepMerge(
@@ -893,6 +920,22 @@ function buildPanelMarkup(chart) {
     .join("\n");
 }
 
+function buildDockPanelMarkup(chart) {
+  const renderMode = isHtmlPanelType(chart) ? "html" : "chart";
+  return [
+    `<section class="oc-dashboard-scene-dock-card is-panel" data-panel-slot="${escapeHtmlAttribute(chart.slotKey)}" data-block-id="${escapeHtmlAttribute(BLOCK_IDS[chart.slotKey] || chart.slotKey)}" data-render-mode="${renderMode}">`,
+    `  <div class="oc-dashboard-scene-dock-title">${escapeHtml(chart.title)}</div>`,
+    '  <div class="oc-dashboard-scene-dock-body is-panel-body">',
+    renderMode === "chart"
+      ? `    <div class="oc-dashboard-scene-dock-chart" data-chart-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`
+      : `    <div class="oc-dashboard-scene-dock-html" data-html-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`,
+    "  </div>",
+    "</section>",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function buildTimelineMarkup(items) {
   return items
     .map(
@@ -932,11 +975,16 @@ function buildNavigationMarkup(items) {
               type="button"
               ${item.href ? `data-nav-href="${escapeHtmlAttribute(item.href)}"` : "disabled"}
             >
-              ${escapeHtml(item.label)}
+              <span class="oc-dashboard-nav-label">${escapeHtml(item.label)}</span>
+              ${
+                item.value
+                  ? `<span class="oc-dashboard-nav-value">${escapeHtml(item.value)}</span>`
+                  : ""
+              }
             </button>`,
         )
         .join("")}
-      </nav>`;
+    </nav>`;
 }
 
 function isVisibleBlock(block) {
@@ -961,7 +1009,46 @@ function buildPanelColumnMarkup(manifest, side, slotKeys) {
     </section>`;
 }
 
-function buildSceneMarkup(manifest, context = {}) {
+function buildSceneDockMarkup(manifest) {
+  const dockSections = [];
+  if (isVisibleBlock(manifest.blocks?.leftBottom) && manifest.charts?.leftBottom) {
+    dockSections.push(buildDockPanelMarkup(manifest.charts.leftBottom));
+  }
+  if (isVisibleBlock(manifest.blocks?.timeline)) {
+    dockSections.push(`
+      <section class="oc-dashboard-scene-dock-card" data-block-id="${escapeHtmlAttribute(manifest.blocks.timeline.id)}">
+        <div class="oc-dashboard-scene-dock-title">${escapeHtml(manifest.blocks.timeline.title || "动态时间线")}</div>
+        <div class="oc-dashboard-scene-dock-body">
+          <ul class="oc-dashboard-feed-list">
+            ${buildTimelineMarkup(manifest.timeline)}
+          </ul>
+        </div>
+      </section>`);
+  }
+  if (isVisibleBlock(manifest.blocks?.alerts)) {
+    dockSections.push(`
+      <section class="oc-dashboard-scene-dock-card" data-block-id="${escapeHtmlAttribute(manifest.blocks.alerts.id)}">
+        <div class="oc-dashboard-scene-dock-title">${escapeHtml(manifest.blocks.alerts.title || "风险提示")}</div>
+        <div class="oc-dashboard-scene-dock-body">
+          <ul class="oc-dashboard-alert-list">
+            ${buildAlertsMarkup(manifest.alerts)}
+          </ul>
+        </div>
+      </section>`);
+  }
+  if (isVisibleBlock(manifest.blocks?.rightBottom) && manifest.charts?.rightBottom) {
+    dockSections.push(buildDockPanelMarkup(manifest.charts.rightBottom));
+  }
+  if (!dockSections.length) {
+    return "";
+  }
+  return `
+    <div class="oc-dashboard-scene-dock" data-dock-count="${escapeHtmlAttribute(dockSections.length)}">
+      ${dockSections.join("")}
+    </div>`;
+}
+
+function buildSceneMarkup(manifest, context = {}, options = {}) {
   if (!isVisibleBlock(manifest.blocks?.scene)) {
     return "";
   }
@@ -974,8 +1061,10 @@ function buildSceneMarkup(manifest, context = {}) {
     { label: "ALERT", value: String(manifest.alerts.length).padStart(2, "0") },
     { label: "FEED", value: String(manifest.timeline.length).padStart(2, "0") },
   ];
+  const sceneDockMarkup =
+    options.layoutMode === "cockpit-stage" ? buildSceneDockMarkup(manifest) : "";
   return `
-    <section class="oc-dashboard-scene-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.scene.id)}">
+    <section class="oc-dashboard-scene-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.scene.id)}" data-has-dock="${sceneDockMarkup ? "true" : "false"}">
       <div class="oc-dashboard-scene-frame">
         <div class="oc-dashboard-scene-overlay">
           ${sceneKicker ? `<div class="oc-dashboard-scene-kicker">${escapeHtml(sceneKicker)}</div>` : ""}
@@ -1012,6 +1101,7 @@ function buildSceneMarkup(manifest, context = {}) {
           <div class="oc-dashboard-scene-beam"></div>
           <div class="oc-dashboard-scene-chart" data-dashboard-scene></div>
         </div>
+        ${sceneDockMarkup}
       </div>
     </section>`;
 }
@@ -1729,13 +1819,28 @@ export function buildPanelOption(chart, manifest) {
 }
 
 export function buildDashboardMarkup(manifest, context = {}) {
-  const leftColumnMarkup = buildPanelColumnMarkup(manifest, "left", ["leftTop", "leftBottom"]);
-  const rightColumnMarkup = buildPanelColumnMarkup(manifest, "right", ["rightTop", "rightBottom"]);
-  const sceneMarkup = buildSceneMarkup(manifest, context);
+  const hasSceneBlock = isVisibleBlock(manifest.blocks?.scene);
+  const useCockpitStage =
+    hasSceneBlock &&
+    isVisibleBlock(manifest.blocks?.leftTop) &&
+    isVisibleBlock(manifest.blocks?.rightTop);
+  const leftColumnMarkup = buildPanelColumnMarkup(
+    manifest,
+    "left",
+    useCockpitStage ? ["leftTop"] : ["leftTop", "leftBottom"],
+  );
+  const rightColumnMarkup = buildPanelColumnMarkup(
+    manifest,
+    "right",
+    useCockpitStage ? ["rightTop"] : ["rightTop", "rightBottom"],
+  );
   const hasLeftColumn = Boolean(leftColumnMarkup);
   const hasRightColumn = Boolean(rightColumnMarkup);
+  const mainLayoutMode = useCockpitStage ? "cockpit-stage" : "standard";
+  const sceneMarkup = buildSceneMarkup(manifest, context, { layoutMode: mainLayoutMode });
   const hasScene = Boolean(sceneMarkup);
-  const mainLayoutMode = hasScene && hasLeftColumn && hasRightColumn ? "cockpit-stage" : "standard";
+  const resolvedLayoutMode =
+    hasScene && hasLeftColumn && hasRightColumn ? mainLayoutMode : "standard";
   const metricsMarkup = isVisibleBlock(manifest.blocks?.metrics)
     ? `
       <section class="oc-dashboard-metrics-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.metrics.id)}" data-metric-count="${escapeHtmlAttribute(manifest.metrics.length)}">
@@ -1749,13 +1854,13 @@ export function buildDashboardMarkup(manifest, context = {}) {
       </section>`
     : "";
   const mainMarkup = (
-    mainLayoutMode === "cockpit-stage"
+    resolvedLayoutMode === "cockpit-stage"
       ? [sceneMarkup, leftColumnMarkup, rightColumnMarkup]
       : [leftColumnMarkup, sceneMarkup, rightColumnMarkup]
   )
     .filter(Boolean)
     .join("");
-  const footerMarkup = buildFooterMarkup(manifest);
+  const footerMarkup = resolvedLayoutMode === "cockpit-stage" ? "" : buildFooterMarkup(manifest);
   return `
     <div
       class="oc-dashboard-shell"
@@ -1794,7 +1899,7 @@ export function buildDashboardMarkup(manifest, context = {}) {
       ${metricsMarkup}
       ${
         mainMarkup
-          ? `<main class="oc-dashboard-main" data-layout-mode="${escapeHtmlAttribute(mainLayoutMode)}">${mainMarkup}</main>`
+          ? `<main class="oc-dashboard-main" data-layout-mode="${escapeHtmlAttribute(resolvedLayoutMode)}">${mainMarkup}</main>`
           : ""
       }
       ${footerMarkup}

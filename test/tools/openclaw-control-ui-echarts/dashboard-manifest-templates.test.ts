@@ -170,7 +170,8 @@ describe("dashboard manifest runtime templates", () => {
     expect(markup).not.toContain('data-block-id="kpi-strip"');
     expect(markup).not.toContain('data-block-id="left-bottom"');
     expect(markup).not.toContain('data-block-id="alerts"');
-    expect(markup).toContain('data-footer-count="1"');
+    expect(markup).not.toContain('data-footer-count="1"');
+    expect(markup).toContain('class="oc-dashboard-scene-dock"');
   });
 
   it("exports the renderer entry for runtime bootstrapping", () => {

@@ -226,4 +226,119 @@ describe("dashboard manifest renderer runtime URL resolution", () => {
 
     clearDashboardRuntimeArtifacts(root);
   });
+
+  it("loads object-form json data sources and materializes field-bound metrics and charts", async () => {
+    installLoadedVendorScript("/assets/vendor/echarts.min.js");
+    installLoadedVendorScript("/assets/vendor/echarts-gl.min.js");
+    installLoadedVendorScript("/assets/vendor/gsap.min.js");
+
+    const root = document.createElement("div");
+    document.body.append(root);
+
+    const liveInstances = new Map();
+    testGlobal.echarts = {
+      getInstanceByDom(container) {
+        return liveInstances.get(container) || null;
+      },
+      init(container) {
+        const chart = {
+          setOption() {},
+          resize() {},
+          dispose() {
+            liveInstances.delete(container);
+          },
+        };
+        liveInstances.set(container, chart);
+        return chart;
+      },
+    };
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        metrics: {
+          资产总额: 2799354346.01,
+          资产负债率: 9.94,
+        },
+        assetStructure: [
+          { name: "1511 投资成本", value: 2633098703.06 },
+          { name: "1221 其他", value: 117060097.02 },
+        ],
+        trend: [
+          { period: "202602", 资产总额: 2781512728.62, 资产负债率: 9.19 },
+          { period: "202603", 资产总额: 2799354346.01, 资产负债率: 9.94 },
+        ],
+        alerts: [
+          {
+            level: "high",
+            text: "长期股权投资占比高，需持续关注被投企业经营与减值风险。",
+          },
+        ],
+      }),
+    }));
+    testGlobal.fetch = fetchMock as typeof fetch;
+
+    const normalized = await renderDashboardManifest({
+      root,
+      manifest: {
+        version: 1,
+        title: "禄丰国控财务总览",
+        particles: false,
+        dataSource: {
+          type: "json",
+          url: "./data/dashboard.json",
+        },
+        metrics: [
+          {
+            label: "资产总额",
+            field: "metrics.资产总额",
+            format: "currencyWan",
+            suffix: "万元",
+          },
+          {
+            label: "资产负债率",
+            field: "metrics.资产负债率",
+            format: "percent",
+            suffix: "%",
+          },
+        ],
+        charts: {
+          leftTop: {
+            type: "pie",
+            title: "资产结构分布",
+            datasetField: "assetStructure",
+            nameField: "name",
+            valueField: "value",
+          },
+          rightBottom: {
+            type: "line",
+            title: "核心指标趋势",
+            datasetField: "trend",
+            categoryField: "period",
+            series: [
+              { name: "资产总额", field: "资产总额" },
+              { name: "资产负债率", field: "资产负债率" },
+            ],
+          },
+        },
+      },
+      context: {
+        workspaceBaseHref: "/workspace-agent-downloads/tenant-agent-1/Echarts/",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      "/workspace-agent-downloads/tenant-agent-1/Echarts/data/dashboard.json",
+    );
+    expect(normalized.metrics[0]?.valueText).toBe("279935.43");
+    expect(normalized.metrics[0]?.unit).toBe("万元");
+    expect(normalized.metrics[1]?.valueText).toBe("9.94");
+    expect(normalized.charts.leftTop.items).toHaveLength(2);
+    expect(normalized.charts.rightBottom.categories).toEqual(["2026-02", "2026-03"]);
+    expect(normalized.charts.rightBottom.series?.[0]?.data).toEqual([2781512728.62, 2799354346.01]);
+    expect(normalized.alerts[0]?.title).toContain("长期股权投资占比高");
+
+    clearDashboardRuntimeArtifacts(root);
+  });
 });

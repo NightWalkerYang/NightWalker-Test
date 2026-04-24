@@ -180,11 +180,13 @@ function hasVisiblePanels(manifest, slotKeys = []) {
   return slotKeys.some((slotKey) => manifest.blocks?.[slotKey]?.visible !== false);
 }
 
-function buildSideColumnWidth(manifest, side) {
+function buildSideColumnWidth(manifest, side, options = {}) {
+  const maxPreferredWidth = options.cockpitClamp ? 280 : 420;
+  const maxPreferredMinWidth = options.cockpitClamp ? 240 : 360;
   if (side === "left") {
-    return `minmax(${manifest.layout.leftColumnMin}px, ${manifest.layout.leftColumnMax}px)`;
+    return `minmax(${Math.min(manifest.layout.leftColumnMin, maxPreferredMinWidth)}px, ${Math.min(manifest.layout.leftColumnMax, maxPreferredWidth)}px)`;
   }
-  return `minmax(${manifest.layout.rightColumnMin}px, ${manifest.layout.rightColumnMax}px)`;
+  return `minmax(${Math.min(manifest.layout.rightColumnMin, maxPreferredMinWidth)}px, ${Math.min(manifest.layout.rightColumnMax, maxPreferredWidth)}px)`;
 }
 
 function buildMainColumns(manifest) {
@@ -192,13 +194,14 @@ function buildMainColumns(manifest) {
   const hasRight = hasVisiblePanels(manifest, ["rightTop", "rightBottom"]);
   const hasScene = manifest.blocks?.scene?.visible !== false;
   if (hasScene) {
+    const cockpitClamp = hasLeft && hasRight;
     const segments = [];
     if (hasLeft) {
-      segments.push(buildSideColumnWidth(manifest, "left"));
+      segments.push(buildSideColumnWidth(manifest, "left", { cockpitClamp }));
     }
     segments.push("minmax(0, 1fr)");
     if (hasRight) {
-      segments.push(buildSideColumnWidth(manifest, "right"));
+      segments.push(buildSideColumnWidth(manifest, "right", { cockpitClamp }));
     }
     return segments.join(" ");
   }
@@ -608,14 +611,271 @@ function animateDashboard(root) {
   }
 }
 
+function resolveDashboardDataSourceHref(dataSource) {
+  if (typeof dataSource === "string") {
+    return dataSource.trim();
+  }
+  if (!isPlainObject(dataSource)) {
+    return "";
+  }
+  if (
+    String(dataSource.type || "")
+      .trim()
+      .toLowerCase() === "embedded"
+  ) {
+    return "";
+  }
+  return String(
+    dataSource.url || dataSource.href || dataSource.src || dataSource.path || "",
+  ).trim();
+}
+
+function readBoundValue(source, fieldPath) {
+  const normalizedPath = String(fieldPath || "").trim();
+  if (!normalizedPath) {
+    return undefined;
+  }
+  const segments = normalizedPath.split(".").filter(Boolean);
+  let current = source;
+  for (const segment of segments) {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+function formatDashboardNumber(value, digits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "";
+  }
+  return numeric.toFixed(digits).replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
+}
+
+function normalizeMetricDisplayValue(metric, rawValue) {
+  const format = String(metric?.format || "")
+    .trim()
+    .toLowerCase();
+  const fallbackUnit = String(metric?.suffix || metric?.unit || "").trim();
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return {
+      valueText: String(rawValue ?? "").trim(),
+      numericValue: Number.NaN,
+      unit: fallbackUnit,
+    };
+  }
+  if (format === "currencywan") {
+    return {
+      valueText: formatDashboardNumber(numeric / 10000, 2),
+      numericValue: numeric / 10000,
+      unit: fallbackUnit || "万元",
+    };
+  }
+  if (format === "currencyyi") {
+    return {
+      valueText: formatDashboardNumber(numeric / 100000000, 2),
+      numericValue: numeric / 100000000,
+      unit: fallbackUnit || "亿元",
+    };
+  }
+  if (format === "percent") {
+    return {
+      valueText: formatDashboardNumber(numeric, 2),
+      numericValue: numeric,
+      unit: fallbackUnit || "%",
+    };
+  }
+  return {
+    valueText: formatDashboardNumber(numeric, 2),
+    numericValue: numeric,
+    unit: fallbackUnit,
+  };
+}
+
+function normalizeCategoryLabel(value) {
+  const text = String(value ?? "").trim();
+  if (/^\d{6}$/.test(text)) {
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}`;
+  }
+  return text;
+}
+
+function materializeMetricDefinition(metric, payload, index) {
+  if (!isPlainObject(metric)) {
+    return metric;
+  }
+  const rawValue = metric.field
+    ? readBoundValue(payload, metric.field)
+    : (metric.value ?? metric.number);
+  if (rawValue === undefined) {
+    return metric;
+  }
+  const resolved = normalizeMetricDisplayValue(metric, rawValue);
+  return {
+    ...metric,
+    id: String(metric.id || `metric-${index + 1}`).trim() || `metric-${index + 1}`,
+    value: resolved.valueText,
+    valueText: resolved.valueText,
+    numericValue: resolved.numericValue,
+    unit: resolved.unit,
+    note:
+      String(
+        metric.note || (metric.noteField ? readBoundValue(payload, metric.noteField) : "") || "",
+      ).trim() || "",
+    delta:
+      String(
+        metric.delta || (metric.deltaField ? readBoundValue(payload, metric.deltaField) : "") || "",
+      ).trim() || "",
+    trend:
+      String(
+        metric.trend || (metric.trendField ? readBoundValue(payload, metric.trendField) : "") || "",
+      ).trim() || "",
+  };
+}
+
+function materializeDatasetItems(dataset, chart) {
+  if (!Array.isArray(dataset)) {
+    return [];
+  }
+  const nameField = String(chart?.nameField || "name").trim() || "name";
+  const valueField = String(chart?.valueField || "value").trim() || "value";
+  return dataset.map((item, index) => ({
+    name:
+      String(isPlainObject(item) ? item[nameField] : `项 ${index + 1}`).trim() || `项 ${index + 1}`,
+    value: Number(isPlainObject(item) ? item[valueField] : item) || 0,
+  }));
+}
+
+function materializeTrendSeries(dataset, chart) {
+  if (!Array.isArray(dataset)) {
+    return [];
+  }
+  const configuredSeries = Array.isArray(chart?.series) ? chart.series : [];
+  if (configuredSeries.length) {
+    return configuredSeries.map((series, index) => {
+      const field = String(series?.field || series?.key || "").trim();
+      return {
+        ...series,
+        name: String(series?.name || field || `系列 ${index + 1}`).trim() || `系列 ${index + 1}`,
+        type: String(series?.type || chart?.type || "line").trim(),
+        data: dataset.map((item) => {
+          if (!field || !isPlainObject(item)) {
+            return 0;
+          }
+          const value = Number(item[field]);
+          return Number.isFinite(value) ? value : 0;
+        }),
+      };
+    });
+  }
+  const valueField = String(chart?.valueField || "value").trim() || "value";
+  return [
+    {
+      name: String(chart?.title || "趋势").trim() || "趋势",
+      type: String(chart?.type || "line").trim() || "line",
+      data: dataset.map((item) => {
+        if (!isPlainObject(item)) {
+          const numeric = Number(item);
+          return Number.isFinite(numeric) ? numeric : 0;
+        }
+        const numeric = Number(item[valueField]);
+        return Number.isFinite(numeric) ? numeric : 0;
+      }),
+    },
+  ];
+}
+
+function materializeChartDefinition(chart, payload) {
+  if (!isPlainObject(chart)) {
+    return chart;
+  }
+  const dataset = chart.datasetField ? readBoundValue(payload, chart.datasetField) : undefined;
+  if (!dataset) {
+    return chart;
+  }
+  const chartType = String(chart.type || "")
+    .trim()
+    .toLowerCase();
+  if (["pie", "ranking", "stat", "list"].includes(chartType)) {
+    return {
+      ...chart,
+      items: materializeDatasetItems(dataset, chart),
+    };
+  }
+  if (chartType === "table" && Array.isArray(dataset)) {
+    return {
+      ...chart,
+      rows: dataset,
+    };
+  }
+  if (["line", "bar"].includes(chartType) && Array.isArray(dataset)) {
+    const categoryField = String(chart.categoryField || "category").trim() || "category";
+    return {
+      ...chart,
+      categories: dataset.map((item, index) =>
+        normalizeCategoryLabel(isPlainObject(item) ? item[categoryField] : `阶段 ${index + 1}`),
+      ),
+      series: materializeTrendSeries(dataset, chart),
+    };
+  }
+  return chart;
+}
+
+function manifestUsesStructuredBindings(manifest) {
+  if (!isPlainObject(manifest)) {
+    return false;
+  }
+  const hasMetricBindings = Array.isArray(manifest.metrics)
+    ? manifest.metrics.some((metric) => isPlainObject(metric) && metric.field)
+    : false;
+  const chartEntries = isPlainObject(manifest.charts) ? Object.values(manifest.charts) : [];
+  const hasChartBindings = chartEntries.some(
+    (chart) =>
+      isPlainObject(chart) &&
+      (chart.datasetField ||
+        chart.nameField ||
+        chart.valueField ||
+        chart.categoryField ||
+        (Array.isArray(chart.series) &&
+          chart.series.some((series) => isPlainObject(series) && series.field))),
+  );
+  return hasMetricBindings || hasChartBindings;
+}
+
+function materializeDashboardManifest(rawManifest, payload) {
+  if (!isPlainObject(rawManifest) || !isPlainObject(payload)) {
+    return rawManifest;
+  }
+  const nextManifest = { ...rawManifest };
+  if (Array.isArray(rawManifest.metrics)) {
+    nextManifest.metrics = rawManifest.metrics.map((metric, index) =>
+      materializeMetricDefinition(metric, payload, index),
+    );
+  }
+  if (isPlainObject(rawManifest.charts)) {
+    nextManifest.charts = Object.fromEntries(
+      Object.entries(rawManifest.charts).map(([key, chart]) => [
+        key,
+        materializeChartDefinition(chart, payload),
+      ]),
+    );
+  }
+  if (!Array.isArray(rawManifest.timeline) && Array.isArray(payload.timeline)) {
+    nextManifest.timeline = payload.timeline;
+  }
+  if (!Array.isArray(rawManifest.alerts) && Array.isArray(payload.alerts)) {
+    nextManifest.alerts = payload.alerts;
+  }
+  return nextManifest;
+}
+
 async function resolveDashboardManifest(rawManifest, context) {
   let manifest = rawManifest;
   const warnings = [];
-  const dataSource = rawManifest?.dataSource;
-  if (isPlainObject(dataSource)) {
-    return { manifest, warnings };
-  }
-  const dataSourceHref = String(dataSource || "").trim();
+  const dataSourceHref = resolveDashboardDataSourceHref(rawManifest?.dataSource);
   if (!dataSourceHref) {
     return { manifest, warnings };
   }
@@ -637,7 +897,9 @@ async function resolveDashboardManifest(rawManifest, context) {
     }
     const payload = await response.json();
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      manifest = deepMerge(manifest, payload);
+      manifest = manifestUsesStructuredBindings(manifest)
+        ? materializeDashboardManifest(manifest, payload)
+        : deepMerge(manifest, payload);
     }
   } catch (error) {
     warnings.push(

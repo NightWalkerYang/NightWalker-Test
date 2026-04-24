@@ -244,21 +244,39 @@ body {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: stretch;
 }
 
 .oc-dashboard-nav-button {
+  display: grid;
+  gap: 2px;
+  align-content: center;
+  min-width: 92px;
   border: 1px solid rgba(98, 230, 255, 0.22);
   background: rgba(7, 19, 38, 0.42);
   color: var(--oc-dashboard-text);
-  padding: 6px 12px;
+  padding: 7px 12px 8px;
   border-radius: 999px;
   font-size: 11px;
   font-family: inherit;
+  text-align: left;
   cursor: pointer;
   transition:
     border-color 120ms ease,
     background 120ms ease,
     color 120ms ease;
+}
+
+.oc-dashboard-nav-label {
+  color: var(--oc-dashboard-muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.oc-dashboard-nav-value {
+  color: var(--oc-dashboard-text);
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .oc-dashboard-nav-button:hover,
@@ -276,8 +294,9 @@ body {
 
 .oc-dashboard-metrics {
   display: grid;
-  grid-template-columns: var(--oc-dashboard-metrics-columns);
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  align-items: stretch;
 }
 
 .oc-dashboard-metrics-shell {
@@ -311,7 +330,7 @@ body {
   display: grid;
   grid-template-rows: auto auto auto;
   min-width: 0;
-  min-height: 74px;
+  min-height: 78px;
   padding: 10px 14px 9px;
   background:
     linear-gradient(180deg, rgba(98, 230, 255, 0.12), transparent 34%),
@@ -368,10 +387,12 @@ body {
 }
 
 .oc-dashboard-metric-label {
+  display: -webkit-box;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  line-height: 1.28;
   letter-spacing: 0.03em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .oc-dashboard-metric-head {
@@ -403,7 +424,7 @@ body {
 }
 
 .oc-dashboard-metric-value {
-  font-size: clamp(18px, 1.5vw, 26px);
+  font-size: clamp(20px, 1.7vw, 30px);
   line-height: 1;
   letter-spacing: 0.01em;
 }
@@ -589,18 +610,20 @@ body {
 .oc-dashboard-main[data-layout-mode="cockpit-stage"] > .oc-dashboard-scene-shell {
   grid-column: 1 / -1;
   grid-row: 1;
-  margin: 0 clamp(108px, 10.5vw, 176px);
-  min-height: max(420px, var(--oc-dashboard-scene-min-height));
+  margin: 0 clamp(92px, 8.6vw, 144px);
+  min-height: max(400px, calc(var(--oc-dashboard-scene-min-height) - 24px));
 }
 
 .oc-dashboard-main[data-layout-mode="cockpit-stage"]
   > .oc-dashboard-column[data-column-side="left"] {
   grid-column: 1;
   grid-row: 1;
-  align-self: stretch;
-  margin: 30px -20px 22px 0;
-  padding-right: 16px;
-  transform: perspective(1800px) rotateY(16deg) translateX(24px) translateY(8px);
+  align-self: start;
+  align-content: start;
+  grid-template-rows: auto auto auto;
+  margin: 46px -6px 0 0;
+  padding-right: 10px;
+  transform: perspective(1800px) rotateY(10deg) translateX(10px) translateY(10px);
   z-index: 3;
 }
 
@@ -608,10 +631,12 @@ body {
   > .oc-dashboard-column[data-column-side="right"] {
   grid-column: 3;
   grid-row: 1;
-  align-self: stretch;
-  margin: 30px 0 22px -20px;
-  padding-left: 16px;
-  transform: perspective(1800px) rotateY(-16deg) translateX(-24px) translateY(8px);
+  align-self: start;
+  align-content: start;
+  grid-template-rows: auto auto auto;
+  margin: 46px 0 0 -6px;
+  padding-left: 10px;
+  transform: perspective(1800px) rotateY(-10deg) translateX(-10px) translateY(10px);
   z-index: 3;
 }
 
@@ -901,11 +926,11 @@ body {
 
 .oc-dashboard-scene-status {
   position: absolute;
-  top: 22px;
-  right: 30px;
+  top: 18px;
+  right: 26px;
   z-index: 3;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -913,8 +938,8 @@ body {
 .oc-dashboard-scene-chip {
   display: inline-grid;
   gap: 3px;
-  min-width: 54px;
-  padding: 6px 10px;
+  min-width: 48px;
+  padding: 5px 9px;
   border: 1px solid rgba(98, 230, 255, 0.12);
   background:
     linear-gradient(180deg, rgba(98, 230, 255, 0.08), transparent 56%), rgba(7, 19, 38, 0.4);
@@ -971,6 +996,10 @@ body {
 .oc-dashboard-scene-chart {
   inset: 8% 9% 16%;
   filter: drop-shadow(0 0 18px rgba(98, 230, 255, 0.12));
+}
+
+.oc-dashboard-scene-shell[data-has-dock="true"] .oc-dashboard-scene-chart {
+  inset: 8% 10% 30%;
 }
 
 .oc-dashboard-scene-grid {
@@ -1095,6 +1124,10 @@ body {
   pointer-events: none;
 }
 
+.oc-dashboard-scene-shell[data-has-dock="true"] .oc-dashboard-scene-platform {
+  bottom: 21%;
+}
+
 .oc-dashboard-scene-target {
   left: 50%;
   top: 56%;
@@ -1105,6 +1138,79 @@ body {
   background: linear-gradient(180deg, rgba(98, 230, 255, 0.04), transparent 54%);
   box-shadow: 0 0 24px rgba(98, 230, 255, 0.08);
   pointer-events: none;
+}
+
+.oc-dashboard-scene-dock {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 16px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: 1.08fr 0.92fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.oc-dashboard-scene-dock[data-dock-count="1"] {
+  grid-template-columns: 1fr;
+}
+
+.oc-dashboard-scene-dock[data-dock-count="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.oc-dashboard-scene-dock[data-dock-count="4"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.oc-dashboard-scene-dock-card {
+  min-height: 92px;
+  padding: 10px 12px 8px;
+  border: 1px solid rgba(98, 230, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(8, 25, 45, 0.84), rgba(6, 18, 33, 0.72)),
+    linear-gradient(90deg, rgba(98, 230, 255, 0.05), transparent 46%);
+  clip-path: polygon(
+    0 16px,
+    16px 0,
+    calc(100% - 18px) 0,
+    100% 18px,
+    100% 100%,
+    10px 100%,
+    0 calc(100% - 10px)
+  );
+  box-shadow:
+    0 18px 32px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  box-sizing: border-box;
+}
+
+.oc-dashboard-scene-dock-title {
+  color: var(--oc-dashboard-accent);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.oc-dashboard-scene-dock-body {
+  max-height: 86px;
+  margin-top: 6px;
+  overflow: auto;
+}
+
+.oc-dashboard-scene-dock-body.is-panel-body {
+  max-height: none;
+  height: 126px;
+  overflow: hidden;
+}
+
+.oc-dashboard-scene-dock-chart,
+.oc-dashboard-scene-dock-html {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .oc-dashboard-scene-beam {
@@ -1154,7 +1260,7 @@ body {
   left: clamp(30px, 2.6vw, 42px);
   top: 36px;
   z-index: 3;
-  max-width: min(42%, var(--oc-dashboard-scene-overlay-width));
+  max-width: min(30%, var(--oc-dashboard-scene-overlay-width));
 }
 
 .oc-dashboard-scene-kicker,
@@ -1183,7 +1289,7 @@ body {
 
 .oc-dashboard-scene-title {
   margin-top: 6px;
-  font-size: clamp(24px, 2.4vw, 34px);
+  font-size: clamp(22px, 2vw, 30px);
   line-height: 1.12;
   text-shadow: 0 0 20px rgba(98, 230, 255, 0.08);
 }
@@ -1192,7 +1298,7 @@ body {
   margin-top: 10px;
   color: var(--oc-dashboard-muted);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .oc-dashboard-footer {
@@ -1200,20 +1306,25 @@ body {
   grid-template-columns: var(--oc-dashboard-footer-columns);
   gap: var(--oc-dashboard-footer-gap);
   min-height: 0;
+  align-items: start;
+  position: relative;
+  z-index: 4;
+  margin-top: 8px;
 }
 
 .oc-dashboard-footer-section {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  min-height: 146px;
-  padding: 12px 14px 10px;
+  min-height: 104px;
+  padding: 10px 12px 8px;
   box-sizing: border-box;
 }
 
 .oc-dashboard-footer-body {
   min-height: 0;
-  margin-top: 8px;
-  padding: 8px 10px;
+  max-height: 104px;
+  margin-top: 6px;
+  padding: 6px 10px;
   border: 1px solid rgba(98, 230, 255, 0.08);
   background:
     linear-gradient(180deg, rgba(9, 25, 44, 0.64), rgba(6, 18, 33, 0.22)),
@@ -1228,6 +1339,7 @@ body {
     0 calc(100% - 8px)
   );
   box-sizing: border-box;
+  overflow: auto;
 }
 
 .oc-dashboard-feed-list,
@@ -1245,7 +1357,7 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 6px 0;
+  padding: 4px 0;
   border-top: 1px solid rgba(98, 230, 255, 0.08);
 }
 
@@ -1375,17 +1487,17 @@ body {
 
 @media (min-width: 1360px) {
   .oc-dashboard-metrics-shell[data-metric-count="8"] .oc-dashboard-metrics {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
   }
 
   .oc-dashboard-metrics-shell[data-metric-count="7"] .oc-dashboard-metrics {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
   }
 
   .oc-dashboard-metrics-shell[data-metric-count="6"] .oc-dashboard-metrics {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   }
 }
 
@@ -1502,17 +1614,17 @@ body {
   }
 
   .oc-dashboard-main[data-layout-mode="cockpit-stage"] > .oc-dashboard-scene-shell {
-    margin: 0 92px;
+    margin: 0 80px;
   }
 
   .oc-dashboard-main[data-layout-mode="cockpit-stage"]
     > .oc-dashboard-column[data-column-side="left"] {
-    margin-right: -14px;
+    margin-right: 0;
   }
 
   .oc-dashboard-main[data-layout-mode="cockpit-stage"]
     > .oc-dashboard-column[data-column-side="right"] {
-    margin-left: -14px;
+    margin-left: 0;
   }
 }
 
@@ -1591,13 +1703,25 @@ body {
     inset: 12% 6% 18%;
   }
 
+  .oc-dashboard-scene-shell[data-has-dock="true"] .oc-dashboard-scene-chart {
+    inset: 10% 7% 34%;
+  }
+
   .oc-dashboard-scene-platform {
     width: min(72vw, 460px);
+  }
+
+  .oc-dashboard-scene-shell[data-has-dock="true"] .oc-dashboard-scene-platform {
+    bottom: 25%;
   }
 
   .oc-dashboard-scene-target {
     width: min(26vw, 170px);
     height: min(26vw, 170px);
+  }
+
+  .oc-dashboard-scene-dock {
+    grid-template-columns: 1fr;
   }
 
   .oc-dashboard-footer {
