@@ -69,6 +69,19 @@ function createTempSandbox() {
   };
 }
 
+function readExecApprovals(sandbox) {
+  const approvalsPath = path.join(sandbox.config.configDir, "exec-approvals.json");
+  if (!fs.existsSync(approvalsPath)) {
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(approvalsPath, "utf8"));
+}
+
+function writeExecApprovals(sandbox, payload) {
+  const approvalsPath = path.join(sandbox.config.configDir, "exec-approvals.json");
+  fs.writeFileSync(approvalsPath, JSON.stringify(payload, null, 2), "utf8");
+}
+
 afterEach(() => {
   for (const root of cleanupRoots) {
     fs.rmSync(root, { recursive: true, force: true });
@@ -293,6 +306,385 @@ describe("tenant platform database foundation", () => {
           (item) => item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
         ),
       ).toBe(true);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("falls back to OPENCLAW_WORKSPACE_DIR for split workspace deployments", () => {
+    const sandbox = createTempSandbox();
+    fs.writeFileSync(
+      sandbox.config.configPath,
+      JSON.stringify({
+        agents: {
+          list: [
+            {
+              id: "main",
+              name: "默认助手",
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+
+    const splitWorkspace = path.join(sandbox.root, "shared-workspace");
+    fs.mkdirSync(path.join(splitWorkspace, "memory"), { recursive: true });
+    fs.mkdirSync(path.join(splitWorkspace, "skills"), { recursive: true });
+    fs.writeFileSync(path.join(splitWorkspace, "MEMORY.md"), "# 主工作区记忆", "utf8");
+    fs.writeFileSync(
+      path.join(splitWorkspace, "memory", "split-layout.md"),
+      "split workspace should still seed derived agents",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(splitWorkspace, "skills", "README.md"),
+      "split workspace skills should be visible in derived agents",
+      "utf8",
+    );
+
+    const previousWorkspaceDir = process.env.OPENCLAW_WORKSPACE_DIR;
+    process.env.OPENCLAW_WORKSPACE_DIR = splitWorkspace;
+
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "gamma",
+        name: "租户 Gamma",
+        adminUsername: "gamma-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-split",
+        password: "secret",
+      });
+
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "main",
+        description: "默认助手",
+        rateMultiplier: 1,
+        balancePoints: 10,
+        status: "active",
+      });
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "MEMORY.md"), "utf8")).toContain(
+        "主工作区记忆",
+      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "memory", "split-layout.md"), "utf8"),
+      ).toContain("split workspace should still seed derived agents");
+      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
+        "split workspace skills should be visible",
+      );
+    } finally {
+      if (previousWorkspaceDir === undefined) {
+        delete process.env.OPENCLAW_WORKSPACE_DIR;
+      } else {
+        process.env.OPENCLAW_WORKSPACE_DIR = previousWorkspaceDir;
+      }
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("copies base agent exec approvals into the derived agent bucket on assignment", () => {
+    const sandbox = createTempSandbox();
+    writeExecApprovals(sandbox, {
+      version: 1,
+      defaults: {
+        security: "full",
+        ask: "off",
+        askFallback: "full",
+      },
+      agents: {
+        finance: {
+          security: "full",
+          ask: "off",
+          askFallback: "full",
+          autoAllowSkills: true,
+          allowlist: [
+            {
+              id: "allow-ls",
+              pattern: "/usr/bin/ls",
+            },
+            {
+              pattern: "=command:finance",
+            },
+          ],
+        },
+        "*": {
+          allowlist: [
+            {
+              pattern: "/usr/bin/pwd",
+            },
+          ],
+        },
+      },
+    });
+
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "approval-sync",
+        name: "租户 Approval Sync",
+        adminUsername: "approval-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-approval",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 8,
+        status: "active",
+      });
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const approvals = readExecApprovals(sandbox);
+      const derivedBucket = approvals?.agents?.[String(assignment.derivedAgentId)];
+      expect(derivedBucket).toMatchObject({
+        security: "full",
+        ask: "off",
+        askFallback: "full",
+        autoAllowSkills: true,
+      });
+      expect(derivedBucket.allowlist).toEqual([
+        expect.objectContaining({ pattern: "/usr/bin/ls" }),
+        expect.objectContaining({ pattern: "=command:finance" }),
+      ]);
+      expect(approvals?.agents?.["*"]?.allowlist).toEqual([
+        expect.objectContaining({ pattern: "/usr/bin/pwd" }),
+      ]);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("backfills derived agent approval buckets for legacy assignments while preserving derived entries", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "approval-heal",
+        name: "租户 Approval Heal",
+        adminUsername: "approval-heal-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-heal",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 8,
+        status: "active",
+      });
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedAgentId = String(assignment.derivedAgentId || "");
+
+      writeExecApprovals(sandbox, {
+        version: 1,
+        defaults: {
+          security: "full",
+          ask: "off",
+          askFallback: "full",
+        },
+        agents: {
+          finance: {
+            security: "full",
+            ask: "off",
+            askFallback: "full",
+            allowlist: [
+              {
+                pattern: "/usr/bin/head",
+              },
+              {
+                pattern: "=command:shared",
+              },
+            ],
+          },
+          [derivedAgentId]: {
+            ask: "always",
+            allowlist: [
+              {
+                pattern: "/usr/bin/cat",
+              },
+              {
+                pattern: "=command:shared",
+              },
+            ],
+          },
+        },
+      });
+
+      const assignedAgents = listAssignedAgentsForUser(
+        db,
+        {
+          tenantId: tenant.id,
+          userId: member.id,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(assignedAgents).toHaveLength(1);
+
+      const approvals = readExecApprovals(sandbox);
+      const derivedBucket = approvals?.agents?.[derivedAgentId];
+      expect(derivedBucket).toMatchObject({
+        security: "full",
+        ask: "off",
+        askFallback: "full",
+      });
+      expect(
+        derivedBucket.allowlist.map((entry) => entry.pattern).toSorted(),
+      ).toEqual(["/usr/bin/cat", "/usr/bin/head", "=command:shared"].toSorted());
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("removes derived agent approval buckets when deleting a tenant member", () => {
+    const sandbox = createTempSandbox();
+    writeExecApprovals(sandbox, {
+      version: 1,
+      defaults: {
+        security: "full",
+        ask: "off",
+        askFallback: "full",
+      },
+      agents: {
+        finance: {
+          security: "full",
+          ask: "off",
+          askFallback: "full",
+          allowlist: [
+            {
+              pattern: "/usr/bin/ls",
+            },
+          ],
+        },
+      },
+    });
+
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "approval-delete",
+        name: "租户 Approval Delete",
+        adminUsername: "approval-delete-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-delete-approval",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 8,
+        status: "active",
+      });
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedAgentId = String(assignment.derivedAgentId || "");
+      expect(readExecApprovals(sandbox)?.agents?.[derivedAgentId]).toBeTruthy();
+
+      deleteTenantMember(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const approvals = readExecApprovals(sandbox);
+      expect(approvals?.agents?.finance).toBeTruthy();
+      expect(approvals?.agents?.[derivedAgentId]).toBeUndefined();
     } finally {
       closeTenantPlatformDb(db);
     }

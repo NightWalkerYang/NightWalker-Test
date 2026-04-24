@@ -376,6 +376,10 @@ function resolveConfigDir(params = {}) {
   return path.join(home, ".openclaw");
 }
 
+function resolveExecApprovalsFilePath(params = {}) {
+  return path.join(resolveConfigDir(params), "exec-approvals.json");
+}
+
 function resolveHomePath(input, configDir) {
   const raw = String(input || "").trim();
   if (!raw) {
@@ -403,6 +407,219 @@ function parseOpenClawConfig(configPath) {
   } catch {
     return {};
   }
+}
+
+function readExecApprovalsFile(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const text = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON5.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeExecApprovalsFile(filePath, payload) {
+  if (!filePath || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return true;
+}
+
+function normalizeExecApprovalPattern(value) {
+  const trimmed = String(value || "").trim();
+  return trimmed ? trimmed.toLowerCase() : "";
+}
+
+function mergeExecApprovalAllowlists(...lists) {
+  const merged = [];
+  const seen = new Set();
+  for (const list of lists) {
+    if (!Array.isArray(list)) {
+      continue;
+    }
+    for (const item of list) {
+      let entry = null;
+      if (typeof item === "string") {
+        const pattern = item.trim();
+        if (pattern) {
+          entry = { pattern };
+        }
+      } else if (item && typeof item === "object" && !Array.isArray(item)) {
+        const pattern = String(item.pattern || "").trim();
+        if (pattern) {
+          entry = {
+            ...item,
+            pattern,
+          };
+        }
+      }
+      if (!entry) {
+        continue;
+      }
+      const key = normalizeExecApprovalPattern(entry.pattern);
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push(entry);
+    }
+  }
+  return merged;
+}
+
+function normalizeExecApprovalAgentBucket(bucket) {
+  if (!bucket || typeof bucket !== "object" || Array.isArray(bucket)) {
+    return null;
+  }
+  const normalized = { ...bucket };
+
+  const security = String(bucket.security || "").trim();
+  if (security) {
+    normalized.security = security;
+  } else {
+    delete normalized.security;
+  }
+
+  const ask = String(bucket.ask || "").trim();
+  if (ask) {
+    normalized.ask = ask;
+  } else {
+    delete normalized.ask;
+  }
+
+  const askFallback = String(bucket.askFallback || "").trim();
+  if (askFallback) {
+    normalized.askFallback = askFallback;
+  } else {
+    delete normalized.askFallback;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(bucket, "autoAllowSkills")) {
+    normalized.autoAllowSkills = Boolean(bucket.autoAllowSkills);
+  } else {
+    delete normalized.autoAllowSkills;
+  }
+
+  const allowlist = mergeExecApprovalAllowlists(bucket.allowlist);
+  if (allowlist.length) {
+    normalized.allowlist = allowlist;
+  } else {
+    delete normalized.allowlist;
+  }
+
+  return normalized;
+}
+
+function mergeExecApprovalAgentBuckets(sourceBucket, targetBucket) {
+  const source = normalizeExecApprovalAgentBucket(sourceBucket);
+  if (!source) {
+    return normalizeExecApprovalAgentBucket(targetBucket);
+  }
+  const target = normalizeExecApprovalAgentBucket(targetBucket) || {};
+  const merged = {
+    ...target,
+    allowlist: mergeExecApprovalAllowlists(target.allowlist, source.allowlist),
+  };
+
+  for (const field of ["security", "ask", "askFallback", "autoAllowSkills"]) {
+    if (Object.prototype.hasOwnProperty.call(source, field)) {
+      merged[field] = source[field];
+    }
+  }
+
+  if (!merged.allowlist?.length) {
+    delete merged.allowlist;
+  }
+
+  return merged;
+}
+
+function syncDerivedAgentExecApprovals(params = {}) {
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!baseAgentId || !derivedAgentId || baseAgentId === derivedAgentId) {
+    return false;
+  }
+
+  const filePath = resolveExecApprovalsFilePath(params);
+  const current = readExecApprovalsFile(filePath);
+  if (!current) {
+    return false;
+  }
+
+  const agents =
+    current.agents && typeof current.agents === "object" && !Array.isArray(current.agents)
+      ? { ...current.agents }
+      : {};
+  const sourceBucket = agents[baseAgentId] ?? (baseAgentId === "main" ? agents.default : null);
+  const mergedBucket = mergeExecApprovalAgentBuckets(sourceBucket, agents[derivedAgentId]);
+  if (!sourceBucket || !mergedBucket) {
+    return false;
+  }
+
+  const next = {
+    ...current,
+    agents: {
+      ...agents,
+      [derivedAgentId]: mergedBucket,
+    },
+  };
+  if (JSON.stringify(current) === JSON.stringify(next)) {
+    return false;
+  }
+  return writeExecApprovalsFile(filePath, next);
+}
+
+function cleanupDerivedAgentExecApprovals(entries, params = {}) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return 0;
+  }
+
+  const filePath = resolveExecApprovalsFilePath(params);
+  const current = readExecApprovalsFile(filePath);
+  if (!current) {
+    return 0;
+  }
+
+  const agents =
+    current.agents && typeof current.agents === "object" && !Array.isArray(current.agents)
+      ? { ...current.agents }
+      : null;
+  if (!agents) {
+    return 0;
+  }
+
+  let removedCount = 0;
+  for (const entry of entries) {
+    const derivedAgentId = String(entry?.derivedAgentId || "").trim();
+    if (!derivedAgentId || !Object.prototype.hasOwnProperty.call(agents, derivedAgentId)) {
+      continue;
+    }
+    delete agents[derivedAgentId];
+    removedCount += 1;
+  }
+  if (!removedCount) {
+    return 0;
+  }
+
+  if (
+    !writeExecApprovalsFile(filePath, {
+      ...current,
+      agents,
+    })
+  ) {
+    return 0;
+  }
+  return removedCount;
 }
 
 function listConfigAgents(configPayload) {
@@ -446,11 +663,19 @@ function resolveBaseWorkspaceDir(params) {
   const baseAgentId = String(params.baseAgentId || "").trim();
   const entry = resolveAgentEntryFromConfig(configPayload, baseAgentId);
   const defaultAgentId = resolveDefaultAgentIdFromConfig(configPayload);
+  const runtimeWorkspaceDir = resolveHomePath(
+    params.workspaceDir || process.env.OPENCLAW_WORKSPACE_DIR,
+    configDir,
+  );
   const candidates = [];
 
   const configuredWorkspace = resolveHomePath(entry?.workspace, configDir);
   if (configuredWorkspace) {
     candidates.push(configuredWorkspace);
+  }
+
+  if (runtimeWorkspaceDir && (!baseAgentId || baseAgentId === defaultAgentId)) {
+    candidates.push(runtimeWorkspaceDir);
   }
 
   const explicitAgentWorkspace = path.join(configDir, "workspace-agents", baseAgentId);
@@ -758,6 +983,11 @@ function purgeTenantMemberUserData(db, params = {}) {
     throw new Error("成员不存在");
   }
   const cleanupResult = cleanupMemberDerivedWorkspaces(cleanupEntries, params);
+  try {
+    cleanupDerivedAgentExecApprovals(cleanupEntries, params);
+  } catch {
+    // Best-effort cleanup only. Member deletion must not be blocked by stale approval buckets.
+  }
 
   return {
     deletedAssignmentCount: Number(deletedAssignments?.changes || 0),
@@ -1699,6 +1929,12 @@ function assignTenantAgentToUserCore(db, params) {
     configPath: params.configPath,
     configDir: params.configDir,
   });
+  syncDerivedAgentExecApprovals({
+    baseAgentId: tenantAgent.baseAgentId,
+    derivedAgentId,
+    configPath: params.configPath,
+    configDir: params.configDir,
+  });
 
   if (existing) {
     db.prepare(
@@ -2007,6 +2243,12 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
           derivedWorkspaceDir: workspace.canonicalWorkspace,
         });
       }
+      syncDerivedAgentExecApprovals({
+        baseAgentId: row.baseAgentId,
+        derivedAgentId: resolvedAgentId,
+        configPath: params.configPath,
+        configDir: params.configDir,
+      });
 
       const baseAgentId = String(row.baseAgentId || "").trim();
       const agentId = resolvedAgentId || baseAgentId;

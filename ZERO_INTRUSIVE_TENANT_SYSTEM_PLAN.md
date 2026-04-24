@@ -290,6 +290,13 @@ sidecar 落点固定为：
   - `tenant_wallet_ledger`、`audit_logs` 等历史记录默认保留；其中用户外键引用按数据库约束自动置空
   - 后续在同一租户内用相同账号重新创建成员时，直接创建一条新的成员账号记录，不再复用旧 `users` 行
 
+当前实现还需要明确一条部署前提：
+
+- 只要部署把 `OPENCLAW_CONFIG_DIR` 和基准 Agent workspace 拆成两个宿主路径，tenant sidecar 也必须看到同一份基准 workspace
+  - 推荐做法是让 sidecar 额外挂载或解析到 `/home/node/.openclaw/workspace`
+  - 不能只让 gateway 容器看到 `workspace/`，而 sidecar 只挂 `.openclaw`
+  - 否则租户管理员给成员分配 Agent 时虽然会创建 `workspace-agents/<derivedAgentId>`，但派生目录只会留下 `.tenant-derived-agent.json` 空壳，无法继承原 Agent 的 `MEMORY.md` / `memory/` / `skills/`
+
 ### 4. 租户成员入口与聊天页
 
 租户成员进入后，只需要做使用相关的事情：
@@ -320,7 +327,7 @@ sidecar 落点固定为：
 
 `/echarts-view/` 的独立入口页必须落在 `echarts-view/index.html`，这样控制台网关会直接返回这份静态页而不是回落到主壳；`/echarts-view` 这个旧式裸路径仍可以作为兼容性别名继续保留在路由归一化里，但分享链接和成员菜单都应统一使用带 trailing slash 的 token 化链接。
 
-大屏可视化 HTML 自身需要直接引用同源静态资产，不允许再写 `https://cdn.jsdelivr.net/npm/echarts...` 这类外链。当前默认可直接使用的公开路径是 `/assets/vendor/echarts.min.js`，其落盘位置对应 `tools/openclaw-control-ui-echarts/generated/control-ui/assets/vendor/echarts.min.js`；如需兼容旧产物，也可以回退到 `/assets/runtime/echarts/echarts.min.js`。如果后续要引入 `Three.js`、`Babylon.js`、`PixiJS`、`GSAP`、`ECharts-GL` 等额外可视化库，也必须按同样原则落为同源静态资源或预打包 bundle，不允许依赖公网 CDN。生成出的 HTML 只应告知用户“已生成什么可视化内容，并可在侧边栏 `可视化展示` 中查看”，不要暴露文件名；同时不要依赖 `base` 标签来解决相对路径，必须把相对资源改写成绝对同源路径。
+大屏可视化 HTML 自身需要直接引用同源静态资产，不允许再写 `https://cdn.jsdelivr.net/npm/echarts...` 这类外链。当前零侵入运行时已经预装并可直接使用这些公开路径：`/assets/vendor/echarts.min.js`、`/assets/vendor/echarts-gl.min.js`、`/assets/vendor/gsap.min.js`、`/assets/vendor/pixi.min.js`、`/assets/vendor/babylon.js`、`/assets/vendor/tsparticles.bundle.min.js`、`/assets/vendor/three.module.min.js`，以及浏览器可直接加载的 `Three.js` addon 路径 `/assets/vendor/three/examples/jsm/**`；其落盘位置对应 `tools/openclaw-control-ui-echarts/generated/control-ui/assets/vendor/`。如需兼容旧产物，ECharts 仍可回退到 `/assets/runtime/echarts/echarts.min.js`。后续如果继续新增可视化库，也必须按同样原则落为同源静态资源或预打包 bundle，不允许依赖公网 CDN。生成出的 HTML 只应告知用户“已生成什么可视化内容，并可在侧边栏 `可视化展示` 中查看”，不要暴露文件名；同时不要依赖 `base` 标签来解决相对路径，必须把相对资源改写成绝对同源路径。
 
 当前桥接层的实际稳定边界还需要明确为：
 
@@ -1631,11 +1638,12 @@ sidecar 落点固定为：
      - 当前 Agent 下的会话列表
      - 会话标题优先取成员首条消息前 20 个字
      - 旧的时间戳占位标题会在后续读取 `chat.history` 时自动回填修正
-     - 删除会话仅做前端隐藏，不删除底层统计与历史数据
-     - 删除前需要二次确认
-     - 删除确认已统一收敛为复用顶栏标准弹窗样式，弹窗文案为“删除后不可恢复，确认删除?”
-     - 当前成员会话列表仍复用原生 `sessions.list` 与前端路由 key，`tenant_agent_sessions` 表尚未真正接入会话创建链路
-     - 如果当前已经处于一个未发送的新会话，再次点击“新建会话”只提示“已经是新的会话了”，不会继续生成新的空会话 key
+      - 删除会话仅做前端隐藏，不删除底层统计与历史数据
+      - 删除前需要二次确认
+      - 删除确认已统一收敛为复用顶栏标准弹窗样式，弹窗文案为“删除后不可恢复，确认删除?”
+      - 当前成员会话列表仍复用原生 `sessions.list` 与前端路由 key，`tenant_agent_sessions` 表尚未真正接入会话创建链路
+      - 如果当前已经处于一个未发送的新会话，再次点击“新建会话”只提示“已经是新的会话了”，不会继续生成新的空会话 key
+      - 当底层模型运行期长时间无返回或连接异常导致原生聊天页持续 loading 时，零侵入层需要主动收敛到失败态，停止无限转圈并提示成员重试
 
 9. 租户 sidecar 与数据库底座已落地
    - SQLite 持久化已打通
@@ -1749,6 +1757,11 @@ sidecar 落点固定为：
   - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / MEMORY.md / memory.md / memory/ / skills/`
   - 只复制这批白名单内容，不继承旧会话、日志或其他运行时产物
   - 仅在派生工作区缺失对应文件时复制，不覆盖成员后续个性化修改，因此成员派生工作区与母 Agent 是“一次性派生”而不是持续跟随更新
+- sidecar 现在还会对派生 Agent 做一层持久授权桶同步：
+  - 当成员分配 Agent，或读取旧的成员分配列表时，会把 `<OPENCLAW_CONFIG_DIR>/exec-approvals.json` 里基础 Agent 的 `agents.<baseAgentId>` 授权桶合并到 `agents.<derivedAgentId>`
+  - 合并时保留派生桶自己已有的 allowlist 条目，同时用基础 Agent 的 `security / ask / askFallback / autoAllowSkills` 覆盖派生桶对应策略位
+  - 成员删除时会同步清理该成员派生 `agentId` 对应的授权桶，避免 `exec-approvals.json` 残留无主派生 Agent 记录
+  - 这只能解决“派生 Agent 换了 id 导致原 allow-always 不继承”的问题，不能绕过底层对超长命令的 obfuscation 检测；如果命令本身被判定为 `Command too long; potential obfuscation`，仍可能继续弹出人工批准
 - 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态
 
 ## 十二、当前还需要继续确认的事项
