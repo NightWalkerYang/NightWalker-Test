@@ -318,6 +318,7 @@ function createGatewayApprovalsClient(params) {
           displayName: "Tenant Platform Auto Approver",
           version: "tenant-platform-auto-approve/1",
           platform: process.platform,
+          deviceFamily: "tenant-platform",
           mode: "backend",
         },
         caps: [],
