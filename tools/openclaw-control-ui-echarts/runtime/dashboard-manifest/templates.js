@@ -1614,7 +1614,7 @@ export function buildPanelOption(chart, manifest) {
 export function buildDashboardMarkup(manifest, context = {}) {
   const metricsMarkup = isVisibleBlock(manifest.blocks?.metrics)
     ? `
-      <section class="oc-dashboard-metrics-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.metrics.id)}">
+      <section class="oc-dashboard-metrics-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.metrics.id)}" data-metric-count="${escapeHtmlAttribute(manifest.metrics.length)}">
         <div class="oc-dashboard-metrics-band">
           <div class="oc-dashboard-metrics-kicker">KPI BUS</div>
           <div class="oc-dashboard-metrics-caption">${escapeHtml(`${String(manifest.metrics.length).padStart(2, "0")} live metrics`)}</div>
