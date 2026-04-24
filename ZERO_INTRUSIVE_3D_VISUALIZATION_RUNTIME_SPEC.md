@@ -172,6 +172,7 @@ Echarts/
 - `scene`
   目前内置场景：`capital-reactor`、`asset-ring`、`radar-core`
   如需完全自定义，也允许直接提供 `scene.option` 原始 ECharts-GL option
+  但要注意：如果自定义 `scene.option` 在当前 `echarts-gl` 运行时里报错，零侵入 runtime 会自动降级到内置兼容 3D 场景；如果兼容 3D 仍失败，再降级到 2D 兼容图，目标优先级始终是“页面可渲染成功”
 - `metrics`
 - `charts.leftTop`
 - `charts.leftBottom`
@@ -185,7 +186,8 @@ Echarts/
 - `navigation`
   可通过 `targetFileName` 指向同 Agent 下其它可视化入口
 - `dataSource`
-  可指向同工作区下的本地 JSON 文件，由 runtime 在浏览器侧同源加载并合并到 manifest
+  可以是同工作区下的本地 JSON 路径，由 runtime 在浏览器侧同源加载并合并到 manifest
+  也可以是对象型内嵌元数据，此时 runtime 不会发起额外 fetch，而是直接按当前 manifest 继续渲染
 
 ### B. 第二推荐：单 HTML + 单 JS Bundle
 

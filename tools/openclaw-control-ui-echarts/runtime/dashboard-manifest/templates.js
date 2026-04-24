@@ -71,24 +71,20 @@ export function deepMerge(baseValue, overrideValue) {
 
 function normalizeMetric(metric, index) {
   const value =
-    metric && Object.prototype.hasOwnProperty.call(metric, "value")
-      ? metric.value
-      : metric?.number;
+    metric && Object.prototype.hasOwnProperty.call(metric, "value") ? metric.value : metric?.number;
   const numericValue = toFiniteNumber(
     metric?.numericValue,
     toFiniteNumber(
-      typeof value === "string"
-        ? value.replace(/[^\d.+-]/g, "")
-        : value,
+      typeof value === "string" ? value.replace(/[^\d.+-]/g, "") : value,
       Number(index + 1) * 10,
     ),
   );
   return {
     id: String(metric?.id || `metric-${index + 1}`).trim() || `metric-${index + 1}`,
-    label: String(metric?.label || metric?.name || `核心指标 ${index + 1}`).trim() || `核心指标 ${index + 1}`,
-    valueText:
-      String(value ?? "")
-        .trim() || `${roundNumber(numericValue, 1)}`,
+    label:
+      String(metric?.label || metric?.name || `核心指标 ${index + 1}`).trim() ||
+      `核心指标 ${index + 1}`,
+    valueText: String(value ?? "").trim() || `${roundNumber(numericValue, 1)}`,
     numericValue,
     unit: String(metric?.unit || "").trim(),
     delta: String(metric?.delta || metric?.trendText || "").trim(),
@@ -119,7 +115,9 @@ function normalizeSeriesEntry(entry, index) {
   }
   return {
     name: String(entry.name || `系列 ${index + 1}`).trim() || `系列 ${index + 1}`,
-    type: String(entry.type || "").trim().toLowerCase(),
+    type: String(entry.type || "")
+      .trim()
+      .toLowerCase(),
     stack: String(entry.stack || "").trim(),
     smooth: entry.smooth !== false,
     area: Boolean(entry.area || entry.areaStyle),
@@ -190,8 +188,8 @@ function normalizeChart(rawChart, slotKey, fallbackType, fallbackTitle) {
     title: String(chart.title || fallbackTitle || "").trim() || fallbackTitle,
     subtitle: String(chart.subtitle || "").trim(),
     unit: String(chart.unit || "").trim(),
-    categories: toArray(chart.categories || chart.labels || chart.xAxisData).map((item, index) =>
-      String(item ?? `项 ${index + 1}`).trim() || `项 ${index + 1}`,
+    categories: toArray(chart.categories || chart.labels || chart.xAxisData).map(
+      (item, index) => String(item ?? `项 ${index + 1}`).trim() || `项 ${index + 1}`,
     ),
     series: toArray(chart.series).map(normalizeSeriesEntry),
     items,
@@ -201,8 +199,11 @@ function normalizeChart(rawChart, slotKey, fallbackType, fallbackTitle) {
     columns: toArray(chart.columns).map((item, index) => {
       if (isPlainObject(item)) {
         return {
-          key: String(item.key || item.field || `column_${index + 1}`).trim() || `column_${index + 1}`,
-          label: String(item.label || item.title || item.key || `列 ${index + 1}`).trim() || `列 ${index + 1}`,
+          key:
+            String(item.key || item.field || `column_${index + 1}`).trim() || `column_${index + 1}`,
+          label:
+            String(item.label || item.title || item.key || `列 ${index + 1}`).trim() ||
+            `列 ${index + 1}`,
         };
       }
       const key = String(item || `column_${index + 1}`).trim() || `column_${index + 1}`;
@@ -287,16 +288,21 @@ function normalizeNavigationItem(item, index, context) {
     (targetFileName ? String(context?.navigationHrefs?.[targetFileName] || "").trim() : "");
   return {
     id: String(item.id || `nav-${index + 1}`).trim() || `nav-${index + 1}`,
-    label: String(item.label || item.title || item.name || `分屏 ${index + 1}`).trim() || `分屏 ${index + 1}`,
+    label:
+      String(item.label || item.title || item.name || `分屏 ${index + 1}`).trim() ||
+      `分屏 ${index + 1}`,
     href,
     active:
-      String(targetFileName || explicitHref).trim() === String(context?.visualizationFileName || "").trim(),
+      String(targetFileName || explicitHref).trim() ===
+      String(context?.visualizationFileName || "").trim(),
   };
 }
 
 export function normalizeDashboardManifest(rawManifest, context = {}) {
   const manifest = isPlainObject(rawManifest) ? rawManifest : {};
-  const metrics = toArray(manifest.metrics || manifest.kpis).map(normalizeMetric).filter(Boolean);
+  const metrics = toArray(manifest.metrics || manifest.kpis)
+    .map(normalizeMetric)
+    .filter(Boolean);
   const chartSource = Array.isArray(manifest.charts)
     ? PANEL_SLOT_ORDER.reduce((result, slotKey, index) => {
         result[slotKey] = manifest.charts[index];
@@ -335,8 +341,7 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
       manifest.logoImage || manifest.brand?.logoImage,
     ),
     logoText:
-      String(manifest.logoText || manifest.brand?.logoText || context.agentName || "").trim() ||
-      "",
+      String(manifest.logoText || manifest.brand?.logoText || context.agentName || "").trim() || "",
     metrics: metrics.length ? metrics : buildDefaultMetrics(),
     scene: {
       type:
@@ -344,8 +349,9 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
           .trim()
           .toLowerCase() || "capital-reactor",
       title:
-        String(manifest.scene?.title || manifest.scene?.name || manifest.title || "资金能量场").trim() ||
-        "资金能量场",
+        String(
+          manifest.scene?.title || manifest.scene?.name || manifest.title || "资金能量场",
+        ).trim() || "资金能量场",
       subtitle: String(manifest.scene?.subtitle || manifest.scene?.description || "").trim(),
       option: isPlainObject(manifest.scene?.option) ? manifest.scene.option : null,
       points: toArray(manifest.scene?.points),
@@ -367,7 +373,12 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
       isPlainObject(manifest.particles) ? manifest.particles : {},
     ),
     navigation,
-    dataSource: String(manifest.dataSource || "").trim(),
+    dataSource:
+      typeof manifest.dataSource === "string"
+        ? manifest.dataSource.trim()
+        : isPlainObject(manifest.dataSource)
+          ? { ...manifest.dataSource }
+          : "",
   };
 }
 
@@ -392,7 +403,9 @@ function buildMetricMarkup(metric) {
     `  <div class="oc-dashboard-metric-label">${escapeHtml(metric.label)}</div>`,
     '  <div class="oc-dashboard-metric-value-line">',
     `    <strong class="oc-dashboard-metric-value">${escapeHtml(metric.valueText)}</strong>`,
-    metric.unit ? `    <span class="oc-dashboard-metric-unit">${escapeHtml(metric.unit)}</span>` : "",
+    metric.unit
+      ? `    <span class="oc-dashboard-metric-unit">${escapeHtml(metric.unit)}</span>`
+      : "",
     "  </div>",
     formatMetricDelta(metric),
     metric.note ? `  <div class="oc-dashboard-metric-note">${escapeHtml(metric.note)}</div>` : "",
@@ -415,7 +428,9 @@ function buildPanelMarkup(chart) {
     renderMode === "chart"
       ? `  <div class="oc-dashboard-panel-chart" data-chart-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`
       : `  <div class="oc-dashboard-panel-html" data-html-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`,
-    chart.footer ? `  <div class="oc-dashboard-panel-footer">${escapeHtml(chart.footer)}</div>` : "",
+    chart.footer
+      ? `  <div class="oc-dashboard-panel-footer">${escapeHtml(chart.footer)}</div>`
+      : "",
     "</section>",
   ]
     .filter(Boolean)
@@ -524,9 +539,7 @@ function createChartSeries(chart, fallbackType) {
 function buildLineOrBarOption(chart, manifest, fallbackType) {
   const theme = manifest.theme;
   const categories =
-    chart.categories.length ||
-    chart.items.length ||
-    chart.series[0]?.data?.length
+    chart.categories.length || chart.items.length || chart.series[0]?.data?.length
       ? chart.categories.length
         ? chart.categories
         : chart.items.length
@@ -651,100 +664,147 @@ function createSceneRingPoints(radius, count, height, phase = 0, scale = 1) {
   return points;
 }
 
-function createSceneMetricLines(metrics, radius, height) {
+function stripScenePointSize(points) {
+  return toArray(points).map((point) => [
+    roundNumber(toFiniteNumber(point?.[0], 0), 3),
+    roundNumber(toFiniteNumber(point?.[1], 0), 3),
+    roundNumber(toFiniteNumber(point?.[2], 0), 3),
+  ]);
+}
+
+function createMetricAnchorPoints(metrics, radius, baseHeight, amplitudeDivisor, phase = 0) {
   return metrics.map((metric, index) => {
-    const angle = (index / Math.max(1, metrics.length)) * Math.PI * 2;
-    const amplitude = Math.max(10, Math.min(36, metric.numericValue / 3));
-    return {
-      coords: [
-        [0, 0, 0],
-        [
-          roundNumber(Math.cos(angle) * radius, 3),
-          roundNumber(Math.sin(angle) * radius, 3),
-          roundNumber(height + amplitude, 3),
-        ],
-      ],
-    };
+    const angle = phase + (index / Math.max(1, metrics.length)) * Math.PI * 2;
+    const amplitude = Math.max(6, Math.min(30, metric.numericValue / amplitudeDivisor));
+    return [
+      roundNumber(Math.cos(angle) * radius, 3),
+      roundNumber(Math.sin(angle) * radius, 3),
+      roundNumber(baseHeight + amplitude, 3),
+    ];
   });
+}
+
+function createCoreColumnPoints(levels) {
+  return toArray(levels).map((height) => [0, 0, roundNumber(toFiniteNumber(height, 0), 3)]);
+}
+
+function createSceneBaseOption(theme, bounds, viewControl) {
+  return {
+    backgroundColor: "transparent",
+    tooltip: { show: false },
+    xAxis3D: { min: bounds.x[0], max: bounds.x[1], ...createAxisConfig(theme) },
+    yAxis3D: { min: bounds.y[0], max: bounds.y[1], ...createAxisConfig(theme) },
+    zAxis3D: { min: bounds.z[0], max: bounds.z[1], ...createAxisConfig(theme) },
+    grid3D: {
+      boxWidth: bounds.boxWidth,
+      boxDepth: bounds.boxDepth,
+      boxHeight: bounds.boxHeight,
+      environment: "transparent",
+      axisPointer: { show: false },
+      light: {
+        main: { intensity: 1.12, shadow: false },
+        ambient: { intensity: 0.7 },
+      },
+      viewControl: {
+        projection: "perspective",
+        autoRotate: true,
+        autoRotateSpeed: 6,
+        distance: 152,
+        alpha: 22,
+        beta: 38,
+        ...viewControl,
+      },
+    },
+  };
+}
+
+function createScatterSceneSeries({
+  haloPoints,
+  orbitPoints = [],
+  metricPoints,
+  corePoints,
+  theme,
+  metricColor,
+  coreColor,
+}) {
+  return [
+    {
+      type: "scatter3D",
+      symbol: "circle",
+      symbolSize: 6,
+      itemStyle: {
+        color: theme.accent,
+        opacity: 0.52,
+      },
+      data: haloPoints,
+    },
+    {
+      type: "scatter3D",
+      symbol: "diamond",
+      symbolSize: 10,
+      itemStyle: {
+        color: theme.accentSoft,
+        opacity: 0.66,
+      },
+      data: orbitPoints,
+    },
+    {
+      type: "scatter3D",
+      symbol: "roundRect",
+      symbolSize: 16,
+      itemStyle: {
+        color: metricColor,
+        opacity: 0.94,
+      },
+      data: metricPoints,
+    },
+    {
+      type: "scatter3D",
+      symbol: "circle",
+      symbolSize: 20,
+      itemStyle: {
+        color: coreColor,
+        opacity: 0.96,
+      },
+      data: corePoints,
+    },
+  ].filter((series) => series.data.length);
 }
 
 function buildCapitalReactorScene(manifest) {
   const theme = manifest.theme;
   const metrics = manifest.metrics;
   return {
-    backgroundColor: "transparent",
-    tooltip: { show: false },
-    xAxis3D: { min: -48, max: 48, ...createAxisConfig(theme) },
-    yAxis3D: { min: -48, max: 48, ...createAxisConfig(theme) },
-    zAxis3D: { min: -28, max: 52, ...createAxisConfig(theme) },
-    grid3D: {
-      boxWidth: 96,
-      boxDepth: 96,
-      boxHeight: 72,
-      environment: "transparent",
-      axisPointer: { show: false },
-      light: {
-        main: { intensity: 1.15, shadow: false },
-        ambient: { intensity: 0.65 },
+    ...createSceneBaseOption(
+      theme,
+      {
+        x: [-48, 48],
+        y: [-48, 48],
+        z: [-28, 52],
+        boxWidth: 96,
+        boxDepth: 96,
+        boxHeight: 72,
       },
-      viewControl: {
-        projection: "perspective",
-        autoRotate: true,
+      {
         autoRotateSpeed: 8,
         distance: 150,
         alpha: 24,
         beta: 42,
       },
-    },
-    series: [
-      {
-        type: "scatter3D",
-        symbolSize(value) {
-          return Number(value?.[3] || 5);
-        },
-        itemStyle: {
-          color: theme.accent,
-          opacity: 0.92,
-        },
-        data: [
-          ...createSceneRingPoints(18, 44, 8, 0.2),
-          ...createSceneRingPoints(28, 52, 12, 0.7, 1.15),
-          ...createSceneRingPoints(38, 60, 16, 1.3, 1.35),
-        ],
-      },
-      {
-        type: "lines3D",
-        effect: {
-          show: true,
-          constantSpeed: 22,
-          trailLength: 0.18,
-          trailWidth: 2,
-          trailOpacity: 0.9,
-          trailColor: theme.accent,
-        },
-        lineStyle: {
-          width: 1.4,
-          color: theme.accentSoft,
-          opacity: 0.46,
-        },
-        data: createSceneMetricLines(metrics, 34, 10),
-      },
-      {
-        type: "scatter3D",
-        symbolSize(value) {
-          return Number(value?.[3] || 10);
-        },
-        itemStyle: {
-          color: theme.warning,
-          opacity: 0.9,
-        },
-        data: [
-          [0, 0, 0, 12],
-          [0, 0, 10, 8],
-          [0, 0, 18, 6],
-        ],
-      },
-    ],
+    ),
+    series: createScatterSceneSeries({
+      haloPoints: stripScenePointSize([
+        ...createSceneRingPoints(18, 44, 8, 0.2),
+        ...createSceneRingPoints(28, 52, 12, 0.7, 1.15),
+        ...createSceneRingPoints(38, 60, 16, 1.3, 1.35),
+      ]),
+      orbitPoints: createMetricAnchorPoints(metrics, 22, 6, 4.5, 0.35),
+      metricPoints: createMetricAnchorPoints(metrics, 34, 10, 3, 0.1),
+      corePoints: createCoreColumnPoints([0, 10, 18, 28]),
+      theme,
+      metricColor: theme.warning,
+      coreColor: theme.text,
+    }),
   };
 }
 
@@ -752,83 +812,36 @@ function buildAssetRingScene(manifest) {
   const theme = manifest.theme;
   const metrics = manifest.metrics;
   return {
-    backgroundColor: "transparent",
-    tooltip: { show: false },
-    xAxis3D: { min: -56, max: 56, ...createAxisConfig(theme) },
-    yAxis3D: { min: -56, max: 56, ...createAxisConfig(theme) },
-    zAxis3D: { min: -20, max: 58, ...createAxisConfig(theme) },
-    grid3D: {
-      boxWidth: 112,
-      boxDepth: 112,
-      boxHeight: 78,
-      environment: "transparent",
-      axisPointer: { show: false },
-      light: {
-        main: { intensity: 1.08 },
-        ambient: { intensity: 0.72 },
+    ...createSceneBaseOption(
+      theme,
+      {
+        x: [-56, 56],
+        y: [-56, 56],
+        z: [-20, 58],
+        boxWidth: 112,
+        boxDepth: 112,
+        boxHeight: 78,
       },
-      viewControl: {
-        projection: "perspective",
-        autoRotate: true,
+      {
         autoRotateSpeed: 6,
         distance: 156,
         alpha: 18,
         beta: 50,
       },
-    },
-    series: [
-      {
-        type: "scatter3D",
-        symbolSize(value) {
-          return Number(value?.[3] || 6);
-        },
-        itemStyle: {
-          color: theme.accentSoft,
-          opacity: 0.88,
-        },
-        data: [
-          ...createSceneRingPoints(22, 40, 4, 0.1),
-          ...createSceneRingPoints(34, 54, 8, 0.8),
-          ...createSceneRingPoints(46, 66, 12, 1.5),
-        ],
-      },
-      {
-        type: "lines3D",
-        effect: {
-          show: true,
-          constantSpeed: 16,
-          trailLength: 0.12,
-          trailWidth: 1.8,
-          trailOpacity: 0.82,
-          trailColor: theme.warning,
-        },
-        lineStyle: {
-          width: 1.1,
-          color: theme.warning,
-          opacity: 0.48,
-        },
-        data: createSceneMetricLines(metrics, 44, 14),
-      },
-      {
-        type: "scatter3D",
-        symbolSize(value) {
-          return Number(value?.[3] || 12);
-        },
-        itemStyle: {
-          color: theme.success,
-          opacity: 0.94,
-        },
-        data: metrics.map((metric, index) => {
-          const angle = (index / Math.max(1, metrics.length)) * Math.PI * 2;
-          return [
-            roundNumber(Math.cos(angle) * 46, 3),
-            roundNumber(Math.sin(angle) * 46, 3),
-            roundNumber(Math.max(6, Math.min(42, metric.numericValue / 2.5)), 3),
-            8,
-          ];
-        }),
-      },
-    ],
+    ),
+    series: createScatterSceneSeries({
+      haloPoints: stripScenePointSize([
+        ...createSceneRingPoints(22, 40, 4, 0.1),
+        ...createSceneRingPoints(34, 54, 8, 0.8),
+        ...createSceneRingPoints(46, 66, 12, 1.5),
+      ]),
+      orbitPoints: createMetricAnchorPoints(metrics, 30, 8, 4.2, 0.55),
+      metricPoints: createMetricAnchorPoints(metrics, 46, 14, 2.5, 0.15),
+      corePoints: createCoreColumnPoints([0, 8, 16, 24]),
+      theme,
+      metricColor: theme.success,
+      coreColor: theme.warning,
+    }),
   };
 }
 
@@ -845,75 +858,71 @@ function buildRadarCoreScene(manifest) {
     ];
   });
   return {
-    backgroundColor: "transparent",
-    tooltip: { show: false },
-    xAxis3D: { min: -52, max: 52, ...createAxisConfig(theme) },
-    yAxis3D: { min: -52, max: 52, ...createAxisConfig(theme) },
-    zAxis3D: { min: -18, max: 50, ...createAxisConfig(theme) },
-    grid3D: {
-      boxWidth: 104,
-      boxDepth: 104,
-      boxHeight: 74,
-      environment: "transparent",
-      axisPointer: { show: false },
-      light: {
-        main: { intensity: 1.12 },
-        ambient: { intensity: 0.68 },
+    ...createSceneBaseOption(
+      theme,
+      {
+        x: [-52, 52],
+        y: [-52, 52],
+        z: [-18, 50],
+        boxWidth: 104,
+        boxDepth: 104,
+        boxHeight: 74,
       },
-      viewControl: {
-        projection: "perspective",
-        autoRotate: true,
+      {
         autoRotateSpeed: 4,
         distance: 150,
         alpha: 26,
         beta: 32,
       },
-    },
-    series: [
+    ),
+    series: createScatterSceneSeries({
+      haloPoints: stripScenePointSize([
+        ...createSceneRingPoints(24, 48, 8, 0.5),
+        ...createSceneRingPoints(36, 60, 10, 1.4),
+      ]),
+      orbitPoints: polygon,
+      metricPoints: createMetricAnchorPoints(metrics, 28, 10, 3.4, 0.4),
+      corePoints: createCoreColumnPoints([0, 7, 14, 21]),
+      theme,
+      metricColor: theme.danger,
+      coreColor: theme.accent,
+    }),
+  };
+}
+
+export function buildSceneFallbackOption(manifest) {
+  const theme = manifest.theme;
+  const metrics = manifest.metrics;
+  return {
+    ...createSceneBaseOption(
+      theme,
       {
-        type: "lines3D",
-        effect: {
-          show: true,
-          constantSpeed: 18,
-          trailLength: 0.14,
-          trailWidth: 2,
-          trailOpacity: 0.8,
-          trailColor: theme.accent,
-        },
-        lineStyle: {
-          width: 1.6,
-          color: theme.accent,
-          opacity: 0.52,
-        },
-        data: polygon.map((point) => ({ coords: [[0, 0, 0], point] })),
+        x: [-48, 48],
+        y: [-48, 48],
+        z: [-18, 46],
+        boxWidth: 96,
+        boxDepth: 96,
+        boxHeight: 64,
       },
       {
-        type: "scatter3D",
-        symbolSize(value) {
-          return Number(value?.[3] || 7);
-        },
-        itemStyle: {
-          color: theme.danger,
-          opacity: 0.92,
-        },
-        data: [
-          ...polygon.map((point) => [...point, 8]),
-          ...createSceneRingPoints(24, 48, 8, 0.5),
-          ...createSceneRingPoints(36, 60, 10, 1.4),
-        ],
+        autoRotateSpeed: 5,
+        distance: 148,
+        alpha: 20,
+        beta: 34,
       },
-      {
-        type: "lines3D",
-        lineStyle: {
-          width: 1,
-          color: theme.grid,
-          opacity: 0.3,
-        },
-        data: polygon.map((point, index) => ({
-          coords: [point, polygon[(index + 1) % polygon.length]],
-        })),
-      },
-    ],
+    ),
+    series: createScatterSceneSeries({
+      haloPoints: stripScenePointSize([
+        ...createSceneRingPoints(18, 36, 5, 0.1),
+        ...createSceneRingPoints(30, 48, 8, 1),
+      ]),
+      orbitPoints: createMetricAnchorPoints(metrics, 24, 6, 4.8, 0.25),
+      metricPoints: createMetricAnchorPoints(metrics, 36, 10, 3.2, 0),
+      corePoints: createCoreColumnPoints([0, 8, 16, 24]),
+      theme,
+      metricColor: theme.warning,
+      coreColor: theme.text,
+    }),
   };
 }
 
@@ -921,7 +930,9 @@ export function buildSceneOption(manifest) {
   if (isPlainObject(manifest.scene?.option)) {
     return manifest.scene.option;
   }
-  const sceneType = String(manifest.scene?.type || "").trim().toLowerCase();
+  const sceneType = String(manifest.scene?.type || "")
+    .trim()
+    .toLowerCase();
   if (sceneType === "asset-ring") {
     return buildAssetRingScene(manifest);
   }

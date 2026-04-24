@@ -1,5 +1,6 @@
 import {
   buildDashboardMarkup,
+  buildSceneFallbackOption,
   buildPanelOption,
   buildSceneOption,
   deepMerge,
@@ -16,6 +17,10 @@ function getGlobalScriptCache() {
     globalThis[DASHBOARD_SCRIPT_CACHE_KEY] = new Map();
   }
   return globalThis[DASHBOARD_SCRIPT_CACHE_KEY];
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function readWindowLocationHref(targetWindow) {
@@ -241,7 +246,9 @@ function renderTablePanel(container, chart, manifest) {
       }));
   const columns = chart.columns.length
     ? chart.columns
-    : Object.keys(rows[0] || {}).slice(0, 3).map((key) => ({ key, label: key }));
+    : Object.keys(rows[0] || {})
+        .slice(0, 3)
+        .map((key) => ({ key, label: key }));
   container.innerHTML = `
     <table class="oc-dashboard-table">
       <thead>
@@ -291,7 +298,9 @@ function renderHtmlPanels(root, manifest) {
     if (!(container instanceof HTMLElement)) {
       continue;
     }
-    const chartType = String(chart.type || "").trim().toLowerCase();
+    const chartType = String(chart.type || "")
+      .trim()
+      .toLowerCase();
     if (chartType === "ranking" || chartType === "list") {
       renderRankingPanel(container, chart, manifest);
       continue;
@@ -305,9 +314,19 @@ function renderHtmlPanels(root, manifest) {
 }
 
 function createChartInstance(container, option) {
+  globalThis.echarts.getInstanceByDom?.(container)?.dispose?.();
   const chart = globalThis.echarts.init(container, null, { renderer: "canvas" });
-  chart.setOption(option, true);
-  return chart;
+  try {
+    chart.setOption(option, true);
+    return chart;
+  } catch (error) {
+    try {
+      chart.dispose();
+    } catch {
+      // Ignore cleanup failures after a bad option payload.
+    }
+    throw error;
+  }
 }
 
 function renderEchartsPanels(root, manifest, chartInstances) {
@@ -324,12 +343,86 @@ function renderEchartsPanels(root, manifest, chartInstances) {
   }
 }
 
+function createSceneCompatibilityFallback(manifest) {
+  const fallbackManifest = deepMerge(manifest, {
+    scene: {
+      type: "capital-reactor",
+      option: null,
+      subtitle: manifest.scene?.subtitle || "兼容模式场景",
+    },
+  });
+  return [
+    {
+      mode: "requested",
+      option: buildSceneOption(manifest),
+    },
+    {
+      mode: "compatible-3d",
+      option: buildSceneFallbackOption(fallbackManifest),
+    },
+    {
+      mode: "compatible-2d",
+      option: buildPanelOption(
+        {
+          slotKey: "scene-fallback",
+          type: "radar",
+          title: manifest.scene?.title || manifest.title,
+          subtitle: "兼容模式场景",
+          unit: "",
+          categories: [],
+          series: [],
+          items: [],
+          indicators: manifest.metrics.map((metric) => ({
+            name: metric.label,
+            max: Math.max(100, roundMetricFallbackMax(metric.numericValue)),
+          })),
+          values: manifest.metrics.map((metric, index) =>
+            Math.max(30, Math.min(98, Math.round(metric.numericValue + index * 6))),
+          ),
+          rows: [],
+          columns: [],
+          option: null,
+          linkHref: "",
+          footer: "",
+        },
+        manifest,
+      ),
+    },
+  ];
+}
+
+function roundMetricFallbackMax(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 100;
+  }
+  return Math.ceil(numeric / 10) * 10;
+}
+
 function renderSceneChart(root, manifest, chartInstances) {
   const sceneContainer = root.querySelector("[data-dashboard-scene]");
   if (!(sceneContainer instanceof HTMLElement)) {
-    return;
+    return "missing";
   }
-  chartInstances.push(createChartInstance(sceneContainer, buildSceneOption(manifest)));
+  delete root.dataset.ocDashboardSceneFallback;
+  let lastError = null;
+  for (const candidate of createSceneCompatibilityFallback(manifest)) {
+    try {
+      chartInstances.push(createChartInstance(sceneContainer, candidate.option));
+      if (candidate.mode !== "requested") {
+        root.dataset.ocDashboardSceneFallback = candidate.mode;
+        console.warn(
+          "[dashboard-manifest] scene fallback activated",
+          candidate.mode,
+          lastError instanceof Error ? lastError.message : lastError,
+        );
+      }
+      return candidate.mode;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("dashboard_scene_render_failed");
 }
 
 function createResizeObserver(root, chartInstances) {
@@ -395,13 +488,18 @@ function animateDashboard(root) {
   if (!gsap?.from) {
     return;
   }
-  gsap.from(root.querySelectorAll(".oc-dashboard-metric, .oc-dashboard-panel, .oc-dashboard-footer-section"), {
-    opacity: 0,
-    y: 22,
-    duration: 0.8,
-    ease: "power2.out",
-    stagger: 0.05,
-  });
+  gsap.from(
+    root.querySelectorAll(
+      ".oc-dashboard-metric, .oc-dashboard-panel, .oc-dashboard-footer-section",
+    ),
+    {
+      opacity: 0,
+      y: 22,
+      duration: 0.8,
+      ease: "power2.out",
+      stagger: 0.05,
+    },
+  );
   const rings = root.querySelectorAll(".oc-dashboard-scene-ring");
   if (rings.length >= 1) {
     gsap.to(rings[0], { rotate: 360, duration: 22, ease: "none", repeat: -1 });
@@ -417,12 +515,19 @@ function animateDashboard(root) {
 async function resolveDashboardManifest(rawManifest, context) {
   let manifest = rawManifest;
   const warnings = [];
-  const dataSource = String(rawManifest?.dataSource || "").trim();
-  if (!dataSource) {
+  const dataSource = rawManifest?.dataSource;
+  if (isPlainObject(dataSource)) {
     return { manifest, warnings };
   }
-  const dataSourceHref = resolveDashboardAssetHref(context.workspaceBaseHref, dataSource);
-  const dataSourceUrl = resolveDashboardRuntimeUrl(dataSourceHref, [
+  const dataSourceHref = String(dataSource || "").trim();
+  if (!dataSourceHref) {
+    return { manifest, warnings };
+  }
+  const resolvedDataSourceHref = resolveDashboardAssetHref(
+    context.workspaceBaseHref,
+    dataSourceHref,
+  );
+  const dataSourceUrl = resolveDashboardRuntimeUrl(resolvedDataSourceHref, [
     String(context.visualizationHref || "").trim(),
     String(context.workspaceBaseHref || "").trim(),
   ]);
@@ -440,7 +545,9 @@ async function resolveDashboardManifest(rawManifest, context) {
     }
   } catch (error) {
     warnings.push(
-      error instanceof Error ? `dataSource ${dataSource} 加载失败: ${error.message}` : `dataSource ${dataSource} 加载失败`,
+      error instanceof Error
+        ? `dataSource ${dataSourceHref} 加载失败: ${error.message}`
+        : `dataSource ${dataSourceHref} 加载失败`,
     );
   }
   return { manifest, warnings };
@@ -451,7 +558,10 @@ export async function renderDashboardManifest({ root, manifest: rawManifest, con
     throw new Error("dashboard_root_missing");
   }
   disposeDashboardRuntime(root);
-  const { manifest: mergedManifest, warnings } = await resolveDashboardManifest(rawManifest, context);
+  const { manifest: mergedManifest, warnings } = await resolveDashboardManifest(
+    rawManifest,
+    context,
+  );
   const normalized = normalizeDashboardManifest(mergedManifest, context);
   if (warnings.length) {
     normalized.alerts = [

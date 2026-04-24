@@ -3,18 +3,41 @@ import { renderDashboardManifest } from "../../../tools/openclaw-control-ui-echa
 import {
   buildDashboardMarkup,
   buildPanelOption,
+  buildSceneFallbackOption,
   buildSceneOption,
   normalizeDashboardManifest,
   resolveDashboardAssetHref,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/dashboard-manifest/templates.js";
 
+function collectFunctionPaths(value, currentPath = "root", output = []) {
+  if (typeof value === "function") {
+    output.push(currentPath);
+    return output;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectFunctionPaths(item, `${currentPath}[${index}]`, output));
+    return output;
+  }
+  if (value && typeof value === "object") {
+    Object.entries(value).forEach(([key, item]) => {
+      collectFunctionPaths(item, `${currentPath}.${key}`, output);
+    });
+  }
+  return output;
+}
+
 describe("dashboard manifest runtime templates", () => {
-  it("normalizes manifest payloads and resolves workspace-relative assets", () => {
+  it("normalizes manifest payloads, preserves embedded data sources, and resolves workspace-relative assets", () => {
     const manifest = normalizeDashboardManifest(
       {
         version: 1,
         title: "财务总览驾驶舱",
         backgroundImage: "images/背景 星空.png",
+        dataSource: {
+          type: "embedded",
+          company: "禄丰国控",
+          period: "202603",
+        },
         metrics: [{ label: "总资产", value: "128.6", unit: "亿元" }],
         charts: {
           leftTop: {
@@ -31,6 +54,11 @@ describe("dashboard manifest runtime templates", () => {
 
     expect(manifest.title).toBe("财务总览驾驶舱");
     expect(manifest.metrics[0]?.label).toBe("总资产");
+    expect(manifest.dataSource).toEqual({
+      type: "embedded",
+      company: "禄丰国控",
+      period: "202603",
+    });
     expect(manifest.backgroundImage).toBe(
       "/workspace-agent-downloads/tenant-agent-1/Echarts/images/%E8%83%8C%E6%99%AF%20%E6%98%9F%E7%A9%BA.png",
     );
@@ -44,7 +72,7 @@ describe("dashboard manifest runtime templates", () => {
     );
   });
 
-  it("builds stable scene and chart options from normalized manifests", () => {
+  it("builds stable scene options without runtime callback fields", () => {
     const manifest = normalizeDashboardManifest({
       version: 1,
       template: "financial-command-center-v1",
@@ -62,12 +90,17 @@ describe("dashboard manifest runtime templates", () => {
     });
 
     const sceneOption = buildSceneOption(manifest);
+    const fallbackSceneOption = buildSceneFallbackOption(manifest);
     const panelOption = buildPanelOption(manifest.charts.rightTop, manifest);
     const markup = buildDashboardMarkup(manifest, {
       agentName: "财务分析助手",
     });
 
     expect(sceneOption.series?.length).toBeGreaterThan(0);
+    expect(sceneOption.series?.every((series) => series.type === "scatter3D")).toBe(true);
+    expect(fallbackSceneOption.series?.every((series) => series.type === "scatter3D")).toBe(true);
+    expect(collectFunctionPaths(sceneOption)).toEqual([]);
+    expect(collectFunctionPaths(fallbackSceneOption)).toEqual([]);
     expect(panelOption.series?.[0]?.type).toBe("pie");
     expect(markup).toContain('data-chart-slot="rightTop"');
     expect(markup).toContain("财务分析助手");
