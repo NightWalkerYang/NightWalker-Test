@@ -1075,13 +1075,15 @@ body {
   );
 }
 
-@media (min-width: 1600px) {
+@media (min-width: 1360px) {
   .oc-dashboard-metrics-shell[data-metric-count="8"] .oc-dashboard-metrics {
     grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .oc-dashboard-metrics-shell[data-metric-count="7"] .oc-dashboard-metrics {
     grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .oc-dashboard-metrics-shell[data-metric-count="6"] .oc-dashboard-metrics {
