@@ -18,6 +18,7 @@
 
 4. Docker 侧部署流程以 `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh` 为准。
    - 零侵入页面、运行时脚本和 sidecar 相关能力，默认都要经过这条部署路径。
+   - 这条部署路径产出的 `generated/control-ui/assets/vendor/` 必须同步零侵入层完整 vendor 目录，而不只是离线 userscript 内嵌的 `echarts.min.js/json5.min.js`；否则 AI 生成的大屏一旦引用 `ECharts-GL`、`GSAP`、`tsParticles`、`PixiJS`、`Babylon.js`、`Three.js` 就会在正式环境直接 `404`。
    - 本地 Docker 部署必须通过部署层追加同源反向代理容器，对浏览器暴露的 `18789` 端口不再直接映射原始 gateway；代理层负责把 `/tenant-platform-api/` 转发到 tenant sidecar，把其它 HTTP/WebSocket 流量转发回 gateway，从而避免修改 gateway 源码，同时避开浏览器对 `18801` 跨端口请求的 CSP 限制。
    - 同一条部署路径还必须同步 `gateway.controlUi.allowedOrigins`，至少覆盖 proxy-facing 的 `http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}` 与 `http://localhost:${OPENCLAW_GATEWAY_PORT}`，并明确关闭 `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback`；原因是前置代理会让 Host-header fallback 在端口处理上变得脆弱，显式 Origin allowlist 才是稳定路径。
    - 本地 Docker 的 proxy-fronted 部署还必须在配置层同步 `gateway.controlUi.dangerouslyDisableDeviceAuth=true`；因为浏览器现在是经由前置代理进入 gateway，本地 loopback 自动配对不再稳定命中，否则用户会先卡在原生 `pairing required` 页面。这个 break-glass 开关不再只绑定 `local edition`，而是绑定“本地前置代理部署”本身。

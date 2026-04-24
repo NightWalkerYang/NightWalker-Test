@@ -89,6 +89,17 @@ describe("package local runtime", () => {
     expect(fs.existsSync(path.join(outputDir, "login.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "echarts-view", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts.min.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts-gl.min.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "gsap.min.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "tsparticles.bundle.min.js"))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "pixi.min.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "babylon.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "three.module.min.js"))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "three"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "json5.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "echarts.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "json5.min.js"))).toBe(true);

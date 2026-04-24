@@ -7,6 +7,7 @@ OUTPUT_DIR="$TOOL_DIR/generated/control-ui"
 CONTROL_UI_RUNTIME_SCRIPT="$TOOL_DIR/openclaw-echarts-renderer.js"
 CONTROL_UI_RUNTIME_MODULE_DIR="$TOOL_DIR/runtime"
 CONTROL_UI_STATIC_DIR="$TOOL_DIR/static"
+CONTROL_UI_VENDOR_DIR="$TOOL_DIR/vendor"
 PORTABLE_CONFIG_SCRIPT="$TOOL_DIR/local-runtime/portable-config.mjs"
 PORTABLE_CONFIG_SOURCE="$TOOL_DIR/local-runtime/openclaw.local.example.json5"
 OFFLINE_BUNDLED_USERSCRIPT="$ROOT_DIR/tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js"
@@ -355,6 +356,7 @@ EOF
     environment:
       HOME: /home/node
       OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
       OPENCLAW_TENANT_PLATFORM_BIND: 0.0.0.0
       OPENCLAW_TENANT_PLATFORM_PORT: 18801
       OPENCLAW_TENANT_PLATFORM_API_BASE: /tenant-platform-api/v1
@@ -365,6 +367,7 @@ EOF
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace:ro
       - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro
     command:
       [
@@ -763,6 +766,7 @@ main() {
   require_file "$CONTROL_UI_RUNTIME_SCRIPT" "Control UI ECharts runtime"
   require_dir "$CONTROL_UI_RUNTIME_MODULE_DIR" "Control UI ECharts runtime modules"
   require_dir "$CONTROL_UI_STATIC_DIR" "Control UI static overlay assets"
+  require_dir "$CONTROL_UI_VENDOR_DIR" "Control UI vendor assets"
   require_file "$OFFLINE_BUNDLED_USERSCRIPT" "Offline bundled ECharts userscript"
 
   local source_dir
@@ -777,6 +781,7 @@ main() {
 
   cp "$CONTROL_UI_RUNTIME_SCRIPT" "$OUTPUT_DIR/assets/openclaw-echarts-renderer.js"
   cp -R "$CONTROL_UI_RUNTIME_MODULE_DIR" "$OUTPUT_DIR/assets/runtime"
+  cp -R "$CONTROL_UI_VENDOR_DIR"/. "$OUTPUT_DIR/assets/vendor"/
   extract_offline_vendors "$OFFLINE_BUNDLED_USERSCRIPT" "$OUTPUT_DIR/assets/vendor"
   mkdir -p "$OUTPUT_DIR/assets/runtime/echarts"
   cp "$OUTPUT_DIR/assets/vendor/echarts.min.js" "$OUTPUT_DIR/assets/runtime/echarts/echarts.min.js"

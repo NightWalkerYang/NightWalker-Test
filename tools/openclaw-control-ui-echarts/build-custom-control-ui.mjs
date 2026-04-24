@@ -21,6 +21,7 @@ const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(
 );
 const CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE = path.join(here, "runtime");
 const CONTROL_UI_STATIC_DIR_SOURCE = path.join(here, "static");
+const CONTROL_UI_VENDOR_DIR_SOURCE = path.join(here, "vendor");
 const OFFLINE_BUNDLED_USERSCRIPT_SOURCE = path.join(
   repoRoot,
   "tools",
@@ -193,6 +194,16 @@ function writeTextIntoOutput(content, outputFile) {
   fs.writeFileSync(outputFile, content, "utf8");
 }
 
+function copyVendorDirectoryIntoOutput(sourceDir, outputDir) {
+  if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+    return;
+  }
+  fs.cpSync(sourceDir, outputDir, {
+    recursive: true,
+    force: true,
+  });
+}
+
 function buildLoginEntryHtml(indexHtml) {
   if (/<base\s+[^>]*href\s*=/.test(indexHtml)) {
     return indexHtml;
@@ -306,6 +317,10 @@ function main() {
       recursive: true,
       force: true,
     },
+  );
+  copyVendorDirectoryIntoOutput(
+    CONTROL_UI_VENDOR_DIR_SOURCE,
+    path.join(outputDir, "assets", "vendor"),
   );
   writeTextIntoOutput(
     embeddedLibraries.echarts,
