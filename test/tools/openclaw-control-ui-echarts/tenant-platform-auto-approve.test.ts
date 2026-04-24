@@ -1,8 +1,12 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { resolveTenantPlatformConfig } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs";
 import {
   createTenantExecApprovalAutoApprover,
+  ensureTenantExecApprovalGatewayAccess,
   rawGatewayDataToString,
   shouldAutoApproveTenantExecRequest,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs";
@@ -75,6 +79,52 @@ describe("tenant platform exec auto-approve matching", () => {
 });
 
 describe("tenant platform exec auto-approver", () => {
+  it("seeds a persistent paired operator device for exec approvals", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-tenant-auto-approve-"));
+    try {
+      const configDir = path.join(root, ".openclaw");
+      const stateDir = path.join(configDir, "tenant-platform");
+      const seeded = ensureTenantExecApprovalGatewayAccess({
+        configDir,
+        stateDir,
+      });
+
+      const paired = JSON.parse(fs.readFileSync(seeded.pairedDevicesPath, "utf8"));
+      const pending = JSON.parse(fs.readFileSync(seeded.pendingDevicesPath, "utf8"));
+      const deviceAuth = JSON.parse(fs.readFileSync(seeded.deviceAuthStorePath, "utf8"));
+      const pairedEntry = paired[seeded.deviceId];
+
+      expect(pairedEntry.publicKey).toBeTruthy();
+      expect(pairedEntry.role).toBe("operator");
+      expect(pairedEntry.roles).toEqual(["operator"]);
+      expect(pairedEntry.scopes).toEqual(["operator.approvals"]);
+      expect(pairedEntry.approvedScopes).toEqual(["operator.approvals"]);
+      expect(pairedEntry.tokens.operator.token).toBe(seeded.deviceToken);
+      expect(pairedEntry.tokens.operator.scopes).toEqual(["operator.approvals"]);
+      expect(pending).toEqual({});
+      expect(deviceAuth).toMatchObject({
+        version: 1,
+        deviceId: seeded.deviceId,
+        tokens: {
+          operator: {
+            token: seeded.deviceToken,
+            role: "operator",
+            scopes: ["operator.approvals"],
+          },
+        },
+      });
+
+      const reseeded = ensureTenantExecApprovalGatewayAccess({
+        configDir,
+        stateDir,
+      });
+      expect(reseeded.deviceId).toBe(seeded.deviceId);
+      expect(reseeded.deviceToken).toBe(seeded.deviceToken);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("auto-resolves matching requests and ignores others", async () => {
     const request = vi.fn(async () => ({ ok: true }));
     const start = vi.fn();
@@ -132,5 +182,45 @@ describe("tenant platform exec auto-approver", () => {
 
     await approver.stop();
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("can start with a seeded device token even when the shared gateway token is absent", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-tenant-auto-approve-"));
+    try {
+      const configDir = path.join(root, ".openclaw");
+      const stateDir = path.join(configDir, "tenant-platform");
+      const createGatewayClient = vi.fn(() => ({
+        start() {},
+        stop() {},
+        request: vi.fn(async () => ({ ok: true })),
+      }));
+
+      const approver = createTenantExecApprovalAutoApprover({
+        config: {
+          configDir,
+          stateDir,
+          gatewayUrl: "ws://openclaw-gateway:18789",
+          execAutoApproveEnabled: true,
+        },
+        logger: {
+          debug() {},
+          info() {},
+          warn() {},
+          error() {},
+        },
+        createGatewayClient,
+      });
+
+      expect(approver.isEnabled()).toBe(true);
+      await approver.start();
+      expect(createGatewayClient).toHaveBeenCalledTimes(1);
+      const gatewayClientParams = createGatewayClient.mock.calls[0]?.[0];
+      expect(gatewayClientParams.deviceIdentityPath).toContain("tenant-platform-gateway-client.json");
+      expect(gatewayClientParams.deviceAuthStorePath).toContain("tenant-platform-device-auth.json");
+      expect(gatewayClientParams.deviceToken).toBeTruthy();
+      expect(gatewayClientParams.scopes).toEqual(["operator.approvals"]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

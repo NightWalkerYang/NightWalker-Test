@@ -1764,7 +1764,12 @@ sidecar 落点固定为：
   - 合并时保留派生桶自己已有的 allowlist 条目，同时用基础 Agent 的 `security / ask / askFallback / autoAllowSkills` 覆盖派生桶对应策略位
   - 成员删除时会同步清理该成员派生 `agentId` 对应的授权桶，避免 `exec-approvals.json` 残留无主派生 Agent 记录
 - 当前实际可运行方案已经补了一层 sidecar 级自动批准：
-  - tenant sidecar 会额外建立一个带 `operator.approvals` scope 的 gateway WebSocket 客户端
+  - tenant sidecar 启动时会在共享的 `OPENCLAW_CONFIG_DIR` 下自愈一份“专用 operator 设备”：
+    - 生成或复用 `tenant-platform/identity/tenant-platform-gateway-client.json`
+    - 直接把该设备写入 `<OPENCLAW_CONFIG_DIR>/devices/paired.json`
+    - 同步写入 sidecar 私有的 `tenant-platform/identity/tenant-platform-device-auth.json`
+    - 授权范围固定为最小必需的 `operator.approvals`
+  - 之后 sidecar 会用这份已配对设备身份建立 `operator.approvals` gateway WebSocket 客户端，而不是继续依赖前端人工点击授权弹窗
   - 当收到 `exec.approval.requested` 事件时，只要请求命中租户派生 Agent（例如 `agentId` 以 `tenant-` 开头，或目标路径命中 `workspace-agents/tenant-*`），就会自动回写 `allow-once`
   - 这样可以直接覆盖底层对超长 heredoc / `Command too long; potential obfuscation` 的人工批准弹窗，不再要求成员在聊天页手点授权
   - 默认部署通过零侵入 sidecar 环境变量开启：`OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE=1`
