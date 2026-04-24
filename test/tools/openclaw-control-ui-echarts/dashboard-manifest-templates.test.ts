@@ -100,6 +100,11 @@ describe("dashboard manifest runtime templates", () => {
       title: "资金总览驾驶舱",
       scene: { type: "asset-ring" },
       charts: {
+        leftTop: {
+          type: "line",
+          categories: ["一季度经营现金流", "二季度经营现金流"],
+          series: [{ name: "经营现金流", data: [18, 22] }],
+        },
         rightTop: {
           type: "pie",
           items: [
@@ -112,6 +117,7 @@ describe("dashboard manifest runtime templates", () => {
 
     const sceneOption = buildSceneOption(manifest);
     const fallbackSceneOption = buildSceneFallbackOption(manifest);
+    const lineOption = buildPanelOption(manifest.charts.leftTop, manifest);
     const panelOption = buildPanelOption(manifest.charts.rightTop, manifest);
     const markup = buildDashboardMarkup(manifest, {
       agentName: "财务分析助手",
@@ -122,7 +128,12 @@ describe("dashboard manifest runtime templates", () => {
     expect(fallbackSceneOption.series?.every((series) => series.type === "scatter3D")).toBe(true);
     expect(collectFunctionPaths(sceneOption)).toEqual([]);
     expect(collectFunctionPaths(fallbackSceneOption)).toEqual([]);
+    expect(lineOption.xAxis?.axisLabel?.fontSize).toBe(10);
+    expect(lineOption.xAxis?.axisLabel?.overflow).toBe("truncate");
+    expect(lineOption.grid?.containLabel).toBe(true);
     expect(panelOption.series?.[0]?.type).toBe("pie");
+    expect(panelOption.series?.[0]?.label?.fontSize).toBe(10);
+    expect(typeof panelOption.series?.[0]?.label?.formatter).toBe("function");
     expect(markup).toContain('data-chart-slot="rightTop"');
     expect(markup).toContain("财务分析助手");
   });

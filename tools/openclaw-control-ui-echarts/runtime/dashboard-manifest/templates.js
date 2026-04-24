@@ -33,12 +33,12 @@ const DEFAULT_LAYOUT = {
   mainGap: 22,
   panelGap: 22,
   footerGap: 22,
-  leftColumnMin: 280,
-  leftColumnMax: 320,
-  rightColumnMin: 280,
-  rightColumnMax: 320,
+  leftColumnMin: 252,
+  leftColumnMax: 292,
+  rightColumnMin: 252,
+  rightColumnMax: 292,
   sceneMinHeight: 0,
-  sceneOverlayWidth: 420,
+  sceneOverlayWidth: 360,
   panelRadius: 22,
   metricRadius: 18,
   cardMode: "glass",
@@ -84,7 +84,7 @@ const STYLE_PROFILE_PRESETS = {
     layout: {
       panelRadius: 24,
       metricRadius: 20,
-      sceneOverlayWidth: 460,
+      sceneOverlayWidth: 400,
       mainGap: 24,
       panelGap: 24,
       sceneMinHeight: 340,
@@ -118,7 +118,7 @@ const STYLE_PROFILE_PRESETS = {
       panelRadius: 18,
       metricRadius: 16,
       cardMode: "solid",
-      sceneOverlayWidth: 400,
+      sceneOverlayWidth: 360,
     },
     motion: {
       level: "low",
@@ -1002,10 +1002,19 @@ export function isHtmlPanelType(chart) {
 
 function createAxisConfig(theme) {
   return {
-    axisLine: { lineStyle: { color: theme.grid } },
-    axisLabel: { color: theme.muted },
-    splitLine: { lineStyle: { color: theme.grid } },
-    axisTick: { show: false },
+    axisLine: { lineStyle: { color: theme.grid, width: 1 } },
+    axisLabel: {
+      color: theme.muted,
+      fontSize: 10,
+      margin: 10,
+      hideOverlap: true,
+    },
+    splitLine: { lineStyle: { color: theme.grid, type: "dashed" } },
+    axisTick: { show: false, length: 4 },
+    nameTextStyle: {
+      color: theme.muted,
+      fontSize: 10,
+    },
   };
 }
 
@@ -1013,15 +1022,46 @@ function createPalette(theme) {
   return [theme.accent, theme.accentSoft, theme.success, theme.warning, theme.danger];
 }
 
+function truncateChartLabel(value, maxLength = 6) {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function createTooltipConfig(theme, trigger = "axis") {
+  return {
+    trigger,
+    backgroundColor: "rgba(5, 14, 28, 0.94)",
+    borderColor: theme.grid,
+    borderWidth: 1,
+    padding: [8, 10],
+    textStyle: {
+      color: theme.text,
+      fontSize: 11,
+      fontFamily: theme.fontFamily,
+    },
+    extraCssText: "box-shadow: 0 12px 28px rgba(0,0,0,0.28); backdrop-filter: blur(10px);",
+  };
+}
+
 function createChartSeries(chart, fallbackType) {
+  const isLine = fallbackType === "line";
+  const isBar = fallbackType === "bar";
   if (chart.series.length) {
     return chart.series.map((series, index) => ({
       name: series.name,
       type: series.type || fallbackType,
-      smooth: fallbackType === "line" ? series.smooth !== false : undefined,
+      smooth: isLine ? series.smooth !== false : undefined,
       stack: series.stack || undefined,
-      areaStyle: fallbackType === "line" && series.area ? {} : undefined,
-      barMaxWidth: fallbackType === "bar" ? 16 : undefined,
+      areaStyle: isLine && series.area ? { opacity: 0.16 } : undefined,
+      lineStyle: isLine ? { width: 2.5 } : undefined,
+      symbol: isLine && series.data.length > 10 ? "none" : undefined,
+      symbolSize: isLine ? 6 : undefined,
+      showSymbol: isLine ? series.data.length <= 10 : undefined,
+      barMaxWidth: isBar ? 16 : undefined,
+      itemStyle: isBar ? { borderRadius: [6, 6, 0, 0] } : undefined,
       emphasis: { focus: "series" },
       data: series.data,
     }));
@@ -1031,8 +1071,13 @@ function createChartSeries(chart, fallbackType) {
       {
         name: chart.title,
         type: fallbackType,
-        smooth: fallbackType === "line",
-        barMaxWidth: fallbackType === "bar" ? 16 : undefined,
+        smooth: isLine,
+        lineStyle: isLine ? { width: 2.5 } : undefined,
+        symbol: isLine && chart.items.length > 10 ? "none" : undefined,
+        symbolSize: isLine ? 6 : undefined,
+        showSymbol: isLine ? chart.items.length <= 10 : undefined,
+        barMaxWidth: isBar ? 16 : undefined,
+        itemStyle: isBar ? { borderRadius: [6, 6, 0, 0] } : undefined,
         emphasis: { focus: "series" },
         data: chart.items.map((item) => item.value),
       },
@@ -1042,7 +1087,10 @@ function createChartSeries(chart, fallbackType) {
     {
       name: chart.title,
       type: fallbackType,
-      smooth: fallbackType === "line",
+      smooth: isLine,
+      lineStyle: isLine ? { width: 2.5 } : undefined,
+      symbol: isLine ? "circle" : undefined,
+      symbolSize: isLine ? 6 : undefined,
       emphasis: { focus: "series" },
       data: [18, 22, 19, 25, 28, 24],
     },
@@ -1051,6 +1099,8 @@ function createChartSeries(chart, fallbackType) {
 
 function buildLineOrBarOption(chart, manifest, fallbackType) {
   const theme = manifest.theme;
+  const axisConfig = createAxisConfig(theme);
+  const isBar = fallbackType === "bar";
   const categories =
     chart.categories.length || chart.items.length || chart.series[0]?.data?.length
       ? chart.categories.length
@@ -1063,19 +1113,41 @@ function buildLineOrBarOption(chart, manifest, fallbackType) {
     backgroundColor: "transparent",
     color: createPalette(theme),
     textStyle: { color: theme.text },
-    tooltip: { trigger: "axis" },
-    grid: { top: 20, right: 16, bottom: 28, left: 42 },
+    tooltip: {
+      ...createTooltipConfig(theme, "axis"),
+      axisPointer: isBar
+        ? {
+            type: "shadow",
+            shadowStyle: { color: "rgba(98, 230, 255, 0.08)" },
+          }
+        : {
+            type: "line",
+            lineStyle: {
+              color: theme.accent,
+              type: "dashed",
+            },
+          },
+    },
+    grid: { top: 26, right: 14, bottom: 32, left: 18, containLabel: true },
     xAxis: {
       type: "category",
       data: categories,
-      ...createAxisConfig(theme),
+      boundaryGap: isBar,
+      ...axisConfig,
       splitLine: { show: false },
+      axisLabel: {
+        ...axisConfig.axisLabel,
+        interval: 0,
+        width: 68,
+        overflow: "truncate",
+      },
     },
     yAxis: {
       type: "value",
-      ...createAxisConfig(theme),
+      splitNumber: 4,
+      ...axisConfig,
       axisLabel: {
-        color: theme.muted,
+        ...axisConfig.axisLabel,
         formatter: chart.unit ? `{value}${chart.unit}` : "{value}",
       },
     },
@@ -1091,23 +1163,37 @@ function buildPieOption(chart, manifest) {
   return {
     backgroundColor: "transparent",
     color: createPalette(theme),
-    tooltip: { trigger: "item" },
+    tooltip: createTooltipConfig(theme, "item"),
     series: [
       {
         name: chart.title,
         type: "pie",
-        radius: ["48%", "76%"],
-        center: ["50%", "54%"],
-        roseType: "radius",
+        radius: ["44%", "70%"],
+        center: ["50%", "56%"],
+        avoidLabelOverlap: true,
+        minAngle: 6,
         label: {
           color: theme.text,
-          formatter: ({ name, percent }) => `${name} ${percent}%`,
+          fontSize: 10,
+          lineHeight: 14,
+          formatter: ({ name, percent }) =>
+            `${truncateChartLabel(name, 6)} ${Math.round(toFiniteNumber(percent, 0))}%`,
         },
-        labelLine: { lineStyle: { color: theme.grid } },
+        labelLine: {
+          length: 10,
+          length2: 8,
+          lineStyle: { color: theme.grid },
+        },
+        labelLayout: {
+          hideOverlap: true,
+        },
         itemStyle: {
           borderColor: "rgba(4, 11, 22, 0.92)",
           borderWidth: 2,
+          shadowBlur: 12,
+          shadowColor: "rgba(0, 0, 0, 0.2)",
         },
+        emphasis: { scale: true, scaleSize: 4 },
         data: items,
       },
     ],
@@ -1133,11 +1219,17 @@ function buildRadarOption(chart, manifest) {
   return {
     backgroundColor: "transparent",
     color: createPalette(theme),
+    tooltip: createTooltipConfig(theme, "item"),
     radar: {
       indicator: indicators,
-      radius: "70%",
-      splitNumber: 4,
-      axisName: { color: theme.text },
+      center: ["50%", "56%"],
+      radius: "66%",
+      splitNumber: 5,
+      axisName: {
+        color: theme.text,
+        fontSize: 10,
+        formatter: (value) => truncateChartLabel(value, 4),
+      },
       splitArea: {
         areaStyle: {
           color: [
@@ -1154,8 +1246,11 @@ function buildRadarOption(chart, manifest) {
     series: [
       {
         type: "radar",
+        symbol: "circle",
+        symbolSize: 5,
         areaStyle: { color: "rgba(98, 230, 255, 0.22)" },
         lineStyle: { color: theme.accent, width: 2 },
+        itemStyle: { color: theme.accent },
         data: [{ value: values, name: chart.title }],
       },
     ],

@@ -37,9 +37,9 @@ body {
   margin: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 20%, rgba(43, 141, 255, 0.18), transparent 28%),
-    radial-gradient(circle at 50% 90%, rgba(98, 230, 255, 0.08), transparent 24%),
-    linear-gradient(180deg, #06101f 0%, var(--oc-dashboard-background) 100%);
+    radial-gradient(circle at 50% 0%, rgba(43, 141, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 50% 78%, rgba(98, 230, 255, 0.1), transparent 28%),
+    linear-gradient(180deg, #081224 0%, #040c18 54%, var(--oc-dashboard-background) 100%);
   color: var(--oc-dashboard-text);
   font-family: Bahnschrift, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
@@ -66,6 +66,30 @@ body {
   font-family: var(--oc-dashboard-font-family);
 }
 
+.oc-dashboard-shell::before,
+.oc-dashboard-shell::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.oc-dashboard-shell::before {
+  inset: 8px;
+  border: 1px solid rgba(98, 230, 255, 0.08);
+  border-radius: 24px;
+  box-shadow: inset 0 0 0 1px rgba(98, 230, 255, 0.02);
+}
+
+.oc-dashboard-shell::after {
+  left: 50%;
+  bottom: -18%;
+  width: min(72vw, 980px);
+  height: min(42vw, 420px);
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(74, 246, 210, 0.12), transparent 66%);
+  opacity: 0.68;
+}
+
 .oc-dashboard-particles,
 .oc-dashboard-backdrop {
   position: absolute;
@@ -90,21 +114,67 @@ body {
 }
 
 .oc-dashboard-header {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--oc-dashboard-shell-gap);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
+  min-height: 116px;
 }
 
 .oc-dashboard-title-group {
+  position: relative;
   min-width: 0;
+  max-width: min(72vw, 1080px);
+  margin: 0 auto;
+  padding: 14px 0 0;
+  text-align: center;
+}
+
+.oc-dashboard-title-group::before,
+.oc-dashboard-title-group::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.oc-dashboard-title-group::before {
+  top: 0;
+  width: min(68vw, 760px);
+  height: 46px;
+  border: 1px solid rgba(98, 230, 255, 0.2);
+  border-bottom-color: rgba(98, 230, 255, 0.08);
+  border-radius: 14px 14px 26px 26px;
+  background:
+    linear-gradient(180deg, rgba(8, 30, 56, 0.92), rgba(8, 21, 39, 0.36)),
+    linear-gradient(
+      90deg,
+      rgba(98, 230, 255, 0.12),
+      transparent 18%,
+      transparent 82%,
+      rgba(98, 230, 255, 0.12)
+    );
+  box-shadow:
+    0 0 0 1px rgba(98, 230, 255, 0.02),
+    inset 0 -10px 24px rgba(0, 0, 0, 0.18);
+  clip-path: polygon(4% 0, 96% 0, 100% 32%, 92% 100%, 8% 100%, 0 32%);
+}
+
+.oc-dashboard-title-group::after {
+  top: 44px;
+  width: min(52vw, 540px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(98, 230, 255, 0.44), transparent);
 }
 
 .oc-dashboard-brand-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  min-height: 28px;
 }
 
 .oc-dashboard-logo-image {
@@ -114,52 +184,58 @@ body {
 }
 
 .oc-dashboard-logo-text {
-  padding: 6px 12px;
-  border: 1px solid rgba(98, 230, 255, 0.32);
+  padding: 5px 12px;
+  border: 1px solid rgba(98, 230, 255, 0.28);
   border-radius: 999px;
-  background: rgba(7, 19, 38, 0.54);
+  background: rgba(7, 19, 38, 0.44);
   color: var(--oc-dashboard-accent);
-  font-size: 13px;
-  letter-spacing: 0.22em;
+  font-size: 12px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .oc-dashboard-template-tag {
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 999px;
-  background: rgba(98, 230, 255, 0.12);
+  background: rgba(98, 230, 255, 0.1);
   color: var(--oc-dashboard-accent);
-  font-size: 12px;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 .oc-dashboard-title {
   margin: 0;
-  font-size: clamp(28px, 3vw, 42px);
-  line-height: 1.05;
+  font-size: clamp(24px, 2.6vw, 36px);
+  line-height: 1.08;
   letter-spacing: var(--oc-dashboard-title-letter-spacing);
   font-family: var(--oc-dashboard-title-font-family);
+  text-shadow: 0 0 22px rgba(98, 230, 255, 0.08);
 }
 
 .oc-dashboard-subtitle {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   color: var(--oc-dashboard-muted);
-  font-size: 14px;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  line-height: 1.55;
+  letter-spacing: 0.05em;
 }
 
 .oc-dashboard-header-side {
+  position: absolute;
+  right: 0;
+  top: 4px;
   display: grid;
   justify-items: end;
-  gap: 12px;
+  gap: 10px;
+  max-width: min(38vw, 420px);
 }
 
 .oc-dashboard-now {
   min-height: 22px;
   color: var(--oc-dashboard-accent);
-  font-size: 13px;
-  letter-spacing: 0.1em;
+  font-size: 12px;
+  letter-spacing: 0.14em;
 }
 
 .oc-dashboard-nav {
@@ -171,11 +247,12 @@ body {
 
 .oc-dashboard-nav-button {
   border: 1px solid rgba(98, 230, 255, 0.22);
-  background: rgba(7, 19, 38, 0.5);
+  background: rgba(7, 19, 38, 0.42);
   color: var(--oc-dashboard-text);
-  padding: 8px 14px;
+  padding: 7px 14px;
   border-radius: 999px;
-  font: inherit;
+  font-size: 12px;
+  font-family: inherit;
   cursor: pointer;
   transition:
     border-color 120ms ease,
@@ -199,17 +276,24 @@ body {
 .oc-dashboard-metrics {
   display: grid;
   grid-template-columns: var(--oc-dashboard-metrics-columns);
-  gap: 16px;
+  gap: 12px;
 }
 
 .oc-dashboard-metric {
   position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto;
   min-width: 0;
-  padding: 16px 18px;
-  background: linear-gradient(180deg, rgba(98, 230, 255, 0.05), transparent), var(--oc-dashboard-surface);
+  min-height: 92px;
+  padding: 14px 16px 12px;
+  background:
+    linear-gradient(180deg, rgba(98, 230, 255, 0.08), transparent 38%),
+    linear-gradient(90deg, rgba(98, 230, 255, 0.04), transparent 36%), var(--oc-dashboard-surface);
   border: 1px solid rgba(98, 230, 255, 0.16);
   border-radius: var(--oc-dashboard-metric-radius);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .oc-dashboard-metric::after {
@@ -226,31 +310,38 @@ body {
 .oc-dashboard-metric-label,
 .oc-dashboard-metric-note {
   color: var(--oc-dashboard-muted);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.oc-dashboard-metric-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .oc-dashboard-metric-value-line {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 .oc-dashboard-metric-value {
-  font-size: clamp(28px, 2.6vw, 40px);
+  font-size: clamp(22px, 2vw, 32px);
   line-height: 1;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .oc-dashboard-metric-unit {
   color: var(--oc-dashboard-muted);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .oc-dashboard-metric-delta {
   display: inline-flex;
-  margin-top: 10px;
-  font-size: 12px;
+  margin-top: 8px;
+  font-size: 11px;
   letter-spacing: 0.08em;
 }
 
@@ -286,14 +377,13 @@ body {
   position: relative;
   min-height: 0;
   background:
-    linear-gradient(180deg, rgba(98, 230, 255, 0.04), transparent 36%),
-    linear-gradient(135deg, rgba(43, 141, 255, 0.1), transparent 30%),
-    var(--oc-dashboard-surface);
+    linear-gradient(180deg, rgba(98, 230, 255, 0.06), transparent 36%),
+    linear-gradient(135deg, rgba(43, 141, 255, 0.1), transparent 26%), var(--oc-dashboard-surface);
   border: 1px solid rgba(98, 230, 255, 0.16);
   border-radius: var(--oc-dashboard-panel-radius);
   overflow: hidden;
   box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.24),
+    0 14px 32px rgba(0, 0, 0, 0.2),
     inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
@@ -311,27 +401,44 @@ body {
 .oc-dashboard-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  padding: 18px 18px 14px;
+  padding: 14px 16px 12px;
   box-sizing: border-box;
 }
 
 .oc-dashboard-panel-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .oc-dashboard-panel-title {
-  font-size: 15px;
-  letter-spacing: 0.08em;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 14px;
+  color: var(--oc-dashboard-accent);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+}
+
+.oc-dashboard-panel-title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 8px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--oc-dashboard-accent), transparent);
+  box-shadow: 0 0 10px rgba(98, 230, 255, 0.3);
 }
 
 .oc-dashboard-panel-subtitle,
 .oc-dashboard-panel-footer {
   color: var(--oc-dashboard-muted);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .oc-dashboard-panel-chart,
@@ -366,9 +473,17 @@ body {
 
 .oc-dashboard-scene-grid {
   background:
-    linear-gradient(transparent 49%, rgba(98, 230, 255, 0.06) 50%, transparent 51%) center / 100% 56px,
-    linear-gradient(90deg, transparent 49%, rgba(98, 230, 255, 0.05) 50%, transparent 51%) center / 56px 100%;
-  mask-image: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85) 18%, rgba(0, 0, 0, 0.85) 74%, transparent);
+    linear-gradient(transparent 49%, rgba(98, 230, 255, 0.06) 50%, transparent 51%) center / 100%
+      60px,
+    linear-gradient(90deg, transparent 49%, rgba(98, 230, 255, 0.04) 50%, transparent 51%) center /
+      60px 100%;
+  mask-image: linear-gradient(
+    180deg,
+    transparent,
+    rgba(0, 0, 0, 0.85) 18%,
+    rgba(0, 0, 0, 0.85) 74%,
+    transparent
+  );
   opacity: var(--oc-dashboard-grid-opacity);
 }
 
@@ -405,31 +520,48 @@ body {
 }
 
 .oc-dashboard-scene-overlay {
-  left: 24px;
+  left: clamp(18px, 2vw, 26px);
   top: 20px;
   z-index: 2;
-  max-width: min(56%, var(--oc-dashboard-scene-overlay-width));
+  max-width: min(44%, var(--oc-dashboard-scene-overlay-width));
 }
 
 .oc-dashboard-scene-kicker,
 .oc-dashboard-footer-title {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 14px;
   color: var(--oc-dashboard-accent);
-  font-size: 12px;
-  letter-spacing: 0.16em;
+  font-size: 11px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
+}
+
+.oc-dashboard-scene-kicker::before,
+.oc-dashboard-footer-title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 8px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--oc-dashboard-accent), transparent);
+  box-shadow: 0 0 10px rgba(98, 230, 255, 0.3);
 }
 
 .oc-dashboard-scene-title {
   margin-top: 8px;
-  font-size: clamp(22px, 2.2vw, 34px);
-  line-height: 1.05;
+  font-size: clamp(18px, 1.9vw, 28px);
+  line-height: 1.12;
+  text-shadow: 0 0 20px rgba(98, 230, 255, 0.06);
 }
 
 .oc-dashboard-scene-subtitle {
   margin-top: 8px;
   color: var(--oc-dashboard-muted);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .oc-dashboard-footer {
@@ -440,7 +572,7 @@ body {
 }
 
 .oc-dashboard-footer-section {
-  padding: 16px 18px;
+  padding: 14px 16px;
   box-sizing: border-box;
 }
 
@@ -459,7 +591,7 @@ body {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 10px 0;
+  padding: 8px 0;
   border-top: 1px solid rgba(98, 230, 255, 0.08);
 }
 
@@ -487,10 +619,13 @@ body {
 .oc-dashboard-ranking-name {
   min-width: 0;
   color: var(--oc-dashboard-text);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .oc-dashboard-feed-value {
   color: var(--oc-dashboard-muted);
+  font-size: 11px;
 }
 
 .oc-dashboard-alert-item.high .oc-dashboard-alert-title {
@@ -508,12 +643,12 @@ body {
 .oc-dashboard-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .oc-dashboard-table th,
 .oc-dashboard-table td {
-  padding: 10px 0;
+  padding: 8px 0;
   border-top: 1px solid rgba(98, 230, 255, 0.08);
   text-align: left;
 }
@@ -530,8 +665,8 @@ body {
 }
 
 .oc-dashboard-stat-item {
-  padding: 14px 12px;
-  border-radius: 16px;
+  padding: 12px 12px;
+  border-radius: 14px;
   background: rgba(98, 230, 255, 0.06);
   border: 1px solid rgba(98, 230, 255, 0.08);
 }
@@ -544,7 +679,7 @@ body {
 .oc-dashboard-stat-value {
   display: block;
   margin-top: 8px;
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -594,8 +729,10 @@ body {
 
 .oc-dashboard-shell[data-style-profile="minimal-premium"] .oc-dashboard-scene-grid {
   background:
-    linear-gradient(transparent 49%, rgba(157, 215, 255, 0.04) 50%, transparent 51%) center / 100% 64px,
-    linear-gradient(90deg, transparent 49%, rgba(157, 215, 255, 0.04) 50%, transparent 51%) center / 64px 100%;
+    linear-gradient(transparent 49%, rgba(157, 215, 255, 0.04) 50%, transparent 51%) center / 100%
+      64px,
+    linear-gradient(90deg, transparent 49%, rgba(157, 215, 255, 0.04) 50%, transparent 51%) center /
+      64px 100%;
 }
 
 .oc-dashboard-shell[data-style-profile="minimal-premium"] .oc-dashboard-scene-ring {
@@ -603,11 +740,27 @@ body {
 }
 
 .oc-dashboard-shell[data-density="compact"] .oc-dashboard-title {
-  font-size: clamp(24px, 2.4vw, 36px);
+  font-size: clamp(22px, 2.1vw, 32px);
 }
 
 .oc-dashboard-shell[data-density="immersive"] .oc-dashboard-title {
-  font-size: clamp(30px, 3.3vw, 46px);
+  font-size: clamp(26px, 3vw, 40px);
+}
+
+.oc-dashboard-shell[data-density="compact"] .oc-dashboard-metric-value {
+  font-size: clamp(20px, 1.8vw, 28px);
+}
+
+.oc-dashboard-shell[data-density="immersive"] .oc-dashboard-metric-value {
+  font-size: clamp(24px, 2.2vw, 34px);
+}
+
+.oc-dashboard-shell[data-density="compact"] .oc-dashboard-scene-title {
+  font-size: clamp(16px, 1.6vw, 24px);
+}
+
+.oc-dashboard-shell[data-density="immersive"] .oc-dashboard-scene-title {
+  font-size: clamp(20px, 2.2vw, 30px);
 }
 
 .oc-dashboard-error {
@@ -643,12 +796,37 @@ body {
   .oc-dashboard-shell {
     padding: 18px 18px 20px;
   }
+
+  .oc-dashboard-title-group {
+    max-width: min(78vw, 920px);
+  }
 }
 
 @media (max-width: 1100px) {
   .oc-dashboard-shell {
     grid-template-rows: auto auto minmax(0, 1fr);
     padding: 16px;
+  }
+
+  .oc-dashboard-header {
+    min-height: auto;
+  }
+
+  .oc-dashboard-title-group {
+    max-width: 100%;
+    padding-top: 10px;
+  }
+
+  .oc-dashboard-title-group::before,
+  .oc-dashboard-title-group::after {
+    display: none;
+  }
+
+  .oc-dashboard-header-side {
+    position: static;
+    margin-top: 10px;
+    max-width: none;
+    justify-items: center;
   }
 
   .oc-dashboard-metrics {
