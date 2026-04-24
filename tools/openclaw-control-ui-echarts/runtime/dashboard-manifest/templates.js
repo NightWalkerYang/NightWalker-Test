@@ -27,18 +27,18 @@ const DEFAULT_THEME = {
 };
 
 const DEFAULT_LAYOUT = {
-  shellGap: 18,
-  shellPadding: "22px 28px 24px",
-  metricsColumns: 4,
-  mainGap: 22,
-  panelGap: 22,
-  footerGap: 22,
-  leftColumnMin: 252,
-  leftColumnMax: 292,
-  rightColumnMin: 252,
-  rightColumnMax: 292,
-  sceneMinHeight: 0,
-  sceneOverlayWidth: 360,
+  shellGap: 14,
+  shellPadding: "18px 22px 20px",
+  metricsColumns: 6,
+  mainGap: 16,
+  panelGap: 16,
+  footerGap: 16,
+  leftColumnMin: 228,
+  leftColumnMax: 258,
+  rightColumnMin: 228,
+  rightColumnMax: 258,
+  sceneMinHeight: 360,
+  sceneOverlayWidth: 320,
   panelRadius: 22,
   metricRadius: 18,
   cardMode: "glass",
@@ -84,10 +84,10 @@ const STYLE_PROFILE_PRESETS = {
     layout: {
       panelRadius: 24,
       metricRadius: 20,
-      sceneOverlayWidth: 400,
+      sceneOverlayWidth: 340,
       mainGap: 24,
       panelGap: 24,
-      sceneMinHeight: 340,
+      sceneMinHeight: 380,
     },
     motion: {
       level: "high",
@@ -118,7 +118,7 @@ const STYLE_PROFILE_PRESETS = {
       panelRadius: 18,
       metricRadius: 16,
       cardMode: "solid",
-      sceneOverlayWidth: 360,
+      sceneOverlayWidth: 300,
     },
     motion: {
       level: "low",
@@ -167,11 +167,11 @@ const DENSITY_PRESETS = {
   compact: {
     layout: {
       shellGap: 14,
-      shellPadding: "18px 20px 18px",
-      mainGap: 18,
-      panelGap: 18,
-      footerGap: 18,
-      metricsColumns: 5,
+      shellPadding: "16px 18px 16px",
+      mainGap: 14,
+      panelGap: 14,
+      footerGap: 14,
+      metricsColumns: 7,
     },
   },
   standard: {
@@ -185,7 +185,8 @@ const DENSITY_PRESETS = {
       panelGap: 24,
       footerGap: 24,
       sceneMinHeight: 420,
-      sceneOverlayWidth: 500,
+      sceneOverlayWidth: 380,
+      metricsColumns: 5,
     },
     motion: {
       level: "high",
@@ -831,18 +832,24 @@ function formatMetricDelta(metric) {
   return `<span class="oc-dashboard-metric-delta ${trendClass}">${escapeHtml(metric.delta)}</span>`;
 }
 
-function buildMetricMarkup(metric) {
+function buildMetricMarkup(metric, index) {
+  const metricIndex = `K-${String(index + 1).padStart(2, "0")}`;
   return [
-    '<article class="oc-dashboard-metric">',
-    `  <div class="oc-dashboard-metric-label">${escapeHtml(metric.label)}</div>`,
+    `<article class="oc-dashboard-metric" data-trend="${escapeHtmlAttribute(metric.trend || "flat")}" data-metric-id="${escapeHtmlAttribute(metric.id)}">`,
+    '  <div class="oc-dashboard-metric-head">',
+    `    <span class="oc-dashboard-metric-index">${escapeHtml(metricIndex)}</span>`,
+    `    <div class="oc-dashboard-metric-label">${escapeHtml(metric.label)}</div>`,
+    "  </div>",
     '  <div class="oc-dashboard-metric-value-line">',
     `    <strong class="oc-dashboard-metric-value">${escapeHtml(metric.valueText)}</strong>`,
     metric.unit
       ? `    <span class="oc-dashboard-metric-unit">${escapeHtml(metric.unit)}</span>`
       : "",
     "  </div>",
+    '  <div class="oc-dashboard-metric-meta">',
     formatMetricDelta(metric),
-    metric.note ? `  <div class="oc-dashboard-metric-note">${escapeHtml(metric.note)}</div>` : "",
+    metric.note ? `    <div class="oc-dashboard-metric-note">${escapeHtml(metric.note)}</div>` : "",
+    "  </div>",
     "</article>",
   ]
     .filter(Boolean)
@@ -852,19 +859,25 @@ function buildMetricMarkup(metric) {
 function buildPanelMarkup(chart) {
   const renderMode = isHtmlPanelType(chart) ? "html" : "chart";
   return [
-    `<section class="oc-dashboard-panel" data-panel-slot="${escapeHtmlAttribute(chart.slotKey)}" data-block-id="${escapeHtmlAttribute(BLOCK_IDS[chart.slotKey] || chart.slotKey)}">`,
-    '  <div class="oc-dashboard-panel-head">',
-    `    <div class="oc-dashboard-panel-title">${escapeHtml(chart.title)}</div>`,
+    `<section class="oc-dashboard-panel" data-panel-slot="${escapeHtmlAttribute(chart.slotKey)}" data-block-id="${escapeHtmlAttribute(BLOCK_IDS[chart.slotKey] || chart.slotKey)}" data-render-mode="${renderMode}">`,
+    '  <div class="oc-dashboard-panel-shell">',
+    '    <div class="oc-dashboard-panel-head">',
+    `      <div class="oc-dashboard-panel-title">${escapeHtml(chart.title)}</div>`,
     chart.subtitle
-      ? `    <div class="oc-dashboard-panel-subtitle">${escapeHtml(chart.subtitle)}</div>`
+      ? `      <div class="oc-dashboard-panel-subtitle">${escapeHtml(chart.subtitle)}</div>`
+      : "",
+    "    </div>",
+    '    <div class="oc-dashboard-panel-body">',
+    '      <div class="oc-dashboard-panel-bay">',
+    renderMode === "chart"
+      ? `        <div class="oc-dashboard-panel-chart" data-chart-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`
+      : `        <div class="oc-dashboard-panel-html" data-html-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`,
+    "      </div>",
+    "    </div>",
+    chart.footer
+      ? `    <div class="oc-dashboard-panel-footer">${escapeHtml(chart.footer)}</div>`
       : "",
     "  </div>",
-    renderMode === "chart"
-      ? `  <div class="oc-dashboard-panel-chart" data-chart-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`
-      : `  <div class="oc-dashboard-panel-html" data-html-slot="${escapeHtmlAttribute(chart.slotKey)}"></div>`,
-    chart.footer
-      ? `  <div class="oc-dashboard-panel-footer">${escapeHtml(chart.footer)}</div>`
-      : "",
     "</section>",
   ]
     .filter(Boolean)
@@ -943,18 +956,42 @@ function buildSceneMarkup(manifest, context = {}) {
   const sceneSubtitle =
     manifest.scene.subtitle || manifest.subtitle || context.agentName || "零侵入仪表盘运行时";
   const sceneKicker = manifest.blocks?.scene?.kicker || "CORE SCENE";
+  const sceneSignals = [
+    { label: "KPI", value: String(manifest.metrics.length).padStart(2, "0") },
+    { label: "ALERT", value: String(manifest.alerts.length).padStart(2, "0") },
+    { label: "FEED", value: String(manifest.timeline.length).padStart(2, "0") },
+  ];
   return `
     <section class="oc-dashboard-scene-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.scene.id)}">
-      <div class="oc-dashboard-scene-overlay">
-        ${sceneKicker ? `<div class="oc-dashboard-scene-kicker">${escapeHtml(sceneKicker)}</div>` : ""}
-        <div class="oc-dashboard-scene-title">${escapeHtml(sceneTitle)}</div>
-        <div class="oc-dashboard-scene-subtitle">${escapeHtml(sceneSubtitle)}</div>
+      <div class="oc-dashboard-scene-frame">
+        <div class="oc-dashboard-scene-overlay">
+          ${sceneKicker ? `<div class="oc-dashboard-scene-kicker">${escapeHtml(sceneKicker)}</div>` : ""}
+          <div class="oc-dashboard-scene-title">${escapeHtml(sceneTitle)}</div>
+          <div class="oc-dashboard-scene-subtitle">${escapeHtml(sceneSubtitle)}</div>
+        </div>
+        <div class="oc-dashboard-scene-status">
+          ${sceneSignals
+            .map(
+              (item) => `
+            <span class="oc-dashboard-scene-chip">
+              <span class="oc-dashboard-scene-chip-label">${escapeHtml(item.label)}</span>
+              <span class="oc-dashboard-scene-chip-value">${escapeHtml(item.value)}</span>
+            </span>`,
+            )
+            .join("")}
+        </div>
+        <div class="oc-dashboard-scene-bay">
+          <div class="oc-dashboard-scene-hud hud-left"></div>
+          <div class="oc-dashboard-scene-hud hud-right"></div>
+          <div class="oc-dashboard-scene-grid"></div>
+          <div class="oc-dashboard-scene-ring ring-a"></div>
+          <div class="oc-dashboard-scene-ring ring-b"></div>
+          <div class="oc-dashboard-scene-ring ring-c"></div>
+          <div class="oc-dashboard-scene-core-glow"></div>
+          <div class="oc-dashboard-scene-beam"></div>
+          <div class="oc-dashboard-scene-chart" data-dashboard-scene></div>
+        </div>
       </div>
-      <div class="oc-dashboard-scene-grid"></div>
-      <div class="oc-dashboard-scene-ring ring-a"></div>
-      <div class="oc-dashboard-scene-ring ring-b"></div>
-      <div class="oc-dashboard-scene-ring ring-c"></div>
-      <div class="oc-dashboard-scene-chart" data-dashboard-scene></div>
     </section>`;
 }
 
@@ -963,18 +1000,22 @@ function buildFooterSectionMarkup(type, manifest) {
     return `
       <section class="oc-dashboard-footer-section" data-block-id="${escapeHtmlAttribute(manifest.blocks.timeline.id)}">
         <div class="oc-dashboard-footer-title">${escapeHtml(manifest.blocks.timeline.title || "动态时间线")}</div>
-        <ul class="oc-dashboard-feed-list">
-          ${buildTimelineMarkup(manifest.timeline)}
-        </ul>
+        <div class="oc-dashboard-footer-body">
+          <ul class="oc-dashboard-feed-list">
+            ${buildTimelineMarkup(manifest.timeline)}
+          </ul>
+        </div>
       </section>`;
   }
   if (type === "alerts") {
     return `
       <section class="oc-dashboard-footer-section" data-block-id="${escapeHtmlAttribute(manifest.blocks.alerts.id)}">
         <div class="oc-dashboard-footer-title">${escapeHtml(manifest.blocks.alerts.title || "风险提示")}</div>
-        <ul class="oc-dashboard-alert-list">
-          ${buildAlertsMarkup(manifest.alerts)}
-        </ul>
+        <div class="oc-dashboard-footer-body">
+          <ul class="oc-dashboard-alert-list">
+            ${buildAlertsMarkup(manifest.alerts)}
+          </ul>
+        </div>
       </section>`;
   }
   return "";
@@ -1573,8 +1614,14 @@ export function buildPanelOption(chart, manifest) {
 export function buildDashboardMarkup(manifest, context = {}) {
   const metricsMarkup = isVisibleBlock(manifest.blocks?.metrics)
     ? `
-      <section class="oc-dashboard-metrics" data-block-id="${escapeHtmlAttribute(manifest.blocks.metrics.id)}">
-        ${manifest.metrics.map(buildMetricMarkup).join("")}
+      <section class="oc-dashboard-metrics-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.metrics.id)}">
+        <div class="oc-dashboard-metrics-band">
+          <div class="oc-dashboard-metrics-kicker">KPI BUS</div>
+          <div class="oc-dashboard-metrics-caption">${escapeHtml(`${String(manifest.metrics.length).padStart(2, "0")} live metrics`)}</div>
+        </div>
+        <div class="oc-dashboard-metrics">
+          ${manifest.metrics.map(buildMetricMarkup).join("")}
+        </div>
       </section>`
     : "";
   const mainMarkup = [
