@@ -162,6 +162,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/branding.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs`
@@ -203,6 +204,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-usage-stats-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-overview-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-platform-auto-approve.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-access-guard.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
@@ -241,6 +243,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The tenant platform sidecar now supports a local-edition license file, signature verification, renewal-code application, and read-only enforcement after expiry.
 - Tenant member Agent assignment now seeds each derived workspace with the base Agent's `MEMORY.md` / `memory.md` / `memory/` / `skills/` plus the existing bootstrap templates, while still excluding prior sessions and other runtime artifacts so assignment remains a one-time derivation.
 - Tenant member Agent assignment now also mirrors the base Agent's durable exec-approval bucket into the derived Agent bucket under `exec-approvals.json`, heals older derived assignments during member-Agent list reads, and removes the derived bucket again when that member is deleted.
+- The tenant platform sidecar now also opens an `operator.approvals` gateway client and automatically resolves matching `exec.approval.requested` events with `allow-once` for tenant-derived Agent requests, so long heredoc or obfuscation-triggered dashboard file writes no longer block on the front-end approval popup.
 - Split-workspace deployments now require the tenant sidecar to see the same base workspace as the gateway, either through an explicit `/home/node/.openclaw/workspace` mount or an `OPENCLAW_WORKSPACE_DIR` fallback; otherwise member assignment can only create `.tenant-derived-agent.json` shells and will miss the base Agent's `MEMORY.md` / `memory/` / `skills/`.
 - Platform admin login and tenant login now share a unified single-entry view that renders on the native Control UI root via `?ocTenantView=login`, avoiding the native router bouncing unknown `/login` pathnames back to the console. The `/login` pathname is still recognized as a backward-compatible alias when accessed directly.
 - The native Control UI root now requires a platform-admin tenant session and redirects unauthenticated users to the platform login view.

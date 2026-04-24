@@ -5,6 +5,7 @@ import path from "node:path";
 const DEFAULT_PORT = 18801;
 const DEFAULT_API_BASE_PATH = "/tenant-platform-api/v1";
 const DEFAULT_TENANT_PLATFORM_EDITION = "cloud";
+const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789";
 
 function resolveHomeDir() {
   return process.env.HOME?.trim() || os.homedir();
@@ -42,6 +43,52 @@ function parsePort(rawValue, fallback) {
   return parsed;
 }
 
+function parseBooleanFlag(rawValue, fallback) {
+  const normalized = String(rawValue ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function normalizeGatewayWsUrl(rawValue) {
+  const normalized = String(rawValue ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.startsWith("ws://") || normalized.startsWith("wss://")) {
+    return normalized;
+  }
+  if (normalized.startsWith("http://")) {
+    return `ws://${normalized.slice("http://".length)}`;
+  }
+  if (normalized.startsWith("https://")) {
+    return `wss://${normalized.slice("https://".length)}`;
+  }
+  return normalized;
+}
+
+function resolveGatewayUrl(env) {
+  const explicit = normalizeGatewayWsUrl(
+    env.OPENCLAW_TENANT_PLATFORM_GATEWAY_URL?.trim() || env.OPENCLAW_GATEWAY_URL?.trim() || "",
+  );
+  if (explicit) {
+    return explicit;
+  }
+  if (fs.existsSync("/.dockerenv")) {
+    return "ws://openclaw-gateway:18789";
+  }
+  return DEFAULT_GATEWAY_URL;
+}
+
 export function resolveTenantPlatformConfig(env = process.env) {
   const configDir = resolveConfigDir();
   const stateDir = path.join(configDir, "tenant-platform");
@@ -66,6 +113,17 @@ export function resolveTenantPlatformConfig(env = process.env) {
   const localLicensePublicKeyPath =
     env.OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH?.trim() ||
     path.join(stateDir, "license-public.pem");
+  const gatewayUrl = resolveGatewayUrl(env);
+  const gatewayToken =
+    env.OPENCLAW_TENANT_PLATFORM_GATEWAY_TOKEN?.trim() || env.OPENCLAW_GATEWAY_TOKEN?.trim() || "";
+  const gatewayPassword =
+    env.OPENCLAW_TENANT_PLATFORM_GATEWAY_PASSWORD?.trim() ||
+    env.OPENCLAW_GATEWAY_PASSWORD?.trim() ||
+    "";
+  const execAutoApproveEnabled = parseBooleanFlag(
+    env.OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE,
+    true,
+  );
 
   return {
     edition,
@@ -80,6 +138,10 @@ export function resolveTenantPlatformConfig(env = process.env) {
     localLicensePath,
     localLicensePublicKey,
     localLicensePublicKeyPath,
+    gatewayUrl,
+    gatewayToken,
+    gatewayPassword,
+    execAutoApproveEnabled,
   };
 }
 

@@ -1763,7 +1763,12 @@ sidecar 落点固定为：
   - 当成员分配 Agent，或读取旧的成员分配列表时，会把 `<OPENCLAW_CONFIG_DIR>/exec-approvals.json` 里基础 Agent 的 `agents.<baseAgentId>` 授权桶合并到 `agents.<derivedAgentId>`
   - 合并时保留派生桶自己已有的 allowlist 条目，同时用基础 Agent 的 `security / ask / askFallback / autoAllowSkills` 覆盖派生桶对应策略位
   - 成员删除时会同步清理该成员派生 `agentId` 对应的授权桶，避免 `exec-approvals.json` 残留无主派生 Agent 记录
-  - 这只能解决“派生 Agent 换了 id 导致原 allow-always 不继承”的问题，不能绕过底层对超长命令的 obfuscation 检测；如果命令本身被判定为 `Command too long; potential obfuscation`，仍可能继续弹出人工批准
+- 当前实际可运行方案已经补了一层 sidecar 级自动批准：
+  - tenant sidecar 会额外建立一个带 `operator.approvals` scope 的 gateway WebSocket 客户端
+  - 当收到 `exec.approval.requested` 事件时，只要请求命中租户派生 Agent（例如 `agentId` 以 `tenant-` 开头，或目标路径命中 `workspace-agents/tenant-*`），就会自动回写 `allow-once`
+  - 这样可以直接覆盖底层对超长 heredoc / `Command too long; potential obfuscation` 的人工批准弹窗，不再要求成员在聊天页手点授权
+  - 默认部署通过零侵入 sidecar 环境变量开启：`OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE=1`
+  - Docker 零侵入部署下建议显式让 sidecar 走容器内网地址：`OPENCLAW_TENANT_PLATFORM_GATEWAY_URL=ws://openclaw-gateway:18789`
 - 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态
 
 ## 十二、当前还需要继续确认的事项
