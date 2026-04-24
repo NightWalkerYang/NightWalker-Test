@@ -18,8 +18,48 @@ function getGlobalScriptCache() {
   return globalThis[DASHBOARD_SCRIPT_CACHE_KEY];
 }
 
-function loadScriptOnce(url) {
-  const absoluteUrl = new URL(url, window.location.href).href;
+function readWindowLocationHref(targetWindow) {
+  try {
+    return String(targetWindow?.location?.href || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function resolveDashboardRuntimeUrl(url, baseCandidates = []) {
+  const normalizedUrl = String(url || "").trim();
+  if (!normalizedUrl) {
+    throw new Error("dashboard_runtime_url_missing");
+  }
+
+  const normalizedBaseCandidates = [
+    ...baseCandidates,
+    readWindowLocationHref(globalThis),
+    String(document.baseURI || "").trim(),
+    readWindowLocationHref(window.top),
+    readWindowLocationHref(window.parent),
+  ].filter(Boolean);
+
+  for (const candidate of normalizedBaseCandidates) {
+    try {
+      return new URL(normalizedUrl, candidate).href;
+    } catch {
+      // Try the next candidate until a stable same-origin base is found.
+    }
+  }
+
+  if (/^(?:[a-zA-Z][a-zA-Z\d+\-.]*:|\/\/|\/)/.test(normalizedUrl)) {
+    return normalizedUrl;
+  }
+
+  throw new Error(`dashboard_runtime_url_invalid:${normalizedUrl}`);
+}
+
+function loadScriptOnce(url, context = {}) {
+  const absoluteUrl = resolveDashboardRuntimeUrl(url, [
+    String(context.visualizationHref || "").trim(),
+    String(context.workspaceBaseHref || "").trim(),
+  ]);
   const cache = getGlobalScriptCache();
   if (cache.has(absoluteUrl)) {
     return cache.get(absoluteUrl);
@@ -66,12 +106,12 @@ function loadScriptOnce(url) {
   return promise;
 }
 
-async function ensureVendorLibraries(manifest) {
-  await loadScriptOnce("/assets/vendor/echarts.min.js");
-  await loadScriptOnce("/assets/vendor/echarts-gl.min.js");
-  await loadScriptOnce("/assets/vendor/gsap.min.js").catch(() => null);
+async function ensureVendorLibraries(manifest, context = {}) {
+  await loadScriptOnce("/assets/vendor/echarts.min.js", context);
+  await loadScriptOnce("/assets/vendor/echarts-gl.min.js", context);
+  await loadScriptOnce("/assets/vendor/gsap.min.js", context).catch(() => null);
   if (manifest.particles?.enabled) {
-    await loadScriptOnce("/assets/vendor/tsparticles.bundle.min.js").catch(() => null);
+    await loadScriptOnce("/assets/vendor/tsparticles.bundle.min.js", context).catch(() => null);
   }
   if (!globalThis.echarts?.init) {
     throw new Error("dashboard_runtime_missing_echarts");
@@ -382,8 +422,12 @@ async function resolveDashboardManifest(rawManifest, context) {
     return { manifest, warnings };
   }
   const dataSourceHref = resolveDashboardAssetHref(context.workspaceBaseHref, dataSource);
+  const dataSourceUrl = resolveDashboardRuntimeUrl(dataSourceHref, [
+    String(context.visualizationHref || "").trim(),
+    String(context.workspaceBaseHref || "").trim(),
+  ]);
   try {
-    const response = await fetch(dataSourceHref, {
+    const response = await fetch(dataSourceUrl, {
       cache: "no-store",
       credentials: "same-origin",
     });
@@ -423,7 +467,7 @@ export async function renderDashboardManifest({ root, manifest: rawManifest, con
 
   const clockTimer = startClock(root);
   try {
-    await ensureVendorLibraries(normalized);
+    await ensureVendorLibraries(normalized, context);
     const chartInstances = [];
     renderSceneChart(root, normalized, chartInstances);
     renderEchartsPanels(root, normalized, chartInstances);
