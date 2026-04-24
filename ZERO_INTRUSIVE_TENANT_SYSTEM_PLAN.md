@@ -323,7 +323,19 @@ sidecar 落点固定为：
 
 ### 4.1 可视化展示公共页
 
-租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view/?token=...`，该路由由独立静态入口页承载，页面本身只负责加载可视化桥接脚本并通过签名 token 请求对应 workspace HTML，再将其挂载到全页 iframe 中；在装载前，服务端会把 workspace HTML 里的内联 `<script>` 外提成同源的生成脚本文件（放到对应 Agent 的 `Echarts/__openclaw_echarts_view__/...` 下），并把相对资源路径重写成绝对的同源 workspace 地址；其中带中文、空格、括号等不安全文件名的相对资源，还必须同步复制成 `__openclaw_echarts_view__` 目录下的 ASCII/hash 别名资源，再把 HTML / 外提脚本里的引用改到这些别名上，避免浏览器编码后的静态文件请求命中 `404`。外提脚本里凡是 `fetch`、`open`、`href/src` 之类的相对 URL 也会被改写，`*_index.html` 之间的跳转则回到对应的公开 `/echarts-view/?token=...` 路由，从而绕开 `srcdoc` 与 `base-uri 'none'` 对相对资源解析的 CSP 限制，避免外层控制台壳干扰可视化脚本。同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
+租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项来自当前登录成员已分配 Agent 工作空间下的两类入口文件：
+
+- `Echarts/*_index.html`
+- `Echarts/*_index.dashboard.json`
+
+点击后统一进入公开路由 `./echarts-view/?token=...`。当前实际运行链路分成两条：
+
+- 如果目标是 `*_index.html`
+  仍由公开页加载可视化桥接脚本，通过签名 token 请求对应 workspace HTML，再挂载到全页 iframe；装载前，服务端会把 workspace HTML 里的内联 `<script>` 外提成同源的生成脚本文件（放到对应 Agent 的 `Echarts/__openclaw_echarts_view__/...` 下），并把相对资源路径重写成绝对的同源 workspace 地址；其中带中文、空格、括号等不安全文件名的相对资源，还必须同步复制成 `__openclaw_echarts_view__` 目录下的 ASCII/hash 别名资源，再把 HTML / 外提脚本里的引用改到这些别名上，避免浏览器编码后的静态文件请求命中 `404`
+- 如果目标是 `*_index.dashboard.json`
+  sidecar 不再要求 AI 产出完整 HTML，而是读取 manifest JSON 后动态生成一个固定的零侵入 wrapper HTML；wrapper 再加载同源 `dashboard-manifest` runtime，用统一 HUD/3D 场景骨架去渲染 manifest 和可选本地数据文件
+
+两条链路下，query token 丢失时都回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
 
 实际实现还需要补一条：凡是大屏内部再跳到另一个 `*_index.html` 的场景，不论是 `<a href>`、内联 `onclick`，还是 `window.location.*` 这类脚本跳转，都必须在重写时改成“顶层窗口跳转”。也就是 `<a>` 改成指向公开 `/echarts-view/?token=...` 且带 `_top`，脚本里的 `location.assign/replace/href` 改写到 `window.top.location.*`。原因是可视化正文本身运行在 `srcdoc iframe` 里，如果继续在 iframe 内部打开 `/echarts-view/`，就会触发该公开页自身的防嵌入响应头，出现“拒绝连接”。
 
@@ -333,13 +345,17 @@ sidecar 落点固定为：
 
 当前桥接层的实际稳定边界还需要明确为：
 
-- `可视化展示` 菜单当前只扫描工作区 `Echarts/` 根目录下的 `*_index.html`，因此每张大屏都必须保留一个位于 `Echarts/` 根目录的静态入口页
+- `可视化展示` 菜单当前只扫描工作区 `Echarts/` 根目录下的 `*_index.html` 与 `*_index.dashboard.json`，因此每张大屏都必须保留一个位于 `Echarts/` 根目录的静态入口页或 manifest 入口
 - 当前桥接层会重写普通 `src/href/data/poster` 资源引用，并会把内联脚本外提成同源生成脚本，但它不是 bundler，不会自动接管整个 ESM 模块图
 - 当前桥接层默认会改写内联脚本中的 `fetch`、`open`、`location.*`、`.href=`、`.src=` 等相对 URL；但 `import ... from "./x.js"`、`dynamic import("./x.js")`、`new Worker("./x.js")`、`new URL("./x", import.meta.url)` 这类模式不在默认重写名单内
-- 因此 3D / 粒子大屏的推荐交付形态不是“未打包源码工程”，而是“单 HTML 入口 + 单 bundle 或少量稳定同源脚本 + 本地静态资源”
+- 对于 `*_index.html` 旧链路，3D / 粒子大屏的推荐交付形态仍然不是“未打包源码工程”，而是“单 HTML 入口 + 单 bundle 或少量稳定同源脚本 + 本地静态资源”
+- 对于新链路，更稳的默认做法是让 AI 直接产出 `*_index.dashboard.json` manifest，再由零侵入 `dashboard-manifest` runtime 统一负责布局、动效、ECharts-GL 主场景与同源数据装载
 - 如果 AI 先产出 React / Vue / Three.js / Babylon.js 工程，最终落盘到工作区时也必须先预打包成静态可部署产物，再放进 `Echarts/` 目录，不允许把 dev server、裸模块导入、动态分包、service worker 直接带进成员公开页链路
 
-3D / 粒子 / 高级可视化大屏的完整交付规范以 `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md` 为准。
+3D / 粒子 / 高级可视化大屏的完整交付规范以 `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md` 为准；其中默认优先级已经调整为：
+
+1. `Echarts/*_index.dashboard.json` manifest 入口
+2. `Echarts/*_index.html` 预打包静态入口
 
 当前要求：
 
@@ -1770,8 +1786,17 @@ sidecar 落点固定为：
     - 同步写入 sidecar 私有的 `tenant-platform/identity/tenant-platform-device-auth.json`
     - 授权范围固定为最小必需的 `operator.approvals`
   - 之后 sidecar 会用这份已配对设备身份建立 `operator.approvals` gateway WebSocket 客户端，而不是继续依赖前端人工点击授权弹窗
-  - 当收到 `exec.approval.requested` 事件时，只要请求命中租户派生 Agent（例如 `agentId` 以 `tenant-` 开头，或目标路径命中 `workspace-agents/tenant-*`），就会自动回写 `allow-once`
-  - 这样可以直接覆盖底层对超长 heredoc / `Command too long; potential obfuscation` 的人工批准弹窗，不再要求成员在聊天页手点授权
+  - 当收到 `exec.approval.requested` 事件时，只要请求命中租户派生上下文，就会自动回写 `allow-once`：
+    - `agentId` 以 `tenant-` 开头
+    - 或 `systemRunPlan.agentId` 以 `tenant-` 开头
+    - 或 `cwd / resolvedPath / command / commandPreview` 命中 `workspace-agents/tenant-*`、`workspace-tenant-*`
+    - 或 `sessionKey / systemRunPlan.sessionKey` 命中租户成员会话标记（如 `agent:...:tenant:...:tenant-agent:...`）
+  - 这里要明确一个当前真实边界：这套 sidecar 自动批准是“异步 follow-up 审批”，不是把 gateway 当前这次 `exec` 同步改成无审批
+    - `gateway` 执行路径仍会先把当前工具调用返回成 `approval-pending`
+    - sidecar 自动客户端随后才会监听 `exec.approval.requested` 并回写 `allow-once`
+    - 底层命令最终可以继续跑完，但当前这一轮模型仍可能先看到“执行策略拦住了”之类的文案
+  - 因此它解决的是“租户成员不需要手点批准”，不是“当前轮永远看不到 approval-pending”
+  - 像 `python skills/...` 这类技能脚本执行，如果要在当前轮彻底不出现 `approval-pending`，仍然要走更前面的静态 allowlist / 可执行白名单链路，而不能只依赖这个 sidecar 自动批准器
   - 默认部署通过零侵入 sidecar 环境变量开启：`OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE=1`
   - Docker 零侵入部署下建议显式让 sidecar 走容器内网地址：`OPENCLAW_TENANT_PLATFORM_GATEWAY_URL=ws://openclaw-gateway:18789`
 - 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态

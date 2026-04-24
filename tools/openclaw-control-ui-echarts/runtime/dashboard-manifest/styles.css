@@ -1,0 +1,595 @@
+:root {
+  --oc-dashboard-background: #040b16;
+  --oc-dashboard-surface: rgba(7, 19, 38, 0.72);
+  --oc-dashboard-surface-strong: rgba(8, 24, 46, 0.92);
+  --oc-dashboard-accent: #62e6ff;
+  --oc-dashboard-accent-soft: #2b8dff;
+  --oc-dashboard-success: #38d39f;
+  --oc-dashboard-warning: #ffb454;
+  --oc-dashboard-danger: #ff6b81;
+  --oc-dashboard-text: #e5fbff;
+  --oc-dashboard-muted: #87a5c4;
+  --oc-dashboard-grid: rgba(98, 230, 255, 0.18);
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(43, 141, 255, 0.18), transparent 28%),
+    radial-gradient(circle at 50% 90%, rgba(98, 230, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #06101f 0%, var(--oc-dashboard-background) 100%);
+  color: var(--oc-dashboard-text);
+  font-family: Bahnschrift, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  position: relative;
+}
+
+#oc-dashboard-root {
+  width: 100%;
+  height: 100%;
+}
+
+.oc-dashboard-shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 18px;
+  width: 100%;
+  height: 100%;
+  padding: 22px 28px 24px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.oc-dashboard-particles,
+.oc-dashboard-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.oc-dashboard-backdrop {
+  opacity: 0.34;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: saturate(1.12);
+}
+
+.oc-dashboard-header,
+.oc-dashboard-metrics,
+.oc-dashboard-main,
+.oc-dashboard-footer {
+  position: relative;
+  z-index: 1;
+}
+
+.oc-dashboard-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+}
+
+.oc-dashboard-title-group {
+  min-width: 0;
+}
+
+.oc-dashboard-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.oc-dashboard-logo-image {
+  height: 26px;
+  max-width: 120px;
+  object-fit: contain;
+}
+
+.oc-dashboard-logo-text {
+  padding: 6px 12px;
+  border: 1px solid rgba(98, 230, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(7, 19, 38, 0.54);
+  color: var(--oc-dashboard-accent);
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.oc-dashboard-template-tag {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(98, 230, 255, 0.12);
+  color: var(--oc-dashboard-accent);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.oc-dashboard-title {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 42px);
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+}
+
+.oc-dashboard-subtitle {
+  margin: 10px 0 0;
+  color: var(--oc-dashboard-muted);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.oc-dashboard-header-side {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+}
+
+.oc-dashboard-now {
+  min-height: 22px;
+  color: var(--oc-dashboard-accent);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+}
+
+.oc-dashboard-nav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.oc-dashboard-nav-button {
+  border: 1px solid rgba(98, 230, 255, 0.22);
+  background: rgba(7, 19, 38, 0.5);
+  color: var(--oc-dashboard-text);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.oc-dashboard-nav-button:hover,
+.oc-dashboard-nav-button.is-active {
+  border-color: rgba(98, 230, 255, 0.48);
+  background: rgba(98, 230, 255, 0.12);
+  color: var(--oc-dashboard-accent);
+}
+
+.oc-dashboard-nav-button.is-disabled,
+.oc-dashboard-nav-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.oc-dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.oc-dashboard-metric {
+  position: relative;
+  min-width: 0;
+  padding: 16px 18px;
+  background: linear-gradient(180deg, rgba(98, 230, 255, 0.05), transparent), var(--oc-dashboard-surface);
+  border: 1px solid rgba(98, 230, 255, 0.16);
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.oc-dashboard-metric::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--oc-dashboard-accent), transparent);
+  opacity: 0.55;
+}
+
+.oc-dashboard-metric-label,
+.oc-dashboard-metric-note {
+  color: var(--oc-dashboard-muted);
+  font-size: 13px;
+}
+
+.oc-dashboard-metric-value-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.oc-dashboard-metric-value {
+  font-size: clamp(28px, 2.6vw, 40px);
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.oc-dashboard-metric-unit {
+  color: var(--oc-dashboard-muted);
+  font-size: 14px;
+}
+
+.oc-dashboard-metric-delta {
+  display: inline-flex;
+  margin-top: 10px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.oc-dashboard-metric-delta.up {
+  color: var(--oc-dashboard-success);
+}
+
+.oc-dashboard-metric-delta.down {
+  color: var(--oc-dashboard-danger);
+}
+
+.oc-dashboard-metric-delta.alert {
+  color: var(--oc-dashboard-warning);
+}
+
+.oc-dashboard-main {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr) minmax(280px, 320px);
+  gap: 22px;
+  min-height: 0;
+}
+
+.oc-dashboard-column {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  min-height: 0;
+}
+
+.oc-dashboard-panel,
+.oc-dashboard-scene-shell,
+.oc-dashboard-footer-section {
+  position: relative;
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(98, 230, 255, 0.04), transparent 36%),
+    linear-gradient(135deg, rgba(43, 141, 255, 0.1), transparent 30%),
+    var(--oc-dashboard-surface);
+  border: 1px solid rgba(98, 230, 255, 0.16);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.oc-dashboard-panel::before,
+.oc-dashboard-scene-shell::before,
+.oc-dashboard-footer-section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(98, 230, 255, 0.06);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.oc-dashboard-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 18px 18px 14px;
+  box-sizing: border-box;
+}
+
+.oc-dashboard-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.oc-dashboard-panel-title {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+
+.oc-dashboard-panel-subtitle,
+.oc-dashboard-panel-footer {
+  color: var(--oc-dashboard-muted);
+  font-size: 12px;
+}
+
+.oc-dashboard-panel-chart,
+.oc-dashboard-panel-html,
+.oc-dashboard-scene-chart {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.oc-dashboard-panel-html {
+  overflow: hidden;
+}
+
+.oc-dashboard-scene-shell {
+  min-height: 0;
+}
+
+.oc-dashboard-scene-chart,
+.oc-dashboard-scene-grid,
+.oc-dashboard-scene-ring,
+.oc-dashboard-scene-overlay {
+  position: absolute;
+}
+
+.oc-dashboard-scene-chart,
+.oc-dashboard-scene-grid {
+  inset: 0;
+}
+
+.oc-dashboard-scene-grid {
+  background:
+    linear-gradient(transparent 49%, rgba(98, 230, 255, 0.06) 50%, transparent 51%) center / 100% 56px,
+    linear-gradient(90deg, transparent 49%, rgba(98, 230, 255, 0.05) 50%, transparent 51%) center / 56px 100%;
+  mask-image: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85) 18%, rgba(0, 0, 0, 0.85) 74%, transparent);
+  opacity: 0.8;
+}
+
+.oc-dashboard-scene-ring {
+  left: 50%;
+  top: 56%;
+  border: 1px solid rgba(98, 230, 255, 0.14);
+  border-radius: 50%;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.oc-dashboard-scene-ring.ring-a {
+  width: min(54vh, 54vw);
+  height: min(54vh, 54vw);
+  margin-left: calc(min(54vh, 54vw) / -2);
+  margin-top: calc(min(54vh, 54vw) / -2);
+}
+
+.oc-dashboard-scene-ring.ring-b {
+  width: min(42vh, 42vw);
+  height: min(42vh, 42vw);
+  margin-left: calc(min(42vh, 42vw) / -2);
+  margin-top: calc(min(42vh, 42vw) / -2);
+  border-style: dashed;
+}
+
+.oc-dashboard-scene-ring.ring-c {
+  width: min(18vh, 18vw);
+  height: min(18vh, 18vw);
+  margin-left: calc(min(18vh, 18vw) / -2);
+  margin-top: calc(min(18vh, 18vw) / -2);
+  border-color: rgba(255, 180, 84, 0.22);
+}
+
+.oc-dashboard-scene-overlay {
+  left: 24px;
+  top: 20px;
+  z-index: 2;
+  max-width: min(56%, 420px);
+}
+
+.oc-dashboard-scene-kicker,
+.oc-dashboard-footer-title {
+  color: var(--oc-dashboard-accent);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.oc-dashboard-scene-title {
+  margin-top: 8px;
+  font-size: clamp(22px, 2.2vw, 34px);
+  line-height: 1.05;
+}
+
+.oc-dashboard-scene-subtitle {
+  margin-top: 8px;
+  color: var(--oc-dashboard-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.oc-dashboard-footer {
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  gap: 22px;
+  min-height: 0;
+}
+
+.oc-dashboard-footer-section {
+  padding: 16px 18px;
+  box-sizing: border-box;
+}
+
+.oc-dashboard-feed-list,
+.oc-dashboard-alert-list,
+.oc-dashboard-ranking-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oc-dashboard-feed-item,
+.oc-dashboard-alert-item,
+.oc-dashboard-ranking-item {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid rgba(98, 230, 255, 0.08);
+}
+
+.oc-dashboard-feed-item {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+}
+
+.oc-dashboard-alert-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.oc-dashboard-ranking-item {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+
+.oc-dashboard-feed-time,
+.oc-dashboard-alert-value,
+.oc-dashboard-ranking-order,
+.oc-dashboard-ranking-value {
+  color: var(--oc-dashboard-accent);
+}
+
+.oc-dashboard-feed-label,
+.oc-dashboard-alert-title,
+.oc-dashboard-ranking-name {
+  min-width: 0;
+  color: var(--oc-dashboard-text);
+}
+
+.oc-dashboard-feed-value {
+  color: var(--oc-dashboard-muted);
+}
+
+.oc-dashboard-alert-item.high .oc-dashboard-alert-title {
+  color: var(--oc-dashboard-danger);
+}
+
+.oc-dashboard-alert-item.medium .oc-dashboard-alert-title {
+  color: var(--oc-dashboard-warning);
+}
+
+.oc-dashboard-alert-item.low .oc-dashboard-alert-title {
+  color: var(--oc-dashboard-success);
+}
+
+.oc-dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.oc-dashboard-table th,
+.oc-dashboard-table td {
+  padding: 10px 0;
+  border-top: 1px solid rgba(98, 230, 255, 0.08);
+  text-align: left;
+}
+
+.oc-dashboard-table th {
+  color: var(--oc-dashboard-muted);
+  font-weight: 500;
+}
+
+.oc-dashboard-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.oc-dashboard-stat-item {
+  padding: 14px 12px;
+  border-radius: 16px;
+  background: rgba(98, 230, 255, 0.06);
+  border: 1px solid rgba(98, 230, 255, 0.08);
+}
+
+.oc-dashboard-stat-name {
+  color: var(--oc-dashboard-muted);
+  font-size: 12px;
+}
+
+.oc-dashboard-stat-value {
+  display: block;
+  margin-top: 8px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.oc-dashboard-error {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  box-sizing: border-box;
+  color: var(--oc-dashboard-text);
+  background:
+    radial-gradient(circle at 50% 25%, rgba(255, 107, 129, 0.14), transparent 30%),
+    linear-gradient(180deg, #08101d 0%, #040b16 100%);
+}
+
+.oc-dashboard-error-title {
+  font-size: 24px;
+}
+
+.oc-dashboard-error-detail {
+  max-width: min(900px, 100%);
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 107, 129, 0.18);
+  color: #ffb7c2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 1440px) {
+  .oc-dashboard-shell {
+    padding: 18px 18px 20px;
+  }
+
+  .oc-dashboard-main {
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(240px, 280px);
+  }
+}
+
+@media (max-width: 1100px) {
+  .oc-dashboard-shell {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    padding: 16px;
+  }
+
+  .oc-dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .oc-dashboard-main {
+    grid-template-columns: 1fr;
+  }
+
+  .oc-dashboard-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+
+  .oc-dashboard-scene-shell {
+    min-height: 360px;
+  }
+
+  .oc-dashboard-footer {
+    grid-template-columns: 1fr;
+  }
+}

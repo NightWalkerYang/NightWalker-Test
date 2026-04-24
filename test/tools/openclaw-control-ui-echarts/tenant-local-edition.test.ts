@@ -711,6 +711,145 @@ describe("tenant platform local edition", () => {
     expect(generatedHandlerScriptContent).toContain("window.top.location.href =");
   });
 
+  it("resolves dashboard manifest visualizations into fixed zero-intrusive runtime wrappers", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-dashboard-manifest",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-manifest",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const assignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const visualizationDir = path.join(
+      sandbox.config.configDir,
+      "workspace-agents",
+      String(assignment.derivedAgentId),
+      "Echarts",
+    );
+    fs.mkdirSync(path.join(visualizationDir, "datasets"), { recursive: true });
+    fs.writeFileSync(
+      path.join(visualizationDir, "财务总览驾驶舱_index.dashboard.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          template: "financial-command-center-v1",
+          title: "财务总览驾驶舱",
+          subtitle: "2026年3月经营态势",
+          dataSource: "datasets/财务数据.json",
+          navigation: [{ label: "切换资金屏", targetFileName: "资金总览驾驶舱_index.dashboard.json" }],
+          metrics: [{ label: "总资产", value: "128.6", unit: "亿元" }],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "资金总览驾驶舱_index.dashboard.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          title: "资金总览驾驶舱",
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(visualizationDir, "datasets", "财务数据.json"),
+      JSON.stringify({
+        metrics: [
+          { label: "总资产", value: "130.2", unit: "亿元" },
+          { label: "营收完成", value: "43.8", unit: "亿元" },
+        ],
+      }),
+      "utf8",
+    );
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-manifest",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const listResponse = await requestJson(baseUrl, "/member/visualizations", {
+      token: memberLogin.payload.data.token,
+    });
+    expect(listResponse.status).toBe(200);
+    const manifestVisualization = listResponse.payload.data.find(
+      (item) => item.visualizationName === "财务总览驾驶舱",
+    );
+    expect(manifestVisualization?.visualizationType).toBe("dashboard_manifest");
+
+    const resolveResponse = await requestJson(
+      baseUrl,
+      `/member/visualizations/resolve?token=${encodeURIComponent(String(manifestVisualization?.token || ""))}`,
+    );
+    expect(resolveResponse.status).toBe(200);
+    expect(resolveResponse.payload.data.visualizationType).toBe("dashboard_manifest");
+    expect(resolveResponse.payload.data.visualizationName).toBe("财务总览驾驶舱");
+    expect(resolveResponse.payload.data.href).toMatch(
+      new RegExp(
+        `^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
+      ),
+    );
+    expect(resolveResponse.payload.data.html).toContain("/assets/runtime/dashboard-manifest/styles.css");
+    expect(resolveResponse.payload.data.html).toContain("/assets/runtime/dashboard-manifest/bootstrap.js");
+    expect(resolveResponse.payload.data.html).toContain('"visualizationType":"dashboard_manifest"');
+    expect(resolveResponse.payload.data.html).toContain('"dataSource":"datasets/财务数据.json"');
+    expect(resolveResponse.payload.data.html).toContain(
+      `"workspaceBaseHref":"/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/"`,
+    );
+    expect(resolveResponse.payload.data.html).toContain("资金总览驾驶舱_index.dashboard.json");
+    expect(resolveResponse.payload.data.html).toContain("/echarts-view/?token=");
+    expect(resolveResponse.payload.data.html).not.toContain("__openclaw_echarts_view__");
+  });
+
   it("aliases non-ASCII external visualization assets into ASCII workspace files", async () => {
     const sandbox = createSandbox();
     const { baseUrl, db } = await startSandboxServer(sandbox);

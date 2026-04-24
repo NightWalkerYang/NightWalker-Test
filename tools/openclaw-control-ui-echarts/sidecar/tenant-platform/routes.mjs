@@ -981,6 +981,90 @@ function readMemberVisualizationTokenPayload(token, secret) {
   };
 }
 
+const DASHBOARD_MANIFEST_PAYLOAD_SCRIPT_ID = "oc-dashboard-manifest-payload";
+const DASHBOARD_MANIFEST_ROOT_ID = "oc-dashboard-root";
+const DASHBOARD_MANIFEST_STYLE_HREF = "/assets/runtime/dashboard-manifest/styles.css";
+const DASHBOARD_MANIFEST_BOOTSTRAP_HREF = "/assets/runtime/dashboard-manifest/bootstrap.js";
+
+function escapeHtmlAttribute(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("'", "&#39;");
+}
+
+function serializeJsonForHtml(value) {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003C")
+    .replaceAll(">", "\\u003E")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
+}
+
+function readDashboardManifestPayload(text) {
+  const normalized = String(text || "").replace(/^\uFEFF/, "").trim();
+  if (!normalized) {
+    throw new Error("dashboard_manifest_empty");
+  }
+  const parsed = JSON.parse(normalized);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("dashboard_manifest_invalid");
+  }
+  return parsed;
+}
+
+function buildDashboardManifestDocument(manifest, options = {}) {
+  const visualizationName = String(options.visualizationName || "").trim();
+  const visualizationFileName = String(options.visualizationFileName || "").trim();
+  const workspaceBaseHref = String(options.workspaceBaseHref || "").trim();
+  const visualizationHref = String(options.visualizationHref || "").trim();
+  const payload = {
+    manifest,
+    context: {
+      visualizationName,
+      visualizationFileName,
+      visualizationType: "dashboard_manifest",
+      visualizationHref,
+      workspaceBaseHref,
+      agentName: String(options.agentName || "").trim(),
+      agentId: String(options.agentId || "").trim(),
+      navigationHrefs:
+        options.navigationHrefs && typeof options.navigationHrefs === "object"
+          ? options.navigationHrefs
+          : {},
+    },
+  };
+  const title =
+    String(manifest?.title || "").trim() ||
+    String(manifest?.name || "").trim() ||
+    visualizationName ||
+    "可视化展示";
+  return [
+    "<!doctype html>",
+    '<html lang="zh-CN">',
+    "  <head>",
+    '    <meta charset="utf-8" />',
+    '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
+    `    <title>${escapeHtmlAttribute(title)}</title>`,
+    `    <link rel="stylesheet" href="${escapeHtmlAttribute(DASHBOARD_MANIFEST_STYLE_HREF)}" />`,
+    "  </head>",
+    "  <body>",
+    `    <div id="${DASHBOARD_MANIFEST_ROOT_ID}" data-workspace-base-href="${escapeHtmlAttribute(workspaceBaseHref)}" data-visualization-name="${escapeHtmlAttribute(visualizationName)}" data-agent-name="${escapeHtmlAttribute(options.agentName || "")}"></div>`,
+    `    <script type="application/json" id="${DASHBOARD_MANIFEST_PAYLOAD_SCRIPT_ID}">${serializeJsonForHtml(payload)}</script>`,
+    `    <script type="module" src="${escapeHtmlAttribute(DASHBOARD_MANIFEST_BOOTSTRAP_HREF)}"></script>`,
+    "  </body>",
+    "</html>",
+    "",
+  ].join("\n");
+}
+
+export function buildDashboardManifestHtml(manifest, options = {}) {
+  return buildDashboardManifestDocument(manifest, options);
+}
+
 export function createTenantPlatformRouter(deps) {
   return async function handleTenantPlatformRequest(request, response) {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
@@ -2004,6 +2088,7 @@ export function createTenantPlatformRouter(deps) {
           agentId: item.derivedAgentId,
           baseAgentId: item.baseAgentId,
           agentName: item.agentName,
+          visualizationType: item.visualizationType,
           visualizationFileName: item.visualizationFileName,
           visualizationName: item.visualizationName,
           title,
@@ -2072,26 +2157,39 @@ export function createTenantPlatformRouter(deps) {
       }
       const visualizationPath = path.join(workspaceRoot, "Echarts", match.visualizationFileName);
       try {
-        const html = fs.readFileSync(visualizationPath, "utf8");
         const workspaceBaseHref = buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId);
-        const generatedScriptHtml = rewriteVisualizationHtml(
-          html,
-          workspaceBaseHref,
-          path.join(workspaceRoot, "Echarts"),
+        const visualizationHref = buildWorkspaceAgentDownloadHref([
+          "workspace-agent-downloads",
+          match.derivedAgentId,
+          "Echarts",
           match.visualizationFileName,
-          visualizationHrefMap,
-        );
+        ]);
+        const rawVisualizationContent = fs.readFileSync(visualizationPath, "utf8");
+        const generatedScriptHtml =
+          match.visualizationType === "dashboard_manifest"
+            ? buildDashboardManifestHtml(readDashboardManifestPayload(rawVisualizationContent), {
+                visualizationName: match.visualizationName,
+                visualizationFileName: match.visualizationFileName,
+                workspaceBaseHref,
+                visualizationHref,
+                agentName: match.agentName,
+                agentId: match.derivedAgentId,
+                navigationHrefs: Object.fromEntries(visualizationHrefMap),
+              })
+            : rewriteVisualizationHtml(
+                rawVisualizationContent,
+                workspaceBaseHref,
+                path.join(workspaceRoot, "Echarts"),
+                match.visualizationFileName,
+                visualizationHrefMap,
+              );
         sendJson(request, response, 200, {
           ok: true,
           data: {
             html: generatedScriptHtml,
             baseHref: workspaceBaseHref,
-            href: buildWorkspaceAgentDownloadHref([
-              "workspace-agent-downloads",
-              match.derivedAgentId,
-              "Echarts",
-              match.visualizationFileName,
-            ]),
+            href: visualizationHref,
+            visualizationType: match.visualizationType,
             visualizationName: match.visualizationName,
             agentName: match.agentName,
             agentId: match.derivedAgentId,

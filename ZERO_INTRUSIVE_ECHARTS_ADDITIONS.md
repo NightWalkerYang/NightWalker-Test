@@ -117,6 +117,13 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/preboot.js`
 
+### Runtime: Dashboard Manifest
+
+- `tools/openclaw-control-ui-echarts/runtime/dashboard-manifest/bootstrap.js`
+- `tools/openclaw-control-ui-echarts/runtime/dashboard-manifest/renderer.js`
+- `tools/openclaw-control-ui-echarts/runtime/dashboard-manifest/styles.css`
+- `tools/openclaw-control-ui-echarts/runtime/dashboard-manifest/templates.js`
+
 ### Runtime: Lufeng Public Route
 
 - `tools/openclaw-control-ui-echarts/runtime/lufeng/bootstrap.js`
@@ -195,6 +202,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/portable-config.test.ts`
 - `test/tools/openclaw-control-ui-echarts/member-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/feedback-toast.test.ts`
+- `test/tools/openclaw-control-ui-echarts/dashboard-manifest-templates.test.ts`
 - `test/tools/openclaw-control-ui-echarts/member-chat-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/package-local-runtime.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
@@ -250,6 +258,8 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The native Control UI sidebar now injects a peer `管理` group at the top with tenant-management and Agent-assignment shortcuts.
 - The native Control UI now supports a public `/echarts-view/?token=...` bridge route with a dedicated static entry page, and tenant members now get a current-member-only `可视化展示` dropdown populated from their assigned Agent workspaces' `Echarts/*_index.html` files. The bridge route resolves a signed token, falls back to the last same-browser token when the query string is missing, and mounts the target workspace HTML inside a full-page iframe, with no placeholder shell. Any executable inline `<script>` blocks are externalized into same-origin generated assets under the target Agent's `Echarts/__openclaw_echarts_view__/...` directory before the iframe loads, relative resource URLs are rewritten to absolute same-origin workspace paths, and any relative JS/JSON/image-like asset names that contain Chinese or other unsafe URL characters are copied to ASCII/hash alias files under that same generated directory before the HTML is served, so the browser no longer 404s on percent-encoded workspace asset names. Same-workspace `*_index.html` links are re-pointed back to the public `/echarts-view/?token=...` route, so the page stays CSP-safe without relying on a `<base>` tag while keeping cross-html navigation inside the supported public bridge.
 - The same public `/echarts-view/` bridge now also rewrites inline style blocks, `style=` attributes, aliased CSS files, module-import specifiers, `dynamic import(...)`, worker entry URLs, and `new URL(..., import.meta.url)` relative assets against the original workspace file location instead of the generated alias directory, so AI-generated 3D/particle dashboards with bundled module graphs and local style/image/model assets are far less likely to white-screen after the zero-intrusive rewrite step.
+- The member visualization inventory and resolve chain now also accept `Echarts/*_index.dashboard.json` manifest entries in addition to legacy `*_index.html`, so AI no longer has to hand-write a full dashboard HTML page just to get a 3D/HUD-style screen onto the platform menu.
+- Those manifest entries are now wrapped by a dedicated zero-intrusive dashboard runtime that loads same-origin `ECharts`, `ECharts-GL`, `GSAP`, and optional `tsParticles`, applies a fixed cinematic dashboard shell, and renders the supplied manifest/data payload inside the existing public `/echarts-view/` route without touching core OpenClaw source files.
 - The zero-intrusive Control UI vendor layer now also preinstalls same-origin `Three.js`, browser-ready `three/examples/jsm` addons, `GSAP`, `PixiJS`, `Babylon.js`, `ECharts-GL`, and `tsParticles` assets under `/assets/vendor/`, so AI-generated 3D or particle dashboards can directly reference local libraries instead of relying on CDN delivery.
 - The primary Docker deployment script now also stages that full zero-intrusive `vendor/` directory into `generated/control-ui/assets/vendor/` instead of only extracting embedded `echarts.min.js` / `json5.min.js`, so the same-origin advanced visualization libraries remain available after real deployments.
 - The direct `setup-direct-docker-compose-up.*` deployment helpers now also apply a targeted `docker compose up -d --force-recreate` for `openclaw-gateway`, `openclaw-tenant-platform`, and `openclaw-gateway-proxy` by default, so refreshed public visualization pages do not keep serving stale gateway/proxy containers that are missing the `workspace-agent-downloads` bind mount.

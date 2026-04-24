@@ -29,7 +29,10 @@ import {
   updateTenantMemberPassword,
   updateTenantMemberStatus,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
-import { rewriteVisualizationHtml } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
+import {
+  buildDashboardManifestHtml,
+  rewriteVisualizationHtml,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 
 const cleanupRoots = new Set();
@@ -284,6 +287,14 @@ describe("tenant platform database foundation", () => {
       fs.mkdirSync(visualizationDir, { recursive: true });
       fs.writeFileSync(path.join(visualizationDir, "销售数据可视化_index.html"), "<html></html>");
       fs.writeFileSync(path.join(visualizationDir, "折线图_index.html"), "<html></html>");
+      fs.writeFileSync(
+        path.join(visualizationDir, "财务驾驶舱_index.dashboard.json"),
+        JSON.stringify({
+          version: 1,
+          title: "财务驾驶舱",
+        }),
+        "utf8",
+      );
       fs.writeFileSync(path.join(visualizationDir, "notes.txt"), "ignored");
 
       const visualizations = listAssignedAgentVisualizationsForUser(
@@ -296,15 +307,23 @@ describe("tenant platform database foundation", () => {
         },
         catalog,
       );
-      expect(visualizations).toHaveLength(2);
+      expect(visualizations).toHaveLength(3);
       expect(visualizations.map((item) => item.visualizationName).toSorted()).toEqual([
         "折线图",
+        "财务驾驶舱",
         "销售数据可视化",
       ]);
       expect(
-        visualizations.every(
-          (item) => item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
-        ),
+        visualizations.every((item) => item.agentName === "财务分析助手"),
+      ).toBe(true);
+      expect(
+        visualizations.find((item) => item.visualizationFileName === "财务驾驶舱_index.dashboard.json")
+          ?.visualizationType,
+      ).toBe("dashboard_manifest");
+      expect(
+        visualizations
+          .filter((item) => item.visualizationType === "html")
+          .every((item) => item.visualizationFileName.endsWith("_index.html")),
       ).toBe(true);
     } finally {
       closeTenantPlatformDb(db);
@@ -752,6 +771,38 @@ describe("tenant platform database foundation", () => {
     expect(generatedHandlerScriptContent).toContain(
       "window.top.location.href = '/echarts-view/?token=next-token'",
     );
+  });
+
+  it("builds dashboard manifest wrappers that only depend on zero-intrusive runtime assets", () => {
+    const html = buildDashboardManifestHtml(
+      {
+        version: 1,
+        template: "financial-command-center-v1",
+        title: "财务总览驾驶舱",
+        dataSource: "data/dashboard.json",
+        metrics: [{ label: "总资产", value: "128.6", unit: "亿元" }],
+      },
+      {
+        visualizationName: "财务总览驾驶舱",
+        visualizationFileName: "财务总览驾驶舱_index.dashboard.json",
+        workspaceBaseHref: "/workspace-agent-downloads/tenant-agent-1/Echarts/",
+        visualizationHref:
+          "/workspace-agent-downloads/tenant-agent-1/Echarts/%E8%B4%A2%E5%8A%A1%E6%80%BB%E8%A7%88%E9%A9%BE%E9%A9%B6%E8%88%B1_index.dashboard.json",
+        agentName: "财务分析助手",
+        agentId: "tenant-agent-1",
+        navigationHrefs: {
+          "资金驾驶舱_index.dashboard.json": "/echarts-view/?token=next-token",
+        },
+      },
+    );
+
+    expect(html).toContain('/assets/runtime/dashboard-manifest/styles.css');
+    expect(html).toContain('/assets/runtime/dashboard-manifest/bootstrap.js');
+    expect(html).toContain('type="application/json"');
+    expect(html).toContain('"visualizationType":"dashboard_manifest"');
+    expect(html).toContain('"workspaceBaseHref":"/workspace-agent-downloads/tenant-agent-1/Echarts/"');
+    expect(html).toContain('"dataSource":"data/dashboard.json"');
+    expect(html).not.toContain("<script>");
   });
 
   it("updates tenant member limits without breaking current member counts", () => {
