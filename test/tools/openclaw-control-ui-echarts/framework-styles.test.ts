@@ -21,10 +21,13 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".oc-text-logo");
     expect(styles).toContain(".oc-text-logo--sidebar");
     expect(styles).toContain(".oc-text-logo--badge");
+    expect(styles).toContain(".oc-image-logo");
+    expect(styles).toContain(".oc-image-logo--sidebar");
+    expect(styles).toContain("object-fit: contain;");
     expect(styles).toContain(".chat-avatar");
     expect(styles).toContain("display: none;");
     expect(styles).toContain(".chat-group.user .chat-bubble");
-    expect(styles).toContain('[data-oc-tool-run]');
+    expect(styles).toContain("[data-oc-tool-run]");
     expect(styles).toContain('[data-oc-tool-run-hidden="true"]');
     expect(styles).toContain('[data-oc-tool-run-stack="true"]');
     expect(styles).toContain('[data-oc-tool-run-entry-hidden="true"]');
@@ -44,7 +47,9 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".oc-voice-status");
     expect(styles).toContain(".oc-voice-status--active");
     expect(styles).toContain(".agent-chat__input-btn--pending");
-    expect(styles).toContain(".agent-chat__input-btn--recording:not(.agent-chat__input-btn--pending)");
+    expect(styles).toContain(
+      ".agent-chat__input-btn--recording:not(.agent-chat__input-btn--pending)",
+    );
     expect(styles).toContain("@keyframes oc-voice-pulse");
     expect(styles).toContain(".chat-attachments-preview");
     expect(styles).toContain(".agent-chat__toolbar");

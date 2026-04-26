@@ -29,6 +29,12 @@ describe("zero-intrusive brand replacer", () => {
         <img class="sidebar-brand__logo" src="favicon.svg" alt="OpenClaw" />
         <span class="sidebar-brand__title">OpenClaw</span>
       </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/chat">
+          <img class="nav-item__logo" src="/assets/chat-icon.svg" alt="" />
+          <span>聊天</span>
+        </a>
+      </nav>
       <div class="login-gate__header">
         <img class="login-gate__logo" src="favicon.svg" alt="OpenClaw" />
         <div class="login-gate__title">OpenClaw</div>
@@ -45,8 +51,13 @@ describe("zero-intrusive brand replacer", () => {
     expect(document.title).toBe("苏博泰克");
     expect(document.querySelector(".sidebar-brand__title")?.textContent).toBe("苏博泰克");
     expect(document.querySelector(".login-gate__title")?.textContent).toBe("苏博泰克");
-    expect(document.querySelector(".dashboard-header__breadcrumb-link")?.textContent).toBe("苏博泰克");
+    expect(document.querySelector(".dashboard-header__breadcrumb-link")?.textContent).toBe(
+      "苏博泰克",
+    );
     expect(document.querySelector(".chat-bubble")?.textContent).toContain("OpenClaw");
+    expect(document.querySelector(".sidebar-nav img")?.getAttribute("src")).toBe(
+      "/assets/chat-icon.svg",
+    );
     expect(document.querySelector('link[rel="icon"]')?.getAttribute("href")).toContain(
       "data:image/svg+xml",
     );
@@ -58,9 +69,9 @@ describe("zero-intrusive brand replacer", () => {
     expect(document.querySelector(".agent-chat__badge img")).toBeNull();
     expect(document.querySelector(".oc-text-logo--sidebar")?.textContent).toBe("SPTC");
     expect(document.querySelector(".oc-text-logo--login")?.textContent).toBe("SPTC");
-    expect(document.querySelector(".agent-chat__avatar--logo .oc-text-logo--hero")?.textContent).toBe(
-      "SPTC",
-    );
+    expect(
+      document.querySelector(".agent-chat__avatar--logo .oc-text-logo--hero")?.textContent,
+    ).toBe("SPTC");
     expect(document.querySelector(".agent-chat__badge .oc-text-logo--badge")?.textContent).toBe(
       "SPTC",
     );
@@ -122,9 +133,9 @@ describe("zero-intrusive brand replacer", () => {
     );
     expect(document.querySelector(".oc-text-logo--sidebar")?.textContent).toBe("ACME");
     expect(document.querySelector(".oc-text-logo--login")?.textContent).toBe("ACME");
-    expect(document.querySelector(".agent-chat__avatar--logo .oc-text-logo--hero")?.textContent).toBe(
-      "ACME",
-    );
+    expect(
+      document.querySelector(".agent-chat__avatar--logo .oc-text-logo--hero")?.textContent,
+    ).toBe("ACME");
   });
 
   it("re-renders fixed brand slots when brand state changes after boot", async () => {
@@ -162,6 +173,12 @@ describe("zero-intrusive brand replacer", () => {
         <img class="sidebar-brand__logo" src="favicon.svg" alt="OpenClaw" />
         <span class="sidebar-brand__title">OpenClaw</span>
       </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/chat">
+          <img class="nav-item__logo" src="/assets/chat-icon.svg" alt="" />
+          <span>聊天</span>
+        </a>
+      </nav>
       <div class="login-gate__header">
         <img class="login-gate__logo" src="favicon.svg" alt="OpenClaw" />
         <div class="login-gate__title">OpenClaw</div>
@@ -186,7 +203,14 @@ describe("zero-intrusive brand replacer", () => {
     const sidebarLogo = document.querySelector(".oc-image-logo--sidebar img");
     const loginLogo = document.querySelector(".oc-image-logo--login img");
     const heroLogo = document.querySelector(".agent-chat__avatar--logo .oc-image-logo--hero img");
-    expect(sidebarLogo?.getAttribute("src")).toBe("/tenant-platform-api/v1/public/branding/logo?v=1");
+    expect(sidebarLogo?.getAttribute("src")).toBe(
+      "/tenant-platform-api/v1/public/branding/logo?v=1",
+    );
+    expect(sidebarLogo?.closest(".sidebar-brand")).toBeTruthy();
+    expect(document.querySelector(".sidebar-nav img")?.getAttribute("src")).toBe(
+      "/assets/chat-icon.svg",
+    );
+    expect(document.querySelectorAll(".sidebar-nav .oc-image-logo").length).toBe(0);
     expect(loginLogo?.getAttribute("src")).toBe("/tenant-platform-api/v1/public/branding/logo?v=1");
     expect(heroLogo?.getAttribute("src")).toBe("/tenant-platform-api/v1/public/branding/logo?v=1");
     expect(document.querySelector('link[rel="icon"]')?.getAttribute("href")).toBe(

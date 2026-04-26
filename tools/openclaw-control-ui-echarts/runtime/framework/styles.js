@@ -277,6 +277,77 @@ export function getFrameworkStyles() {
         linear-gradient(145deg, color-mix(in srgb, white 74%, transparent), color-mix(in srgb, var(--accent-subtle) 78%, transparent));
     }
 
+    .oc-image-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border) 84%);
+      background: color-mix(in srgb, var(--panel, var(--card)) 82%, transparent);
+      box-shadow:
+        0 10px 22px color-mix(in srgb, var(--bg, #020617) 7%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 34%, transparent);
+      vertical-align: middle;
+    }
+
+    .oc-image-logo > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .oc-image-logo--sidebar,
+    .oc-image-logo--avatar {
+      width: 32px;
+      height: 32px;
+      max-width: 32px;
+      max-height: 32px;
+      border-radius: 10px;
+    }
+
+    .sidebar-brand .oc-image-logo--sidebar {
+      flex: 0 0 32px;
+      min-width: 32px;
+    }
+
+    .oc-image-logo--login,
+    .oc-image-logo--hero {
+      width: 48px;
+      height: 48px;
+      max-width: 48px;
+      max-height: 48px;
+      border-radius: 14px;
+    }
+
+    .oc-image-logo--badge {
+      width: auto;
+      max-width: 72px;
+      height: 18px;
+      padding: 0 6px;
+      margin-right: 6px;
+      border-radius: 999px;
+    }
+
+    .oc-image-logo--badge > img {
+      width: auto;
+      max-width: 60px;
+    }
+
+    .agent-chat__avatar--logo > .oc-image-logo--hero {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: inherit;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
     .content--chat .chat-avatar,
     .shell--chat-focus .content .chat-avatar {
       display: none;
