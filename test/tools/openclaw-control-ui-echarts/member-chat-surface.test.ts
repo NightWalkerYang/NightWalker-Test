@@ -1182,4 +1182,113 @@ describe("member chat surface", () => {
     expect(app.lastError).toBe("本次请求超时，模型连接异常，请重新发送。");
     expect(document.body.textContent).toContain("本次请求超时，模型连接异常，请重新发送。");
   });
+
+  it("keeps a draft session interactive when gateway sessions.list hangs", async () => {
+    vi.useFakeTimers();
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub({
+      request: async (method) => {
+        if (method === "sessions.list") {
+          return new Promise(() => {});
+        }
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await vi.advanceTimersByTimeAsync(6_100);
+
+    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
+      "新建会话",
+    );
+    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
+      "新会话",
+    );
+    expect(app.chatLoading).toBe(false);
+    expect(decodeURIComponent(window.location.search)).toContain(
+      "session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:",
+    );
+  });
+
+  it("does not block a draft member session on chat.history hydration", async () => {
+    vi.useFakeTimers();
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    let chatHistoryCalls = 0;
+    const app = createAppStub({
+      request: async (method) => {
+        if (method === "sessions.list") {
+          return { sessions: [] };
+        }
+        if (method === "chat.history") {
+          chatHistoryCalls += 1;
+          return new Promise(() => {});
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(chatHistoryCalls).toBe(0);
+    expect(app.chatLoading).toBe(false);
+    expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
+      "新会话",
+    );
+  });
 });

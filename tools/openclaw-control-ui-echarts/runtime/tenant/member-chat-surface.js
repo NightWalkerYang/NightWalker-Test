@@ -34,6 +34,9 @@ const CHAT_FAILSAFE_TIMEOUT_MS = 75_000;
 const CHAT_FAILSAFE_MESSAGE = "本次请求超时，模型连接异常，请重新发送。";
 const CHAT_FAILSAFE_TIMER_KEY = "__ocMemberChatFailsafeTimer";
 const CHAT_FAILSAFE_SESSION_KEY = "__ocMemberChatFailsafeSessionKey";
+const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
+const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
+const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
   const normalizedPath = String(pathname || "/").trim() || "/";
@@ -86,6 +89,34 @@ function showTransientToast(controller, message, type = "info") {
     root.querySelector(TOAST_SELECTOR)?.remove();
     timerOwner.ocToastTimer = 0;
   }, 2500);
+}
+
+function createTimeoutError(label, timeoutMs) {
+  const error = new Error(`${label}_timeout_after_${timeoutMs}ms`);
+  error.name = "TimeoutError";
+  return error;
+}
+
+function isTimeoutError(error) {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
+async function awaitWithTimeout(promise, timeoutMs, label) {
+  let timerId = 0;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => {
+        timerId = window.setTimeout(() => {
+          reject(createTimeoutError(label, timeoutMs));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timerId > 0) {
+      window.clearTimeout(timerId);
+    }
+  }
 }
 
 function clearChatLoadingFailsafe(app) {
@@ -701,6 +732,32 @@ function ensureVisibleCurrentSession(sessions, currentSessionKey) {
   ];
 }
 
+function findSessionRowByKey(sessions, sessionKey) {
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey) {
+    return null;
+  }
+  return (
+    sessions.find(
+      (row) =>
+        String(row?.key || "")
+          .trim()
+          .toLowerCase() === normalizedSessionKey,
+    ) || null
+  );
+}
+
+function shouldSkipSessionHistoryHydration(sessions, sessionKey) {
+  const row = findSessionRowByKey(sessions, sessionKey);
+  if (!row || row.hasGatewaySession !== false) {
+    return false;
+  }
+  const title = normalizeSessionTitleValue(row?.title || row?.label);
+  return isProvisionalSessionTitle(title);
+}
+
 function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
   const url = new URL(href, document.baseURI);
   const resolveCandidate = (value) => {
@@ -756,7 +813,11 @@ async function loadMemberSessions(app, selectedAgent, session) {
   const apiClient = createTenantApiClient();
   let registeredSessions = [];
   try {
-    registeredSessions = await apiClient.listMemberSessions(selectedAgent.id);
+    registeredSessions = await awaitWithTimeout(
+      apiClient.listMemberSessions(selectedAgent.id),
+      MEMBER_SESSION_LIST_TIMEOUT_MS,
+      "member_sessions.list",
+    );
   } catch (error) {
     console.error("Failed to list member sessions from platform", error);
   }
@@ -764,7 +825,18 @@ async function loadMemberSessions(app, selectedAgent, session) {
     registeredSessions.map((r) => [String(r.openclawSessionKey).trim().toLowerCase(), r]),
   );
 
-  const rows = normalizeSessionRows(await app.client.request("sessions.list", {}));
+  let rows = [];
+  try {
+    rows = normalizeSessionRows(
+      await awaitWithTimeout(
+        app.client.request("sessions.list", {}),
+        MEMBER_SESSION_LIST_TIMEOUT_MS,
+        "gateway.sessions.list",
+      ),
+    );
+  } catch (error) {
+    console.error("Failed to list gateway sessions for member chat", error);
+  }
   const filteredFromGateway = rows.filter((row) =>
     isTenantMemberSessionKey(row.key, session, selectedAgent),
   );
@@ -786,10 +858,14 @@ async function loadMemberSessions(app, selectedAgent, session) {
     await Promise.all(
       keysToHydrateFromHistory.map(async (key) => {
         try {
-          const historyResp = await app.client.request("chat.history", {
-            sessionKey: key,
-            limit: 200,
-          });
+          const historyResp = await awaitWithTimeout(
+            app.client.request("chat.history", {
+              sessionKey: key,
+              limit: 200,
+            }),
+            MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS,
+            "gateway.chat.history.title",
+          );
           const nextTitle = findFirstUserMessageTitle(historyResp?.messages);
           if (nextTitle) {
             hydratedTitleMap.set(key, nextTitle);
@@ -997,7 +1073,12 @@ async function applyHiddenDelete(controller, nextHiddenKey) {
           .toLowerCase() === fallbackSessionKey,
     );
     syncRouteForSession(controller.selectedAgent, fallbackSessionKey, { replace: true });
-    pinMemberChatSession(controller.app, fallbackSessionKey);
+    pinMemberChatSession(controller.app, fallbackSessionKey, {
+      skipHydrateHistory: shouldSkipSessionHistoryHydration(
+        controller.sessions,
+        fallbackSessionKey,
+      ),
+    });
   }
   renderSidebarSection(controller);
 }
@@ -1073,10 +1154,11 @@ function closeAllDialogs() {
   }
 }
 
-function pinMemberChatSession(app, sessionKey) {
+function pinMemberChatSession(app, sessionKey, options = {}) {
   if (!(app instanceof HTMLElement) || !sessionKey) {
     return;
   }
+  const skipHydrateHistory = options.skipHydrateHistory === true;
 
   const previousSessionKey = String(app.__ocPinnedSessionKey || "")
     .trim()
@@ -1132,11 +1214,9 @@ function pinMemberChatSession(app, sessionKey) {
     app.chatStreamStartedAt = null;
     app.chatStream = null;
     app.lastError = null;
-    app.chatLoading = true;
     if (typeof app.resetToolStream === "function") {
       app.resetToolStream();
     }
-    app.requestUpdate?.();
 
     if (app.sessionKey !== sessionKey) {
       app.sessionKey = sessionKey;
@@ -1153,12 +1233,26 @@ function pinMemberChatSession(app, sessionKey) {
       void app.loadAssistantIdentity();
     }
 
+    if (skipHydrateHistory) {
+      app.__ocPinnedSessionHydratingKey = "";
+      app.__ocPinnedSessionHydratedKey = sessionKey;
+      app.chatLoading = false;
+      clearChatLoadingFailsafe(app);
+      app.requestUpdate?.();
+      return;
+    }
+
+    app.chatLoading = true;
+    app.requestUpdate?.();
     app.__ocPinnedSessionHydratingKey = sessionKey;
 
     // Load chat history for the pinned session directly via the client.
     const targetKey = sessionKey;
-    app.client
-      .request("chat.history", { sessionKey: targetKey, limit: 200 })
+    awaitWithTimeout(
+      app.client.request("chat.history", { sessionKey: targetKey, limit: 200 }),
+      MEMBER_CHAT_HISTORY_TIMEOUT_MS,
+      "gateway.chat.history.bootstrap",
+    )
       .then((res) => {
         if (app.__ocPinnedSessionHydratingKey === targetKey) {
           app.__ocPinnedSessionHydratingKey = "";
@@ -1185,7 +1279,10 @@ function pinMemberChatSession(app, sessionKey) {
           }
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        if (isTimeoutError(error)) {
+          console.warn("Timed out while hydrating member chat history", { sessionKey: targetKey });
+        }
         if (app.__ocPinnedSessionHydratingKey === targetKey) {
           app.__ocPinnedSessionHydratingKey = "";
         }
@@ -1291,7 +1388,9 @@ function attachSectionHandlers(section, controller) {
       ctrl.sessions = ensureVisibleCurrentSession(ctrl.sessions, nextSessionKey);
       ctrl.hasDraftSession = true;
       syncRouteForSession(ctrl.selectedAgent, nextSessionKey, { replace: false });
-      pinMemberChatSession(ctrl.app, nextSessionKey);
+      pinMemberChatSession(ctrl.app, nextSessionKey, {
+        skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
+      });
       renderSidebarSection(ctrl);
       return;
     }
@@ -1326,7 +1425,9 @@ function attachSectionHandlers(section, controller) {
             .toLowerCase() === nextSessionKey,
       );
       syncRouteForSession(ctrl.selectedAgent, nextSessionKey, { replace: false });
-      pinMemberChatSession(ctrl.app, nextSessionKey);
+      pinMemberChatSession(ctrl.app, nextSessionKey, {
+        skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
+      });
       renderSidebarSection(ctrl);
       return;
     }
@@ -1468,7 +1569,9 @@ async function syncMemberChatSurface() {
   renderTopAction(controller);
   ensureDeleteDialog(controller);
   syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
-  pinMemberChatSession(app, currentSessionKey);
+  pinMemberChatSession(app, currentSessionKey, {
+    skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
+  });
   window._ocMemberChatSurfaceController = controller;
   void syncMemberUsageRecords(
     controller,
