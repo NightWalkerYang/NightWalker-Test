@@ -3,7 +3,6 @@ import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
   buildTenantMemberChatRoute,
-  createTenantMemberSessionKey,
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_OWNED_AGENTS_VIEW,
   TENANT_AGENT_SELECTOR_VIEW,
@@ -56,12 +55,7 @@ export function resolveMemberChatBootstrapHref({
   if (currentSessionKey && isTenantMemberSessionKey(currentSessionKey, tenantSession, selectedAgent)) {
     return currentHref;
   }
-
-  const seededSessionKey = createTenantMemberSessionKey(tenantSession, selectedAgent);
-  if (!seededSessionKey) {
-    return currentHref;
-  }
-  return buildTenantMemberChatRoute(tenantAgentId, seededSessionKey);
+  return buildTenantMemberChatRoute(tenantAgentId);
 }
 
 export function resolvePlatformAccessDecision({

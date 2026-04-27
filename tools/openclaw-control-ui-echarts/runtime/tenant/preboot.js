@@ -302,8 +302,7 @@
     const querySessionKey = String(url.searchParams.get("session") || "").trim();
     const sessionKey = isTenantMemberSessionKey(querySessionKey, tenantSession, selectedAgent)
       ? normalizeTenantValue(querySessionKey)
-      : readCachedMemberSessionKey(tenantSession, selectedAgent) ||
-        createTenantMemberSessionKey(tenantSession, selectedAgent);
+      : readCachedMemberSessionKey(tenantSession, selectedAgent);
 
     if (sessionKey) {
       url.searchParams.set("session", sessionKey);
