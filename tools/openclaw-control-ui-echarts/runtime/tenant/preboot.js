@@ -333,12 +333,6 @@
 
   const normalizedCurrent = resolveMemberRouteUrl(window.location.href, window.location.href);
   persistControlUiSession(normalizedCurrent.searchParams.get("session") || "");
-  if (
-    normalizedCurrent.pathname !== window.location.pathname ||
-    normalizedCurrent.search !== window.location.search
-  ) {
-    window.history.replaceState({}, "", normalizedCurrent.toString());
-  }
 
   if (!window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__) {
     const originalReplaceState = window.history.replaceState.bind(window.history);
