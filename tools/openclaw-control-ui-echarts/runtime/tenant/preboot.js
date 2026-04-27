@@ -160,6 +160,27 @@
     return url;
   };
 
+  const normalizeSessionTitleValue = (value) => String(value ?? "").trim();
+
+  const isGeneratedTimestampTitle = (value) => {
+    const normalized = normalizeSessionTitleValue(value);
+    if (!normalized) {
+      return false;
+    }
+    return (
+      /^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(normalized) ||
+      /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(normalized)
+    );
+  };
+
+  const isProvisionalSessionTitle = (value) => {
+    const normalized = normalizeSessionTitleValue(value);
+    if (!normalized) {
+      return true;
+    }
+    return normalized === "新会话" || isGeneratedTimestampTitle(normalized);
+  };
+
   const buildMemberSessionCacheId = (session, selectedAgent) => {
     const tenantId = normalizeTenantValue(session?.session?.tenantId);
     const userId = normalizeTenantValue(session?.session?.userId);
@@ -195,6 +216,48 @@
     const next = cache && typeof cache === "object" ? { ...cache } : {};
     next[cacheId] = normalizeTenantValue(sessionKey);
     writeJson(storage, MEMBER_LAST_SESSION_STORAGE_KEY, next);
+  };
+
+  const readRegisteredMemberSessionKey = (session, selectedAgent) => {
+    if (typeof XMLHttpRequest !== "function") {
+      return "";
+    }
+    const tenantAgentId = String(selectedAgent?.id || "").trim();
+    const token = String(session?.token || "").trim();
+    if (!tenantAgentId || !token) {
+      return "";
+    }
+    try {
+      const request = new XMLHttpRequest();
+      const url = new URL("/tenant-platform-api/v1/member/sessions", document.baseURI);
+      url.searchParams.set("tenantAgentId", tenantAgentId);
+      request.open("GET", url.toString(), false);
+      request.setRequestHeader("Accept", "application/json");
+      request.setRequestHeader("Authorization", `Bearer ${token}`);
+      request.send(null);
+      if (request.status < 200 || request.status >= 300) {
+        return "";
+      }
+      const payload = JSON.parse(String(request.responseText || "{}"));
+      const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+      const candidates = rows
+        .filter((row) => !row?.hiddenAt)
+        .map((row) => ({
+          key: String(row?.openclawSessionKey || "").trim(),
+          title: normalizeSessionTitleValue(row?.title),
+          updatedAt: Date.parse(String(row?.updatedAt || "")) || 0,
+        }))
+        .filter(
+          (row) =>
+            row.key &&
+            isTenantMemberSessionKey(row.key, session, selectedAgent) &&
+            !isProvisionalSessionTitle(row.title),
+        )
+        .sort((left, right) => right.updatedAt - left.updatedAt);
+      return candidates[0]?.key ? normalizeTenantValue(candidates[0].key) : "";
+    } catch {
+      return "";
+    }
   };
 
   const normalizeGatewayScope = (gatewayUrl) => {
@@ -302,7 +365,8 @@
     const querySessionKey = String(url.searchParams.get("session") || "").trim();
     const sessionKey = isTenantMemberSessionKey(querySessionKey, tenantSession, selectedAgent)
       ? normalizeTenantValue(querySessionKey)
-      : readCachedMemberSessionKey(tenantSession, selectedAgent);
+      : readCachedMemberSessionKey(tenantSession, selectedAgent) ||
+        readRegisteredMemberSessionKey(tenantSession, selectedAgent);
 
     if (sessionKey) {
       url.searchParams.set("session", sessionKey);

@@ -1536,7 +1536,7 @@ sidecar 落点固定为：
    - 统一登录页已增加会话有效性校验：仅在会话可用时自动跳转，过期/无效会话会先清理后停留登录页
    - 退出登录已统一清理平台与租户两套本地会话，避免登录页与控制台之间循环跳转
    - 成员已登录时如果命中 `/chat?ocTenantView=login...` 这类脏路由，运行时会先改写回干净的成员聊天路由或成员 Agent 选择页，再继续后续 surface 装配，避免页面卡在只剩抬头的半登录壳
-   - 成员聊天路由修正已前移到原生 Control UI 主 bundle 之前：零侵入构建现在会在 `index-*.js` 前注入 `runtime/tenant/preboot.js`，优先复用已知安全的成员 session 来预种 Control UI 本地 settings；如果当前还没有可复用的成员会话，则保持无 `session` 路由，等成员聊天 surface 在页面起来后再以内存草稿态接管，避免 `172.30.31.203` 这类环境把全新的随机 session 直接拿去做原生首轮 `chat.history` 后卡死
+   - 成员聊天路由修正已前移到原生 Control UI 主 bundle 之前：零侵入构建现在会在 `index-*.js` 前注入 `runtime/tenant/preboot.js`，优先复用本地缓存的安全成员 session；如果本地还没有缓存，则允许在同源 `/tenant-platform-api/v1/member/sessions` 上同步读取最近一次非草稿成员会话来预种 Control UI 本地 settings；只有这两条都拿不到时才保持无 `session` 路由，等成员聊天 surface 在页面起来后再以内存草稿态接管，避免 `172.30.31.203` 这类环境把全新的随机 session 直接拿去做原生首轮 `chat.history` 后卡死
    - 零侵入构建链路已修正 `/login` 入口产物生成：现在会稳定生成 `login/index.html` 与 `login.html`，避免重建或部署后因登录静态入口损坏而出现 `Not Found`
    - 零侵入部署脚本已改为“保留生成目录、仅替换目录内容”，避免 Docker 仍绑定到被删除的旧空目录，从而在重建后出现控制台根入口与 `/login` 的 `Not Found`
 
