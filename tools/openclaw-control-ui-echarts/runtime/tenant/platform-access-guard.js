@@ -26,6 +26,11 @@ export function isNativeControlUiPath(pathname = window.location.pathname) {
   return !/\.html$/i.test(normalized);
 }
 
+function isMemberSelectorHostPath(pathname = window.location.pathname) {
+  const normalized = String(pathname || "/").trim() || "/";
+  return normalized === "/" || normalized.endsWith("/index.html");
+}
+
 export function resolvePlatformAccessDecision({
   pathname = window.location.pathname,
   href = window.location.href,
@@ -61,7 +66,8 @@ export function resolvePlatformAccessDecision({
   if (
     tenantSession?.token &&
     tenantSession?.session?.role === "member" &&
-    view === TENANT_AGENT_SELECTOR_VIEW
+    view === TENANT_AGENT_SELECTOR_VIEW &&
+    isMemberSelectorHostPath(pathname)
   ) {
     return "allow";
   }

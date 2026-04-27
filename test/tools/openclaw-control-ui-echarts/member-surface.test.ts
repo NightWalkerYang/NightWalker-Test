@@ -72,4 +72,29 @@ describe("member surface", () => {
       "请选择一个已分配的 Agent 继续使用。",
     );
   });
+
+  it("does not mount the selector on malformed /chat selector routes", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-agent-selector");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await bootMemberSurface();
+
+    const content = document.querySelector(".content");
+    expect(content?.getAttribute("data-oc-member-surface-active")).toBeNull();
+    expect(document.querySelector("[data-oc-member-surface-root]")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

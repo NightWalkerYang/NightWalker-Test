@@ -185,5 +185,15 @@ describe("platform access guard", () => {
         tenantSession: { token: "member-token", session: { role: "member" } },
       }),
     ).toBe("allow");
+
+    expect(
+      resolvePlatformAccessDecision({
+        pathname: "/chat",
+        href: "https://www.hailstone.cn:18789/chat?ocTenantView=tenant-agent-selector",
+        edition: "cloud",
+        platformSession: null,
+        tenantSession: { token: "member-token", session: { role: "member" } },
+      }),
+    ).toBe("redirect-member");
   });
 });
