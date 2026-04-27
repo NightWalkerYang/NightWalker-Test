@@ -1590,6 +1590,152 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("estimates zero-priced ollama usage from tokens during sync", () => {
+    const sandbox = createTempSandbox();
+    fs.writeFileSync(
+      sandbox.config.configPath,
+      JSON.stringify({
+        agents: {
+          list: [
+            {
+              id: "finance",
+              name: "财务分析助手",
+            },
+          ],
+        },
+        models: {
+          mode: "merge",
+          providers: {
+            ollama: {
+              api: "ollama",
+              models: [
+                {
+                  id: "qwen3.6:latest",
+                  cost: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "theta",
+        name: "租户 Theta",
+        adminUsername: "theta-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-ollama",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 10,
+        status: "active",
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const sessionKey = "agent:finance:tenant:theta:user:member-ollama:chat:latest";
+      writeSessionStoreEntry(sandbox, String(assignment.derivedAgentId || "finance"), sessionKey, {
+        sessionId: "sess-theta",
+        estimatedCostUsd: 0,
+        modelProvider: "ollama",
+        model: "qwen3.6:latest",
+        updatedAt: "2026-04-13T10:00:00.000Z",
+      });
+
+      const syncResult = syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+        records: [
+          {
+            sourceFingerprint: "assistant-1",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "ollama",
+            model: "qwen3.6:latest",
+            inputTokens: 80_000,
+            outputTokens: 4_000,
+            totalTokens: 84_000,
+          },
+          {
+            sourceFingerprint: "assistant-2",
+            messageTimestamp: "2026-04-13T09:35:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "ollama",
+            model: "qwen3.6:latest",
+            inputTokens: 40_000,
+            outputTokens: 2_000,
+            totalTokens: 42_000,
+          },
+        ],
+      });
+      expect(syncResult.inserted).toBe(2);
+      expect(syncResult.pointsDelta).toBeCloseTo(0.0432, 8);
+      expect(syncResult.agentBalancePoints).toBeCloseTo(9.9568, 8);
+
+      const usageRows = db
+        .prepare(
+          `SELECT source_fingerprint AS sourceFingerprint, total_cost AS totalCost
+           FROM tenant_usage_records
+           WHERE tenant_id = ?
+           ORDER BY message_timestamp ASC`,
+        )
+        .all(tenant.id);
+      expect(usageRows).toEqual([
+        expect.objectContaining({
+          sourceFingerprint: "assistant-1",
+          totalCost: 0.0288,
+        }),
+        expect.objectContaining({
+          sourceFingerprint: "assistant-2",
+          totalCost: 0.0144,
+        }),
+      ]);
+
+      const overview = getTenantOverview(db, { tenantId: tenant.id });
+      expect(overview?.summary.consumedCredits).toBeCloseTo(0.0432, 8);
+      const usageList = listTenantUsageRecords(db, { tenantId: tenant.id, page: 1, pageSize: 8 });
+      expect(usageList.items[0]?.creditsUsed).toBeGreaterThan(0);
+      expect(usageList.items[1]?.creditsUsed).toBeGreaterThan(0);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("repairs historical usage rows when session estimatedCostUsd becomes available later", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);

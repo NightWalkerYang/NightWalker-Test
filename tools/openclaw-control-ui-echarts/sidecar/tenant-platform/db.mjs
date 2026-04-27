@@ -42,6 +42,16 @@ const ZERO_INTRUSIVE_MODEL_COST_FALLBACKS = {
     cacheWrite: 0,
   },
 };
+const ZERO_INTRUSIVE_PROVIDER_COST_FALLBACKS = {
+  // Some local Ollama deployments intentionally register zero model prices,
+  // but tenant overview still needs a stable non-zero token-based usage cost.
+  ollama: {
+    input: 0.3,
+    output: 1.2,
+    cacheRead: 0,
+    cacheWrite: 0,
+  },
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -498,10 +508,17 @@ function resolveConfiguredModelTokenCosts(params = {}) {
   };
 }
 
-function resolveFallbackModelTokenCosts(model) {
-  const modelKey = normalizeModelCostLookupKey(model);
+function resolveFallbackModelTokenCosts(params = {}) {
+  const modelKey = normalizeModelCostLookupKey(params.model);
   const fallback = ZERO_INTRUSIVE_MODEL_COST_FALLBACKS[modelKey];
-  return fallback ? { ...fallback } : null;
+  if (fallback) {
+    return { ...fallback };
+  }
+  const providerKey = String(params.provider || "")
+    .trim()
+    .toLowerCase();
+  const providerFallback = ZERO_INTRUSIVE_PROVIDER_COST_FALLBACKS[providerKey];
+  return providerFallback ? { ...providerFallback } : null;
 }
 
 function resolveModelTokenCosts(params = {}) {
@@ -515,7 +532,7 @@ function resolveModelTokenCosts(params = {}) {
   ) {
     return configured;
   }
-  return resolveFallbackModelTokenCosts(params.model);
+  return resolveFallbackModelTokenCosts(params);
 }
 
 function estimateUsageCostUsdFromTokenRates(usage, tokenCosts) {
