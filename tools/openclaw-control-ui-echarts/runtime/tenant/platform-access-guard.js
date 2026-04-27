@@ -2,6 +2,8 @@ import { isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
+  buildTenantMemberChatRoute,
+  createTenantMemberSessionKey,
   TENANT_AGENT_ASSIGNMENT_VIEW,
   TENANT_OWNED_AGENTS_VIEW,
   TENANT_AGENT_SELECTOR_VIEW,
@@ -11,6 +13,8 @@ import {
   TENANT_USAGE_STATS_VIEW,
   clearPlatformSession,
   isTenantLoginView,
+  isTenantMemberSessionKey,
+  readSelectedTenantAgent,
   readSelectedTenantAgentId,
   routeForRole,
   readPlatformSession,
@@ -29,6 +33,35 @@ export function isNativeControlUiPath(pathname = window.location.pathname) {
 function isMemberSelectorHostPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
   return normalized === "/" || normalized.endsWith("/index.html");
+}
+
+export function resolveMemberChatBootstrapHref({
+  href = window.location.href,
+  pathname = window.location.pathname,
+  tenantSession = readTenantSession(),
+  selectedAgent = readSelectedTenantAgent(href),
+} = {}) {
+  const normalizedPathname = String(pathname || "").trim();
+  if (normalizedPathname !== "/chat" || tenantSession?.session?.role !== "member") {
+    return href;
+  }
+
+  const tenantAgentId = String(selectedAgent?.id || "").trim();
+  if (!tenantAgentId) {
+    return href;
+  }
+
+  const currentHref = new URL(href, document.baseURI).href;
+  const currentSessionKey = new URL(currentHref).searchParams.get("session")?.trim() || "";
+  if (currentSessionKey && isTenantMemberSessionKey(currentSessionKey, tenantSession, selectedAgent)) {
+    return currentHref;
+  }
+
+  const seededSessionKey = createTenantMemberSessionKey(tenantSession, selectedAgent);
+  if (!seededSessionKey) {
+    return currentHref;
+  }
+  return buildTenantMemberChatRoute(tenantAgentId, seededSessionKey);
 }
 
 export function resolvePlatformAccessDecision({
@@ -124,6 +157,11 @@ export async function bootPlatformAccessGuard() {
     !isNativeControlUiPath(window.location.pathname)
   ) {
     return;
+  }
+
+  const bootstrapHref = resolveMemberChatBootstrapHref();
+  if (bootstrapHref !== window.location.href) {
+    window.history.replaceState({}, "", bootstrapHref);
   }
 
   const platformSession = readPlatformSession();

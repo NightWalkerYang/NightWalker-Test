@@ -5,8 +5,10 @@
 import { describe, expect, it } from "vitest";
 import {
   isNativeControlUiPath,
+  resolveMemberChatBootstrapHref,
   resolvePlatformAccessDecision,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js";
+import { isTenantMemberSessionKey } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 
 describe("platform access guard", () => {
   it("recognizes native control-ui routes", () => {
@@ -195,5 +197,60 @@ describe("platform access guard", () => {
         tenantSession: { token: "member-token", session: { role: "member" } },
       }),
     ).toBe("redirect-member");
+  });
+
+  it("seeds a member chat session before the native chat bootstraps main", () => {
+    const tenantSession = {
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    };
+    const selectedAgent = {
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+    };
+
+    const targetHref = resolveMemberChatBootstrapHref({
+      pathname: "/chat",
+      href: "https://www.hailstone.cn:18789/chat?tenantAgentId=tenant-agent-1",
+      tenantSession,
+      selectedAgent,
+    });
+
+    const url = new URL(targetHref);
+    expect(url.pathname).toBe("/chat");
+    expect(url.searchParams.get("tenantAgentId")).toBe("tenant-agent-1");
+    expect(
+      isTenantMemberSessionKey(url.searchParams.get("session"), tenantSession, selectedAgent),
+    ).toBe(true);
+  });
+
+  it("keeps an existing member chat session bootstrap href unchanged", () => {
+    const tenantSession = {
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    };
+    const selectedAgent = {
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+    };
+    const existingHref =
+      "https://www.hailstone.cn:18789/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:current";
+
+    expect(
+      resolveMemberChatBootstrapHref({
+        pathname: "/chat",
+        href: existingHref,
+        tenantSession,
+        selectedAgent,
+      }),
+    ).toBe(existingHref);
   });
 });
