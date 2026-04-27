@@ -46,11 +46,11 @@ function createTempSandbox() {
   const configPath = path.join(configDir, "openclaw.json");
   fs.writeFileSync(
     configPath,
-    JSON.stringify({
-      agents: {
-        list: [
-          {
-            id: "finance",
+      JSON.stringify({
+        agents: {
+          list: [
+            {
+              id: "finance",
             name: "财务分析助手",
             identity: {
               emoji: "💼",
@@ -358,6 +358,34 @@ describe("tenant platform database foundation", () => {
               name: "默认助手",
             },
           ],
+        },
+        models: {
+          mode: "merge",
+          providers: {
+            cleannetworkspace: {
+              api: "openai-completions",
+              models: [
+                {
+                  id: "gpt-5.4",
+                  cost: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                },
+                {
+                  id: "gpt-5.4-mini",
+                  cost: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                },
+              ],
+            },
+          },
         },
       }),
       "utf8",
@@ -1648,7 +1676,13 @@ describe("tenant platform database foundation", () => {
 
       writeSessionStoreEntry(sandbox, String(assignment.derivedAgentId || "finance"), sessionKey, {
         sessionId: "sess-eta",
-        estimatedCostUsd: 0.18,
+        estimatedCostUsd: 0,
+        modelProvider: "cleannetworkspace",
+        model: "gpt-5.4",
+        inputTokens: 48000,
+        outputTokens: 4000,
+        cacheRead: 0,
+        cacheWrite: 0,
         updatedAt: "2026-04-13T10:10:00.000Z",
       });
 

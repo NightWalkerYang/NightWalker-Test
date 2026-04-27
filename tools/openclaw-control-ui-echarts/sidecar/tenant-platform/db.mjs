@@ -25,6 +25,23 @@ const DERIVED_AGENT_TEMPLATE_ENTRIES = [
   "skills",
 ];
 const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
+const ZERO_INTRUSIVE_MODEL_COST_FALLBACKS = {
+  // OpenAI official GPT-5.4 pricing per 1M text tokens. Only used when the
+  // runtime config exposes zero pricing and the session store has no positive
+  // estimatedCostUsd to reuse.
+  "gpt-5.4": {
+    input: 2.5,
+    output: 15,
+    cacheRead: 0.25,
+    cacheWrite: 0,
+  },
+  "gpt-5.4-mini": {
+    input: 0.75,
+    output: 4.5,
+    cacheRead: 0.075,
+    cacheWrite: 0,
+  },
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -78,6 +95,15 @@ function extractAgentIdFromSessionKey(openclawSessionKey) {
   const normalized = String(openclawSessionKey || "").trim();
   const match = normalized.match(/^agent:([^:]+):/i);
   return match?.[1] ? String(match[1]).trim() : "";
+}
+
+function normalizeModelCostLookupKey(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  const slashIndex = normalized.lastIndexOf("/");
+  return slashIndex >= 0 ? normalized.slice(slashIndex + 1) : normalized;
 }
 
 function collectSessionStoreAgentCandidates(params = {}) {
@@ -442,6 +468,73 @@ function parseOpenClawConfig(configPath) {
   }
 }
 
+function resolveConfiguredModelTokenCosts(params = {}) {
+  const providerId = String(params.provider || "").trim();
+  const modelKey = normalizeModelCostLookupKey(params.model);
+  if (!providerId || !modelKey) {
+    return null;
+  }
+  const configPayload = parseOpenClawConfig(resolveConfigPath(params));
+  const providerModels =
+    configPayload?.models?.providers &&
+    typeof configPayload.models.providers === "object" &&
+    !Array.isArray(configPayload.models.providers)
+      ? configPayload.models.providers[providerId]?.models
+      : null;
+  if (!Array.isArray(providerModels)) {
+    return null;
+  }
+  const matchedModel = providerModels.find(
+    (entry) => normalizeModelCostLookupKey(entry?.id) === modelKey,
+  );
+  if (!matchedModel?.cost || typeof matchedModel.cost !== "object") {
+    return null;
+  }
+  return {
+    input: normalizeOptionalPositiveCost(matchedModel.cost.input) ?? 0,
+    output: normalizeOptionalPositiveCost(matchedModel.cost.output) ?? 0,
+    cacheRead: normalizeOptionalPositiveCost(matchedModel.cost.cacheRead) ?? 0,
+    cacheWrite: normalizeOptionalPositiveCost(matchedModel.cost.cacheWrite) ?? 0,
+  };
+}
+
+function resolveFallbackModelTokenCosts(model) {
+  const modelKey = normalizeModelCostLookupKey(model);
+  const fallback = ZERO_INTRUSIVE_MODEL_COST_FALLBACKS[modelKey];
+  return fallback ? { ...fallback } : null;
+}
+
+function resolveModelTokenCosts(params = {}) {
+  const configured = resolveConfiguredModelTokenCosts(params);
+  if (
+    configured &&
+    (configured.input > 0 ||
+      configured.output > 0 ||
+      configured.cacheRead > 0 ||
+      configured.cacheWrite > 0)
+  ) {
+    return configured;
+  }
+  return resolveFallbackModelTokenCosts(params.model);
+}
+
+function estimateUsageCostUsdFromTokenRates(usage, tokenCosts) {
+  if (!tokenCosts) {
+    return null;
+  }
+  const inputTokens = Math.max(0, Math.round(toFiniteNumber(usage?.inputTokens)));
+  const outputTokens = Math.max(0, Math.round(toFiniteNumber(usage?.outputTokens)));
+  const cacheReadTokens = Math.max(0, Math.round(toFiniteNumber(usage?.cacheReadTokens)));
+  const cacheWriteTokens = Math.max(0, Math.round(toFiniteNumber(usage?.cacheWriteTokens)));
+  const estimatedCostUsd = roundPoints(
+    (inputTokens * Math.max(0, toFiniteNumber(tokenCosts.input))) / 1_000_000 +
+      (outputTokens * Math.max(0, toFiniteNumber(tokenCosts.output))) / 1_000_000 +
+      (cacheReadTokens * Math.max(0, toFiniteNumber(tokenCosts.cacheRead))) / 1_000_000 +
+      (cacheWriteTokens * Math.max(0, toFiniteNumber(tokenCosts.cacheWrite))) / 1_000_000,
+  );
+  return estimatedCostUsd > 0 ? estimatedCostUsd : null;
+}
+
 function resolveSessionStorePathForAgentId(agentId, params = {}) {
   if (!agentId) {
     return "";
@@ -534,7 +627,24 @@ function readSessionStoreEntry(params = {}, cache = null) {
 
 function resolveSessionEstimatedCostUsd(params = {}, cache = null) {
   const sessionEntry = readSessionStoreEntry(params, cache);
-  return normalizeOptionalPositiveCost(sessionEntry?.estimatedCostUsd);
+  const explicitEstimatedCostUsd = normalizeOptionalPositiveCost(sessionEntry?.estimatedCostUsd);
+  if (explicitEstimatedCostUsd) {
+    return explicitEstimatedCostUsd;
+  }
+  return estimateUsageCostUsdFromTokenRates(
+    {
+      inputTokens: sessionEntry?.inputTokens,
+      outputTokens: sessionEntry?.outputTokens,
+      cacheReadTokens: sessionEntry?.cacheRead ?? sessionEntry?.cacheReadTokens,
+      cacheWriteTokens: sessionEntry?.cacheWrite ?? sessionEntry?.cacheWriteTokens,
+    },
+    resolveModelTokenCosts({
+      provider: sessionEntry?.modelProvider || sessionEntry?.provider,
+      model: sessionEntry?.model,
+      configDir: params.configDir,
+      configPath: params.configPath,
+    }),
+  );
 }
 
 function normalizeTenantUsageSyncRecords(records, fallbackTimestamp = nowIso()) {
