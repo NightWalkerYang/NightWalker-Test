@@ -254,6 +254,71 @@ describe("member chat surface", () => {
     expect(requestedMethods.filter((method) => method === "chat.history")).toHaveLength(2);
   });
 
+  it("reuses the native sessions cache before asking the gateway again", async () => {
+    installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "本周分析",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub({
+      request: async (method, params) => {
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    app.sessionsResult = {
+      sessions: [
+        {
+          key: "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          label: "本周分析",
+          updatedAt: Date.now(),
+        },
+      ],
+    };
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+    await flush();
+
+    const requestedMethods = app.client.request.mock.calls.map(([method]) => method);
+    expect(requestedMethods.filter((method) => method === "sessions.list")).toHaveLength(0);
+    expect(requestedMethods.filter((method) => method === "chat.history")).toHaveLength(1);
+  });
+
   it("creates a new member session and shows it in the sidebar list", async () => {
     installTenantApiFetchStub();
     writeTenantSession({

@@ -828,17 +828,23 @@ async function loadMemberSessions(app, selectedAgent, session) {
     registeredSessions.map((r) => [String(r.openclawSessionKey).trim().toLowerCase(), r]),
   );
 
-  let rows = [];
-  try {
-    rows = normalizeSessionRows(
-      await awaitWithTimeout(
-        app.client.request("sessions.list", {}),
-        MEMBER_SESSION_LIST_TIMEOUT_MS,
-        "gateway.sessions.list",
-      ),
-    );
-  } catch (error) {
-    console.error("Failed to list gateway sessions for member chat", error);
+  let rows =
+    app?.sessionsResult && Array.isArray(app.sessionsResult.sessions)
+      ? normalizeSessionRows(app.sessionsResult)
+      : null;
+  if (!rows) {
+    try {
+      rows = normalizeSessionRows(
+        await awaitWithTimeout(
+          app.client.request("sessions.list", {}),
+          MEMBER_SESSION_LIST_TIMEOUT_MS,
+          "gateway.sessions.list",
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to list gateway sessions for member chat", error);
+      rows = [];
+    }
   }
   const filteredFromGateway = rows.filter((row) =>
     isTenantMemberSessionKey(row.key, session, selectedAgent),
