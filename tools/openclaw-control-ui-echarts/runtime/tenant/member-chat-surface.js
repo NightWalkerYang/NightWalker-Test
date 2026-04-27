@@ -37,6 +37,9 @@ const CHAT_FAILSAFE_SESSION_KEY = "__ocMemberChatFailsafeSessionKey";
 const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
 const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
 const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
+let memberChatSurfaceSyncing = false;
+let memberChatSurfaceSyncQueued = false;
+let memberChatSurfaceSuppressNextRouteSync = false;
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
   const normalizedPath = String(pathname || "/").trim() || "/";
@@ -1154,6 +1157,14 @@ function closeAllDialogs() {
   }
 }
 
+function isMemberChatSelfMutation(node) {
+  return Boolean(
+    node.closest?.(
+      `[${SECTION_ATTR}], [${TOP_ACTION_ATTR}], [${DELETE_DIALOG_ROOT_ATTR}], [${TOAST_ROOT_ATTR}]`,
+    ),
+  );
+}
+
 function pinMemberChatSession(app, sessionKey, options = {}) {
   if (!(app instanceof HTMLElement) || !sessionKey) {
     return;
@@ -1352,6 +1363,7 @@ function syncRouteForSession(selectedAgent, sessionKey, { replace = true } = {})
   const target = buildTenantMemberChatRoute(selectedAgent.id, sessionKey);
   const targetUrl = new URL(target, document.baseURI);
   if (current.href !== targetUrl.href) {
+    memberChatSurfaceSuppressNextRouteSync = true;
     navigateTenantRoute(targetUrl.href, { replace });
   }
 }
@@ -1495,89 +1507,104 @@ function renderTopAction(controller) {
 }
 
 async function syncMemberChatSurface() {
-  if (!isMemberChatRoute()) {
+  if (memberChatSurfaceSyncing) {
+    memberChatSurfaceSyncQueued = true;
+    return;
+  }
+  memberChatSurfaceSyncing = true;
+  try {
+    if (!isMemberChatRoute()) {
+      const app = document.querySelector(APP_SELECTOR);
+      if (app instanceof HTMLElement) {
+        clearChatLoadingFailsafe(app);
+        delete app.__ocPinnedSessionHydratedKey;
+        delete app.__ocPinnedSessionHydratingKey;
+      }
+      delete window._ocMemberChatSurfaceController;
+      document.documentElement.removeAttribute(DOC_ATTR);
+      document.body?.removeAttribute(DOC_ATTR);
+      document.querySelector(`[${SECTION_ATTR}]`)?.remove();
+      document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
+      document.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`)?.remove();
+      document.querySelector(`[${TOAST_ROOT_ATTR}]`)?.remove();
+      return;
+    }
+
+    document.documentElement.setAttribute(DOC_ATTR, "true");
+    document.body?.setAttribute(DOC_ATTR, "true");
+    ensureStyle();
+    closeAllDialogs();
+
     const app = document.querySelector(APP_SELECTOR);
-    if (app instanceof HTMLElement) {
-      clearChatLoadingFailsafe(app);
-      delete app.__ocPinnedSessionHydratedKey;
-      delete app.__ocPinnedSessionHydratingKey;
+    const sidebar = document.querySelector(SIDEBAR_SELECTOR);
+    const breadcrumb = document.querySelector(BREADCRUMB_SELECTOR);
+    const session = readTenantSession();
+    const selectedAgent = readSelectedTenantAgent();
+    if (
+      !(app instanceof HTMLElement) ||
+      !(sidebar instanceof HTMLElement) ||
+      !session ||
+      !selectedAgent?.id
+    ) {
+      if (app instanceof HTMLElement) {
+        clearChatLoadingFailsafe(app);
+      }
+      return;
     }
-    delete window._ocMemberChatSurfaceController;
-    document.documentElement.removeAttribute(DOC_ATTR);
-    document.body?.removeAttribute(DOC_ATTR);
-    document.querySelector(`[${SECTION_ATTR}]`)?.remove();
-    document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
-    document.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`)?.remove();
-    document.querySelector(`[${TOAST_ROOT_ATTR}]`)?.remove();
-    return;
-  }
-
-  document.documentElement.setAttribute(DOC_ATTR, "true");
-  document.body?.setAttribute(DOC_ATTR, "true");
-  ensureStyle();
-  closeAllDialogs();
-
-  const app = document.querySelector(APP_SELECTOR);
-  const sidebar = document.querySelector(SIDEBAR_SELECTOR);
-  const breadcrumb = document.querySelector(BREADCRUMB_SELECTOR);
-  const session = readTenantSession();
-  const selectedAgent = readSelectedTenantAgent();
-  if (
-    !(app instanceof HTMLElement) ||
-    !(sidebar instanceof HTMLElement) ||
-    !session ||
-    !selectedAgent?.id
-  ) {
-    if (app instanceof HTMLElement) {
-      clearChatLoadingFailsafe(app);
+    if (!app.client || !app.connected) {
+      return;
     }
-    return;
+
+    const sessionsFromGateway = await loadMemberSessions(app, selectedAgent, session);
+    const currentSessionKey = findTargetSessionKey(
+      app,
+      selectedAgent,
+      session,
+      window.location.href,
+      sessionsFromGateway,
+    );
+
+    const controller = {
+      app,
+      sidebar,
+      breadcrumb,
+      session,
+      selectedAgent,
+      sessionsFromGateway,
+      sessions: ensureVisibleCurrentSession(sessionsFromGateway, currentSessionKey),
+      currentSessionKey,
+      hasDraftSession: !sessionsFromGateway.some(
+        (row) =>
+          String(row?.key || "")
+            .trim()
+            .toLowerCase() === currentSessionKey,
+      ),
+      pendingDeleteSessionKey: "",
+      toastTimer: 0,
+    };
+
+    renderSidebarSection(controller);
+    renderTopAction(controller);
+    ensureDeleteDialog(controller);
+    syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
+    pinMemberChatSession(app, currentSessionKey, {
+      skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
+    });
+    window._ocMemberChatSurfaceController = controller;
+    void syncMemberUsageRecords(
+      controller,
+      currentSessionKey,
+      Array.isArray(app.chatMessages) ? app.chatMessages : [],
+    );
+  } finally {
+    memberChatSurfaceSyncing = false;
+    if (memberChatSurfaceSyncQueued) {
+      memberChatSurfaceSyncQueued = false;
+      window.setTimeout(() => {
+        void syncMemberChatSurface();
+      }, 0);
+    }
   }
-  if (!app.client || !app.connected) {
-    return;
-  }
-
-  const sessionsFromGateway = await loadMemberSessions(app, selectedAgent, session);
-  const currentSessionKey = findTargetSessionKey(
-    app,
-    selectedAgent,
-    session,
-    window.location.href,
-    sessionsFromGateway,
-  );
-
-  const controller = {
-    app,
-    sidebar,
-    breadcrumb,
-    session,
-    selectedAgent,
-    sessionsFromGateway,
-    sessions: ensureVisibleCurrentSession(sessionsFromGateway, currentSessionKey),
-    currentSessionKey,
-    hasDraftSession: !sessionsFromGateway.some(
-      (row) =>
-        String(row?.key || "")
-          .trim()
-          .toLowerCase() === currentSessionKey,
-    ),
-    pendingDeleteSessionKey: "",
-    toastTimer: 0,
-  };
-
-  renderSidebarSection(controller);
-  renderTopAction(controller);
-  ensureDeleteDialog(controller);
-  syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
-  pinMemberChatSession(app, currentSessionKey, {
-    skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
-  });
-  window._ocMemberChatSurfaceController = controller;
-  void syncMemberUsageRecords(
-    controller,
-    currentSessionKey,
-    Array.isArray(app.chatMessages) ? app.chatMessages : [],
-  );
 }
 window.syncMemberChatSurface = syncMemberChatSurface;
 
@@ -1637,6 +1664,10 @@ export function bootMemberChatSurface() {
   );
 
   onTenantRouteChange(() => {
+    if (memberChatSurfaceSuppressNextRouteSync) {
+      memberChatSurfaceSuppressNextRouteSync = false;
+      return;
+    }
     void syncMemberChatSurface();
   });
 
@@ -1646,7 +1677,7 @@ export function bootMemberChatSurface() {
         if (!(node instanceof Element)) {
           continue;
         }
-        if (node.closest?.(`[${SECTION_ATTR}]`)) {
+        if (isMemberChatSelfMutation(node)) {
           continue;
         }
         if (
