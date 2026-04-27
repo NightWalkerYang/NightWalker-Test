@@ -761,6 +761,10 @@ function shouldSkipSessionHistoryHydration(sessions, sessionKey) {
   return isProvisionalSessionTitle(title);
 }
 
+function resolveRouteSessionKey(sessions, sessionKey) {
+  return shouldSkipSessionHistoryHydration(sessions, sessionKey) ? "" : sessionKey;
+}
+
 function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
   const url = new URL(href, document.baseURI);
   const resolveCandidate = (value) => {
@@ -1000,6 +1004,13 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
     }
   }
   renderSidebarSection(controller);
+  if (window._ocMemberChatSurfaceController?.currentSessionKey === normalizedSessionKey) {
+    syncRouteForSession(
+      controller.selectedAgent,
+      resolveRouteSessionKey(controller.sessions, normalizedSessionKey),
+      { replace: true },
+    );
+  }
 }
 
 function ensureSection(sidebar) {
@@ -1081,7 +1092,11 @@ async function applyHiddenDelete(controller, nextHiddenKey) {
           .trim()
           .toLowerCase() === fallbackSessionKey,
     );
-    syncRouteForSession(controller.selectedAgent, fallbackSessionKey, { replace: true });
+    syncRouteForSession(
+      controller.selectedAgent,
+      resolveRouteSessionKey(controller.sessions, fallbackSessionKey),
+      { replace: true },
+    );
     pinMemberChatSession(controller.app, fallbackSessionKey, {
       skipHydrateHistory: shouldSkipSessionHistoryHydration(
         controller.sessions,
@@ -1405,7 +1420,11 @@ function attachSectionHandlers(section, controller) {
       ctrl.currentSessionKey = nextSessionKey;
       ctrl.sessions = ensureVisibleCurrentSession(ctrl.sessions, nextSessionKey);
       ctrl.hasDraftSession = true;
-      syncRouteForSession(ctrl.selectedAgent, nextSessionKey, { replace: false });
+      syncRouteForSession(
+        ctrl.selectedAgent,
+        resolveRouteSessionKey(ctrl.sessions, nextSessionKey),
+        { replace: false },
+      );
       pinMemberChatSession(ctrl.app, nextSessionKey, {
         skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
       });
@@ -1442,7 +1461,11 @@ function attachSectionHandlers(section, controller) {
             .trim()
             .toLowerCase() === nextSessionKey,
       );
-      syncRouteForSession(ctrl.selectedAgent, nextSessionKey, { replace: false });
+      syncRouteForSession(
+        ctrl.selectedAgent,
+        resolveRouteSessionKey(ctrl.sessions, nextSessionKey),
+        { replace: false },
+      );
       pinMemberChatSession(ctrl.app, nextSessionKey, {
         skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
       });
@@ -1592,7 +1615,11 @@ async function syncMemberChatSurface() {
     renderSidebarSection(controller);
     renderTopAction(controller);
     ensureDeleteDialog(controller);
-    syncRouteForSession(selectedAgent, currentSessionKey, { replace: true });
+    syncRouteForSession(
+      selectedAgent,
+      resolveRouteSessionKey(controller.sessions, currentSessionKey),
+      { replace: true },
+    );
     pinMemberChatSession(app, currentSessionKey, {
       skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
     });

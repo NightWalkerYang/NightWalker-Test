@@ -138,6 +138,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/preboot.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js`

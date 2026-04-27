@@ -9,6 +9,10 @@ import { injectAutoGatewayTokenBootstrap } from "./runtime/branding/auto-token.j
 import { injectEchartsViewPublicBootstrap } from "./runtime/echarts-view/bootstrap.js";
 import { injectLufengPublicBootstrap } from "./runtime/lufeng/bootstrap.js";
 
+const MAIN_BUNDLE_PATTERN =
+  /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
+const TENANT_PREBOOT_PATTERN = /^\s*<script[^>]*data-openclaw-tenant-preboot[^>]*><\/script>\s*$/gm;
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 
@@ -158,6 +162,26 @@ function injectRuntimeScript(indexHtml) {
   return indexHtml.replace("  </body>", `${scriptTag}  </body>`);
 }
 
+function injectBeforeMainBundle(indexHtml, nextTag, cleanupPattern, label) {
+  const cleaned = cleanupPattern ? indexHtml.replace(cleanupPattern, "") : indexHtml;
+  if (!nextTag) {
+    return cleaned;
+  }
+  if (MAIN_BUNDLE_PATTERN.test(cleaned)) {
+    return cleaned.replace(MAIN_BUNDLE_PATTERN, `${nextTag}\n$&`);
+  }
+  if (!cleaned.includes("</head>")) {
+    throw new Error(`index.html is missing </head>; cannot inject the ${label}.`);
+  }
+  return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
+}
+
+function injectTenantPreboot(indexHtml) {
+  const scriptTag =
+    '    <script src="./assets/runtime/tenant/preboot.js" data-openclaw-tenant-preboot></script>';
+  return injectBeforeMainBundle(indexHtml, scriptTag, TENANT_PREBOOT_PATTERN, "tenant preboot");
+}
+
 function replaceBrandFavicons(indexHtml) {
   const lines = indexHtml.split(/\r?\n/);
   const filtered = lines.filter(
@@ -291,7 +315,7 @@ function main() {
     replaceBrandFavicons(
       injectAutoGatewayTokenBootstrap(
         injectLufengPublicBootstrap(
-          injectEchartsViewPublicBootstrap(outputIndex),
+          injectTenantPreboot(injectEchartsViewPublicBootstrap(outputIndex)),
           autoGatewayToken,
         ),
         autoGatewayToken,
