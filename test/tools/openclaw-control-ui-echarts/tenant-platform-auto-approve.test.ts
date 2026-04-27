@@ -65,6 +65,33 @@ describe("tenant platform exec auto-approve matching", () => {
     ).toBe(true);
   });
 
+  it("matches tenant session keys when the approval request omits agent id", () => {
+    expect(
+      shouldAutoApproveTenantExecRequest({
+        id: "approval-session",
+        request: {
+          sessionKey:
+            "agent:subotech-finance:tenant:tenant-87da5:tenant-agent:tenant-agent-1:user:user-1:chat:run-1",
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("matches tenant system.run plan agent/session context", () => {
+    expect(
+      shouldAutoApproveTenantExecRequest({
+        id: "approval-plan",
+        request: {
+          systemRunPlan: {
+            agentId: "tenant-tenant-87da5-subotech-finance-0706d688feec",
+            sessionKey:
+              "agent:tenant-tenant-87da5-subotech-finance-0706d688feec:tenant:tenant-87da5:tenant-agent:tenant-agent-1:user:user-1:chat:run-2",
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
   it("does not match non-tenant agents", () => {
     expect(
       shouldAutoApproveTenantExecRequest({

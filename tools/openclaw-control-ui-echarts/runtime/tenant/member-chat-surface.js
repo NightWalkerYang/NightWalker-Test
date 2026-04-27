@@ -30,6 +30,10 @@ const SIDEBAR_SELECTOR = ".sidebar-nav";
 const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
 const SECTION_CLASS = "nav-section oc-member-chat-section";
 const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
+const CHAT_FAILSAFE_TIMEOUT_MS = 75_000;
+const CHAT_FAILSAFE_MESSAGE = "本次请求超时，模型连接异常，请重新发送。";
+const CHAT_FAILSAFE_TIMER_KEY = "__ocMemberChatFailsafeTimer";
+const CHAT_FAILSAFE_SESSION_KEY = "__ocMemberChatFailsafeSessionKey";
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
   const normalizedPath = String(pathname || "/").trim() || "/";
@@ -82,6 +86,64 @@ function showTransientToast(controller, message, type = "info") {
     root.querySelector(TOAST_SELECTOR)?.remove();
     timerOwner.ocToastTimer = 0;
   }, 2500);
+}
+
+function clearChatLoadingFailsafe(app) {
+  if (!(app instanceof HTMLElement)) {
+    return;
+  }
+  const timerId = Number(app[CHAT_FAILSAFE_TIMER_KEY] || 0);
+  if (timerId > 0) {
+    window.clearTimeout(timerId);
+  }
+  app[CHAT_FAILSAFE_TIMER_KEY] = 0;
+  app[CHAT_FAILSAFE_SESSION_KEY] = "";
+}
+
+function scheduleChatLoadingFailsafe(app, sessionKey) {
+  if (!(app instanceof HTMLElement)) {
+    return;
+  }
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey) {
+    clearChatLoadingFailsafe(app);
+    return;
+  }
+  clearChatLoadingFailsafe(app);
+  app[CHAT_FAILSAFE_SESSION_KEY] = normalizedSessionKey;
+  app[CHAT_FAILSAFE_TIMER_KEY] = window.setTimeout(() => {
+    const trackedSessionKey = String(app[CHAT_FAILSAFE_SESSION_KEY] || "")
+      .trim()
+      .toLowerCase();
+    const activeSessionKey = String(app.__ocPinnedSessionKey || app.sessionKey || "")
+      .trim()
+      .toLowerCase();
+    app[CHAT_FAILSAFE_TIMER_KEY] = 0;
+    app[CHAT_FAILSAFE_SESSION_KEY] = "";
+    if (!trackedSessionKey || trackedSessionKey !== normalizedSessionKey) {
+      return;
+    }
+    if (!activeSessionKey || activeSessionKey !== normalizedSessionKey) {
+      return;
+    }
+    if (!app.chatLoading) {
+      return;
+    }
+    if (typeof app.resetToolStream === "function") {
+      app.resetToolStream();
+    }
+    app.chatLoading = false;
+    app.chatRunId = null;
+    app.chatStream = null;
+    app.chatStreamStartedAt = null;
+    if (!String(app.lastError || "").trim()) {
+      app.lastError = CHAT_FAILSAFE_MESSAGE;
+    }
+    app.requestUpdate?.();
+    showTransientToast(window._ocMemberChatSurfaceController, CHAT_FAILSAFE_MESSAGE, "danger");
+  }, CHAT_FAILSAFE_TIMEOUT_MS);
 }
 
 function normalizeSessionRows(result) {
@@ -1016,6 +1078,16 @@ function pinMemberChatSession(app, sessionKey) {
     return;
   }
 
+  const previousSessionKey = String(app.__ocPinnedSessionKey || "")
+    .trim()
+    .toLowerCase();
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (previousSessionKey && previousSessionKey !== normalizedSessionKey) {
+    clearChatLoadingFailsafe(app);
+  }
+
   // Always update the mutable pinned key reference FIRST
   app.__ocPinnedSessionKey = sessionKey;
 
@@ -1105,6 +1177,7 @@ function pinMemberChatSession(app, sessionKey) {
             app.resetChatScroll();
           }
           app.chatLoading = false;
+          clearChatLoadingFailsafe(app);
           app.__ocPinnedSessionHydratedKey = targetKey;
           app.requestUpdate?.();
           if (window._ocMemberChatSurfaceController?.currentSessionKey === targetKey) {
@@ -1121,6 +1194,7 @@ function pinMemberChatSession(app, sessionKey) {
           app.chatThinkingLevel = null;
           app.__ocPinnedSessionHydratedKey = "";
           app.chatLoading = false;
+          clearChatLoadingFailsafe(app);
           app.requestUpdate?.();
         }
       });
@@ -1129,6 +1203,17 @@ function pinMemberChatSession(app, sessionKey) {
   if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
     const originalRequest = app.client.request.bind(app.client);
     app.client.request = async (method, params) => {
+      const activeSessionKey =
+        method === "chat.send"
+          ? String(
+              window._ocMemberChatSurfaceController?.currentSessionKey ||
+                app.__ocPinnedSessionKey ||
+                app.sessionKey ||
+                "",
+            )
+              .trim()
+              .toLowerCase()
+          : "";
       if (method === "chat.send") {
         const session = readTenantSession();
         const agent = readSelectedTenantAgent();
@@ -1143,6 +1228,7 @@ function pinMemberChatSession(app, sessionKey) {
       }
       const result = await originalRequest(method, params);
       if (method === "chat.send") {
+        scheduleChatLoadingFailsafe(app, activeSessionKey);
         if (window._ocMemberChatSurfaceController?.currentSessionKey) {
           void ensureMemberSessionTitle(
             window._ocMemberChatSurfaceController,
@@ -1311,6 +1397,7 @@ async function syncMemberChatSurface() {
   if (!isMemberChatRoute()) {
     const app = document.querySelector(APP_SELECTOR);
     if (app instanceof HTMLElement) {
+      clearChatLoadingFailsafe(app);
       delete app.__ocPinnedSessionHydratedKey;
       delete app.__ocPinnedSessionHydratingKey;
     }
@@ -1340,6 +1427,9 @@ async function syncMemberChatSurface() {
     !session ||
     !selectedAgent?.id
   ) {
+    if (app instanceof HTMLElement) {
+      clearChatLoadingFailsafe(app);
+    }
     return;
   }
   if (!app.client || !app.connected) {

@@ -166,7 +166,7 @@ Logo 规则固定为：
 - `Logo` 只能在：
   - 文字 Logo
   - 图片 Logo
-  中二选一
+    中二选一
 - 选择文字 Logo 时：
   - 只允许填写 Logo 文本
   - 不允许同时启用图片 Logo
@@ -350,6 +350,7 @@ sidecar 落点固定为：
 - 当前桥接层默认会改写内联脚本中的 `fetch`、`open`、`location.*`、`.href=`、`.src=` 等相对 URL；但 `import ... from "./x.js"`、`dynamic import("./x.js")`、`new Worker("./x.js")`、`new URL("./x", import.meta.url)` 这类模式不在默认重写名单内
 - 对于 `*_index.html` 旧链路，3D / 粒子大屏的推荐交付形态仍然不是“未打包源码工程”，而是“单 HTML 入口 + 单 bundle 或少量稳定同源脚本 + 本地静态资源”
 - 对于新链路，更稳的默认做法是让 AI 直接产出 `*_index.dashboard.json` manifest，再由零侵入 `dashboard-manifest` runtime 统一负责布局、动效、ECharts-GL 主场景与同源数据装载
+- `*_index.dashboard.json` 的主路线不是让 AI 回到“任意写 HTML/CSS/DOM”，而是提供受控 `schemaVersion: 2` JSON DSL：AI 可以声明 `components`、`layout.areas`、图表数据、指标卡、文本块、表格、排行、主场景和主题 token；平台只把允许的组件类型编译成固定 DOM 与 ECharts 配置。当前开放的结构区域为 `left`、`center`、`right`、`bottom`、`footer`，开放的组件类型包括 `metric-card`、`line-chart`、`bar-chart`、`pie-chart`、`radar-chart`、`table`、`ranking`、`stat`、`list`、`text-block`、`scene-3d`。不允许 manifest 直接提供任意 `innerHTML`、任意 CSS 或任意 JS。
 - 如果 AI 先产出 React / Vue / Three.js / Babylon.js 工程，最终落盘到工作区时也必须先预打包成静态可部署产物，再放进 `Echarts/` 目录，不允许把 dev server、裸模块导入、动态分包、service worker 直接带进成员公开页链路
 
 3D / 粒子 / 高级可视化大屏的完整交付规范以 `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md` 为准；其中默认优先级已经调整为：
@@ -973,8 +974,11 @@ sidecar 落点固定为：
 
 当前积分规则：
 
-- 云端扣费阶段直接复用 OpenClaw 源系统消息上的 `cost.total` 数值做 1:1 积分扣减
-- sidecar 不再自行重算模型价格
+- 云端扣费阶段优先复用 OpenClaw usage 明细里已经带出的 `cost.total` 数值做 1:1 积分扣减
+- 当 `tenant_usage_records` 对应消息只有 token、缺少 per-record `cost.total` 时，sidecar 允许回退读取同一 `openclaw_session_key` 在 `sessions.json` 中的 `estimatedCostUsd`
+- 回退命中后，sidecar 按同一会话内各条 usage 记录的 `total_tokens` 占比分摊该 `estimatedCostUsd`，再按 1:1 成本口径记账和扣减积分
+- 如果 session 级 `estimatedCostUsd` 仍然为 0，且 runtime 模型配置价格缺失或显式为 0，sidecar 允许按 usage token 与零侵入内置兜底单价直接估算 `total_cost`；当前先覆盖 `ollama` 这类零价模型环境，避免云端租户积分统计长期停留在 0
+- sidecar 不依赖在线厂商价格查询；优先消费源系统 `cost.total` 与 session 级 `estimatedCostUsd`，只有两者都不可用时才退回本地 token 估算
 
 建议字段：
 
@@ -1218,7 +1222,9 @@ sidecar 落点固定为：
 
 4. 第一阶段扣费口径
    - 使用正常大模型 API 调用返回的 usage 与 `cost.total`
-   - sidecar 只做同步、记账、积分扣减，不自行重算模型价格
+   - 如果 usage 明细没有 `cost.total`，则回退使用同会话 `sessions.json` 里的 `estimatedCostUsd`，并按 `total_tokens` 占比分摊到明细记录
+   - 如果 session 级 `estimatedCostUsd` 也缺失或为 0，且 runtime 模型价格同样不可用，则允许 sidecar 按 usage token 与零侵入内置兜底单价估算 `total_cost`
+   - sidecar 只做同步、记账、积分扣减，不依赖在线价格查询；模型单价优先读 runtime 配置，兜底单价只作为零价环境补洞
    - 暂不把 coding plan 当作主计费口径
 
 5. 客户本地部署
@@ -1422,11 +1428,11 @@ sidecar 落点固定为：
 
 8. 公有云模式支付与扣费后置开发
    - 账号密码登录
-   - 按源系统 `cost.total` 数值 1:1 扣积分
+   - 优先按源系统 `cost.total` 数值 1:1 扣积分；缺失时回退到 session 级 `estimatedCostUsd` 分摊后再扣积分；若两者都不可用且模型价格为 0，则按 token 与零侵入兜底单价估算后再扣积分
    - 支付方式：通联承接支付宝 / 微信扫码
    - 支付成功后先进入待确认订单
    - 支付回调自动确认后再入账
-   - 每次模型回复完成后按源系统 usage / `cost.total` 同步扣费
+   - 每次模型回复完成后按源系统 usage / `cost.total` 同步扣费；若明细缺少 `cost.total`，则回退使用 session 级 `estimatedCostUsd`；若两者都不可用且模型价格为 0，则按 token 与零侵入兜底单价估算
    - Agent 积分不足时直接拦截消息发送
 
 9. 本地部署模式第一阶段只做授权与统计
@@ -1549,6 +1555,7 @@ sidecar 落点固定为：
      - 顶部仅保留搜索框和“创建租户”
      - 表格最右侧提供“人数调整”
      - 底部提供分页
+
 - `Agent 分配` 已收敛为列表/表格形态：
   - 顶部仅保留搜索框
   - 表格最右侧提供“分配Agent”“撤回分配”和“倍率调整”
@@ -1580,15 +1587,16 @@ sidecar 落点固定为：
    - 平台管理员撤回租户已接收的 Agent，并同步失效相关成员分配
 
 6.1 平台级更新日志中心已落地
-   - sidecar SQLite 已新增专用更新日志表
-   - 平台管理员现在可以在右下角 `版本` 弹窗中：
-     - 查看历史更新
-     - 新建更新
-     - 通过“修改”入口打开带搜索的历史列表
-     - 对历史更新进行修改与删除
-   - 租户管理员和租户成员现在可以在右下角 `版本` 弹窗中查看历史更新
-   - 平台管理员、租户管理员和租户成员登录进入工作视图后，会自动弹出当前最新更新日志
-   - 当前自动弹窗按浏览器本地已读签名控制，不额外引入服务端已读状态表
+
+- sidecar SQLite 已新增专用更新日志表
+- 平台管理员现在可以在右下角 `版本` 弹窗中：
+  - 查看历史更新
+  - 新建更新
+  - 通过“修改”入口打开带搜索的历史列表
+  - 对历史更新进行修改与删除
+- 租户管理员和租户成员现在可以在右下角 `版本` 弹窗中查看历史更新
+- 平台管理员、租户管理员和租户成员登录进入工作视图后，会自动弹出当前最新更新日志
+- 当前自动弹窗按浏览器本地已读签名控制，不额外引入服务端已读状态表
 
 7. 租户管理员基础能力已落地
    - 租户管理员登录
@@ -1613,6 +1621,7 @@ sidecar 落点固定为：
      - `耗量统计`
      - 版本信息
    - 耗量统计页当前以零侵入 usage 同步记录为主数据源：租户成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage，必要时回退 `chat.history`，并幂等写入 `tenant_usage_records`
+   - 当前真实计费链路已补齐多级成本回退：如果 usage 明细只有 token、没有 per-record `cost.total`，sidecar 会先读取同一会话 `sessions.json` 中的 `estimatedCostUsd`，再按各条记录 `total_tokens` 占比分摊；如果 session 级估算也为 0，且 runtime 模型价格缺失或为 0，则继续按 usage token 与零侵入内置兜底单价估算后写回 `tenant_usage_records.total_cost` 与 `tenant_wallet_ledger`
    - 当前已接通服务端分页记录视图，可查看成员、Agent、总 token、输入、输出、耗用积分与时间；更细的聚合报表保留给 sidecar 数据层
    - 租户管理员底部入口已进一步收紧为仅保留版本块，不再显示文档、知识图谱、租户登录等平台入口
    - 租户管理员原生壳层当前会额外挂一个角色上下文标记，并用全局注入样式强制隐藏所有非 `管理` / `Agent` / `统计` 的原生侧边导航分组（依赖 `data-oc-role-nav` 白名单），避免原生控制台延迟重渲染后又把平台菜单露出来
@@ -1656,12 +1665,12 @@ sidecar 落点固定为：
      - 当前 Agent 下的会话列表
      - 会话标题优先取成员首条消息前 20 个字
      - 旧的时间戳占位标题会在后续读取 `chat.history` 时自动回填修正
-      - 删除会话仅做前端隐藏，不删除底层统计与历史数据
-      - 删除前需要二次确认
-      - 删除确认已统一收敛为复用顶栏标准弹窗样式，弹窗文案为“删除后不可恢复，确认删除?”
-      - 当前成员会话列表仍复用原生 `sessions.list` 与前端路由 key，`tenant_agent_sessions` 表尚未真正接入会话创建链路
-      - 如果当前已经处于一个未发送的新会话，再次点击“新建会话”只提示“已经是新的会话了”，不会继续生成新的空会话 key
-      - 当底层模型运行期长时间无返回或连接异常导致原生聊天页持续 loading 时，零侵入层需要主动收敛到失败态，停止无限转圈并提示成员重试
+     - 删除会话仅做前端隐藏，不删除底层统计与历史数据
+     - 删除前需要二次确认
+     - 删除确认已统一收敛为复用顶栏标准弹窗样式，弹窗文案为“删除后不可恢复，确认删除?”
+     - 当前成员会话列表仍复用原生 `sessions.list` 与前端路由 key，`tenant_agent_sessions` 表尚未真正接入会话创建链路
+     - 如果当前已经处于一个未发送的新会话，再次点击“新建会话”只提示“已经是新的会话了”，不会继续生成新的空会话 key
+     - 当底层模型运行期长时间无返回或连接异常导致原生聊天页持续 loading 时，零侵入层需要主动收敛到失败态，停止无限转圈并提示成员重试
 
 9. 租户 sidecar 与数据库底座已落地
    - SQLite 持久化已打通

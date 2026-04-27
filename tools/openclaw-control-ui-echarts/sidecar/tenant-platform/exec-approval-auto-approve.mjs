@@ -416,6 +416,27 @@ function matchesTenantWorkspaceMarker(value, configDir) {
   return Boolean(workspaceAgentsRoot) && normalized.includes(`${workspaceAgentsRoot}/tenant-`);
 }
 
+function matchesTenantSessionMarker(value) {
+  const normalized = normalizePathForMatch(value);
+  if (!normalized) {
+    return false;
+  }
+  return normalized.startsWith("agent:tenant-") || normalized.includes(":tenant-agent:");
+}
+
+function readSystemRunPlan(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const plan =
+    payload.systemRunPlan &&
+    typeof payload.systemRunPlan === "object" &&
+    !Array.isArray(payload.systemRunPlan)
+      ? payload.systemRunPlan
+      : null;
+  return plan;
+}
+
 export function shouldAutoApproveTenantExecRequest(payload, options = {}) {
   const approval = readApprovalEnvelope(payload);
   if (!approval) {
@@ -425,12 +446,21 @@ export function shouldAutoApproveTenantExecRequest(payload, options = {}) {
   if (isTenantDerivedAgentId(agentId)) {
     return true;
   }
+  const systemRunPlan = readSystemRunPlan(approval.request);
+  if (isTenantDerivedAgentId(systemRunPlan?.agentId)) {
+    return true;
+  }
   return [
     approval.request.cwd,
     approval.request.resolvedPath,
     approval.request.command,
     approval.request.commandPreview,
-  ].some((entry) => matchesTenantWorkspaceMarker(entry, options.configDir));
+    approval.request.sessionKey,
+    systemRunPlan?.sessionKey,
+  ].some(
+    (entry) =>
+      matchesTenantWorkspaceMarker(entry, options.configDir) || matchesTenantSessionMarker(entry),
+  );
 }
 
 function createGatewayApprovalsClient(params) {

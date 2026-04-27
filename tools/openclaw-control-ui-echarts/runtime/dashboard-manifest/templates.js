@@ -7,6 +7,41 @@ const PANEL_SLOT_META = {
   rightBottom: { title: "健康评估", type: "radar" },
 };
 
+const STRUCTURED_AREA_KEYS = ["left", "center", "right", "bottom", "footer"];
+
+const COMPONENT_TYPE_ALIASES = {
+  area: "text",
+  bar: "bar",
+  "bar-chart": "bar",
+  barChart: "bar",
+  chart: "line",
+  gauge: "stat",
+  kpi: "metric",
+  "kpi-card": "metric",
+  line: "line",
+  "line-chart": "line",
+  lineChart: "line",
+  list: "list",
+  metric: "metric",
+  "metric-card": "metric",
+  metricCard: "metric",
+  pie: "pie",
+  "pie-chart": "pie",
+  pieChart: "pie",
+  radar: "radar",
+  "radar-chart": "radar",
+  radarChart: "radar",
+  ranking: "ranking",
+  scene: "scene",
+  "scene-3d": "scene",
+  scene3d: "scene",
+  stat: "stat",
+  table: "table",
+  text: "text",
+  "text-block": "text",
+  textBlock: "text",
+};
+
 const DEFAULT_THEME = {
   background: "#040b16",
   surface: "rgba(7, 19, 38, 0.72)",
@@ -572,6 +607,235 @@ function normalizeRows(rows = []) {
   });
 }
 
+function normalizeComponentType(value, fallback = "text") {
+  const rawType = String(value || fallback).trim();
+  if (!rawType) {
+    return fallback;
+  }
+  const lowerType = rawType.toLowerCase();
+  return COMPONENT_TYPE_ALIASES[rawType] || COMPONENT_TYPE_ALIASES[lowerType] || lowerType;
+}
+
+function normalizeStructuredAreaKey(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (["left", "leftcolumn", "left-column"].includes(normalized)) {
+    return "left";
+  }
+  if (["center", "main", "middle", "scene"].includes(normalized)) {
+    return "center";
+  }
+  if (["right", "rightcolumn", "right-column"].includes(normalized)) {
+    return "right";
+  }
+  if (["bottom", "metrics", "kpi", "kpis"].includes(normalized)) {
+    return "bottom";
+  }
+  if (["footer", "feed", "feeds"].includes(normalized)) {
+    return "footer";
+  }
+  return "";
+}
+
+function normalizeComponentId(value, fallback) {
+  const normalized = String(value || fallback || "")
+    .trim()
+    .replace(/[^\w-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || fallback;
+}
+
+function normalizeDashboardComponentEntries(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((component, index) =>
+        isPlainObject(component)
+          ? {
+              key: String(component.id || component.key || `component-${index + 1}`).trim(),
+              value: component,
+            }
+          : null,
+      )
+      .filter(Boolean);
+  }
+  if (isPlainObject(value)) {
+    return Object.entries(value).map(([key, component]) => ({
+      key,
+      value: isPlainObject(component) ? component : { value: component },
+    }));
+  }
+  return [];
+}
+
+function normalizeAreaComponentReference(item) {
+  if (typeof item === "string") {
+    return normalizeComponentId(item, "");
+  }
+  if (!isPlainObject(item)) {
+    return "";
+  }
+  return normalizeComponentId(
+    item.id || item.component || item.componentId || item.ref || item.key,
+    "",
+  );
+}
+
+function normalizeAreaComponentReferences(value) {
+  const source = isPlainObject(value) && Array.isArray(value.components) ? value.components : value;
+  return toArray(source).map(normalizeAreaComponentReference).filter(Boolean);
+}
+
+function normalizeComponentLayoutAreas(layout, componentEntries) {
+  const areas = Object.fromEntries(STRUCTURED_AREA_KEYS.map((key) => [key, []]));
+  const source = isPlainObject(layout?.areas) ? layout.areas : layout?.areas;
+  if (Array.isArray(source)) {
+    for (const area of source) {
+      if (!isPlainObject(area)) {
+        continue;
+      }
+      const areaKey = normalizeStructuredAreaKey(area.id || area.area || area.key || area.name);
+      if (!areaKey) {
+        continue;
+      }
+      areas[areaKey].push(...normalizeAreaComponentReferences(area.components || area.items));
+    }
+  } else if (isPlainObject(source)) {
+    for (const [key, areaValue] of Object.entries(source)) {
+      const areaKey = normalizeStructuredAreaKey(key);
+      if (!areaKey) {
+        continue;
+      }
+      areas[areaKey].push(...normalizeAreaComponentReferences(areaValue));
+    }
+  }
+
+  for (const component of componentEntries) {
+    const areaKey = normalizeStructuredAreaKey(
+      component.area || component.region || component.zone || component.position,
+    );
+    if (!areaKey || areas[areaKey].includes(component.id)) {
+      continue;
+    }
+    areas[areaKey].push(component.id);
+  }
+
+  return Object.fromEntries(
+    Object.entries(areas).map(([key, ids]) => [key, [...new Set(ids.filter(Boolean))]]),
+  );
+}
+
+function normalizeChartFromComponent(component, slotKey) {
+  const data = isPlainObject(component.data) ? component.data : {};
+  const chart = isPlainObject(component.chart) ? component.chart : {};
+  const merged = deepMerge(chart, component);
+  const type = normalizeComponentType(merged.type || chart.type, "line");
+  return normalizeChart(
+    {
+      ...merged,
+      type,
+      title: merged.title || merged.label || merged.name,
+      subtitle: merged.subtitle || merged.description,
+      categories: merged.categories || merged.labels || merged.xAxisData || data.categories,
+      series: merged.series || data.series,
+      items: merged.items || data.items,
+      indicators: merged.indicators || data.indicators,
+      values: merged.values || data.values,
+      rows: merged.rows || merged.dataRows || data.rows,
+      columns: merged.columns || data.columns,
+      option: isPlainObject(merged.option) ? merged.option : data.option,
+      footer: merged.footer || merged.note,
+    },
+    slotKey,
+    type,
+    merged.title || PANEL_SLOT_META.leftTop.title,
+  );
+}
+
+function normalizeMetricFromComponent(component, index) {
+  const metric = isPlainObject(component.metric) ? component.metric : component;
+  return normalizeMetric(
+    {
+      ...metric,
+      id: component.id || metric.id,
+      label: metric.label || metric.title || metric.name || component.title || component.label,
+    },
+    index,
+  );
+}
+
+function buildStructuredManifestControls(manifest) {
+  const rawEntries = normalizeDashboardComponentEntries(manifest.components);
+  if (!rawEntries.length) {
+    return null;
+  }
+  const components = rawEntries.map(({ key, value }, index) => {
+    const id = normalizeComponentId(value.id || value.key || key, `component-${index + 1}`);
+    return {
+      ...value,
+      id,
+      type: normalizeComponentType(value.type || value.kind || value.componentType, "text"),
+      order: clampNumber(value.order, 0, 200, index),
+    };
+  });
+  const areas = normalizeComponentLayoutAreas(
+    isPlainObject(manifest.layout) ? manifest.layout : {},
+    components,
+  );
+  const componentIds = new Set(components.map((component) => component.id));
+  const chartSource = {};
+  const metricById = new Map();
+  let scene = null;
+  const componentTypes = {};
+
+  for (const component of components) {
+    componentTypes[component.id] = component.type;
+    if (
+      ["line", "bar", "pie", "radar", "table", "ranking", "stat", "list", "text"].includes(
+        component.type,
+      )
+    ) {
+      chartSource[component.id] = normalizeChartFromComponent(component, component.id);
+      continue;
+    }
+    if (component.type === "metric") {
+      metricById.set(component.id, normalizeMetricFromComponent(component, metricById.size));
+      continue;
+    }
+    if (component.type === "scene" && !scene) {
+      const source = isPlainObject(component.scene) ? component.scene : component;
+      scene = {
+        type:
+          String(source.sceneType || source.visualType || source.type || "capital-reactor")
+            .trim()
+            .toLowerCase() || "capital-reactor",
+        title: String(source.title || source.name || manifest.title || "数据服务中心").trim(),
+        subtitle: String(source.subtitle || source.description || "").trim(),
+        option: isPlainObject(source.option) ? source.option : null,
+        points: toArray(source.points),
+        values: toArray(source.values).map((item) => toFiniteNumber(item, 0)),
+        componentId: component.id,
+      };
+    }
+  }
+
+  for (const key of STRUCTURED_AREA_KEYS) {
+    areas[key] = areas[key].filter((id) => componentIds.has(id));
+  }
+
+  return {
+    areas,
+    chartSource,
+    componentTypes,
+    metrics: areas.bottom
+      .map((componentId) => metricById.get(componentId))
+      .filter(Boolean)
+      .map((metric, index) => normalizeMetric(metric, index)),
+    scene,
+  };
+}
+
 function normalizeChart(rawChart, slotKey, fallbackType, fallbackTitle) {
   const chart = isPlainObject(rawChart) ? rawChart : {};
   const items =
@@ -611,6 +875,7 @@ function normalizeChart(rawChart, slotKey, fallbackType, fallbackTitle) {
     option: isPlainObject(chart.option) ? chart.option : null,
     linkHref: String(chart.linkHref || chart.href || "").trim(),
     footer: String(chart.footer || "").trim(),
+    content: String(chart.content || chart.text || chart.body || "").trim(),
   };
 }
 
@@ -705,13 +970,15 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
   const manifest = isPlainObject(rawManifest) ? rawManifest : {};
   const styleProfile = normalizeStyleProfile(manifest.styleProfile || manifest.template);
   const density = normalizeDensity(manifest.density || manifest.layout?.density);
+  const structuredControls = buildStructuredManifestControls(manifest);
   const stylePreset =
     STYLE_PROFILE_PRESETS[styleProfile] || STYLE_PROFILE_PRESETS["financial-command-center-v1"];
   const densityPreset = DENSITY_PRESETS[density] || DENSITY_PRESETS.standard;
-  const metrics = toArray(manifest.metrics || manifest.kpis)
-    .map(normalizeMetric)
-    .filter(Boolean);
-  const chartSource = Array.isArray(manifest.charts)
+  const sourceMetrics = structuredControls?.metrics?.length
+    ? structuredControls.metrics
+    : toArray(manifest.metrics || manifest.kpis);
+  const metrics = sourceMetrics.map(normalizeMetric).filter(Boolean);
+  const rawChartSource = Array.isArray(manifest.charts)
     ? PANEL_SLOT_ORDER.reduce((result, slotKey, index) => {
         result[slotKey] = manifest.charts[index];
         return result;
@@ -719,8 +986,18 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
     : isPlainObject(manifest.charts)
       ? manifest.charts
       : {};
-  const charts = PANEL_SLOT_ORDER.reduce((result, slotKey) => {
-    const meta = PANEL_SLOT_META[slotKey];
+  const chartSource = {
+    ...rawChartSource,
+    ...(structuredControls?.chartSource || {}),
+  };
+  const chartSlotKeys = structuredControls
+    ? [...new Set(Object.keys(chartSource))]
+    : PANEL_SLOT_ORDER;
+  const charts = chartSlotKeys.reduce((result, slotKey) => {
+    const meta = PANEL_SLOT_META[slotKey] || {
+      title: chartSource[slotKey]?.title || `面板 ${Object.keys(result).length + 1}`,
+      type: chartSource[slotKey]?.type || "line",
+    };
     result[slotKey] = normalizeChart(chartSource[slotKey], slotKey, meta.type, meta.title);
     return result;
   }, {});
@@ -786,8 +1063,41 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
       weight: layout.footerWeights.alerts,
     }),
   };
+  if (structuredControls) {
+    for (const [componentId, componentType] of Object.entries(structuredControls.componentTypes)) {
+      if (componentType === "metric") {
+        continue;
+      }
+      blocks[componentId] = normalizeBlockConfig(componentId, blockSource[componentId], {
+        id: componentId,
+        visible: true,
+      });
+    }
+    const sceneComponentId = structuredControls.scene?.componentId || "";
+    if (sceneComponentId) {
+      blocks.scene = normalizeBlockConfig("scene", blockSource.scene, {
+        id: sceneComponentId,
+        visible: structuredControls.areas.center.includes(sceneComponentId),
+        kicker: "CORE SCENE",
+      });
+    } else {
+      blocks.scene = normalizeBlockConfig("scene", blockSource.scene, {
+        id: BLOCK_IDS.scene,
+        visible: false,
+        kicker: "CORE SCENE",
+      });
+    }
+    blocks.metrics = normalizeBlockConfig("metrics", blockSource.metrics, {
+      id: BLOCK_IDS.metrics,
+      visible: structuredControls.areas.bottom.some(
+        (id) => structuredControls.componentTypes[id] === "metric",
+      ),
+    });
+  }
+  const sceneSource = structuredControls?.scene || manifest.scene || {};
   return {
     version: toFiniteNumber(manifest.version, 1),
+    schemaVersion: toFiniteNumber(manifest.schemaVersion, toFiniteNumber(manifest.version, 1)),
     template:
       String(manifest.template || "")
         .trim()
@@ -815,17 +1125,16 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
     metrics: metrics.length ? metrics : buildDefaultMetrics(),
     scene: {
       type:
-        String(manifest.scene?.type || "")
+        String(sceneSource.type || "")
           .trim()
           .toLowerCase() || "capital-reactor",
       title:
-        String(
-          manifest.scene?.title || manifest.scene?.name || manifest.title || "资金能量场",
-        ).trim() || "资金能量场",
-      subtitle: String(manifest.scene?.subtitle || manifest.scene?.description || "").trim(),
-      option: isPlainObject(manifest.scene?.option) ? manifest.scene.option : null,
-      points: toArray(manifest.scene?.points),
-      values: toArray(manifest.scene?.values).map((item) => toFiniteNumber(item, 0)),
+        String(sceneSource.title || sceneSource.name || manifest.title || "资金能量场").trim() ||
+        "资金能量场",
+      subtitle: String(sceneSource.subtitle || sceneSource.description || "").trim(),
+      option: isPlainObject(sceneSource.option) ? sceneSource.option : null,
+      points: toArray(sceneSource.points),
+      values: toArray(sceneSource.values).map((item) => toFiniteNumber(item, 0)),
     },
     charts,
     timeline: toArray(manifest.timeline).map(normalizeTimelineItem).filter(Boolean).length
@@ -843,6 +1152,23 @@ export function normalizeDashboardManifest(rawManifest, context = {}) {
       isPlainObject(manifest.particles) ? manifest.particles : {},
     ),
     blocks,
+    structure: structuredControls
+      ? {
+          mode: "component",
+          areas: structuredControls.areas,
+          componentTypes: structuredControls.componentTypes,
+        }
+      : {
+          mode: "legacy",
+          areas: {
+            left: ["leftTop", "leftBottom"],
+            center: ["scene"],
+            right: ["rightTop", "rightBottom"],
+            bottom: ["metrics"],
+            footer: ["timeline", "alerts"],
+          },
+          componentTypes: {},
+        },
     navigation,
     dataSource:
       typeof manifest.dataSource === "string"
@@ -920,6 +1246,42 @@ function buildPanelMarkup(chart) {
     .join("\n");
 }
 
+function buildColumnAuxMarkup(type, manifest) {
+  if (type === "timeline") {
+    return [
+      `<section class="oc-dashboard-panel is-aux-panel" data-block-id="${escapeHtmlAttribute(manifest.blocks.timeline.id)}">`,
+      '  <div class="oc-dashboard-panel-shell">',
+      '    <div class="oc-dashboard-panel-head">',
+      `      <div class="oc-dashboard-panel-title">${escapeHtml(manifest.blocks.timeline.title || "动态时间线")}</div>`,
+      "    </div>",
+      '    <div class="oc-dashboard-panel-body is-feed-panel-body">',
+      '      <ul class="oc-dashboard-feed-list">',
+      buildTimelineMarkup(manifest.timeline),
+      "      </ul>",
+      "    </div>",
+      "  </div>",
+      "</section>",
+    ].join("\n");
+  }
+  if (type === "alerts") {
+    return [
+      `<section class="oc-dashboard-panel is-aux-panel" data-block-id="${escapeHtmlAttribute(manifest.blocks.alerts.id)}">`,
+      '  <div class="oc-dashboard-panel-shell">',
+      '    <div class="oc-dashboard-panel-head">',
+      `      <div class="oc-dashboard-panel-title">${escapeHtml(manifest.blocks.alerts.title || "风险提示")}</div>`,
+      "    </div>",
+      '    <div class="oc-dashboard-panel-body is-feed-panel-body">',
+      '      <ul class="oc-dashboard-alert-list">',
+      buildAlertsMarkup(manifest.alerts),
+      "      </ul>",
+      "    </div>",
+      "  </div>",
+      "</section>",
+    ].join("\n");
+  }
+  return "";
+}
+
 function buildDockPanelMarkup(chart) {
   const renderMode = isHtmlPanelType(chart) ? "html" : "chart";
   return [
@@ -991,21 +1353,59 @@ function isVisibleBlock(block) {
   return Boolean(block?.visible !== false);
 }
 
-function buildPanelColumnMarkup(manifest, side, slotKeys) {
-  const visibleCharts = slotKeys
-    .filter((slotKey) => isVisibleBlock(manifest.blocks?.[slotKey]))
-    .map((slotKey) => manifest.charts?.[slotKey])
+function getStructureAreaItems(manifest, area, fallbackItems) {
+  const items = manifest.structure?.areas?.[area];
+  return Array.isArray(items) && manifest.structure?.mode === "component" ? items : fallbackItems;
+}
+
+function getComponentType(manifest, componentId) {
+  return String(manifest.structure?.componentTypes?.[componentId] || "").trim();
+}
+
+function areaHasScene(manifest) {
+  if (manifest.structure?.mode !== "component") {
+    return isVisibleBlock(manifest.blocks?.scene);
+  }
+  return getStructureAreaItems(manifest, "center", []).some(
+    (componentId) => getComponentType(manifest, componentId) === "scene",
+  );
+}
+
+function buildPanelColumnMarkup(manifest, side, items) {
+  const visibleItems = items
+    .map((item) => {
+      if (typeof item === "string") {
+        if (item === "timeline" && isVisibleBlock(manifest.blocks?.timeline)) {
+          return buildColumnAuxMarkup("timeline", manifest);
+        }
+        if (item === "alerts" && isVisibleBlock(manifest.blocks?.alerts)) {
+          return buildColumnAuxMarkup("alerts", manifest);
+        }
+        if (!isVisibleBlock(manifest.blocks?.[item])) {
+          return "";
+        }
+        const chart = manifest.charts?.[item];
+        return chart ? buildPanelMarkup(chart) : "";
+      }
+      if (item?.type === "timeline" && isVisibleBlock(manifest.blocks?.timeline)) {
+        return buildColumnAuxMarkup("timeline", manifest);
+      }
+      if (item?.type === "alerts" && isVisibleBlock(manifest.blocks?.alerts)) {
+        return buildColumnAuxMarkup("alerts", manifest);
+      }
+      return "";
+    })
     .filter(Boolean);
-  if (!visibleCharts.length) {
+  if (!visibleItems.length) {
     return "";
   }
   const railLabel = side === "left" ? "LEFT BAY" : "RIGHT BAY";
   return `
-    <section class="oc-dashboard-column ${escapeHtmlAttribute(side)}" data-column-side="${escapeHtmlAttribute(side)}" data-panel-count="${visibleCharts.length}">
+    <section class="oc-dashboard-column ${escapeHtmlAttribute(side)}" data-column-side="${escapeHtmlAttribute(side)}" data-panel-count="${visibleItems.length}">
       <div class="oc-dashboard-column-rail">
         <span class="oc-dashboard-column-label">${escapeHtml(railLabel)}</span>
       </div>
-      ${visibleCharts.map((chart) => buildPanelMarkup(chart)).join("")}
+      ${visibleItems.join("")}
     </section>`;
 }
 
@@ -1056,13 +1456,15 @@ function buildSceneMarkup(manifest, context = {}, options = {}) {
   const sceneSubtitle =
     manifest.scene.subtitle || manifest.subtitle || context.agentName || "零侵入仪表盘运行时";
   const sceneKicker = manifest.blocks?.scene?.kicker || "CORE SCENE";
+  const heroMetric = manifest.metrics[0] || null;
+  const portalNodes = manifest.metrics.slice(0, 4);
   const sceneSignals = [
     { label: "KPI", value: String(manifest.metrics.length).padStart(2, "0") },
     { label: "ALERT", value: String(manifest.alerts.length).padStart(2, "0") },
     { label: "FEED", value: String(manifest.timeline.length).padStart(2, "0") },
   ];
   const sceneDockMarkup =
-    options.layoutMode === "cockpit-stage" ? buildSceneDockMarkup(manifest) : "";
+    options.layoutMode === "cockpit-stage" ? "" : buildSceneDockMarkup(manifest);
   return `
     <section class="oc-dashboard-scene-shell" data-block-id="${escapeHtmlAttribute(manifest.blocks.scene.id)}" data-has-dock="${sceneDockMarkup ? "true" : "false"}">
       <div class="oc-dashboard-scene-frame">
@@ -1083,22 +1485,34 @@ function buildSceneMarkup(manifest, context = {}, options = {}) {
             .join("")}
         </div>
         <div class="oc-dashboard-scene-bay">
-          <div class="oc-dashboard-scene-anchor anchor-nw"></div>
-          <div class="oc-dashboard-scene-anchor anchor-ne"></div>
-          <div class="oc-dashboard-scene-anchor anchor-sw"></div>
-          <div class="oc-dashboard-scene-anchor anchor-se"></div>
-          <div class="oc-dashboard-scene-vector vector-left"></div>
-          <div class="oc-dashboard-scene-vector vector-right"></div>
-          <div class="oc-dashboard-scene-hud hud-left"></div>
-          <div class="oc-dashboard-scene-hud hud-right"></div>
-          <div class="oc-dashboard-scene-grid"></div>
-          <div class="oc-dashboard-scene-ring ring-a"></div>
-          <div class="oc-dashboard-scene-ring ring-b"></div>
-          <div class="oc-dashboard-scene-ring ring-c"></div>
-          <div class="oc-dashboard-scene-core-glow"></div>
-          <div class="oc-dashboard-scene-platform"></div>
-          <div class="oc-dashboard-scene-target"></div>
-          <div class="oc-dashboard-scene-beam"></div>
+          <div class="oc-dashboard-portal-grid"></div>
+          <div class="oc-dashboard-portal-halo halo-a"></div>
+          <div class="oc-dashboard-portal-halo halo-b"></div>
+          <div class="oc-dashboard-portal-halo halo-c"></div>
+          <div class="oc-dashboard-portal-floor"></div>
+          <div class="oc-dashboard-portal-spire"></div>
+          <div class="oc-dashboard-portal-core"></div>
+          <div class="oc-dashboard-portal-bridge bridge-1"></div>
+          <div class="oc-dashboard-portal-bridge bridge-2"></div>
+          <div class="oc-dashboard-portal-bridge bridge-3"></div>
+          <div class="oc-dashboard-portal-bridge bridge-4"></div>
+          ${portalNodes
+            .map(
+              (metric, index) => `
+          <div class="oc-dashboard-portal-node node-${index + 1}">
+            <span class="oc-dashboard-portal-node-label">${escapeHtml(metric.label)}</span>
+            <span class="oc-dashboard-portal-node-value">${escapeHtml(metric.valueText)}${metric.unit ? ` ${escapeHtml(metric.unit)}` : ""}</span>
+          </div>`,
+            )
+            .join("")}
+          ${
+            heroMetric
+              ? `<div class="oc-dashboard-portal-value">
+            <div class="oc-dashboard-portal-value-label">${escapeHtml(heroMetric.label)}</div>
+            <div class="oc-dashboard-portal-value-number">${escapeHtml(heroMetric.valueText)}${heroMetric.unit ? `<span class="oc-dashboard-portal-value-unit">${escapeHtml(heroMetric.unit)}</span>` : ""}</div>
+          </div>`
+              : ""
+          }
           <div class="oc-dashboard-scene-chart" data-dashboard-scene></div>
         </div>
         ${sceneDockMarkup}
@@ -1133,7 +1547,7 @@ function buildFooterSectionMarkup(type, manifest) {
 }
 
 function buildFooterMarkup(manifest) {
-  const footerSections = ["timeline", "alerts"]
+  const footerSections = getStructureAreaItems(manifest, "footer", ["timeline", "alerts"])
     .filter((type) => isVisibleBlock(manifest.blocks?.[type]))
     .sort(
       (left, right) =>
@@ -1149,7 +1563,9 @@ function buildFooterMarkup(manifest) {
 }
 
 export function isHtmlPanelType(chart) {
-  return new Set(["ranking", "table", "stat", "list"]).has(String(chart?.type || "").trim());
+  return new Set(["ranking", "table", "stat", "list", "text"]).has(
+    String(chart?.type || "").trim(),
+  );
 }
 
 function createAxisConfig(theme) {
@@ -1207,12 +1623,12 @@ function createChartSeries(chart, fallbackType) {
       type: series.type || fallbackType,
       smooth: isLine ? series.smooth !== false : undefined,
       stack: series.stack || undefined,
-      areaStyle: isLine && series.area ? { opacity: 0.16 } : undefined,
-      lineStyle: isLine ? { width: 2.5 } : undefined,
+      areaStyle: isLine && series.area ? { opacity: 0.14 } : undefined,
+      lineStyle: isLine ? { width: 2.6 } : undefined,
       symbol: isLine && series.data.length > 10 ? "none" : undefined,
-      symbolSize: isLine ? 6 : undefined,
+      symbolSize: isLine ? 5 : undefined,
       showSymbol: isLine ? series.data.length <= 10 : undefined,
-      barMaxWidth: isBar ? 16 : undefined,
+      barMaxWidth: isBar ? 14 : undefined,
       itemStyle: isBar ? { borderRadius: [6, 6, 0, 0] } : undefined,
       emphasis: { focus: "series" },
       data: series.data,
@@ -1224,11 +1640,11 @@ function createChartSeries(chart, fallbackType) {
         name: chart.title,
         type: fallbackType,
         smooth: isLine,
-        lineStyle: isLine ? { width: 2.5 } : undefined,
+        lineStyle: isLine ? { width: 2.6 } : undefined,
         symbol: isLine && chart.items.length > 10 ? "none" : undefined,
-        symbolSize: isLine ? 6 : undefined,
+        symbolSize: isLine ? 5 : undefined,
         showSymbol: isLine ? chart.items.length <= 10 : undefined,
-        barMaxWidth: isBar ? 16 : undefined,
+        barMaxWidth: isBar ? 14 : undefined,
         itemStyle: isBar ? { borderRadius: [6, 6, 0, 0] } : undefined,
         emphasis: { focus: "series" },
         data: chart.items.map((item) => item.value),
@@ -1240,9 +1656,9 @@ function createChartSeries(chart, fallbackType) {
       name: chart.title,
       type: fallbackType,
       smooth: isLine,
-      lineStyle: isLine ? { width: 2.5 } : undefined,
+      lineStyle: isLine ? { width: 2.6 } : undefined,
       symbol: isLine ? "circle" : undefined,
-      symbolSize: isLine ? 6 : undefined,
+      symbolSize: isLine ? 5 : undefined,
       emphasis: { focus: "series" },
       data: [18, 22, 19, 25, 28, 24],
     },
@@ -1261,6 +1677,7 @@ function buildLineOrBarOption(chart, manifest, fallbackType) {
           ? chart.items.map((item) => item.name)
           : chart.series[0].data.map((_, index) => `阶段 ${index + 1}`)
       : ["01", "02", "03", "04", "05", "06"];
+  const categoryCount = categories.length;
   return {
     backgroundColor: "transparent",
     color: createPalette(theme),
@@ -1270,17 +1687,18 @@ function buildLineOrBarOption(chart, manifest, fallbackType) {
       axisPointer: isBar
         ? {
             type: "shadow",
-            shadowStyle: { color: "rgba(98, 230, 255, 0.08)" },
+            shadowStyle: { color: "rgba(98, 230, 255, 0.04)" },
           }
         : {
             type: "line",
             lineStyle: {
-              color: theme.accent,
+              color: theme.grid,
+              width: 1,
               type: "dashed",
             },
           },
     },
-    grid: { top: 26, right: 14, bottom: 32, left: 18, containLabel: true },
+    grid: { top: 26, right: 14, bottom: 40, left: 18, containLabel: true },
     xAxis: {
       type: "category",
       data: categories,
@@ -1289,8 +1707,8 @@ function buildLineOrBarOption(chart, manifest, fallbackType) {
       splitLine: { show: false },
       axisLabel: {
         ...axisConfig.axisLabel,
-        interval: 0,
-        width: 68,
+        interval: categoryCount > 8 ? "auto" : 0,
+        width: categoryCount > 6 ? 52 : 68,
         overflow: "truncate",
       },
     },
@@ -1312,40 +1730,82 @@ function buildPieOption(chart, manifest) {
   const items = chart.items.length
     ? chart.items
     : manifest.metrics.map((metric) => ({ name: metric.label, value: metric.numericValue }));
+  const showCompactLabels = items.length <= 5;
+  const centerTitle = truncateChartLabel(chart.title.replace(/分布|结构|占比/g, ""), 4) || "结构";
+  const centerCount = `${items.length}项`;
   return {
     backgroundColor: "transparent",
     color: createPalette(theme),
     tooltip: createTooltipConfig(theme, "item"),
+    graphic: [
+      {
+        type: "text",
+        left: "center",
+        top: "42%",
+        silent: true,
+        style: {
+          text: centerTitle,
+          fill: theme.muted,
+          fontSize: 10,
+          fontWeight: 500,
+          textAlign: "center",
+        },
+      },
+      {
+        type: "text",
+        left: "center",
+        top: "50%",
+        silent: true,
+        style: {
+          text: centerCount,
+          fill: theme.text,
+          fontSize: 18,
+          fontWeight: 700,
+          textAlign: "center",
+        },
+      },
+    ],
     series: [
       {
         name: chart.title,
         type: "pie",
-        radius: ["44%", "70%"],
-        center: ["50%", "56%"],
+        radius: ["54%", "78%"],
+        center: ["50%", "58%"],
         avoidLabelOverlap: true,
-        minAngle: 6,
+        minAngle: 10,
         label: {
+          show: showCompactLabels,
           color: theme.text,
           fontSize: 10,
-          lineHeight: 14,
-          formatter: ({ name, percent }) =>
-            `${truncateChartLabel(name, 6)} ${Math.round(toFiniteNumber(percent, 0))}%`,
+          lineHeight: 12,
+          formatter: ({ name }) => truncateChartLabel(name, 4),
         },
         labelLine: {
-          length: 10,
-          length2: 8,
-          lineStyle: { color: theme.grid },
+          show: showCompactLabels,
+          length: 7,
+          length2: 6,
+          smooth: true,
+          lineStyle: { color: theme.grid, opacity: 0.75 },
         },
         labelLayout: {
           hideOverlap: true,
         },
         itemStyle: {
-          borderColor: "rgba(4, 11, 22, 0.92)",
-          borderWidth: 2,
-          shadowBlur: 12,
-          shadowColor: "rgba(0, 0, 0, 0.2)",
+          borderColor: "rgba(4, 11, 22, 0.88)",
+          borderWidth: 1.5,
+          shadowBlur: 10,
+          shadowColor: "rgba(0, 0, 0, 0.18)",
         },
-        emphasis: { scale: true, scaleSize: 4 },
+        emphasis: {
+          scale: true,
+          scaleSize: 4,
+          label: {
+            show: true,
+            color: theme.text,
+            formatter: ({ name, percent }) =>
+              `${truncateChartLabel(name, 4)} ${Math.round(toFiniteNumber(percent, 0))}%`,
+          },
+        },
         data: items,
       },
     ],
@@ -1356,18 +1816,25 @@ function buildRadarOption(chart, manifest) {
   const theme = manifest.theme;
   const indicators = chart.indicators.length
     ? chart.indicators
-    : [
-        { name: "偿债", max: 100 },
-        { name: "盈利", max: 100 },
-        { name: "预算", max: 100 },
-        { name: "融资", max: 100 },
-        { name: "回款", max: 100 },
-      ];
+    : chart.items.length
+      ? chart.items.map((item, index) => ({
+          name: item.name || `维度 ${index + 1}`,
+          max: Math.max(100, Math.ceil(Math.max(1, item.value) / 10) * 10),
+        }))
+      : [
+          { name: "偿债", max: 100 },
+          { name: "盈利", max: 100 },
+          { name: "预算", max: 100 },
+          { name: "融资", max: 100 },
+          { name: "回款", max: 100 },
+        ];
   const values = chart.values.length
     ? chart.values
-    : manifest.metrics.map((metric, index) =>
-        Math.max(35, Math.min(98, roundNumber(metric.numericValue + index * 7, 0))),
-      );
+    : chart.items.length
+      ? chart.items.map((item) => Math.max(0, roundNumber(item.value, 0)))
+      : manifest.metrics.map((metric, index) =>
+          Math.max(35, Math.min(98, roundNumber(metric.numericValue + index * 7, 0))),
+        );
   return {
     backgroundColor: "transparent",
     color: createPalette(theme),
@@ -1375,32 +1842,27 @@ function buildRadarOption(chart, manifest) {
     radar: {
       indicator: indicators,
       center: ["50%", "56%"],
-      radius: "66%",
-      splitNumber: 5,
+      radius: "54%",
+      splitNumber: 3,
       axisName: {
-        color: theme.text,
+        color: theme.muted,
         fontSize: 10,
         formatter: (value) => truncateChartLabel(value, 4),
       },
       splitArea: {
         areaStyle: {
-          color: [
-            "rgba(98, 230, 255, 0.02)",
-            "rgba(98, 230, 255, 0.04)",
-            "rgba(98, 230, 255, 0.06)",
-            "rgba(98, 230, 255, 0.08)",
-          ],
+          color: ["rgba(98, 230, 255, 0.015)", "rgba(98, 230, 255, 0.03)"],
         },
       },
-      splitLine: { lineStyle: { color: theme.grid } },
-      axisLine: { lineStyle: { color: theme.grid } },
+      splitLine: { lineStyle: { color: theme.grid, opacity: 0.45 } },
+      axisLine: { lineStyle: { color: theme.grid, opacity: 0.35 } },
     },
     series: [
       {
         type: "radar",
         symbol: "circle",
-        symbolSize: 5,
-        areaStyle: { color: "rgba(98, 230, 255, 0.22)" },
+        symbolSize: 4,
+        areaStyle: { color: "rgba(98, 230, 255, 0.18)" },
         lineStyle: { color: theme.accent, width: 2 },
         itemStyle: { color: theme.accent },
         data: [{ value: values, name: chart.title }],
@@ -1452,9 +1914,36 @@ function createSceneBaseOption(theme, bounds, viewControl) {
   return {
     backgroundColor: "transparent",
     tooltip: { show: false },
-    xAxis3D: { min: bounds.x[0], max: bounds.x[1], ...createAxisConfig(theme) },
-    yAxis3D: { min: bounds.y[0], max: bounds.y[1], ...createAxisConfig(theme) },
-    zAxis3D: { min: bounds.z[0], max: bounds.z[1], ...createAxisConfig(theme) },
+    xAxis3D: {
+      min: bounds.x[0],
+      max: bounds.x[1],
+      ...createAxisConfig(theme),
+      axisLine: { show: false },
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      nameTextStyle: { show: false },
+    },
+    yAxis3D: {
+      min: bounds.y[0],
+      max: bounds.y[1],
+      ...createAxisConfig(theme),
+      axisLine: { show: false },
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      nameTextStyle: { show: false },
+    },
+    zAxis3D: {
+      min: bounds.z[0],
+      max: bounds.z[1],
+      ...createAxisConfig(theme),
+      axisLine: { show: false },
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      nameTextStyle: { show: false },
+    },
     grid3D: {
       boxWidth: bounds.boxWidth,
       boxDepth: bounds.boxDepth,
@@ -1462,16 +1951,16 @@ function createSceneBaseOption(theme, bounds, viewControl) {
       environment: "transparent",
       axisPointer: { show: false },
       light: {
-        main: { intensity: 1.12, shadow: false },
-        ambient: { intensity: 0.7 },
+        main: { intensity: 0.9, shadow: false },
+        ambient: { intensity: 0.45 },
       },
       viewControl: {
         projection: "perspective",
-        autoRotate: true,
-        autoRotateSpeed: 6,
-        distance: 152,
-        alpha: 22,
-        beta: 38,
+        autoRotate: false,
+        autoRotateSpeed: 0,
+        distance: 160,
+        alpha: 18,
+        beta: 32,
         ...viewControl,
       },
     },
@@ -1491,40 +1980,40 @@ function createScatterSceneSeries({
     {
       type: "scatter3D",
       symbol: "circle",
-      symbolSize: 6,
+      symbolSize: 4,
       itemStyle: {
         color: theme.accent,
-        opacity: 0.52,
+        opacity: 0.22,
       },
       data: haloPoints,
     },
     {
       type: "scatter3D",
       symbol: "diamond",
-      symbolSize: 10,
+      symbolSize: 7,
       itemStyle: {
         color: theme.accentSoft,
-        opacity: 0.66,
+        opacity: 0.36,
       },
       data: orbitPoints,
     },
     {
       type: "scatter3D",
       symbol: "roundRect",
-      symbolSize: 16,
+      symbolSize: 12,
       itemStyle: {
         color: metricColor,
-        opacity: 0.94,
+        opacity: 0.72,
       },
       data: metricPoints,
     },
     {
       type: "scatter3D",
       symbol: "circle",
-      symbolSize: 20,
+      symbolSize: 14,
       itemStyle: {
         color: coreColor,
-        opacity: 0.96,
+        opacity: 0.82,
       },
       data: corePoints,
     },
@@ -1544,28 +2033,22 @@ function createSceneLinkSeries({ metricPoints, orbitPoints = [], corePoints, the
   return [
     {
       type: "lines3D",
-      blendMode: "lighter",
-      effect: {
-        show: true,
-        trailWidth: 2,
-        trailLength: 0.14,
-        trailOpacity: 0.45,
-        constantSpeed: 18,
-      },
+      blendMode: "source-over",
+      effect: { show: false },
       lineStyle: {
-        color: theme.accent,
-        width: 2,
-        opacity: 0.42,
+        color: theme.grid,
+        width: 1,
+        opacity: 0.22,
       },
       data: spokeLines,
     },
     {
       type: "lines3D",
-      blendMode: "lighter",
+      blendMode: "source-over",
       lineStyle: {
-        color: metricColor,
-        width: 1.4,
-        opacity: 0.3,
+        color: theme.grid,
+        width: 1,
+        opacity: 0.18,
       },
       data: orbitLines,
     },
@@ -1587,7 +2070,7 @@ function buildCapitalReactorScene(manifest) {
         boxHeight: 72,
       },
       {
-        autoRotateSpeed: 8,
+        autoRotateSpeed: 0,
         distance: 150,
         alpha: 24,
         beta: 42,
@@ -1607,9 +2090,9 @@ function buildCapitalReactorScene(manifest) {
         }),
         ...createScatterSceneSeries({
           haloPoints: stripScenePointSize([
-            ...createSceneRingPoints(18, 44, 8, 0.2),
-            ...createSceneRingPoints(28, 52, 12, 0.7, 1.15),
-            ...createSceneRingPoints(38, 60, 16, 1.3, 1.35),
+            ...createSceneRingPoints(18, 24, 8, 0.2),
+            ...createSceneRingPoints(28, 32, 12, 0.7, 1.15),
+            ...createSceneRingPoints(38, 40, 16, 1.3, 1.35),
           ]),
           orbitPoints,
           metricPoints,
@@ -1638,7 +2121,7 @@ function buildAssetRingScene(manifest) {
         boxHeight: 78,
       },
       {
-        autoRotateSpeed: 6,
+        autoRotateSpeed: 0,
         distance: 156,
         alpha: 18,
         beta: 50,
@@ -1658,9 +2141,9 @@ function buildAssetRingScene(manifest) {
         }),
         ...createScatterSceneSeries({
           haloPoints: stripScenePointSize([
-            ...createSceneRingPoints(22, 40, 4, 0.1),
-            ...createSceneRingPoints(34, 54, 8, 0.8),
-            ...createSceneRingPoints(46, 66, 12, 1.5),
+            ...createSceneRingPoints(22, 20, 4, 0.1),
+            ...createSceneRingPoints(34, 28, 8, 0.8),
+            ...createSceneRingPoints(46, 36, 12, 1.5),
           ]),
           orbitPoints,
           metricPoints,
@@ -1698,7 +2181,7 @@ function buildRadarCoreScene(manifest) {
         boxHeight: 74,
       },
       {
-        autoRotateSpeed: 4,
+        autoRotateSpeed: 0,
         distance: 150,
         alpha: 26,
         beta: 32,
@@ -1717,8 +2200,8 @@ function buildRadarCoreScene(manifest) {
         }),
         ...createScatterSceneSeries({
           haloPoints: stripScenePointSize([
-            ...createSceneRingPoints(24, 48, 8, 0.5),
-            ...createSceneRingPoints(36, 60, 10, 1.4),
+            ...createSceneRingPoints(24, 24, 8, 0.5),
+            ...createSceneRingPoints(36, 32, 10, 1.4),
           ]),
           orbitPoints: polygon,
           metricPoints,
@@ -1747,7 +2230,7 @@ export function buildSceneFallbackOption(manifest) {
         boxHeight: 64,
       },
       {
-        autoRotateSpeed: 5,
+        autoRotateSpeed: 0,
         distance: 148,
         alpha: 20,
         beta: 34,
@@ -1767,8 +2250,8 @@ export function buildSceneFallbackOption(manifest) {
         }),
         ...createScatterSceneSeries({
           haloPoints: stripScenePointSize([
-            ...createSceneRingPoints(18, 36, 5, 0.1),
-            ...createSceneRingPoints(30, 48, 8, 1),
+            ...createSceneRingPoints(18, 18, 5, 0.1),
+            ...createSceneRingPoints(30, 24, 8, 1),
           ]),
           orbitPoints,
           metricPoints,
@@ -1819,25 +2302,21 @@ export function buildPanelOption(chart, manifest) {
 }
 
 export function buildDashboardMarkup(manifest, context = {}) {
-  const hasSceneBlock = isVisibleBlock(manifest.blocks?.scene);
+  const leftItems = getStructureAreaItems(manifest, "left", ["leftTop", "leftBottom"]);
+  const rightItems = getStructureAreaItems(manifest, "right", ["rightTop", "rightBottom"]);
+  const hasSceneBlock = areaHasScene(manifest);
   const useCockpitStage =
     hasSceneBlock &&
-    isVisibleBlock(manifest.blocks?.leftTop) &&
-    isVisibleBlock(manifest.blocks?.rightTop);
-  const leftColumnMarkup = buildPanelColumnMarkup(
-    manifest,
-    "left",
-    useCockpitStage ? ["leftTop"] : ["leftTop", "leftBottom"],
-  );
-  const rightColumnMarkup = buildPanelColumnMarkup(
-    manifest,
-    "right",
-    useCockpitStage ? ["rightTop"] : ["rightTop", "rightBottom"],
-  );
+    leftItems.some((item) => manifest.charts?.[item] && isVisibleBlock(manifest.blocks?.[item])) &&
+    rightItems.some((item) => manifest.charts?.[item] && isVisibleBlock(manifest.blocks?.[item]));
+  const leftColumnMarkup = buildPanelColumnMarkup(manifest, "left", leftItems);
+  const rightColumnMarkup = buildPanelColumnMarkup(manifest, "right", rightItems);
   const hasLeftColumn = Boolean(leftColumnMarkup);
   const hasRightColumn = Boolean(rightColumnMarkup);
   const mainLayoutMode = useCockpitStage ? "cockpit-stage" : "standard";
-  const sceneMarkup = buildSceneMarkup(manifest, context, { layoutMode: mainLayoutMode });
+  const sceneMarkup = hasSceneBlock
+    ? buildSceneMarkup(manifest, context, { layoutMode: mainLayoutMode })
+    : "";
   const hasScene = Boolean(sceneMarkup);
   const resolvedLayoutMode =
     hasScene && hasLeftColumn && hasRightColumn ? mainLayoutMode : "standard";
@@ -1860,7 +2339,7 @@ export function buildDashboardMarkup(manifest, context = {}) {
   )
     .filter(Boolean)
     .join("");
-  const footerMarkup = resolvedLayoutMode === "cockpit-stage" ? "" : buildFooterMarkup(manifest);
+  const footerMarkup = buildFooterMarkup(manifest);
   return `
     <div
       class="oc-dashboard-shell"

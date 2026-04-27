@@ -23,6 +23,15 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function readWindowLocationHref(targetWindow) {
   try {
     return String(targetWindow?.location?.href || "").trim();
@@ -147,8 +156,8 @@ function disposeDashboardRuntime(root) {
 function renderDashboardError(root, title, detail = "") {
   root.innerHTML = `
     <div class="oc-dashboard-error">
-      <div class="oc-dashboard-error-title">${String(title || "仪表盘加载失败")}</div>
-      ${detail ? `<pre class="oc-dashboard-error-detail">${String(detail)}</pre>` : ""}
+      <div class="oc-dashboard-error-title">${escapeHtml(title || "仪表盘加载失败")}</div>
+      ${detail ? `<pre class="oc-dashboard-error-detail">${escapeHtml(detail)}</pre>` : ""}
     </div>`;
 }
 
@@ -180,6 +189,18 @@ function hasVisiblePanels(manifest, slotKeys = []) {
   return slotKeys.some((slotKey) => manifest.blocks?.[slotKey]?.visible !== false);
 }
 
+function getStructureAreaItems(manifest, area, fallbackItems) {
+  const items = manifest.structure?.areas?.[area];
+  return Array.isArray(items) && manifest.structure?.mode === "component" ? items : fallbackItems;
+}
+
+function hasVisibleAreaPanels(manifest, area, fallbackItems) {
+  return getStructureAreaItems(manifest, area, fallbackItems).some(
+    (componentId) =>
+      manifest.charts?.[componentId] && manifest.blocks?.[componentId]?.visible !== false,
+  );
+}
+
 function buildSideColumnWidth(manifest, side, options = {}) {
   const maxPreferredWidth = options.cockpitClamp ? 280 : 420;
   const maxPreferredMinWidth = options.cockpitClamp ? 240 : 360;
@@ -190,9 +211,14 @@ function buildSideColumnWidth(manifest, side, options = {}) {
 }
 
 function buildMainColumns(manifest) {
-  const hasLeft = hasVisiblePanels(manifest, ["leftTop", "leftBottom"]);
-  const hasRight = hasVisiblePanels(manifest, ["rightTop", "rightBottom"]);
-  const hasScene = manifest.blocks?.scene?.visible !== false;
+  const hasLeft = hasVisibleAreaPanels(manifest, "left", ["leftTop", "leftBottom"]);
+  const hasRight = hasVisibleAreaPanels(manifest, "right", ["rightTop", "rightBottom"]);
+  const hasScene =
+    manifest.structure?.mode === "component"
+      ? getStructureAreaItems(manifest, "center", []).some(
+          (componentId) => manifest.structure?.componentTypes?.[componentId] === "scene",
+        )
+      : manifest.blocks?.scene?.visible !== false;
   if (hasScene) {
     const cockpitClamp = hasLeft && hasRight;
     const segments = [];
@@ -212,7 +238,7 @@ function buildMainColumns(manifest) {
 }
 
 function buildFooterColumns(manifest) {
-  const visibleSections = ["timeline", "alerts"]
+  const visibleSections = getStructureAreaItems(manifest, "footer", ["timeline", "alerts"])
     .filter((key) => manifest.blocks?.[key]?.visible !== false)
     .sort(
       (left, right) =>
@@ -310,8 +336,8 @@ function renderRankingPanel(container, chart, manifest) {
           (item, index) => `
             <li class="oc-dashboard-ranking-item">
               <span class="oc-dashboard-ranking-order">${index + 1}</span>
-              <span class="oc-dashboard-ranking-name">${String(item.name || item.label || `项目 ${index + 1}`)}</span>
-              <span class="oc-dashboard-ranking-value">${String(item.value ?? "")}</span>
+              <span class="oc-dashboard-ranking-name">${escapeHtml(item.name || item.label || `项目 ${index + 1}`)}</span>
+              <span class="oc-dashboard-ranking-value">${escapeHtml(item.value ?? "")}</span>
             </li>`,
         )
         .join("")}
@@ -334,14 +360,14 @@ function renderTablePanel(container, chart, manifest) {
   container.innerHTML = `
     <table class="oc-dashboard-table">
       <thead>
-        <tr>${columns.map((column) => `<th>${String(column.label)}</th>`).join("")}</tr>
+        <tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
       </thead>
       <tbody>
         ${rows
           .map(
             (row) => `
               <tr>${columns
-                .map((column) => `<td>${String(row?.[column.key] ?? "-")}</td>`)
+                .map((column) => `<td>${escapeHtml(row?.[column.key] ?? "-")}</td>`)
                 .join("")}</tr>`,
           )
           .join("")}
@@ -362,11 +388,19 @@ function renderStatPanel(container, chart, manifest) {
         .map(
           (item) => `
             <article class="oc-dashboard-stat-item">
-              <div class="oc-dashboard-stat-name">${String(item.name || item.label || "")}</div>
-              <strong class="oc-dashboard-stat-value">${String(item.value ?? "")}</strong>
+              <div class="oc-dashboard-stat-name">${escapeHtml(item.name || item.label || "")}</div>
+              <strong class="oc-dashboard-stat-value">${escapeHtml(item.value ?? "")}</strong>
             </article>`,
         )
         .join("")}
+    </div>`;
+}
+
+function renderTextPanel(container, chart) {
+  const content = chart.content || chart.subtitle || chart.footer || "";
+  container.innerHTML = `
+    <div class="oc-dashboard-text-block">
+      ${escapeHtml(content).replace(/\n/g, "<br>")}
     </div>`;
 }
 
@@ -389,6 +423,10 @@ function renderHtmlPanels(root, manifest) {
     }
     if (chartType === "table") {
       renderTablePanel(container, chart, manifest);
+      continue;
+    }
+    if (chartType === "text") {
+      renderTextPanel(container, chart);
       continue;
     }
     renderStatPanel(container, chart, manifest);

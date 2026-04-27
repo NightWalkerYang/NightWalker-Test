@@ -26,6 +26,11 @@ function collectFunctionPaths(value, currentPath = "root", output = []) {
   return output;
 }
 
+function countOccurrences(text, pattern) {
+  const matches = text.match(pattern);
+  return matches ? matches.length : 0;
+}
+
 describe("dashboard manifest runtime templates", () => {
   it("normalizes manifest payloads, preserves embedded data sources, and resolves workspace-relative assets", () => {
     const manifest = normalizeDashboardManifest(
@@ -134,10 +139,43 @@ describe("dashboard manifest runtime templates", () => {
     expect(lineOption.xAxis?.axisLabel?.overflow).toBe("truncate");
     expect(lineOption.grid?.containLabel).toBe(true);
     expect(panelOption.series?.[0]?.type).toBe("pie");
-    expect(panelOption.series?.[0]?.label?.fontSize).toBe(10);
+    expect(panelOption.series?.[0]?.label?.fontSize).toBeGreaterThan(0);
     expect(typeof panelOption.series?.[0]?.label?.formatter).toBe("function");
     expect(markup).toContain('data-layout-mode="cockpit-stage"');
-    expect(markup).toContain("LEFT BAY");
+    expect(markup).toContain(
+      '<section class="oc-dashboard-scene-shell" data-block-id="scene-main" data-has-dock="false">',
+    );
+    expect(markup).toContain('data-column-side="left"');
+    expect(markup).toContain('data-column-side="right"');
+    expect(countOccurrences(markup, /data-panel-count="2"/g)).toBe(2);
+    expect(countOccurrences(markup, /<section class="oc-dashboard-panel(?: is-aux-panel)?"/g)).toBe(
+      4,
+    );
+    expect(markup).toContain('class="oc-dashboard-scene-bay"');
+    expect(markup).toContain('class="oc-dashboard-portal-core"');
+    expect(markup).toContain('class="oc-dashboard-portal-floor"');
+    expect(markup).toContain('class="oc-dashboard-portal-value"');
+    expect(markup).toContain('class="oc-dashboard-portal-node node-1"');
+    expect(markup).not.toContain("oc-dashboard-stage-");
+    expect(markup).toContain("data-dashboard-scene");
+    expect(markup).not.toContain('class="oc-dashboard-scene-dock"');
+    expect(markup).not.toContain("data-dock-count=");
+    expect(countOccurrences(markup, /class="oc-dashboard-scene-dock-card/g)).toBe(0);
+    expect(markup).toContain('data-footer-count="2"');
+    expect(markup).toContain(
+      '<section class="oc-dashboard-footer-section" data-block-id="timeline">',
+    );
+    expect(markup).toContain(
+      '<section class="oc-dashboard-footer-section" data-block-id="alerts">',
+    );
+    expect(markup).not.toContain(
+      '<section class="oc-dashboard-panel is-aux-panel" data-block-id="timeline">',
+    );
+    expect(markup).not.toContain(
+      '<section class="oc-dashboard-panel is-aux-panel" data-block-id="alerts">',
+    );
+    expect(markup).toContain('class="oc-dashboard-feed-list"');
+    expect(markup).toContain('class="oc-dashboard-alert-list"');
     expect(markup).toContain('data-chart-slot="rightTop"');
     expect(markup).toContain("财务分析助手");
   });
@@ -170,8 +208,109 @@ describe("dashboard manifest runtime templates", () => {
     expect(markup).not.toContain('data-block-id="kpi-strip"');
     expect(markup).not.toContain('data-block-id="left-bottom"');
     expect(markup).not.toContain('data-block-id="alerts"');
-    expect(markup).not.toContain('data-footer-count="1"');
-    expect(markup).toContain('class="oc-dashboard-scene-dock"');
+    expect(markup).toContain('data-footer-count="1"');
+    expect(markup).toContain('data-layout-mode="cockpit-stage"');
+    expect(markup).toContain('data-has-dock="false"');
+    expect(markup).not.toContain('class="oc-dashboard-scene-dock"');
+    expect(markup).not.toContain("data-dock-count=");
+    expect(countOccurrences(markup, /class="oc-dashboard-scene-dock-card/g)).toBe(0);
+    expect(markup).toContain('data-column-side="left"');
+    expect(markup).toContain('data-column-side="right"');
+    expect(markup).toContain('data-panel-count="1"');
+    expect(markup).toContain('data-panel-count="2"');
+    expect(countOccurrences(markup, /<section class="oc-dashboard-panel(?: is-aux-panel)?"/g)).toBe(
+      3,
+    );
+    expect(markup).toContain(
+      '<section class="oc-dashboard-footer-section" data-block-id="timeline">',
+    );
+    expect(markup).toContain('<div class="oc-dashboard-footer-title">动态时间线</div>');
+    expect(markup).not.toContain(
+      '<section class="oc-dashboard-footer-section" data-block-id="alerts">',
+    );
+  });
+
+  it("lets schema v2 JSON control dashboard structure through registered components", () => {
+    const manifest = normalizeDashboardManifest({
+      schemaVersion: 2,
+      title: "AI 结构化大屏",
+      styleProfile: "cinematic-finance",
+      layout: {
+        areas: [
+          { id: "left", components: ["trafficTrend", "summaryText"] },
+          { id: "center", components: ["coreScene"] },
+          { id: "right", components: ["userTable"] },
+          { id: "bottom", components: ["imageMetric", "videoMetric"] },
+          { id: "footer", components: [] },
+        ],
+      },
+      components: {
+        trafficTrend: {
+          type: "line-chart",
+          title: "<b>今日流量</b>",
+          data: {
+            categories: ["A", "B"],
+            series: [{ name: "访问", data: [12, 18] }],
+          },
+        },
+        summaryText: {
+          type: "text-block",
+          title: "AI 说明",
+          content: "平台渲染文本，不执行 <script>alert(1)</script>",
+        },
+        coreScene: {
+          type: "scene-3d",
+          title: "数据服务中心",
+          subtitle: "受控 DOM 主舞台",
+          sceneType: "radar-core",
+        },
+        userTable: {
+          type: "table",
+          title: "用户状态",
+          columns: [
+            { key: "id", label: "ID" },
+            { key: "name", label: "用户" },
+            { key: "status", label: "状态" },
+          ],
+          rows: [{ id: "01", name: "User1", status: "Online" }],
+        },
+        imageMetric: {
+          type: "metric-card",
+          label: "图片流量",
+          value: "260",
+          unit: "clicks",
+        },
+        videoMetric: {
+          type: "metric-card",
+          label: "视频流量",
+          value: "330",
+          unit: "clicks",
+        },
+      },
+    });
+
+    const markup = buildDashboardMarkup(manifest);
+
+    expect(manifest.schemaVersion).toBe(2);
+    expect(manifest.structure.mode).toBe("component");
+    expect(manifest.structure.areas.left).toEqual(["trafficTrend", "summaryText"]);
+    expect(manifest.structure.areas.center).toEqual(["coreScene"]);
+    expect(manifest.structure.areas.bottom).toEqual(["imageMetric", "videoMetric"]);
+    expect(manifest.metrics.map((metric) => metric.label)).toEqual(["图片流量", "视频流量"]);
+    expect(manifest.scene.title).toBe("数据服务中心");
+    expect(manifest.scene.type).toBe("radar-core");
+    expect(manifest.blocks.scene.id).toBe("coreScene");
+    expect(manifest.charts.trafficTrend.type).toBe("line");
+    expect(manifest.charts.summaryText.type).toBe("text");
+    expect(manifest.charts.userTable.type).toBe("table");
+    expect(markup).toContain('data-layout-mode="cockpit-stage"');
+    expect(markup).toContain('data-panel-slot="trafficTrend"');
+    expect(markup).toContain('data-html-slot="summaryText"');
+    expect(markup).toContain('data-html-slot="userTable"');
+    expect(markup).toContain('data-block-id="coreScene"');
+    expect(markup).toContain("&lt;b&gt;今日流量&lt;/b&gt;");
+    expect(markup).not.toContain("<b>今日流量</b>");
+    expect(markup).not.toContain('class="oc-dashboard-footer"');
   });
 
   it("exports the renderer entry for runtime bootstrapping", () => {

@@ -1112,4 +1112,74 @@ describe("member chat surface", () => {
       )?.hiddenAt,
     ).toBeFalsy();
   });
+
+  it("stops infinite loading and surfaces a timeout error when chat send stays pending", async () => {
+    vi.useFakeTimers();
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub({
+      request: async (method) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+                label: "本周分析",
+                updatedAt: Date.now(),
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        if (method === "chat.send") {
+          return { ok: true };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await vi.runOnlyPendingTimersAsync();
+
+    app.chatLoading = true;
+    app.chatRunId = "run-1";
+    app.chatStreamStartedAt = Date.now();
+    app.lastError = null;
+
+    await app.client.request("chat.send", { message: "生成一个大屏" });
+    await vi.advanceTimersByTimeAsync(75_000);
+
+    expect(app.chatLoading).toBe(false);
+    expect(app.chatRunId).toBeNull();
+    expect(app.chatStreamStartedAt).toBeNull();
+    expect(app.lastError).toBe("本次请求超时，模型连接异常，请重新发送。");
+    expect(document.body.textContent).toContain("本次请求超时，模型连接异常，请重新发送。");
+  });
 });
