@@ -113,12 +113,43 @@ export function clearPlatformSession() {
   clearStoredSession(PLATFORM_SESSION_STORAGE_KEY);
 }
 
+function normalizeTenantApiBaseOverride(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\/$/, "");
+  if (!normalized) {
+    return "";
+  }
+  try {
+    const url = new URL(normalized, document.baseURI);
+    // Older proxy-fronted builds could persist a direct sidecar base such as
+    // http://host:18801/tenant-platform-api/v1. Keep healing that stale state
+    // so browsers stop retrying a CSP-blocked cross-port path on 172-style
+    // deployments and fall back to the working same-origin proxy route.
+    if (url.port === "18801" && /^\/tenant-platform-api\/v1(?:\/.*)?$/i.test(url.pathname)) {
+      return "";
+    }
+  } catch {
+    return normalized;
+  }
+  return normalized;
+}
+
 export function readTenantApiBaseOverride() {
-  return safeStorage()?.getItem(API_BASE_STORAGE_KEY)?.trim() || "";
+  const storage = safeStorage();
+  const raw = storage?.getItem(API_BASE_STORAGE_KEY) || "";
+  const normalized = normalizeTenantApiBaseOverride(raw);
+  if (raw && !normalized) {
+    storage?.removeItem(API_BASE_STORAGE_KEY);
+  }
+  if (raw && normalized && raw !== normalized) {
+    storage?.setItem(API_BASE_STORAGE_KEY, normalized);
+  }
+  return normalized;
 }
 
 export function writeTenantApiBaseOverride(value) {
-  const normalized = String(value || "").trim();
+  const normalized = normalizeTenantApiBaseOverride(value);
   if (!normalized) {
     safeStorage()?.removeItem(API_BASE_STORAGE_KEY);
     return;

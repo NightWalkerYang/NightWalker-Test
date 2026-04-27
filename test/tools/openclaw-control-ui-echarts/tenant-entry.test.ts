@@ -184,6 +184,16 @@ describe("zero-intrusive tenant entry", () => {
     ]);
   });
 
+  it("self-heals a stale direct-sidecar API override", () => {
+    window.localStorage.setItem(
+      "openclaw:tenant-platform:api-base:v1",
+      "http://172.30.31.203:18801/tenant-platform-api/v1",
+    );
+
+    expect(resolveTenantApiBaseCandidates()).toEqual(["/tenant-platform-api/v1"]);
+    expect(window.localStorage.getItem("openclaw:tenant-platform:api-base:v1")).toBeNull();
+  });
+
   it("injects a native-style management section for platform admins", () => {
     writeTenantSession({
       token: "platform-token",
