@@ -80,6 +80,20 @@ function extractAgentIdFromSessionKey(openclawSessionKey) {
   return match?.[1] ? String(match[1]).trim() : "";
 }
 
+function collectSessionStoreAgentCandidates(params = {}) {
+  const seen = new Set();
+  const result = [];
+  for (const value of [params.agentId, params.derivedAgentId, extractAgentIdFromSessionKey(params.openclawSessionKey)]) {
+    const normalized = String(value || "").trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
 function normalizeUsageDay(value) {
   const normalized = String(value || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
@@ -428,10 +442,7 @@ function parseOpenClawConfig(configPath) {
   }
 }
 
-function resolveSessionStorePath(params = {}) {
-  const agentId = String(
-    params.agentId || extractAgentIdFromSessionKey(params.openclawSessionKey),
-  ).trim();
+function resolveSessionStorePathForAgentId(agentId, params = {}) {
   if (!agentId) {
     return "";
   }
@@ -450,6 +461,24 @@ function resolveSessionStorePath(params = {}) {
     return resolvedStorePath;
   }
   return path.join(resolvedStorePath, "sessions.json");
+}
+
+function resolveSessionStorePath(params = {}) {
+  const agentIds = collectSessionStoreAgentCandidates(params);
+  let firstCandidatePath = "";
+  for (const agentId of agentIds) {
+    const candidatePath = resolveSessionStorePathForAgentId(agentId, params);
+    if (!candidatePath) {
+      continue;
+    }
+    if (!firstCandidatePath) {
+      firstCandidatePath = candidatePath;
+    }
+    if (fs.existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+  return firstCandidatePath;
 }
 
 function readSessionStore(params = {}, cache = null) {
@@ -2534,12 +2563,13 @@ export function syncTenantUsageRecords(db, params) {
 
   const tenantAgent = db
     .prepare(
-      `SELECT ta.id,
-              ta.balance_points AS balancePoints,
-              ta.rate_multiplier AS rateMultiplier,
-              t.deployment_mode AS deploymentMode,
-              u.username AS memberUsername
-       FROM tenant_agents ta
+        `SELECT ta.id,
+                ta.balance_points AS balancePoints,
+                ta.rate_multiplier AS rateMultiplier,
+                t.deployment_mode AS deploymentMode,
+                u.username AS memberUsername,
+                ua.derived_agent_id AS derivedAgentId
+         FROM tenant_agents ta
        JOIN tenants t ON t.id = ta.tenant_id
        JOIN tenant_memberships tm ON tm.tenant_id = ta.tenant_id
        JOIN users u ON u.id = tm.user_id
@@ -2570,6 +2600,7 @@ export function syncTenantUsageRecords(db, params) {
     normalizeTenantUsageSyncRecords(records, now),
     {
       openclawSessionKey,
+      derivedAgentId: String(tenantAgent.derivedAgentId || "").trim(),
       configDir: params.configDir,
       configPath: params.configPath,
     },
@@ -2952,6 +2983,21 @@ export function repairTenantUsageCostGaps(db, params = {}) {
   let skippedSessions = 0;
 
   for (const group of candidateGroups) {
+    const assignment = db
+      .prepare(
+        `SELECT derived_agent_id AS derivedAgentId
+         FROM user_agent_assignments
+         WHERE tenant_id = @tenantId
+           AND user_id = @userId
+           AND tenant_agent_id = @tenantAgentId
+         ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, created_at DESC
+         LIMIT 1`,
+      )
+      .get({
+        tenantId,
+        userId: group.userId,
+        tenantAgentId: group.tenantAgentId,
+      });
     const records = db
       .prepare(
         `SELECT source_fingerprint AS sourceFingerprint,
@@ -2987,6 +3033,7 @@ export function repairTenantUsageCostGaps(db, params = {}) {
       normalizeTenantUsageSyncRecords(records),
       {
         openclawSessionKey: group.openclawSessionKey,
+        derivedAgentId: String(assignment?.derivedAgentId || "").trim(),
         configDir: params.configDir,
         configPath: params.configPath,
       },

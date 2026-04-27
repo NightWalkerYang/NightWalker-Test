@@ -1467,7 +1467,7 @@ describe("tenant platform database foundation", () => {
         balancePoints: 10,
         status: "active",
       });
-      assignTenantAgentToUser(db, {
+      const assignment = assignTenantAgentToUser(db, {
         tenantId: tenant.id,
         userId: member.id,
         tenantAgentId,
@@ -1476,7 +1476,7 @@ describe("tenant platform database foundation", () => {
       });
 
       const sessionKey = "agent:finance:tenant:zeta:user:member-a:chat:latest";
-      writeSessionStoreEntry(sandbox, "finance", sessionKey, {
+      writeSessionStoreEntry(sandbox, String(assignment.derivedAgentId || "finance"), sessionKey, {
         sessionId: "sess-zeta",
         estimatedCostUsd: 0.2,
         updatedAt: "2026-04-13T10:00:00.000Z",
@@ -1595,7 +1595,7 @@ describe("tenant platform database foundation", () => {
         balancePoints: 10,
         status: "active",
       });
-      assignTenantAgentToUser(db, {
+      const assignment = assignTenantAgentToUser(db, {
         tenantId: tenant.id,
         userId: member.id,
         tenantAgentId,
@@ -1646,7 +1646,7 @@ describe("tenant platform database foundation", () => {
           .get(tenant.id)?.count,
       ).toBe(0);
 
-      writeSessionStoreEntry(sandbox, "finance", sessionKey, {
+      writeSessionStoreEntry(sandbox, String(assignment.derivedAgentId || "finance"), sessionKey, {
         sessionId: "sess-eta",
         estimatedCostUsd: 0.18,
         updatedAt: "2026-04-13T10:10:00.000Z",
