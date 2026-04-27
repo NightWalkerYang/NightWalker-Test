@@ -155,14 +155,9 @@ export function resolveTenantApiBaseCandidates() {
     pushCandidate(fromMeta);
   }
 
-  if (window.location.protocol === "http:" && window.location.port === "18789") {
-    pushCandidate(
-      `${window.location.protocol}//${window.location.hostname}:18801/tenant-platform-api/v1`,
-    );
-    pushCandidate(`${window.location.protocol}//127.0.0.1:18801/tenant-platform-api/v1`);
-    pushCandidate(`${window.location.protocol}//localhost:18801/tenant-platform-api/v1`);
-  }
-
+  // Proxy-fronted deployments must stay same-origin here. Guessing cross-port
+  // sidecar URLs causes browser CSP connect-src violations before we ever reach
+  // the working `/tenant-platform-api/v1` proxy path.
   pushCandidate("/tenant-platform-api/v1");
   return candidates;
 }

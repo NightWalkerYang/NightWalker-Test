@@ -21,6 +21,7 @@
    - 这条部署路径产出的 `generated/control-ui/assets/vendor/` 必须同步零侵入层完整 vendor 目录，而不只是离线 userscript 内嵌的 `echarts.min.js/json5.min.js`；否则 AI 生成的大屏一旦引用 `ECharts-GL`、`GSAP`、`tsParticles`、`PixiJS`、`Babylon.js`、`Three.js` 就会在正式环境直接 `404`。
    - 这条部署路径生成完 `docker-compose.override.yml` 后，还必须默认执行一次定向 `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy`；否则浏览器侧即使已经能拿到最新 HTML，gateway/proxy 也可能仍然跑在旧容器配置上，导致刷新后 `workspace-agent-downloads/.../__openclaw_echarts_view__-*` 这类重写脚本资源继续 `404`。
    - 本地 Docker 部署必须通过部署层追加同源反向代理容器，对浏览器暴露的 `18789` 端口不再直接映射原始 gateway；代理层负责把 `/tenant-platform-api/` 转发到 tenant sidecar，把其它 HTTP/WebSocket 流量转发回 gateway，从而避免修改 gateway 源码，同时避开浏览器对 `18801` 跨端口请求的 CSP 限制。
+   - 浏览器侧租户 runtime 默认只允许走同源 `/tenant-platform-api/v1`；不能再因为页面端口是 `18789` 就优先猜测 `http://<host>:18801/tenant-platform-api/v1`、`127.0.0.1:18801`、`localhost:18801` 这类跨端口地址。实测在 `172.30.31.203` 这类 cloud bundle 部署下，这些候选会先被 Control UI 的 `connect-src 'self' ws: wss:` CSP 拦截，造成成员页首屏卡顿甚至“页面进不去”的假死现象。
    - 同一条部署路径还必须同步 `gateway.controlUi.allowedOrigins`，至少覆盖 proxy-facing 的 `http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}` 与 `http://localhost:${OPENCLAW_GATEWAY_PORT}`，并明确关闭 `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback`；原因是前置代理会让 Host-header fallback 在端口处理上变得脆弱，显式 Origin allowlist 才是稳定路径。
    - 本地 Docker 的 proxy-fronted 部署还必须在配置层同步 `gateway.controlUi.dangerouslyDisableDeviceAuth=true`；因为浏览器现在是经由前置代理进入 gateway，本地 loopback 自动配对不再稳定命中，否则用户会先卡在原生 `pairing required` 页面。这个 break-glass 开关不再只绑定 `local edition`，而是绑定“本地前置代理部署”本身。
 

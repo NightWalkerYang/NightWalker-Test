@@ -5,7 +5,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bootTenantEntry } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
 import {
+  resolveTenantApiBaseCandidates,
   writeSelectedTenantAgent,
+  writeTenantApiBaseOverride,
   writeTenantSession,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 
@@ -169,6 +171,19 @@ afterEach(() => {
 });
 
 describe("zero-intrusive tenant entry", () => {
+  it("defaults tenant API candidates to the same-origin proxy path", () => {
+    expect(resolveTenantApiBaseCandidates()).toEqual(["/tenant-platform-api/v1"]);
+  });
+
+  it("prefers an explicit tenant API override before the same-origin proxy path", () => {
+    writeTenantApiBaseOverride("http://127.0.0.1:19999/tenant-platform-api/v1");
+
+    expect(resolveTenantApiBaseCandidates()).toEqual([
+      "http://127.0.0.1:19999/tenant-platform-api/v1",
+      "/tenant-platform-api/v1",
+    ]);
+  });
+
   it("injects a native-style management section for platform admins", () => {
     writeTenantSession({
       token: "platform-token",
