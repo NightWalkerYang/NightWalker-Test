@@ -34,6 +34,7 @@ const CHAT_FAILSAFE_TIMEOUT_MS = 75_000;
 const CHAT_FAILSAFE_MESSAGE = "本次请求超时，模型连接异常，请重新发送。";
 const CHAT_FAILSAFE_TIMER_KEY = "__ocMemberChatFailsafeTimer";
 const CHAT_FAILSAFE_SESSION_KEY = "__ocMemberChatFailsafeSessionKey";
+const CHAT_EMPTY_RENDER_PLACEHOLDER_KEY = "__ocMemberChatEmptyRenderPlaceholder";
 const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
 const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
 const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
@@ -277,6 +278,20 @@ function isAssistantSilentReply(message) {
   }
   const text = extractNormalizedMessageText(message);
   return Boolean(text) && isSilentReplyText(text);
+}
+
+function createRenderableEmptyChatMessages() {
+  return [
+    {
+      role: "assistant",
+      content: [],
+      [CHAT_EMPTY_RENDER_PLACEHOLDER_KEY]: true,
+    },
+  ];
+}
+
+function normalizeRenderableChatMessages(messages) {
+  return Array.isArray(messages) && messages.length > 0 ? messages : createRenderableEmptyChatMessages();
 }
 
 function buildSessionTitleFromText(value) {
@@ -1237,7 +1252,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
 
   if (shouldHydrateHistory) {
     // Reset session-scoped view state before rehydrating persisted history.
-    app.chatMessages = [];
+    app.chatMessages = skipHydrateHistory ? createRenderableEmptyChatMessages() : [];
     if (Array.isArray(app.chatQueue)) {
       app.chatQueue = [];
     }
@@ -1291,7 +1306,9 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
         }
         if (app.__ocPinnedSessionKey === targetKey) {
           const msgs = Array.isArray(res?.messages) ? res.messages : [];
-          app.chatMessages = msgs.filter((message) => !isAssistantSilentReply(message));
+          app.chatMessages = normalizeRenderableChatMessages(
+            msgs.filter((message) => !isAssistantSilentReply(message)),
+          );
           app.chatThinkingLevel = res?.thinkingLevel ?? null;
           app.chatRunId = null;
           app.chatStream = null;
@@ -1319,7 +1336,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           app.__ocPinnedSessionHydratingKey = "";
         }
         if (app.__ocPinnedSessionKey === targetKey) {
-          app.chatMessages = [];
+          app.chatMessages = createRenderableEmptyChatMessages();
           app.chatThinkingLevel = null;
           app.__ocPinnedSessionHydratedKey = "";
           app.chatLoading = false;
@@ -1736,9 +1753,5 @@ export function bootMemberChatSurface() {
   observer.observe(document.documentElement, {
     subtree: true,
     childList: true,
-  });
-
-  window.addEventListener("popstate", () => {
-    void syncMemberChatSurface();
   });
 }

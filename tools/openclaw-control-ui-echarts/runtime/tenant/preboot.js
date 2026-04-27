@@ -363,6 +363,13 @@
     url.searchParams.set("tenantAgentId", tenantAgentId);
 
     const querySessionKey = String(url.searchParams.get("session") || "").trim();
+    const shouldRespectBlankRuntimeSession =
+      window.__openclawMemberChatSurfaceBooted === true &&
+      !querySessionKey &&
+      normalizePath(url.pathname) === "/chat";
+    if (shouldRespectBlankRuntimeSession) {
+      return url;
+    }
     const sessionKey = isTenantMemberSessionKey(querySessionKey, tenantSession, selectedAgent)
       ? normalizeTenantValue(querySessionKey)
       : readCachedMemberSessionKey(tenantSession, selectedAgent) ||
