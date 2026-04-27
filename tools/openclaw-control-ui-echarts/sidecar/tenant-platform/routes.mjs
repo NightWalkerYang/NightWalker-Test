@@ -2270,6 +2270,8 @@ export function createTenantPlatformRouter(deps) {
           tenantAgentId,
           openclawSessionKey,
           records: Array.isArray(body.records) ? body.records : [],
+          configDir: deps.config?.configDir,
+          configPath: deps.config?.configPath,
         });
         sendJson(request, response, 200, { ok: true, data: result });
       } catch (error) {

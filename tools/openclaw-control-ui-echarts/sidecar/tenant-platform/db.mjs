@@ -69,6 +69,17 @@ function resolveUsageChargePoints(totalCost, rateMultiplier) {
   return roundPoints(cost * multiplier);
 }
 
+function normalizeOptionalPositiveCost(value) {
+  const numeric = roundPoints(toFiniteNumber(value, 0));
+  return numeric > 0 ? numeric : null;
+}
+
+function extractAgentIdFromSessionKey(openclawSessionKey) {
+  const normalized = String(openclawSessionKey || "").trim();
+  const match = normalized.match(/^agent:([^:]+):/i);
+  return match?.[1] ? String(match[1]).trim() : "";
+}
+
 function normalizeUsageDay(value) {
   const normalized = String(value || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
@@ -376,6 +387,14 @@ function resolveConfigDir(params = {}) {
   return path.join(home, ".openclaw");
 }
 
+function resolveConfigPath(params = {}) {
+  const explicit = String(params.configPath || "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  return path.join(resolveConfigDir(params), "openclaw.json");
+}
+
 function resolveExecApprovalsFilePath(params = {}) {
   return path.join(resolveConfigDir(params), "exec-approvals.json");
 }
@@ -407,6 +426,187 @@ function parseOpenClawConfig(configPath) {
   } catch {
     return {};
   }
+}
+
+function resolveSessionStorePath(params = {}) {
+  const agentId = String(
+    params.agentId || extractAgentIdFromSessionKey(params.openclawSessionKey),
+  ).trim();
+  if (!agentId) {
+    return "";
+  }
+  const configDir = resolveConfigDir(params);
+  const configPayload = parseOpenClawConfig(resolveConfigPath(params));
+  const configuredStore = String(configPayload?.session?.store || "").trim();
+  if (!configuredStore) {
+    return path.join(configDir, "agents", agentId, "sessions", "sessions.json");
+  }
+  const templatedStore = configuredStore.replaceAll("{agentId}", agentId);
+  const resolvedStorePath = resolveHomePath(templatedStore, configDir);
+  if (!resolvedStorePath) {
+    return path.join(configDir, "agents", agentId, "sessions", "sessions.json");
+  }
+  if (path.basename(resolvedStorePath).toLowerCase() === "sessions.json") {
+    return resolvedStorePath;
+  }
+  return path.join(resolvedStorePath, "sessions.json");
+}
+
+function readSessionStore(params = {}, cache = null) {
+  const storePath = resolveSessionStorePath(params);
+  if (!storePath) {
+    return null;
+  }
+  if (cache?.has(storePath)) {
+    return cache.get(storePath);
+  }
+  let parsed = null;
+  try {
+    const raw = fs.readFileSync(storePath, "utf8");
+    const payload = JSON.parse(raw);
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      parsed = payload;
+    }
+  } catch {
+    parsed = null;
+  }
+  cache?.set(storePath, parsed);
+  return parsed;
+}
+
+function readSessionStoreEntry(params = {}, cache = null) {
+  const sessionKey = String(params.openclawSessionKey || "").trim();
+  if (!sessionKey) {
+    return null;
+  }
+  const store = readSessionStore(params, cache);
+  if (!store || typeof store !== "object") {
+    return null;
+  }
+  const direct = store[sessionKey];
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+    return direct;
+  }
+  const normalizedSessionKey = sessionKey.toLowerCase();
+  for (const [key, value] of Object.entries(store)) {
+    if (
+      String(key || "")
+        .trim()
+        .toLowerCase() === normalizedSessionKey &&
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value)
+    ) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function resolveSessionEstimatedCostUsd(params = {}, cache = null) {
+  const sessionEntry = readSessionStoreEntry(params, cache);
+  return normalizeOptionalPositiveCost(sessionEntry?.estimatedCostUsd);
+}
+
+function normalizeTenantUsageSyncRecords(records, fallbackTimestamp = nowIso()) {
+  return (Array.isArray(records) ? records : []).flatMap((record) => {
+    const sourceFingerprint = String(record?.sourceFingerprint || "").trim();
+    if (!sourceFingerprint) {
+      return [];
+    }
+    const messageTimestamp = normalizeIsoTimestamp(record?.messageTimestamp, fallbackTimestamp);
+    const usageDay =
+      normalizeUsageDay(record?.usageDay || messageTimestamp) || fallbackTimestamp.slice(0, 10);
+    const inputTokens = Math.max(0, Math.round(toFiniteNumber(record?.inputTokens)));
+    const outputTokens = Math.max(0, Math.round(toFiniteNumber(record?.outputTokens)));
+    const cacheReadTokens = Math.max(0, Math.round(toFiniteNumber(record?.cacheReadTokens)));
+    const cacheWriteTokens = Math.max(0, Math.round(toFiniteNumber(record?.cacheWriteTokens)));
+    const totalTokensRaw = Math.round(toFiniteNumber(record?.totalTokens));
+    const totalTokens =
+      totalTokensRaw > 0
+        ? totalTokensRaw
+        : inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+    return [
+      {
+        sourceFingerprint,
+        messageTimestamp,
+        usageDay,
+        provider: String(record?.provider || "").trim() || null,
+        model: String(record?.model || "").trim() || null,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        totalTokens,
+        totalCost: normalizeOptionalPositiveCost(record?.totalCost),
+      },
+    ];
+  });
+}
+
+function applySessionEstimatedCostFallbackToUsageRecords(
+  records,
+  sessionParams = {},
+  cache = null,
+) {
+  if (!Array.isArray(records) || records.length === 0) {
+    return [];
+  }
+  const pendingIndexes = [];
+  let knownCostUsd = 0;
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    const totalCost = normalizeOptionalPositiveCost(record?.totalCost);
+    if (totalCost) {
+      knownCostUsd = roundPoints(knownCostUsd + totalCost);
+      continue;
+    }
+    pendingIndexes.push(index);
+  }
+  if (pendingIndexes.length === 0) {
+    return records;
+  }
+  const estimatedCostUsd = resolveSessionEstimatedCostUsd(sessionParams, cache);
+  if (!estimatedCostUsd) {
+    return records;
+  }
+  const remainingCostUsd = roundPoints(estimatedCostUsd - knownCostUsd);
+  if (remainingCostUsd <= 0) {
+    return records;
+  }
+
+  const nextRecords = records.map((record) => ({ ...record }));
+  const weightedTokens = pendingIndexes.reduce(
+    (sum, index) => sum + Math.max(0, Math.round(toFiniteNumber(nextRecords[index]?.totalTokens))),
+    0,
+  );
+  let allocatedCostUsd = 0;
+
+  for (let pendingIndex = 0; pendingIndex < pendingIndexes.length; pendingIndex += 1) {
+    const recordIndex = pendingIndexes[pendingIndex];
+    const isLastPending = pendingIndex === pendingIndexes.length - 1;
+    const currentRecord = nextRecords[recordIndex];
+    const weight = Math.max(0, Math.round(toFiniteNumber(currentRecord?.totalTokens)));
+    let shareCostUsd = 0;
+
+    if (isLastPending) {
+      shareCostUsd = Math.max(0, roundPoints(remainingCostUsd - allocatedCostUsd));
+    } else if (weightedTokens > 0) {
+      shareCostUsd = Math.max(0, roundPoints((remainingCostUsd * weight) / weightedTokens));
+    } else {
+      shareCostUsd = Math.max(
+        0,
+        roundPoints(remainingCostUsd / Math.max(1, pendingIndexes.length)),
+      );
+    }
+
+    allocatedCostUsd = roundPoints(allocatedCostUsd + shareCostUsd);
+    if (shareCostUsd > 0) {
+      currentRecord.totalCost = shareCostUsd;
+    }
+  }
+
+  return nextRecords;
 }
 
 function readExecApprovalsFile(filePath) {
@@ -2361,9 +2561,19 @@ export function syncTenantUsageRecords(db, params) {
       tenantId,
       userId,
     });
-  if (!tenantAgent) {
-    throw new Error("tenant_agent_not_found");
-  }
+    if (!tenantAgent) {
+      throw new Error("tenant_agent_not_found");
+    }
+
+  const now = nowIso();
+  const normalizedRecords = applySessionEstimatedCostFallbackToUsageRecords(
+    normalizeTenantUsageSyncRecords(records, now),
+    {
+      openclawSessionKey,
+      configDir: params.configDir,
+      configPath: params.configPath,
+    },
+  );
 
   return runInTransaction(db, () => {
     const selectExisting = db.prepare(
@@ -2532,7 +2742,6 @@ export function syncTenantUsageRecords(db, params) {
     let inserted = 0;
     let updated = 0;
     let pointsDelta = 0;
-    const now = nowIso();
     const billingEnabled =
       String(tenantAgent.deploymentMode || "")
         .trim()
@@ -2540,26 +2749,22 @@ export function syncTenantUsageRecords(db, params) {
     const rateMultiplier = Math.max(0, toFiniteNumber(tenantAgent.rateMultiplier, 1));
     let currentAgentBalance = normalizeNonNegativePoints(tenantAgent.balancePoints);
 
-    for (const record of records) {
-      const sourceFingerprint = String(record?.sourceFingerprint || "").trim();
-      if (!sourceFingerprint) {
-        continue;
-      }
-      const messageTimestamp = normalizeIsoTimestamp(record?.messageTimestamp, now);
-      const usageDay = normalizeUsageDay(record?.usageDay || messageTimestamp) || now.slice(0, 10);
-      const inputTokens = Math.max(0, Math.round(toFiniteNumber(record?.inputTokens)));
-      const outputTokens = Math.max(0, Math.round(toFiniteNumber(record?.outputTokens)));
-      const cacheReadTokens = Math.max(0, Math.round(toFiniteNumber(record?.cacheReadTokens)));
-      const cacheWriteTokens = Math.max(0, Math.round(toFiniteNumber(record?.cacheWriteTokens)));
-      const totalTokensRaw = Math.round(toFiniteNumber(record?.totalTokens));
-      const totalTokens =
-        totalTokensRaw > 0
-          ? totalTokensRaw
-          : inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
-      if (totalTokens <= 0 && toFiniteNumber(record?.totalCost, 0) <= 0) {
+    for (const record of normalizedRecords) {
+      if (record.totalTokens <= 0 && !record.totalCost) {
         continue;
       }
 
+      const {
+        sourceFingerprint,
+        messageTimestamp,
+        usageDay,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        totalTokens,
+        totalCost,
+      } = record;
       const existing = selectExisting.get({
         openclawSessionKey,
         sourceFingerprint,
@@ -2571,12 +2776,10 @@ export function syncTenantUsageRecords(db, params) {
             messageTimestamp,
             userId,
             tenantAgentId,
-            provider: String(record?.provider || "").trim() || null,
-            model: String(record?.model || "").trim() || null,
+            provider: record.provider,
+            model: record.model,
             totalTokens,
           });
-      const totalCost =
-        toFiniteNumber(record?.totalCost, 0) > 0 ? toFiniteNumber(record?.totalCost, 0) : null;
       if (existing) {
         upsert.run({
           id: existing.id,
@@ -2589,8 +2792,8 @@ export function syncTenantUsageRecords(db, params) {
           sourceFingerprint,
           messageTimestamp,
           usageDay,
-          provider: String(record?.provider || "").trim() || null,
-          model: String(record?.model || "").trim() || null,
+          provider: record.provider,
+          model: record.model,
           inputTokens,
           outputTokens,
           cacheReadTokens,
@@ -2610,8 +2813,8 @@ export function syncTenantUsageRecords(db, params) {
           sourceFingerprint,
           messageTimestamp,
           usageDay,
-          provider: String(record?.provider || "").trim() || null,
-          model: String(record?.model || "").trim() || null,
+          provider: record.provider,
+          model: record.model,
           inputTokens,
           outputTokens,
           cacheReadTokens,
@@ -2632,8 +2835,8 @@ export function syncTenantUsageRecords(db, params) {
           sourceFingerprint,
           messageTimestamp,
           usageDay,
-          provider: String(record?.provider || "").trim() || null,
-          model: String(record?.model || "").trim() || null,
+          provider: record.provider,
+          model: record.model,
           inputTokens,
           outputTokens,
           cacheReadTokens,
@@ -2719,6 +2922,107 @@ export function syncTenantUsageRecords(db, params) {
       pointsDelta,
     };
   });
+}
+
+export function repairTenantUsageCostGaps(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+
+  const candidateGroups = db
+    .prepare(
+      `SELECT DISTINCT r.user_id AS userId,
+              r.tenant_agent_id AS tenantAgentId,
+              r.openclaw_session_key AS openclawSessionKey
+       FROM tenant_usage_records r
+       JOIN tenants t ON t.id = r.tenant_id
+       WHERE r.tenant_id = @tenantId
+         AND t.deployment_mode != 'local'
+         AND COALESCE(r.total_cost, 0) <= 0
+         AND COALESCE(r.user_id, '') != ''
+         AND COALESCE(r.tenant_agent_id, '') != ''
+         AND COALESCE(r.openclaw_session_key, '') != ''`,
+    )
+    .all({ tenantId });
+
+  const sessionStoreCache = new Map();
+  let repairedSessions = 0;
+  let repairedRows = 0;
+  let skippedSessions = 0;
+
+  for (const group of candidateGroups) {
+    const records = db
+      .prepare(
+        `SELECT source_fingerprint AS sourceFingerprint,
+                message_timestamp AS messageTimestamp,
+                usage_day AS usageDay,
+                provider,
+                model,
+                input_tokens AS inputTokens,
+                output_tokens AS outputTokens,
+                cache_read_tokens AS cacheReadTokens,
+                cache_write_tokens AS cacheWriteTokens,
+                total_tokens AS totalTokens,
+                total_cost AS totalCost
+         FROM tenant_usage_records
+         WHERE tenant_id = @tenantId
+           AND user_id = @userId
+           AND tenant_agent_id = @tenantAgentId
+           AND openclaw_session_key = @openclawSessionKey
+         ORDER BY message_timestamp ASC, created_at ASC`,
+      )
+      .all({
+        tenantId,
+        userId: group.userId,
+        tenantAgentId: group.tenantAgentId,
+        openclawSessionKey: group.openclawSessionKey,
+      });
+    if (!records.length) {
+      skippedSessions += 1;
+      continue;
+    }
+
+    const previewRecords = applySessionEstimatedCostFallbackToUsageRecords(
+      normalizeTenantUsageSyncRecords(records),
+      {
+        openclawSessionKey: group.openclawSessionKey,
+        configDir: params.configDir,
+        configPath: params.configPath,
+      },
+      sessionStoreCache,
+    );
+    const nextFilledRows = previewRecords.filter(
+      (record, index) => !normalizeOptionalPositiveCost(records[index]?.totalCost) && record.totalCost,
+    ).length;
+    if (nextFilledRows <= 0) {
+      skippedSessions += 1;
+      continue;
+    }
+
+    try {
+      syncTenantUsageRecords(db, {
+        tenantId,
+        userId: group.userId,
+        tenantAgentId: group.tenantAgentId,
+        openclawSessionKey: group.openclawSessionKey,
+        records: previewRecords,
+        configDir: params.configDir,
+        configPath: params.configPath,
+      });
+      repairedSessions += 1;
+      repairedRows += nextFilledRows;
+    } catch {
+      skippedSessions += 1;
+    }
+  }
+
+  return {
+    scannedSessions: candidateGroups.length,
+    repairedSessions,
+    repairedRows,
+    skippedSessions,
+  };
 }
 
 export function listTenantUsageStats(db, params, configAgents = []) {
