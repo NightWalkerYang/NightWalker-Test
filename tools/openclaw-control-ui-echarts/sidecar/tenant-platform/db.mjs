@@ -647,6 +647,13 @@ function resolveSessionEstimatedCostUsd(params = {}, cache = null) {
   );
 }
 
+function resolveSessionUsageModelIdentity(sessionEntry) {
+  return {
+    provider: String(sessionEntry?.modelProvider || sessionEntry?.provider || "").trim() || null,
+    model: String(sessionEntry?.model || "").trim() || null,
+  };
+}
+
 function normalizeTenantUsageSyncRecords(records, fallbackTimestamp = nowIso()) {
   return (Array.isArray(records) ? records : []).flatMap((record) => {
     const sourceFingerprint = String(record?.sourceFingerprint || "").trim();
@@ -691,10 +698,39 @@ function applySessionEstimatedCostFallbackToUsageRecords(
   if (!Array.isArray(records) || records.length === 0) {
     return [];
   }
+  const sessionEntry = readSessionStoreEntry(sessionParams, cache);
+  const sessionIdentity = resolveSessionUsageModelIdentity(sessionEntry);
+  const explicitSessionEstimatedCostUsd = normalizeOptionalPositiveCost(sessionEntry?.estimatedCostUsd);
+  const nextRecords = records.map((record) => {
+    const nextRecord = { ...record };
+    if (!nextRecord.provider && sessionIdentity.provider) {
+      nextRecord.provider = sessionIdentity.provider;
+    }
+    if (!nextRecord.model && sessionIdentity.model) {
+      nextRecord.model = sessionIdentity.model;
+    }
+    if (!nextRecord.totalCost && !explicitSessionEstimatedCostUsd) {
+      nextRecord.totalCost = estimateUsageCostUsdFromTokenRates(
+        {
+          inputTokens: nextRecord.inputTokens,
+          outputTokens: nextRecord.outputTokens,
+          cacheReadTokens: nextRecord.cacheReadTokens,
+          cacheWriteTokens: nextRecord.cacheWriteTokens,
+        },
+        resolveModelTokenCosts({
+          provider: nextRecord.provider,
+          model: nextRecord.model,
+          configDir: sessionParams.configDir,
+          configPath: sessionParams.configPath,
+        }),
+      );
+    }
+    return nextRecord;
+  });
   const pendingIndexes = [];
   let knownCostUsd = 0;
-  for (let index = 0; index < records.length; index += 1) {
-    const record = records[index];
+  for (let index = 0; index < nextRecords.length; index += 1) {
+    const record = nextRecords[index];
     const totalCost = normalizeOptionalPositiveCost(record?.totalCost);
     if (totalCost) {
       knownCostUsd = roundPoints(knownCostUsd + totalCost);
@@ -703,18 +739,15 @@ function applySessionEstimatedCostFallbackToUsageRecords(
     pendingIndexes.push(index);
   }
   if (pendingIndexes.length === 0) {
-    return records;
+    return nextRecords;
   }
-  const estimatedCostUsd = resolveSessionEstimatedCostUsd(sessionParams, cache);
-  if (!estimatedCostUsd) {
-    return records;
+  if (!explicitSessionEstimatedCostUsd) {
+    return nextRecords;
   }
-  const remainingCostUsd = roundPoints(estimatedCostUsd - knownCostUsd);
+  const remainingCostUsd = roundPoints(explicitSessionEstimatedCostUsd - knownCostUsd);
   if (remainingCostUsd <= 0) {
-    return records;
+    return nextRecords;
   }
-
-  const nextRecords = records.map((record) => ({ ...record }));
   const weightedTokens = pendingIndexes.reduce(
     (sum, index) => sum + Math.max(0, Math.round(toFiniteNumber(nextRecords[index]?.totalTokens))),
     0,

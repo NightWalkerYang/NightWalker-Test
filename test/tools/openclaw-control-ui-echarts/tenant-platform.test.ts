@@ -1632,38 +1632,138 @@ describe("tenant platform database foundation", () => {
       });
 
       const sessionKey = "agent:finance:tenant:eta:user:member-a:chat:latest";
-      const brokenSync = syncTenantUsageRecords(db, {
+      db.prepare(
+        `INSERT INTO tenant_usage_records (
+           id,
+           tenant_id,
+           user_id,
+           member_user_id,
+           member_username,
+           tenant_agent_id,
+           openclaw_session_key,
+           source_fingerprint,
+           message_timestamp,
+           usage_day,
+           provider,
+           model,
+           input_tokens,
+           output_tokens,
+           cache_read_tokens,
+           cache_write_tokens,
+           total_tokens,
+           total_cost,
+           created_at,
+           updated_at
+         ) VALUES (
+           @id,
+           @tenantId,
+           @userId,
+           @memberUserId,
+           @memberUsername,
+           @tenantAgentId,
+           @openclawSessionKey,
+           @sourceFingerprint,
+           @messageTimestamp,
+           @usageDay,
+           @provider,
+           @model,
+           @inputTokens,
+           @outputTokens,
+           @cacheReadTokens,
+           @cacheWriteTokens,
+           @totalTokens,
+           @totalCost,
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        id: "usage-eta-1",
         tenantId: tenant.id,
         userId: member.id,
+        memberUserId: member.id,
+        memberUsername: member.username,
         tenantAgentId,
         openclawSessionKey: sessionKey,
-        configPath: sandbox.config.configPath,
-        configDir: sandbox.config.configDir,
-        records: [
-          {
-            sourceFingerprint: "assistant-1",
-            messageTimestamp: "2026-04-13T09:30:00.000Z",
-            usageDay: "2026-04-13",
-            provider: "openai",
-            model: "openai/gpt-5.4",
-            inputTokens: 80,
-            outputTokens: 40,
-            totalTokens: 120,
-          },
-          {
-            sourceFingerprint: "assistant-2",
-            messageTimestamp: "2026-04-13T09:35:00.000Z",
-            usageDay: "2026-04-13",
-            provider: "openai",
-            model: "openai/gpt-5.4",
-            inputTokens: 40,
-            outputTokens: 20,
-            totalTokens: 60,
-          },
-        ],
+        sourceFingerprint: "assistant-1",
+        messageTimestamp: "2026-04-13T09:30:00.000Z",
+        usageDay: "2026-04-13",
+        provider: "cleannetworkspace",
+        model: "gpt-5.4",
+        inputTokens: 80,
+        outputTokens: 40,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 120,
+        totalCost: null,
+        createdAt: "2026-04-13T09:30:00.000Z",
+        updatedAt: "2026-04-13T09:30:00.000Z",
       });
-      expect(brokenSync.pointsDelta).toBe(0);
-      expect(brokenSync.agentBalancePoints).toBeCloseTo(10, 8);
+      db.prepare(
+        `INSERT INTO tenant_usage_records (
+           id,
+           tenant_id,
+           user_id,
+           member_user_id,
+           member_username,
+           tenant_agent_id,
+           openclaw_session_key,
+           source_fingerprint,
+           message_timestamp,
+           usage_day,
+           provider,
+           model,
+           input_tokens,
+           output_tokens,
+           cache_read_tokens,
+           cache_write_tokens,
+           total_tokens,
+           total_cost,
+           created_at,
+           updated_at
+         ) VALUES (
+           @id,
+           @tenantId,
+           @userId,
+           @memberUserId,
+           @memberUsername,
+           @tenantAgentId,
+           @openclawSessionKey,
+           @sourceFingerprint,
+           @messageTimestamp,
+           @usageDay,
+           @provider,
+           @model,
+           @inputTokens,
+           @outputTokens,
+           @cacheReadTokens,
+           @cacheWriteTokens,
+           @totalTokens,
+           @totalCost,
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        id: "usage-eta-2",
+        tenantId: tenant.id,
+        userId: member.id,
+        memberUserId: member.id,
+        memberUsername: member.username,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        sourceFingerprint: "assistant-2",
+        messageTimestamp: "2026-04-13T09:35:00.000Z",
+        usageDay: "2026-04-13",
+        provider: "cleannetworkspace",
+        model: "gpt-5.4",
+        inputTokens: 40,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 60,
+        totalCost: null,
+        createdAt: "2026-04-13T09:35:00.000Z",
+        updatedAt: "2026-04-13T09:35:00.000Z",
+      });
       expect(
         db
           .prepare(
@@ -1708,11 +1808,11 @@ describe("tenant platform database foundation", () => {
       expect(repairedRows).toEqual([
         expect.objectContaining({
           sourceFingerprint: "assistant-1",
-          totalCost: 0.12,
+          totalCost: 0.0008,
         }),
         expect.objectContaining({
           sourceFingerprint: "assistant-2",
-          totalCost: 0.06,
+          totalCost: 0.0004,
         }),
       ]);
 
@@ -1726,12 +1826,12 @@ describe("tenant platform database foundation", () => {
         .all(tenant.id);
       expect(ledgerRows).toHaveLength(2);
       expect(ledgerRows[0]).toMatchObject({
-        amountPoints: 0.12,
-        balanceAfter: 9.88,
+        amountPoints: 0.0008,
+        balanceAfter: 9.9992,
       });
       expect(ledgerRows[1]).toMatchObject({
-        amountPoints: 0.06,
-        balanceAfter: 9.82,
+        amountPoints: 0.0004,
+        balanceAfter: 9.9988,
       });
 
       const assignedAgents = listAssignedAgentsForUser(
@@ -1739,9 +1839,9 @@ describe("tenant platform database foundation", () => {
         { tenantId: tenant.id, userId: member.id },
         readOpenClawAgentCatalog(sandbox.config.configPath),
       );
-      expect(assignedAgents[0]?.balancePoints).toBeCloseTo(9.82, 8);
+      expect(assignedAgents[0]?.balancePoints).toBeCloseTo(9.9988, 8);
       expect(getTenantOverview(db, { tenantId: tenant.id }).summary.consumedCredits).toBeCloseTo(
-        0.18,
+        0.0012,
         8,
       );
     } finally {
