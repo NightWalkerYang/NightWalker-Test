@@ -250,7 +250,11 @@ function ensureDataSourceSchemaCompatibility(db) {
        created_by_user_id TEXT,
        created_at TEXT NOT NULL,
        updated_at TEXT NOT NULL,
-       UNIQUE (tenant_id, user_id, data_source_id)
+       UNIQUE (tenant_id, user_id, data_source_id),
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+       FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE,
+       FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
      );`,
   );
   db.exec(
@@ -262,7 +266,10 @@ function ensureDataSourceSchemaCompatibility(db) {
        org_id TEXT NOT NULL,
        org_name_snapshot TEXT NOT NULL DEFAULT '',
        created_at TEXT NOT NULL,
-       UNIQUE (tenant_id, user_id, data_source_id, org_id)
+       UNIQUE (tenant_id, user_id, data_source_id, org_id),
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+       FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE
      );`,
   );
 }
@@ -1555,6 +1562,20 @@ function purgeTenantMemberUserData(db, params = {}) {
     tenantId,
     userId,
   });
+  db.prepare(
+    `DELETE FROM tenant_member_org_scopes
+     WHERE tenant_id = @tenantId AND user_id = @userId`,
+  ).run({
+    tenantId,
+    userId,
+  });
+  db.prepare(
+    `DELETE FROM tenant_member_source_policies
+     WHERE tenant_id = @tenantId AND user_id = @userId`,
+  ).run({
+    tenantId,
+    userId,
+  });
   const deletedUser = db.prepare(
     `DELETE FROM users
      WHERE id = @userId AND role = 'member'`,
@@ -2029,6 +2050,8 @@ export function setTenantMemberOrgScope(db, params = {}) {
   const userId = String(params.userId || "").trim();
   const dataSourceId = String(params.dataSourceId || "").trim();
   const scopeMode = normalizeScopeMode(params.scopeMode);
+  const orgScopes =
+    scopeMode === "custom" ? normalizeOrgScopeEntries(params.orgScopes ?? params.orgIds) : [];
   if (!tenantId) {
     throw new Error("tenant_id_required");
   }
@@ -2040,6 +2063,9 @@ export function setTenantMemberOrgScope(db, params = {}) {
   }
   if (!scopeMode) {
     throw new Error("scope_mode_invalid");
+  }
+  if (scopeMode === "custom" && orgScopes.length === 0) {
+    throw new Error("member_org_scope_empty");
   }
   const binding = getTenantDataSourceBinding(db, tenantId);
   if (!binding || String(binding.dataSourceId || "").trim() !== dataSourceId) {
@@ -2122,7 +2148,6 @@ export function setTenantMemberOrgScope(db, params = {}) {
     });
 
     if (scopeMode === "custom") {
-      const orgScopes = normalizeOrgScopeEntries(params.orgScopes ?? params.orgIds);
       const insertScope = db.prepare(
         `INSERT INTO tenant_member_org_scopes (
            id,
@@ -2666,12 +2691,26 @@ export function listTenantMembers(db, tenantId) {
     .prepare(
       `SELECT u.id, u.username, u.status,
               tm.role, tm.created_at AS createdAt,
-              COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount
+              COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount,
+              COALESCE(sp.scope_mode, 'none') AS orgScopeMode,
+              CASE
+                WHEN COALESCE(sp.scope_mode, 'none') = 'custom' THEN COUNT(DISTINCT os.org_id)
+                ELSE 0
+              END AS orgScopeCount
        FROM users u
        JOIN tenant_memberships tm ON tm.user_id = u.id
        LEFT JOIN user_agent_assignments ua ON ua.user_id = u.id AND ua.status = 'active'
+       LEFT JOIN tenant_data_source_bindings b ON b.tenant_id = tm.tenant_id
+       LEFT JOIN tenant_member_source_policies sp
+         ON sp.tenant_id = tm.tenant_id
+        AND sp.user_id = u.id
+        AND sp.data_source_id = b.data_source_id
+       LEFT JOIN tenant_member_org_scopes os
+         ON os.tenant_id = tm.tenant_id
+        AND os.user_id = u.id
+        AND os.data_source_id = b.data_source_id
        WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted'
-       GROUP BY u.id, tm.role, tm.created_at
+       GROUP BY u.id, tm.role, tm.created_at, sp.scope_mode
        ORDER BY tm.created_at DESC`,
     )
     .all(tenantId);

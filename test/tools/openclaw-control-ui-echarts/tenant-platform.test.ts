@@ -305,6 +305,12 @@ describe("tenant platform database foundation", () => {
             orgScopeCount: 0,
           }),
         ]);
+        expect(() =>
+          resolveMemberDataAccessContext(db, {
+            tenantId: tenant.id,
+            userId: member.id,
+          }),
+        ).toThrowError("member_org_scope_empty");
 
         setTenantMemberOrgScope(db, {
           tenantId: tenant.id,
@@ -476,6 +482,175 @@ describe("tenant platform database foundation", () => {
             orgScopeCount: 0,
           }),
         ]);
+        expect(() =>
+          resolveMemberDataAccessContext(db, {
+            tenantId: tenant.id,
+            userId: member.id,
+          }),
+        ).toThrowError("member_org_scope_empty");
+      } finally {
+        closeTenantPlatformDb(db);
+      }
+    });
+
+    it("rejects custom scope mode when the normalized org scope list is empty", async () => {
+      const { setTenantDataSourceBinding, setTenantMemberOrgScope, upsertDataSource } =
+        await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        createBootstrapPlatformAdmin(db, {
+          username: "platform-root",
+          password: "secret",
+        });
+        const tenant = createTenantWithAdmin(db, {
+          code: "scope-empty",
+          name: "租户 Scope Empty",
+          adminUsername: "scope-empty-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const tenantAdmin = getUserByUsername(db, "scope-empty-admin");
+        const member = createTenantMember(db, {
+          tenantId: tenant.id,
+          username: "scope-empty-member",
+          password: "secret",
+        });
+        const source = upsertDataSource(db, {
+          code: "kd-scope-empty",
+          name: "空范围账套",
+          sourceType: "kingdee_analytics",
+          connection: { host: "db-scope-empty.internal" },
+        });
+
+        setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: source.id,
+          boundByUserId: tenantAdmin?.id,
+        });
+
+        expect(() =>
+          setTenantMemberOrgScope(db, {
+            tenantId: tenant.id,
+            userId: member.id,
+            dataSourceId: source.id,
+            scopeMode: "custom",
+            createdByUserId: tenantAdmin?.id,
+            orgScopes: [{ orgId: "   ", orgNameSnapshot: "ignored" }],
+          }),
+        ).toThrowError("member_org_scope_empty");
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_source_policies
+               WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?`,
+            )
+            .get(tenant.id, member.id, source.id)?.count,
+        ).toBe(0);
+      } finally {
+        closeTenantPlatformDb(db);
+      }
+    });
+
+    it("deleting a member removes persisted data source scope rows", async () => {
+      const { setTenantDataSourceBinding, setTenantMemberOrgScope, upsertDataSource } =
+        await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        createBootstrapPlatformAdmin(db, {
+          username: "platform-root",
+          password: "secret",
+        });
+        const tenant = createTenantWithAdmin(db, {
+          code: "scope-delete",
+          name: "租户 Scope Delete",
+          adminUsername: "scope-delete-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const tenantAdmin = getUserByUsername(db, "scope-delete-admin");
+        const member = createTenantMember(db, {
+          tenantId: tenant.id,
+          username: "scope-delete-member",
+          password: "secret",
+        });
+        const source = upsertDataSource(db, {
+          code: "kd-scope-delete",
+          name: "删除账套",
+          sourceType: "kingdee_analytics",
+          connection: { host: "db-scope-delete.internal" },
+        });
+
+        setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: source.id,
+          boundByUserId: tenantAdmin?.id,
+        });
+        setTenantMemberOrgScope(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: source.id,
+          scopeMode: "custom",
+          createdByUserId: tenantAdmin?.id,
+          orgScopes: [
+            {
+              orgId: "3001",
+              orgNameSnapshot: "西南事业部",
+            },
+          ],
+        });
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_source_policies
+               WHERE tenant_id = ? AND user_id = ?`,
+            )
+            .get(tenant.id, member.id)?.count,
+        ).toBe(1);
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_org_scopes
+               WHERE tenant_id = ? AND user_id = ?`,
+            )
+            .get(tenant.id, member.id)?.count,
+        ).toBe(1);
+
+        deleteTenantMember(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          configDir: sandbox.config.configDir,
+          configPath: sandbox.config.configPath,
+        });
+
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_source_policies
+               WHERE tenant_id = ? AND user_id = ?`,
+            )
+            .get(tenant.id, member.id)?.count,
+        ).toBe(0);
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_org_scopes
+               WHERE tenant_id = ? AND user_id = ?`,
+            )
+            .get(tenant.id, member.id)?.count,
+        ).toBe(0);
       } finally {
         closeTenantPlatformDb(db);
       }

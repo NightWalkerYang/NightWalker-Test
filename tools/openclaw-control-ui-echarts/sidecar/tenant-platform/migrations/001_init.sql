@@ -83,7 +83,11 @@ CREATE TABLE IF NOT EXISTS tenant_member_source_policies (
   created_by_user_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (tenant_id, user_id, data_source_id)
+  UNIQUE (tenant_id, user_id, data_source_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS tenant_member_org_scopes (
@@ -94,7 +98,10 @@ CREATE TABLE IF NOT EXISTS tenant_member_org_scopes (
   org_id TEXT NOT NULL,
   org_name_snapshot TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  UNIQUE (tenant_id, user_id, data_source_id, org_id)
+  UNIQUE (tenant_id, user_id, data_source_id, org_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS tenant_agents (
