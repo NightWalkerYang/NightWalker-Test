@@ -7,6 +7,7 @@
   const TENANT_SELECTED_AGENT_STORAGE_KEY = "openclaw:tenant-platform:selected-agent:v1";
   const MEMBER_LAST_SESSION_STORAGE_KEY = "openclaw:tenant-platform:member-chat:last-session:v1";
   const TENANT_VIEW_QUERY_KEY = "ocTenantView";
+  const LOGIN_VIEW = "login";
   const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
   const CONTROL_UI_TAB_PATHS = new Set([
     "/agents",
@@ -108,6 +109,9 @@
 
   const buildMemberSelectorRouteUrl = () =>
     new URL(`./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`, document.baseURI);
+
+  const buildTenantLoginRouteUrl = () =>
+    new URL(`./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`, document.baseURI);
 
   const resolveTenantSessionAgentIds = (selectedAgent) => {
     const primary = normalizeTenantValue(selectedAgent?.agentId);
@@ -242,14 +246,14 @@
     writeJson(storage, MEMBER_LAST_SESSION_STORAGE_KEY, next);
   };
 
-  const readRegisteredMemberSessionKey = (session, selectedAgent) => {
+  const readRegisteredMemberSessions = (session, selectedAgent) => {
     if (typeof XMLHttpRequest !== "function") {
-      return "";
+      return [];
     }
     const tenantAgentId = String(selectedAgent?.id || "").trim();
     const token = String(session?.token || "").trim();
     if (!tenantAgentId || !token) {
-      return "";
+      return [];
     }
     try {
       const request = new XMLHttpRequest();
@@ -260,10 +264,20 @@
       request.setRequestHeader("Authorization", `Bearer ${token}`);
       request.send(null);
       if (request.status < 200 || request.status >= 300) {
-        return "";
+        return [];
       }
       const payload = JSON.parse(String(request.responseText || "{}"));
-      const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+      return Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const readRegisteredMemberSessionKey = (session, selectedAgent, registeredRows = null) => {
+    const rows = Array.isArray(registeredRows)
+      ? registeredRows
+      : readRegisteredMemberSessions(session, selectedAgent);
+    try {
       const candidates = rows
         .filter((row) => !row?.hiddenAt)
         .map((row) => ({
@@ -371,15 +385,22 @@
 
   const resolveMemberRouteUrl = (urlLike, baseHref = window.location.href) => {
     const url = new URL(urlLike, baseHref);
-    if (normalizePath(url.pathname) !== "/chat") {
+    const normalizedPath = normalizePath(url.pathname);
+    const targetTenantView = url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "";
+    if (normalizedPath === "/chat" && targetTenantView === LOGIN_VIEW) {
+      return buildTenantLoginRouteUrl();
+    }
+    if (normalizedPath !== "/chat") {
       return url;
     }
     const tenantSession = readTenantSession();
+    const targetTenantAgentId = String(url.searchParams.get("tenantAgentId") || "").trim();
     if (tenantSession?.session?.role !== "member") {
+      if (targetTenantAgentId) {
+        return buildTenantLoginRouteUrl();
+      }
       return url;
     }
-    const targetTenantAgentId = String(url.searchParams.get("tenantAgentId") || "").trim();
-    const targetTenantView = url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "";
     if (
       isMemberSelectorRoute(baseHref, tenantSession) &&
       (!targetTenantAgentId || targetTenantView === TENANT_AGENT_SELECTOR_VIEW)
@@ -388,6 +409,9 @@
     }
     const selectedAgent = readSelectedTenantAgent(url.href);
     const tenantAgentId = String(selectedAgent?.id || "").trim();
+    if (targetTenantAgentId && !hasResolvedSelectedAgent(selectedAgent)) {
+      return buildMemberSelectorRouteUrl();
+    }
     if (!tenantAgentId) {
       return url;
     }
@@ -395,23 +419,35 @@
     if (targetTenantView === TENANT_AGENT_SELECTOR_VIEW) {
       url.searchParams.delete(TENANT_VIEW_QUERY_KEY);
     }
+    const registeredRows = readRegisteredMemberSessions(tenantSession, selectedAgent);
+    const querySessionKey = String(url.searchParams.get("session") || "").trim();
+    const matchedRegisteredRow = registeredRows.find((row) => {
+      const rowKey = normalizeTenantValue(row?.openclawSessionKey);
+      return rowKey && rowKey === normalizeTenantValue(querySessionKey);
+    });
+    const shouldDiscardProvisionalQuerySession =
+      matchedRegisteredRow &&
+      !matchedRegisteredRow?.hiddenAt &&
+      isProvisionalSessionTitle(matchedRegisteredRow?.title);
+    if (shouldDiscardProvisionalQuerySession) {
+      url.searchParams.delete("session");
+    }
     if (!hasResolvedSelectedAgent(selectedAgent)) {
       url.searchParams.delete("session");
       return url;
     }
-
-    const querySessionKey = String(url.searchParams.get("session") || "").trim();
+    const effectiveQuerySessionKey = String(url.searchParams.get("session") || "").trim();
     const shouldRespectBlankRuntimeSession =
       window.__openclawMemberChatSurfaceBooted === true &&
-      !querySessionKey &&
+      !effectiveQuerySessionKey &&
       normalizePath(url.pathname) === "/chat";
     if (shouldRespectBlankRuntimeSession) {
       return url;
     }
-    const sessionKey = isTenantMemberSessionKey(querySessionKey, tenantSession, selectedAgent)
-      ? normalizeTenantValue(querySessionKey)
+    const sessionKey = isTenantMemberSessionKey(effectiveQuerySessionKey, tenantSession, selectedAgent)
+      ? normalizeTenantValue(effectiveQuerySessionKey)
       : readCachedMemberSessionKey(tenantSession, selectedAgent) ||
-        readRegisteredMemberSessionKey(tenantSession, selectedAgent);
+        readRegisteredMemberSessionKey(tenantSession, selectedAgent, registeredRows);
 
     if (sessionKey) {
       url.searchParams.set("session", sessionKey);
@@ -440,7 +476,7 @@
   document.documentElement.setAttribute("data-oc-tenant-preboot", "true");
 
   const normalizedCurrent = resolveMemberRouteUrl(window.location.href, window.location.href);
-  persistControlUiSession(normalizedCurrent.searchParams.get("session") || "");
+  persistRouteState(normalizedCurrent);
 
   if (!window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__) {
     const originalReplaceState = window.history.replaceState.bind(window.history);

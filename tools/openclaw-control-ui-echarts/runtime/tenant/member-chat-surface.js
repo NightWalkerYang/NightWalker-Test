@@ -777,6 +777,14 @@ function shouldSkipSessionHistoryHydration(sessions, sessionKey) {
   return isProvisionalSessionTitle(title);
 }
 
+function isDraftOnlySessionRow(row) {
+  if (!row || row.hasGatewaySession !== false) {
+    return false;
+  }
+  const title = normalizeSessionTitleValue(row?.title || row?.label);
+  return isProvisionalSessionTitle(title);
+}
+
 function resolveRouteSessionKey(sessions, sessionKey) {
   return shouldSkipSessionHistoryHydration(sessions, sessionKey) ? "" : sessionKey;
 }
@@ -796,6 +804,9 @@ function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
           .trim()
           .toLowerCase() === normalized,
     );
+    if (isDraftOnlySessionRow(existingRow)) {
+      return "";
+    }
     return existingRow?.key ? String(existingRow.key).trim().toLowerCase() : normalized;
   };
   const fromQuery = resolveCandidate(url.searchParams.get("session"));

@@ -444,6 +444,62 @@ describe("member chat surface", () => {
     );
   });
 
+  it("ignores a stale draft-only query session and falls back to a usable member session", async () => {
+    installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:stale-draft",
+          title: "新会话",
+          updatedAt: "2026-04-27T07:46:20.096Z",
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:stale-draft",
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    expect(app.sessionKey).toBe(
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    expect(decodeURIComponent(window.location.search)).toContain(
+      "session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    expect(decodeURIComponent(window.location.search)).not.toContain("stale-draft");
+  });
+
   it("replaces generated timestamp titles with the first member message preview", async () => {
     installTenantApiFetchStub({
       sessions: [
