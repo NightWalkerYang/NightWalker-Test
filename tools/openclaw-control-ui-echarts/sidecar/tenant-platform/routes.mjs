@@ -96,6 +96,63 @@ function sendText(request, response, statusCode, body, contentType = "text/plain
   response.end(body);
 }
 
+function buildTenantWalletReturnHtml() {
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>支付结果处理中</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f8fafc;
+        color: #0f172a;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .card {
+        width: min(92vw, 420px);
+        padding: 24px;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+      p {
+        margin: 0;
+        line-height: 1.6;
+        color: #475569;
+      }
+      a {
+        display: inline-block;
+        margin-top: 18px;
+        color: #2563eb;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>支付结果处理中</h1>
+      <p>支付完成后会自动返回租户钱包页。若页面未自动跳转，请点击下方链接返回并刷新订单状态。</p>
+      <a href="/?ocTenantView=tenant-wallet">返回租户钱包</a>
+    </div>
+    <script>
+      window.setTimeout(function () {
+        window.location.replace("/?ocTenantView=tenant-wallet");
+      }, 1200);
+    </script>
+  </body>
+</html>`;
+}
+
 function readJsonBody(request) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -2482,6 +2539,11 @@ export function createTenantPlatformRouter(deps) {
       } catch {
         sendText(request, response, 500, "fail");
       }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/public/payment/allinpay/return") {
+      sendText(request, response, 200, buildTenantWalletReturnHtml(), "text/html; charset=utf-8");
       return;
     }
 

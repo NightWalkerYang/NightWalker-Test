@@ -6,8 +6,8 @@ const require = createRequire(import.meta.url);
 const QRCode = require("qrcode-terminal/vendor/QRCode");
 const QRErrorCorrectLevel = require("qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel");
 
-const DEFAULT_ALLINPAY_ORDER_URL = "https://vsp.allinpay.com/apiweb/h5unionpay/unionorder";
-const DEFAULT_ALLINPAY_QUERY_URL = "https://vsp.allinpay.com/apiweb/h5unionpay/query";
+const DEFAULT_ALLINPAY_ORDER_URL = "https://syb.allinpay.com/apiweb/h5unionpay/unionorder";
+const DEFAULT_ALLINPAY_QUERY_URL = "https://vsp.allinpay.com/apiweb/tranx/query";
 const DEFAULT_ALLINPAY_VERSION = "12";
 const DEFAULT_ALLINPAY_SIGN_TYPE = "RSA";
 const DEFAULT_ALLINPAY_VALID_MINUTES = 30;
@@ -36,6 +36,18 @@ function normalizeText(value) {
 
 function normalizeUrl(value) {
   return normalizeText(value).replace(/\/+$/, "");
+}
+
+function joinUrl(baseUrl, relativePath) {
+  const normalizedBase = normalizeUrl(baseUrl);
+  const normalizedPath = normalizeText(relativePath);
+  if (!normalizedBase || !normalizedPath) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(normalizedPath)) {
+    return normalizedPath;
+  }
+  return `${normalizedBase}${normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`}`;
 }
 
 function readSecretFilePath(pathValue) {
@@ -184,12 +196,18 @@ export function resolveAllinpaySidecarConfig(env = process.env, platformConfig =
     `${apiBasePath}/public/payment/allinpay/notify`;
   const returnPath =
     normalizeText(env.OPENCLAW_TENANT_PAYMENT_ALLINPAY_RETURN_PATH) ||
-    "/?ocTenantView=tenant-wallet";
+    `${apiBasePath}/public/payment/allinpay/return`;
+  const notifyUrl =
+    normalizeUrl(env.OPENCLAW_TENANT_PAYMENT_ALLINPAY_NOTIFY_URL) ||
+    joinUrl(publicBaseUrl, notifyPath);
+  const returnUrl =
+    normalizeUrl(env.OPENCLAW_TENANT_PAYMENT_ALLINPAY_RETURN_URL) ||
+    joinUrl(publicBaseUrl, returnPath);
   const validMinutes = normalizePositiveInteger(
     env.OPENCLAW_TENANT_PAYMENT_ALLINPAY_VALID_MINUTES,
     DEFAULT_ALLINPAY_VALID_MINUTES,
   );
-  const enabled = Boolean(appId && merchantId && privateKey && publicKey && publicBaseUrl);
+  const enabled = Boolean(appId && merchantId && privateKey && publicKey && publicBaseUrl && notifyUrl);
 
   return {
     enabled,
@@ -202,12 +220,9 @@ export function resolveAllinpaySidecarConfig(env = process.env, platformConfig =
     publicBaseUrl,
     apiBasePath,
     notifyPath,
-    notifyUrl: publicBaseUrl ? `${publicBaseUrl}${notifyPath}` : "",
+    notifyUrl,
     returnPath,
-    returnUrl:
-      publicBaseUrl && publicBaseUrl.startsWith("https://")
-        ? `${publicBaseUrl}${returnPath}`
-        : "",
+    returnUrl,
     orderUrl: normalizeText(env.OPENCLAW_TENANT_PAYMENT_ALLINPAY_ORDER_URL) || DEFAULT_ALLINPAY_ORDER_URL,
     queryUrl: normalizeText(env.OPENCLAW_TENANT_PAYMENT_ALLINPAY_QUERY_URL) || DEFAULT_ALLINPAY_QUERY_URL,
     version:
@@ -256,7 +271,7 @@ export function buildAllinpayLaunchDescriptor(order, config) {
     body: normalizeText(order?.body) || "OpenClaw租户充值",
     remark: normalizeText(order?.id),
     notify_url: config.notifyUrl,
-    sign_type: config.signType,
+    signtype: config.signType,
     validtime: String(config.validMinutes),
   };
   if (channel.paytype) {
@@ -364,7 +379,7 @@ export async function queryAllinpayOrder(order, config, fetchImpl = globalThis.f
     appid: config.appId,
     reqsn: normalizeText(order?.id),
     randomstr: buildRandomString(),
-    sign_type: config.signType,
+    signtype: config.signType,
   };
   if (normalizeText(order?.providerOrderId)) {
     fields.trxid = normalizeText(order.providerOrderId);

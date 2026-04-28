@@ -1444,6 +1444,9 @@ sidecar 落点固定为：
      - 支付成功后钱包入账
      - 租户管理员把钱包积分划转到 Agent
    - 部署侧必须把 `OPENCLAW_TENANT_PLATFORM_PUBLIC_BASE_URL` 与通联相关 `OPENCLAW_TENANT_PAYMENT_ALLINPAY_*` 变量显式透传到 `openclaw-tenant-platform` 容器；公网支付场景要求这里使用真实可访问的 `https://...` 地址，不能只停留在宿主机 `.env`
+   - 通联协议细节按官方文档落地：H5 下单默认生产地址为 `https://syb.allinpay.com/apiweb/h5unionpay/unionorder`，交易查询默认地址为 `https://vsp.allinpay.com/apiweb/tranx/query`，签名字段名使用 `signtype`
+   - 通联同步回跳页不能带查询参数，所以当前零侵入实现改为 sidecar 公共返回页 `/tenant-platform-api/v1/public/payment/allinpay/return`，再由该页跳回 `/?ocTenantView=tenant-wallet`
+   - 通联 `notify_url` 若走 `https` 需要默认 `443` 端口；当前部署若暂时没有 `443` 入口，需要用显式 `OPENCLAW_TENANT_PAYMENT_ALLINPAY_NOTIFY_URL` 单独指定一个可被通联访问的地址
    - 每次模型回复完成后同步 usage；若明细缺少 `cost.total`，则回退使用 session 级 `estimatedCostUsd`，并先折算为 `CNY` 后再分摊；若两者都不可用，则按 token 与本地静态单价或 runtime 模型价格估算
    - Agent 积分不足时直接拦截消息发送
 

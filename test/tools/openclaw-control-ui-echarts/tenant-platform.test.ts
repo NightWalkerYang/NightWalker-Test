@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   openTenantPlatformDb,
@@ -40,7 +41,11 @@ import {
   buildDashboardManifestHtml,
   rewriteVisualizationHtml,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
-import { buildQrSvgDataUrl } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs";
+import {
+  buildAllinpayLaunchDescriptor,
+  buildQrSvgDataUrl,
+  resolveAllinpaySidecarConfig,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs";
 import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 
 const cleanupRoots = new Set();
@@ -2348,6 +2353,42 @@ describe("tenant platform database foundation", () => {
     expect(dataUrl.startsWith("data:image/svg+xml;charset=utf-8,")).toBe(true);
     expect(decodeURIComponent(dataUrl.split(",")[1] || "")).toContain("<svg");
     expect(decodeURIComponent(dataUrl.split(",")[1] || "")).toContain("支付二维码");
+  });
+
+  it("uses the official allinpay endpoints and signtype field", () => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { format: "pem", type: "pkcs8" },
+      publicKeyEncoding: { format: "pem", type: "spki" },
+    });
+    const config = resolveAllinpaySidecarConfig(
+      {
+        OPENCLAW_TENANT_PLATFORM_PUBLIC_BASE_URL: "https://example.com",
+        OPENCLAW_TENANT_PAYMENT_ALLINPAY_APP_ID: "app-demo",
+        OPENCLAW_TENANT_PAYMENT_ALLINPAY_MERCHANT_ID: "merchant-demo",
+        OPENCLAW_TENANT_PAYMENT_ALLINPAY_PRIVATE_KEY: privateKey,
+        OPENCLAW_TENANT_PAYMENT_ALLINPAY_PUBLIC_KEY: publicKey,
+      },
+      {
+        apiBasePath: "/tenant-platform-api/v1",
+        publicBaseUrl: "https://example.com",
+      },
+    );
+
+    expect(config.orderUrl).toBe("https://syb.allinpay.com/apiweb/h5unionpay/unionorder");
+    expect(config.queryUrl).toBe("https://vsp.allinpay.com/apiweb/tranx/query");
+    expect(config.returnUrl).toBe("https://example.com/tenant-platform-api/v1/public/payment/allinpay/return");
+    expect(config.notifyUrl).toBe("https://example.com/tenant-platform-api/v1/public/payment/allinpay/notify");
+
+    const descriptor = buildAllinpayLaunchDescriptor(
+      {
+        id: "payment_demo",
+        amountCny: 1,
+      },
+      config,
+    );
+    expect(descriptor.fields.signtype).toBe("RSA");
+    expect("sign_type" in descriptor.fields).toBe(false);
   });
 
   it("transfers wallet points to tenant agents and records budget ledger", () => {
