@@ -1462,6 +1462,103 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("prefers local static provider pricing over incoming per-record totalCost", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "epsilon-static",
+        name: "租户 Epsilon Static",
+        adminUsername: "epsilon-static-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-static",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 10,
+        status: "active",
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const sessionKey = "agent:finance:tenant:epsilon-static:user:member-static:chat:latest";
+      const syncResult = syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: sessionKey,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+        records: [
+          {
+            sourceFingerprint: "assistant-1",
+            messageTimestamp: "2026-04-13T09:30:00.000Z",
+            usageDay: "2026-04-13",
+            provider: "cleannetworkspace",
+            model: "gpt-5.4",
+            inputTokens: 120,
+            outputTokens: 45,
+            totalTokens: 165,
+            totalCost: 3,
+          },
+        ],
+      });
+      expect(syncResult.inserted).toBe(1);
+      expect(syncResult.pointsDelta).toBeCloseTo(0.006825, 8);
+      expect(syncResult.agentBalancePoints).toBeCloseTo(9.993175, 8);
+
+      const usageRow = db
+        .prepare(
+          `SELECT total_cost AS totalCost
+           FROM tenant_usage_records
+           WHERE tenant_id = ?
+           LIMIT 1`,
+        )
+        .get(tenant.id);
+      expect(usageRow?.totalCost).toBeCloseTo(0.006825, 8);
+
+      const ledgerRow = db
+        .prepare(
+          `SELECT amount_points AS amountPoints, balance_after AS balanceAfter
+           FROM tenant_wallet_ledger
+           WHERE tenant_id = ?
+           LIMIT 1`,
+        )
+        .get(tenant.id);
+      expect(ledgerRow?.amountPoints).toBeCloseTo(0.006825, 8);
+      expect(ledgerRow?.balanceAfter).toBeCloseTo(9.993175, 8);
+
+      expect(getTenantOverview(db, { tenantId: tenant.id }).summary.consumedCredits).toBeCloseTo(
+        0.006825,
+        8,
+      );
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("falls back to session estimatedCostUsd when synced usage records omit per-record cost", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
@@ -1541,8 +1638,8 @@ describe("tenant platform database foundation", () => {
         ],
       });
       expect(syncResult.inserted).toBe(2);
-      expect(syncResult.pointsDelta).toBeCloseTo(0.2, 8);
-      expect(syncResult.agentBalancePoints).toBeCloseTo(9.8, 8);
+      expect(syncResult.pointsDelta).toBeCloseTo(1.4, 8);
+      expect(syncResult.agentBalancePoints).toBeCloseTo(8.6, 8);
 
       const usageRows = db
         .prepare(
@@ -1555,11 +1652,11 @@ describe("tenant platform database foundation", () => {
       expect(usageRows).toEqual([
         expect.objectContaining({
           sourceFingerprint: "assistant-1",
-          totalCost: 0.15,
+          totalCost: 1.05,
         }),
         expect.objectContaining({
           sourceFingerprint: "assistant-2",
-          totalCost: 0.05,
+          totalCost: 0.35,
         }),
       ]);
 
@@ -1573,18 +1670,18 @@ describe("tenant platform database foundation", () => {
         .all(tenant.id);
       expect(ledgerRows).toHaveLength(2);
       expect(ledgerRows[0]).toMatchObject({
-        amountPoints: 0.15,
-        balanceAfter: 9.85,
+        amountPoints: 1.05,
+        balanceAfter: 8.95,
       });
       expect(ledgerRows[1]).toMatchObject({
-        amountPoints: 0.05,
-        balanceAfter: 9.8,
+        amountPoints: 0.35,
+        balanceAfter: 8.6,
       });
       expect(String(ledgerRows[0]?.note || "")).toContain(sessionKey);
       expect(String(ledgerRows[1]?.note || "")).toContain(sessionKey);
 
       const overview = getTenantOverview(db, { tenantId: tenant.id });
-      expect(overview?.summary.consumedCredits).toBeCloseTo(0.2, 8);
+      expect(overview?.summary.consumedCredits).toBeCloseTo(1.4, 8);
     } finally {
       closeTenantPlatformDb(db);
     }
@@ -1954,11 +2051,11 @@ describe("tenant platform database foundation", () => {
       expect(repairedRows).toEqual([
         expect.objectContaining({
           sourceFingerprint: "assistant-1",
-          totalCost: 0.0008,
+          totalCost: 0.0056,
         }),
         expect.objectContaining({
           sourceFingerprint: "assistant-2",
-          totalCost: 0.0004,
+          totalCost: 0.0028,
         }),
       ]);
 
@@ -1972,12 +2069,12 @@ describe("tenant platform database foundation", () => {
         .all(tenant.id);
       expect(ledgerRows).toHaveLength(2);
       expect(ledgerRows[0]).toMatchObject({
-        amountPoints: 0.0008,
-        balanceAfter: 9.9992,
+        amountPoints: 0.0056,
+        balanceAfter: 9.9944,
       });
       expect(ledgerRows[1]).toMatchObject({
-        amountPoints: 0.0004,
-        balanceAfter: 9.9988,
+        amountPoints: 0.0028,
+        balanceAfter: 9.9916,
       });
 
       const assignedAgents = listAssignedAgentsForUser(
@@ -1985,9 +2082,9 @@ describe("tenant platform database foundation", () => {
         { tenantId: tenant.id, userId: member.id },
         readOpenClawAgentCatalog(sandbox.config.configPath),
       );
-      expect(assignedAgents[0]?.balancePoints).toBeCloseTo(9.9988, 8);
+      expect(assignedAgents[0]?.balancePoints).toBeCloseTo(9.9916, 8);
       expect(getTenantOverview(db, { tenantId: tenant.id }).summary.consumedCredits).toBeCloseTo(
-        0.0012,
+        0.0084,
         8,
       );
     } finally {

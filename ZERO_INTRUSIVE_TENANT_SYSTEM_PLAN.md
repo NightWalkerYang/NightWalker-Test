@@ -980,11 +980,13 @@ sidecar 落点固定为：
 
 当前积分规则：
 
-- 云端扣费阶段优先复用 OpenClaw usage 明细里已经带出的 `cost.total` 数值做 1:1 积分扣减
+- 最终结算币种固定为人民币 `CNY`，`1 积分 = 1 人民币`
+- sidecar 以零侵入本地静态模型单价表和本地静态汇率表作为租户计费真值，不依赖供应商在线价格查询
+- 对已配置本地静态单价的 provider/model，优先按 usage token 直接换算 `tenant_usage_records.total_cost`，先按供应商币种计算，再按本地汇率折算为 `CNY`
+- 未命中本地静态单价时，云端扣费阶段继续优先复用 OpenClaw usage 明细里已经带出的 `cost.total`
 - 当 `tenant_usage_records` 对应消息只有 token、缺少 per-record `cost.total` 时，sidecar 允许回退读取同一 `openclaw_session_key` 在 `sessions.json` 中的 `estimatedCostUsd`
-- 回退命中后，sidecar 按同一会话内各条 usage 记录的 `total_tokens` 占比分摊该 `estimatedCostUsd`，再按 1:1 成本口径记账和扣减积分
-- 如果 session 级 `estimatedCostUsd` 仍然为 0，且 runtime 模型配置价格缺失或显式为 0，sidecar 允许按 usage token 与零侵入内置兜底单价直接估算 `total_cost`；当前先覆盖 `ollama` 这类零价模型环境，避免云端租户积分统计长期停留在 0
-- sidecar 不依赖在线厂商价格查询；优先消费源系统 `cost.total` 与 session 级 `estimatedCostUsd`，只有两者都不可用时才退回本地 token 估算
+- 回退命中后，必须先按本地 `USD -> CNY` 汇率折算 `estimatedCostUsd`，再按同一会话内各条 usage 记录的 `total_tokens` 占比分摊，最后按 1:1 成本口径记账和扣减积分
+- 如果 session 级 `estimatedCostUsd` 仍然不可用，则允许继续按 usage token 与本地静态单价或 runtime 模型价格估算 `total_cost`；当前先覆盖 `cleannetworkspace/gpt-5.4` 与 `ollama` 这类零价环境，避免云端租户积分统计长期停留在 0
 
 建议字段：
 
@@ -1221,16 +1223,17 @@ sidecar 落点固定为：
    - 租户管理员重置本租户成员密码
 
 2. 积分兑换比例
-   - 云端扣费阶段直接复用源系统 `cost.total` 数值做 1:1 积分扣减
+   - 最终统一按人民币 `CNY` 结算，`1 积分 = 1 人民币`
 
 3. 登录账号唯一性
    - 租户内唯一账号
 
 4. 第一阶段扣费口径
-   - 使用正常大模型 API 调用返回的 usage 与 `cost.total`
-   - 如果 usage 明细没有 `cost.total`，则回退使用同会话 `sessions.json` 里的 `estimatedCostUsd`，并按 `total_tokens` 占比分摊到明细记录
-   - 如果 session 级 `estimatedCostUsd` 也缺失或为 0，且 runtime 模型价格同样不可用，则允许 sidecar 按 usage token 与零侵入内置兜底单价估算 `total_cost`
-   - sidecar 只做同步、记账、积分扣减，不依赖在线价格查询；模型单价优先读 runtime 配置，兜底单价只作为零价环境补洞
+   - 对已配置本地静态单价的 provider/model，优先按 usage token 本地结算，并统一折算为 `CNY`
+   - 未命中本地静态单价时，继续使用正常大模型 API 调用返回的 usage 与 `cost.total`
+   - 如果 usage 明细没有 `cost.total`，则回退使用同会话 `sessions.json` 里的 `estimatedCostUsd`，并先按本地 `USD -> CNY` 汇率折算，再按 `total_tokens` 占比分摊到明细记录
+   - 如果 session 级 `estimatedCostUsd` 也缺失或为 0，则允许 sidecar 按 usage token 与本地静态单价或 runtime 模型价格估算 `total_cost`
+   - sidecar 只做同步、记账、积分扣减，不依赖在线价格查询；本地静态单价表与本地静态汇率表是第一阶段租户计费真值
    - 暂不把 coding plan 当作主计费口径
 
 5. 客户本地部署
@@ -1434,11 +1437,11 @@ sidecar 落点固定为：
 
 8. 公有云模式支付与扣费后置开发
    - 账号密码登录
-   - 优先按源系统 `cost.total` 数值 1:1 扣积分；缺失时回退到 session 级 `estimatedCostUsd` 分摊后再扣积分；若两者都不可用且模型价格为 0，则按 token 与零侵入兜底单价估算后再扣积分
+   - 最终统一按 `CNY` 结算并按 `1 积分 = 1 人民币` 扣积分；命中本地静态单价的模型优先按 token 本地计费，未命中时再复用源系统 `cost.total`
    - 支付方式：通联承接支付宝 / 微信扫码
    - 支付成功后先进入待确认订单
    - 支付回调自动确认后再入账
-   - 每次模型回复完成后按源系统 usage / `cost.total` 同步扣费；若明细缺少 `cost.total`，则回退使用 session 级 `estimatedCostUsd`；若两者都不可用且模型价格为 0，则按 token 与零侵入兜底单价估算
+   - 每次模型回复完成后同步 usage；若明细缺少 `cost.total`，则回退使用 session 级 `estimatedCostUsd`，并先折算为 `CNY` 后再分摊；若两者都不可用，则按 token 与本地静态单价或 runtime 模型价格估算
    - Agent 积分不足时直接拦截消息发送
 
 9. 本地部署模式第一阶段只做授权与统计
@@ -1629,7 +1632,7 @@ sidecar 落点固定为：
      - `耗量统计`
      - 版本信息
    - 耗量统计页当前以零侵入 usage 同步记录为主数据源：租户成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage，必要时回退 `chat.history`，并幂等写入 `tenant_usage_records`
-   - 当前真实计费链路已补齐多级成本回退：如果 usage 明细只有 token、没有 per-record `cost.total`，sidecar 会先读取同一会话 `sessions.json` 中的 `estimatedCostUsd`，再按各条记录 `total_tokens` 占比分摊；如果 session 级估算也为 0，且 runtime 模型价格缺失或为 0，则继续按 usage token 与零侵入内置兜底单价估算后写回 `tenant_usage_records.total_cost` 与 `tenant_wallet_ledger`
+  - 当前真实计费链路已改为本地静态单价优先并统一按 `CNY` 结算：命中本地静态单价的 provider/model 会直接按 usage token 计算 `tenant_usage_records.total_cost`；若 usage 明细缺少 per-record `cost.total`，sidecar 会再读取同一会话 `sessions.json` 中的 `estimatedCostUsd`，先按本地汇率折算到 `CNY`，再按各条记录 `total_tokens` 占比分摊；如果 session 级估算也不可用，则继续按 token 与本地静态单价或 runtime 模型价格估算后写回 `tenant_usage_records.total_cost` 与 `tenant_wallet_ledger`
    - 当前已接通服务端分页记录视图，可查看成员、Agent、总 token、输入、输出、耗用积分与时间；更细的聚合报表保留给 sidecar 数据层
    - 租户管理员底部入口已进一步收紧为仅保留版本块，不再显示文档、知识图谱、租户登录等平台入口
    - 租户管理员原生壳层当前会额外挂一个角色上下文标记，并用全局注入样式强制隐藏所有非 `管理` / `Agent` / `统计` 的原生侧边导航分组（依赖 `data-oc-role-nav` 白名单），避免原生控制台延迟重渲染后又把平台菜单露出来

@@ -1,0 +1,40 @@
+{
+  // Tenant billing always settles in CNY, and points are deducted 1:1 from the
+  // final CNY cost.
+  settlementCurrency: "CNY",
+
+  // Local static FX table. Avoid live exchange-rate dependencies so historical
+  // reconciliation stays reproducible.
+  exchangeRates: {
+    CNY: 1,
+    USD: 7,
+  },
+
+  providers: {
+    cleannetworkspace: {
+      models: {
+        // OpenAI GPT-5.4 public pricing, stored in provider currency and
+        // converted to CNY during tenant settlement.
+        "gpt-5.4": {
+          currency: "USD",
+          input: 2.5,
+          output: 15,
+          cacheRead: 0.25,
+          cacheWrite: 0,
+        },
+      },
+    },
+
+    ollama: {
+      // Local/self-hosted zero-price environments still need a stable non-zero
+      // tenant billing fallback. This fallback is already expressed in CNY.
+      fallback: {
+        currency: "CNY",
+        input: 0.3,
+        output: 1.2,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+    },
+  },
+}

@@ -177,6 +177,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/billing-rates.json5`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/branding.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs`
@@ -323,6 +324,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The tenant-admin sidebar now injects a sibling `统计` dropdown alongside `管理`, with a `耗量统计` entry that renders a server-paginated usage list for member, Agent, total token, input, output, cache read, cache write, credit, and time columns. The page now prefers debit-direction `tenant_wallet_ledger` usage charges for `消耗积分`, falls back to synced `tenant_usage_records` for older rows, and keeps the existing `data-table` layout from 成员管理 / Agent 分配 pages.
 - The same tenant-admin sidebar now also injects a sibling `Agent` dropdown between `管理` and `统计`, and the new `已有Agent` page reuses the existing `listTenantAgents()` sidecar API instead of adding a new backend surface.
 - Member chat usage sync now writes both `tenant_usage_records` and, for cloud tenants, idempotent `tenant_wallet_ledger` usage-charge rows keyed by `openclaw_session_key + source_fingerprint`, then deducts the matching `tenant_agents.balance_points` inside the same sidecar transaction.
+- The tenant billing sidecar now also reads a local static billing table from `billing-rates.json5`, settles tenant usage in CNY, converts session-level `estimatedCostUsd` through the local FX table before allocation, and deducts points 1:1 against the final CNY amount without depending on supplier-returned cost fields.
 - Tenant member chat now intercepts the send action: if the selected Agent's assigned balance is not greater than 0 (for non-local editions), it blocks the message and displays a "积分不足请联系管理员。" alert.
 - Unified `/login` now validates account status during both new logins and auto-authentication; if the account is not active, it intercepts the process and displays a "账号未启用，请联系管理员。" alert.
 - Tenant-admin member management now exposes an operation column with member password changes plus an enable/disable switch, backed by zero-intrusive tenant-member update routes in the sidecar.

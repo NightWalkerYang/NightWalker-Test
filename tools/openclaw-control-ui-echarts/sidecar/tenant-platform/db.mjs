@@ -8,6 +8,7 @@ import { hashPassword } from "./auth.mjs";
 import { ensureTenantPlatformDirs } from "./config.mjs";
 
 const MIGRATION_PATH = new URL("./migrations/001_init.sql", import.meta.url);
+const BILLING_RATES_PATH = new URL("./billing-rates.json5", import.meta.url);
 const LOCAL_BOOTSTRAP_TENANT_CODE = "local";
 const LOCAL_BOOTSTRAP_TENANT_NAME = "本地租户";
 const LOCAL_BOOTSTRAP_MEMBER_LIMIT = 999;
@@ -25,33 +26,38 @@ const DERIVED_AGENT_TEMPLATE_ENTRIES = [
   "skills",
 ];
 const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
-const ZERO_INTRUSIVE_MODEL_COST_FALLBACKS = {
-  // OpenAI official GPT-5.4 pricing per 1M text tokens. Only used when the
-  // runtime config exposes zero pricing and the session store has no positive
-  // estimatedCostUsd to reuse.
-  "gpt-5.4": {
-    input: 2.5,
-    output: 15,
-    cacheRead: 0.25,
-    cacheWrite: 0,
+const DEFAULT_BILLING_CURRENCY = "CNY";
+const DEFAULT_CONFIG_PRICING_CURRENCY = "USD";
+const DEFAULT_ZERO_INTRUSIVE_BILLING_RATES = {
+  settlementCurrency: DEFAULT_BILLING_CURRENCY,
+  exchangeRates: {
+    CNY: 1,
+    USD: 7,
   },
-  "gpt-5.4-mini": {
-    input: 0.75,
-    output: 4.5,
-    cacheRead: 0.075,
-    cacheWrite: 0,
+  providers: {
+    cleannetworkspace: {
+      models: {
+        "gpt-5.4": {
+          currency: "USD",
+          input: 2.5,
+          output: 15,
+          cacheRead: 0.25,
+          cacheWrite: 0,
+        },
+      },
+    },
+    ollama: {
+      fallback: {
+        currency: DEFAULT_BILLING_CURRENCY,
+        input: 0.3,
+        output: 1.2,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+    },
   },
 };
-const ZERO_INTRUSIVE_PROVIDER_COST_FALLBACKS = {
-  // Some local Ollama deployments intentionally register zero model prices,
-  // but tenant overview still needs a stable non-zero token-based usage cost.
-  ollama: {
-    input: 0.3,
-    output: 1.2,
-    cacheRead: 0,
-    cacheWrite: 0,
-  },
-};
+let cachedBillingRatesConfig = null;
 
 function nowIso() {
   return new Date().toISOString();
@@ -73,6 +79,13 @@ function roundPoints(value) {
 
 function normalizeNonNegativePoints(value) {
   return Math.max(0, roundPoints(value));
+}
+
+function normalizeCurrencyCode(value, fallback = DEFAULT_BILLING_CURRENCY) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  return normalized || fallback;
 }
 
 function buildUsageLedgerNote(openclawSessionKey, sourceFingerprint) {
@@ -114,6 +127,99 @@ function normalizeModelCostLookupKey(value) {
   }
   const slashIndex = normalized.lastIndexOf("/");
   return slashIndex >= 0 ? normalized.slice(slashIndex + 1) : normalized;
+}
+
+function readBillingRatesConfig() {
+  if (cachedBillingRatesConfig) {
+    return cachedBillingRatesConfig;
+  }
+  try {
+    const raw = fs.readFileSync(BILLING_RATES_PATH, "utf8");
+    const parsed = JSON5.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      cachedBillingRatesConfig = parsed;
+      return cachedBillingRatesConfig;
+    }
+  } catch {}
+  cachedBillingRatesConfig = DEFAULT_ZERO_INTRUSIVE_BILLING_RATES;
+  return cachedBillingRatesConfig;
+}
+
+function resolveSettlementCurrency() {
+  return normalizeCurrencyCode(readBillingRatesConfig()?.settlementCurrency, DEFAULT_BILLING_CURRENCY);
+}
+
+function resolveCurrencyToSettlementRate(currency) {
+  const settlementCurrency = resolveSettlementCurrency();
+  const normalizedCurrency = normalizeCurrencyCode(currency, settlementCurrency);
+  if (normalizedCurrency === settlementCurrency) {
+    return 1;
+  }
+  const exchangeRates = readBillingRatesConfig()?.exchangeRates;
+  if (!exchangeRates || typeof exchangeRates !== "object" || Array.isArray(exchangeRates)) {
+    return null;
+  }
+  for (const [rawCurrency, rawRate] of Object.entries(exchangeRates)) {
+    if (normalizeCurrencyCode(rawCurrency) !== normalizedCurrency) {
+      continue;
+    }
+    const rate = roundPoints(toFiniteNumber(rawRate, 0));
+    return rate > 0 ? rate : null;
+  }
+  return null;
+}
+
+function convertAmountToSettlementCurrency(amount, currency) {
+  const normalizedAmount = normalizeOptionalPositiveCost(amount);
+  if (!normalizedAmount) {
+    return null;
+  }
+  const rate = resolveCurrencyToSettlementRate(currency);
+  if (!rate) {
+    return null;
+  }
+  return normalizeNonNegativePoints(normalizedAmount * rate);
+}
+
+function normalizeTokenPricingEntry(entry, fallbackCurrency = resolveSettlementCurrency()) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+  const normalized = {
+    currency: normalizeCurrencyCode(entry.currency, fallbackCurrency),
+    input: normalizeOptionalPositiveCost(entry.input) ?? 0,
+    output: normalizeOptionalPositiveCost(entry.output) ?? 0,
+    cacheRead: normalizeOptionalPositiveCost(entry.cacheRead) ?? 0,
+    cacheWrite: normalizeOptionalPositiveCost(entry.cacheWrite) ?? 0,
+  };
+  if (
+    normalized.input <= 0 &&
+    normalized.output <= 0 &&
+    normalized.cacheRead <= 0 &&
+    normalized.cacheWrite <= 0
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function resolveBillingProviderEntry(providerId) {
+  const normalizedProviderId = String(providerId || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedProviderId) {
+    return null;
+  }
+  const providers = readBillingRatesConfig()?.providers;
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
+    return null;
+  }
+  for (const [rawProviderId, entry] of Object.entries(providers)) {
+    if (String(rawProviderId || "").trim().toLowerCase() === normalizedProviderId) {
+      return entry && typeof entry === "object" && !Array.isArray(entry) ? entry : null;
+    }
+  }
+  return null;
 }
 
 function collectSessionStoreAgentCandidates(params = {}) {
@@ -478,7 +584,7 @@ function parseOpenClawConfig(configPath) {
   }
 }
 
-function resolveConfiguredModelTokenCosts(params = {}) {
+function resolveConfiguredModelTokenPricing(params = {}) {
   const providerId = String(params.provider || "").trim();
   const modelKey = normalizeModelCostLookupKey(params.model);
   if (!providerId || !modelKey) {
@@ -500,56 +606,59 @@ function resolveConfiguredModelTokenCosts(params = {}) {
   if (!matchedModel?.cost || typeof matchedModel.cost !== "object") {
     return null;
   }
-  return {
-    input: normalizeOptionalPositiveCost(matchedModel.cost.input) ?? 0,
-    output: normalizeOptionalPositiveCost(matchedModel.cost.output) ?? 0,
-    cacheRead: normalizeOptionalPositiveCost(matchedModel.cost.cacheRead) ?? 0,
-    cacheWrite: normalizeOptionalPositiveCost(matchedModel.cost.cacheWrite) ?? 0,
-  };
+  return normalizeTokenPricingEntry(
+    {
+      ...matchedModel.cost,
+      currency: matchedModel.cost.currency || DEFAULT_CONFIG_PRICING_CURRENCY,
+    },
+    DEFAULT_CONFIG_PRICING_CURRENCY,
+  );
 }
 
-function resolveFallbackModelTokenCosts(params = {}) {
+function resolveStaticModelTokenPricing(params = {}) {
   const modelKey = normalizeModelCostLookupKey(params.model);
-  const fallback = ZERO_INTRUSIVE_MODEL_COST_FALLBACKS[modelKey];
-  if (fallback) {
-    return { ...fallback };
+  const providerEntry = resolveBillingProviderEntry(params.provider);
+  const settlementCurrency = resolveSettlementCurrency();
+  const exactModelPricing = normalizeTokenPricingEntry(
+    providerEntry?.models?.[modelKey],
+    settlementCurrency,
+  );
+  if (exactModelPricing) {
+    return exactModelPricing;
   }
-  const providerKey = String(params.provider || "")
-    .trim()
-    .toLowerCase();
-  const providerFallback = ZERO_INTRUSIVE_PROVIDER_COST_FALLBACKS[providerKey];
-  return providerFallback ? { ...providerFallback } : null;
+  const genericModelPricing = normalizeTokenPricingEntry(
+    readBillingRatesConfig()?.models?.[modelKey],
+    settlementCurrency,
+  );
+  if (genericModelPricing) {
+    return genericModelPricing;
+  }
+  return normalizeTokenPricingEntry(providerEntry?.fallback, settlementCurrency);
 }
 
-function resolveModelTokenCosts(params = {}) {
-  const configured = resolveConfiguredModelTokenCosts(params);
-  if (
-    configured &&
-    (configured.input > 0 ||
-      configured.output > 0 ||
-      configured.cacheRead > 0 ||
-      configured.cacheWrite > 0)
-  ) {
-    return configured;
+function resolveModelTokenPricing(params = {}) {
+  const staticPricing = resolveStaticModelTokenPricing(params);
+  if (staticPricing) {
+    return staticPricing;
   }
-  return resolveFallbackModelTokenCosts(params);
+  return resolveConfiguredModelTokenPricing(params);
 }
 
-function estimateUsageCostUsdFromTokenRates(usage, tokenCosts) {
-  if (!tokenCosts) {
+function estimateUsageSettlementCostFromTokenPricing(usage, tokenPricing) {
+  if (!tokenPricing) {
     return null;
   }
   const inputTokens = Math.max(0, Math.round(toFiniteNumber(usage?.inputTokens)));
   const outputTokens = Math.max(0, Math.round(toFiniteNumber(usage?.outputTokens)));
   const cacheReadTokens = Math.max(0, Math.round(toFiniteNumber(usage?.cacheReadTokens)));
   const cacheWriteTokens = Math.max(0, Math.round(toFiniteNumber(usage?.cacheWriteTokens)));
-  const estimatedCostUsd = roundPoints(
-    (inputTokens * Math.max(0, toFiniteNumber(tokenCosts.input))) / 1_000_000 +
-      (outputTokens * Math.max(0, toFiniteNumber(tokenCosts.output))) / 1_000_000 +
-      (cacheReadTokens * Math.max(0, toFiniteNumber(tokenCosts.cacheRead))) / 1_000_000 +
-      (cacheWriteTokens * Math.max(0, toFiniteNumber(tokenCosts.cacheWrite))) / 1_000_000,
+  const estimatedProviderCost = roundPoints(
+    (inputTokens * Math.max(0, toFiniteNumber(tokenPricing.input))) / 1_000_000 +
+      (outputTokens * Math.max(0, toFiniteNumber(tokenPricing.output))) / 1_000_000 +
+      (cacheReadTokens * Math.max(0, toFiniteNumber(tokenPricing.cacheRead))) / 1_000_000 +
+      (cacheWriteTokens * Math.max(0, toFiniteNumber(tokenPricing.cacheWrite))) / 1_000_000,
   );
-  return estimatedCostUsd > 0 ? estimatedCostUsd : null;
+  return convertAmountToSettlementCurrency(estimatedProviderCost, tokenPricing.currency);
 }
 
 function resolveSessionStorePathForAgentId(agentId, params = {}) {
@@ -642,22 +751,25 @@ function readSessionStoreEntry(params = {}, cache = null) {
   return null;
 }
 
-function resolveSessionEstimatedCostUsd(params = {}, cache = null) {
-  const sessionEntry = readSessionStoreEntry(params, cache);
-  const explicitEstimatedCostUsd = normalizeOptionalPositiveCost(sessionEntry?.estimatedCostUsd);
+function resolveSessionEstimatedSettlementCost(params = {}, cache = null, sessionEntry = null) {
+  const resolvedSessionEntry = sessionEntry || readSessionStoreEntry(params, cache);
+  const explicitEstimatedCostUsd = normalizeOptionalPositiveCost(
+    resolvedSessionEntry?.estimatedCostUsd,
+  );
   if (explicitEstimatedCostUsd) {
-    return explicitEstimatedCostUsd;
+    return convertAmountToSettlementCurrency(explicitEstimatedCostUsd, "USD");
   }
-  return estimateUsageCostUsdFromTokenRates(
+  return estimateUsageSettlementCostFromTokenPricing(
     {
-      inputTokens: sessionEntry?.inputTokens,
-      outputTokens: sessionEntry?.outputTokens,
-      cacheReadTokens: sessionEntry?.cacheRead ?? sessionEntry?.cacheReadTokens,
-      cacheWriteTokens: sessionEntry?.cacheWrite ?? sessionEntry?.cacheWriteTokens,
+      inputTokens: resolvedSessionEntry?.inputTokens,
+      outputTokens: resolvedSessionEntry?.outputTokens,
+      cacheReadTokens: resolvedSessionEntry?.cacheRead ?? resolvedSessionEntry?.cacheReadTokens,
+      cacheWriteTokens:
+        resolvedSessionEntry?.cacheWrite ?? resolvedSessionEntry?.cacheWriteTokens,
     },
-    resolveModelTokenCosts({
-      provider: sessionEntry?.modelProvider || sessionEntry?.provider,
-      model: sessionEntry?.model,
+    resolveModelTokenPricing({
+      provider: resolvedSessionEntry?.modelProvider || resolvedSessionEntry?.provider,
+      model: resolvedSessionEntry?.model,
       configDir: params.configDir,
       configPath: params.configPath,
     }),
@@ -707,17 +819,43 @@ function normalizeTenantUsageSyncRecords(records, fallbackTimestamp = nowIso()) 
   });
 }
 
-function applySessionEstimatedCostFallbackToUsageRecords(
-  records,
-  sessionParams = {},
-  cache = null,
-) {
+function resolveUsageRecordSettlementCost(record, sessionParams = {}) {
+  const staticTokenPricing = resolveStaticModelTokenPricing({
+    provider: record?.provider,
+    model: record?.model,
+  });
+  if (staticTokenPricing) {
+    const staticEstimatedCost = estimateUsageSettlementCostFromTokenPricing(record, staticTokenPricing);
+    if (staticEstimatedCost) {
+      return staticEstimatedCost;
+    }
+  }
+  const explicitTotalCost = normalizeOptionalPositiveCost(record?.totalCost);
+  if (explicitTotalCost) {
+    return explicitTotalCost;
+  }
+  return estimateUsageSettlementCostFromTokenPricing(
+    record,
+    resolveModelTokenPricing({
+      provider: record?.provider,
+      model: record?.model,
+      configDir: sessionParams.configDir,
+      configPath: sessionParams.configPath,
+    }),
+  );
+}
+
+function applyUsageSettlementFallbackToUsageRecords(records, sessionParams = {}, cache = null) {
   if (!Array.isArray(records) || records.length === 0) {
     return [];
   }
   const sessionEntry = readSessionStoreEntry(sessionParams, cache);
   const sessionIdentity = resolveSessionUsageModelIdentity(sessionEntry);
-  const explicitSessionEstimatedCostUsd = normalizeOptionalPositiveCost(sessionEntry?.estimatedCostUsd);
+  const sessionEstimatedSettlementCost = resolveSessionEstimatedSettlementCost(
+    sessionParams,
+    cache,
+    sessionEntry,
+  );
   const nextRecords = records.map((record) => {
     const nextRecord = { ...record };
     if (!nextRecord.provider && sessionIdentity.provider) {
@@ -726,31 +864,16 @@ function applySessionEstimatedCostFallbackToUsageRecords(
     if (!nextRecord.model && sessionIdentity.model) {
       nextRecord.model = sessionIdentity.model;
     }
-    if (!nextRecord.totalCost && !explicitSessionEstimatedCostUsd) {
-      nextRecord.totalCost = estimateUsageCostUsdFromTokenRates(
-        {
-          inputTokens: nextRecord.inputTokens,
-          outputTokens: nextRecord.outputTokens,
-          cacheReadTokens: nextRecord.cacheReadTokens,
-          cacheWriteTokens: nextRecord.cacheWriteTokens,
-        },
-        resolveModelTokenCosts({
-          provider: nextRecord.provider,
-          model: nextRecord.model,
-          configDir: sessionParams.configDir,
-          configPath: sessionParams.configPath,
-        }),
-      );
-    }
+    nextRecord.totalCost = resolveUsageRecordSettlementCost(nextRecord, sessionParams);
     return nextRecord;
   });
   const pendingIndexes = [];
-  let knownCostUsd = 0;
+  let knownSettlementCost = 0;
   for (let index = 0; index < nextRecords.length; index += 1) {
     const record = nextRecords[index];
     const totalCost = normalizeOptionalPositiveCost(record?.totalCost);
     if (totalCost) {
-      knownCostUsd = roundPoints(knownCostUsd + totalCost);
+      knownSettlementCost = roundPoints(knownSettlementCost + totalCost);
       continue;
     }
     pendingIndexes.push(index);
@@ -758,40 +881,46 @@ function applySessionEstimatedCostFallbackToUsageRecords(
   if (pendingIndexes.length === 0) {
     return nextRecords;
   }
-  if (!explicitSessionEstimatedCostUsd) {
+  if (!sessionEstimatedSettlementCost) {
     return nextRecords;
   }
-  const remainingCostUsd = roundPoints(explicitSessionEstimatedCostUsd - knownCostUsd);
-  if (remainingCostUsd <= 0) {
+  const remainingSettlementCost = roundPoints(sessionEstimatedSettlementCost - knownSettlementCost);
+  if (remainingSettlementCost <= 0) {
     return nextRecords;
   }
   const weightedTokens = pendingIndexes.reduce(
     (sum, index) => sum + Math.max(0, Math.round(toFiniteNumber(nextRecords[index]?.totalTokens))),
     0,
   );
-  let allocatedCostUsd = 0;
+  let allocatedSettlementCost = 0;
 
   for (let pendingIndex = 0; pendingIndex < pendingIndexes.length; pendingIndex += 1) {
     const recordIndex = pendingIndexes[pendingIndex];
     const isLastPending = pendingIndex === pendingIndexes.length - 1;
     const currentRecord = nextRecords[recordIndex];
     const weight = Math.max(0, Math.round(toFiniteNumber(currentRecord?.totalTokens)));
-    let shareCostUsd = 0;
+    let shareSettlementCost = 0;
 
     if (isLastPending) {
-      shareCostUsd = Math.max(0, roundPoints(remainingCostUsd - allocatedCostUsd));
-    } else if (weightedTokens > 0) {
-      shareCostUsd = Math.max(0, roundPoints((remainingCostUsd * weight) / weightedTokens));
-    } else {
-      shareCostUsd = Math.max(
+      shareSettlementCost = Math.max(
         0,
-        roundPoints(remainingCostUsd / Math.max(1, pendingIndexes.length)),
+        roundPoints(remainingSettlementCost - allocatedSettlementCost),
+      );
+    } else if (weightedTokens > 0) {
+      shareSettlementCost = Math.max(
+        0,
+        roundPoints((remainingSettlementCost * weight) / weightedTokens),
+      );
+    } else {
+      shareSettlementCost = Math.max(
+        0,
+        roundPoints(remainingSettlementCost / Math.max(1, pendingIndexes.length)),
       );
     }
 
-    allocatedCostUsd = roundPoints(allocatedCostUsd + shareCostUsd);
-    if (shareCostUsd > 0) {
-      currentRecord.totalCost = shareCostUsd;
+    allocatedSettlementCost = roundPoints(allocatedSettlementCost + shareSettlementCost);
+    if (shareSettlementCost > 0) {
+      currentRecord.totalCost = shareSettlementCost;
     }
   }
 
@@ -2756,7 +2885,7 @@ export function syncTenantUsageRecords(db, params) {
     }
 
   const now = nowIso();
-  const normalizedRecords = applySessionEstimatedCostFallbackToUsageRecords(
+  const normalizedRecords = applyUsageSettlementFallbackToUsageRecords(
     normalizeTenantUsageSyncRecords(records, now),
     {
       openclawSessionKey,
@@ -3189,7 +3318,7 @@ export function repairTenantUsageCostGaps(db, params = {}) {
       continue;
     }
 
-    const previewRecords = applySessionEstimatedCostFallbackToUsageRecords(
+    const previewRecords = applyUsageSettlementFallbackToUsageRecords(
       normalizeTenantUsageSyncRecords(records),
       {
         openclawSessionKey: group.openclawSessionKey,
