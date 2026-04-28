@@ -655,6 +655,125 @@ describe("tenant platform database foundation", () => {
         closeTenantPlatformDb(db);
       }
     });
+
+    it("deleting a member cleans scope rows in upgraded pre-foreign-key databases", async () => {
+      const { setTenantDataSourceBinding, setTenantMemberOrgScope, upsertDataSource } =
+        await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        createBootstrapPlatformAdmin(db, {
+          username: "platform-root",
+          password: "secret",
+        });
+        const tenant = createTenantWithAdmin(db, {
+          code: "scope-delete-legacy",
+          name: "租户 Scope Delete Legacy",
+          adminUsername: "scope-delete-legacy-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const tenantAdmin = getUserByUsername(db, "scope-delete-legacy-admin");
+        const member = createTenantMember(db, {
+          tenantId: tenant.id,
+          username: "scope-delete-legacy-member",
+          password: "secret",
+        });
+        const source = upsertDataSource(db, {
+          code: "kd-scope-delete-legacy",
+          name: "删除账套 Legacy",
+          sourceType: "kingdee_analytics",
+          connection: { host: "db-scope-delete-legacy.internal" },
+        });
+
+        setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: source.id,
+          boundByUserId: tenantAdmin?.id,
+        });
+        setTenantMemberOrgScope(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: source.id,
+          scopeMode: "custom",
+          createdByUserId: tenantAdmin?.id,
+          orgScopes: [
+            {
+              orgId: "3101",
+              orgNameSnapshot: "海外事业部",
+            },
+          ],
+        });
+
+        db.exec("PRAGMA foreign_keys = OFF;");
+        try {
+          db.exec(
+            `ALTER TABLE tenant_member_source_policies RENAME TO tenant_member_source_policies_with_fk;
+             CREATE TABLE tenant_member_source_policies (
+               id TEXT PRIMARY KEY,
+               tenant_id TEXT NOT NULL,
+               user_id TEXT NOT NULL,
+               data_source_id TEXT NOT NULL,
+               scope_mode TEXT NOT NULL,
+               created_by_user_id TEXT,
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL,
+               UNIQUE (tenant_id, user_id, data_source_id)
+             );
+             INSERT INTO tenant_member_source_policies
+             SELECT * FROM tenant_member_source_policies_with_fk;
+             DROP TABLE tenant_member_source_policies_with_fk;
+             ALTER TABLE tenant_member_org_scopes RENAME TO tenant_member_org_scopes_with_fk;
+             CREATE TABLE tenant_member_org_scopes (
+               id TEXT PRIMARY KEY,
+               tenant_id TEXT NOT NULL,
+               user_id TEXT NOT NULL,
+               data_source_id TEXT NOT NULL,
+               org_id TEXT NOT NULL,
+               org_name_snapshot TEXT NOT NULL DEFAULT '',
+               created_at TEXT NOT NULL,
+               UNIQUE (tenant_id, user_id, data_source_id, org_id)
+             );
+             INSERT INTO tenant_member_org_scopes
+             SELECT * FROM tenant_member_org_scopes_with_fk;
+             DROP TABLE tenant_member_org_scopes_with_fk;`,
+          );
+        } finally {
+          db.exec("PRAGMA foreign_keys = ON;");
+        }
+
+        deleteTenantMember(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          configDir: sandbox.config.configDir,
+          configPath: sandbox.config.configPath,
+        });
+
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_source_policies
+               WHERE tenant_id = ? AND user_id = ?`,
+            )
+            .get(tenant.id, member.id)?.count,
+        ).toBe(0);
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_org_scopes
+               WHERE tenant_id = ? AND user_id = ?`,
+            )
+            .get(tenant.id, member.id)?.count,
+        ).toBe(0);
+      } finally {
+        closeTenantPlatformDb(db);
+      }
+    });
   });
 
   it("creates a bootstrap platform admin and a tenant with an admin", () => {

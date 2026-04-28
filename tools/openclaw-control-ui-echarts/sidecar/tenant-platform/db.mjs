@@ -1562,6 +1562,8 @@ function purgeTenantMemberUserData(db, params = {}) {
     tenantId,
     userId,
   });
+  // Keep explicit cleanup for Task 1-upgraded databases created before these
+  // scope tables gained foreign keys; fresh installs cascade, upgraded ones may not.
   db.prepare(
     `DELETE FROM tenant_member_org_scopes
      WHERE tenant_id = @tenantId AND user_id = @userId`,
