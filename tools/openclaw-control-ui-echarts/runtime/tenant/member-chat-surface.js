@@ -5,6 +5,7 @@ import {
   buildTenantMemberChatRoute,
   buildTenantMemberLegacySessionKey,
   createTenantMemberSessionKey,
+  hasResolvedSelectedTenantAgent,
   isTenantMemberSessionKey,
   readSelectedTenantAgent,
   readTenantSession,
@@ -52,7 +53,7 @@ function isMemberChatRoute(pathname = window.location.pathname, href = window.lo
     return false;
   }
   const selectedAgent = readSelectedTenantAgent(href);
-  return Boolean(selectedAgent?.id && selectedAgent?.agentId);
+  return Boolean(selectedAgent?.id);
 }
 
 function escapeHtml(value) {
@@ -1365,7 +1366,12 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
         const agent = readSelectedTenantAgent();
         const isLocal = session?.session?.edition === "local";
         const balance = Number(agent?.balancePoints ?? 0);
-        if (session?.session?.role !== "platform_admin" && !isLocal && balance <= 0) {
+        if (
+          session?.session?.role !== "platform_admin" &&
+          !isLocal &&
+          hasResolvedSelectedTenantAgent(agent) &&
+          balance <= 0
+        ) {
           // Note: In most cases, the early interceptor in bootMemberChatSurface
           // will catch this before it reaches here.
           showTransientToast(window._ocMemberChatSurfaceController, "积分不足请联系管理员。", "danger");
@@ -1552,6 +1558,30 @@ function renderTopAction(controller) {
   attachTopActionHandlers(root);
 }
 
+async function resolveSelectedAgentForMemberChat(session, href = window.location.href) {
+  const selectedAgent = readSelectedTenantAgent(href);
+  if (hasResolvedSelectedTenantAgent(selectedAgent)) {
+    return selectedAgent;
+  }
+  const tenantAgentId = String(selectedAgent?.id || "").trim();
+  if (!tenantAgentId || session?.session?.role !== "member") {
+    return selectedAgent;
+  }
+  try {
+    const agents = await createTenantApiClient().listMemberAgents();
+    const resolved = Array.isArray(agents)
+      ? agents.find((item) => String(item?.id || "").trim() === tenantAgentId)
+      : null;
+    if (resolved && hasResolvedSelectedTenantAgent(resolved)) {
+      writeSelectedTenantAgent(resolved);
+      return resolved;
+    }
+  } catch (error) {
+    console.warn("Failed to resolve selected member agent for chat route", error);
+  }
+  return selectedAgent;
+}
+
 async function syncMemberChatSurface() {
   if (memberChatSurfaceSyncing) {
     memberChatSurfaceSyncQueued = true;
@@ -1585,7 +1615,7 @@ async function syncMemberChatSurface() {
     const sidebar = document.querySelector(SIDEBAR_SELECTOR);
     const breadcrumb = document.querySelector(BREADCRUMB_SELECTOR);
     const session = readTenantSession();
-    const selectedAgent = readSelectedTenantAgent();
+    const selectedAgent = await resolveSelectedAgentForMemberChat(session);
     if (
       !(app instanceof HTMLElement) ||
       !(sidebar instanceof HTMLElement) ||
@@ -1595,6 +1625,10 @@ async function syncMemberChatSurface() {
       if (app instanceof HTMLElement) {
         clearChatLoadingFailsafe(app);
       }
+      return;
+    }
+    if (!hasResolvedSelectedTenantAgent(selectedAgent)) {
+      navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE, { replace: true });
       return;
     }
     if (!app.client || !app.connected) {
@@ -1673,6 +1707,9 @@ export function bootMemberChatSurface() {
     const session = readTenantSession();
     const agent = readSelectedTenantAgent();
     if (session?.session?.role === "platform_admin" || session?.session?.edition === "local") {
+      return true;
+    }
+    if (!hasResolvedSelectedTenantAgent(agent)) {
       return true;
     }
     const balance = Number(agent?.balancePoints ?? 0);

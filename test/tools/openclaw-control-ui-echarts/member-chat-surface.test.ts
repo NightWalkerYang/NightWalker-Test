@@ -61,9 +61,10 @@ function createAppStub(overrides = {}) {
   return app;
 }
 
-function installTenantApiFetchStub({ sessions = [] } = {}) {
+function installTenantApiFetchStub({ sessions = [], agents = [] } = {}) {
   const state = {
     sessions: sessions.map((session) => ({ ...session })),
+    agents: agents.map((agent) => ({ ...agent })),
     usageSyncPayloads: [],
   };
   globalThis.fetch = vi.fn(async (input, options = {}) => {
@@ -78,6 +79,9 @@ function installTenantApiFetchStub({ sessions = [] } = {}) {
     });
     if (url.includes("/member/sessions?")) {
       return okJson(state.sessions);
+    }
+    if (url.endsWith("/member/agents")) {
+      return okJson(state.agents);
     }
     if (url.endsWith("/member/sessions") && method === "POST") {
       const body = JSON.parse(String(options.body || "{}"));
@@ -213,6 +217,69 @@ describe("member chat surface", () => {
       "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
     );
     expect(app.tab).toBe("chat");
+  });
+
+  it("heals a direct member chat route when the stored selected Agent is stale", async () => {
+    installTenantApiFetchStub({
+      agents: [
+        {
+          id: "tenant-agent-1",
+          agentId: "subotech-finance",
+          agentName: "苏博泰克财务分析助手",
+          description: "财务分析",
+          status: "active",
+          balancePoints: 10,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    window.localStorage.setItem(
+      "openclaw:tenant-platform:selected-agent:v1",
+      JSON.stringify({
+        id: "tenant-agent-old",
+        agentId: "stale-agent",
+        agentName: "旧 Agent",
+        balancePoints: 0,
+      }),
+    );
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+    await flush();
+
+    expect(document.querySelector("[data-oc-member-chat-section]")).not.toBeNull();
+    expect(app.sessionKey).toBe(
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    expect(
+      JSON.parse(window.localStorage.getItem("openclaw:tenant-platform:selected-agent:v1") || "{}"),
+    ).toMatchObject({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+    });
   });
 
   it("does not resync member chat after rendering its own chrome", async () => {

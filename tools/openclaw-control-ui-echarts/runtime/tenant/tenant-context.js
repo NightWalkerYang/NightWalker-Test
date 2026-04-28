@@ -235,10 +235,13 @@ export function readSelectedTenantAgent(locationHref = window.location.href) {
   if (stored?.id === tenantAgentId) {
     return stored;
   }
-  return {
-    ...(stored && typeof stored === "object" ? stored : {}),
-    id: tenantAgentId,
-  };
+  return { id: tenantAgentId };
+}
+
+export function hasResolvedSelectedTenantAgent(agent) {
+  const tenantAgentId = String(agent?.id || "").trim();
+  const agentId = String(agent?.agentId || agent?.baseAgentId || "").trim();
+  return Boolean(tenantAgentId && agentId);
 }
 
 export function readSelectedTenantAgentId(locationHref = window.location.href) {

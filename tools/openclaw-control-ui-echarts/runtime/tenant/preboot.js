@@ -6,6 +6,8 @@
   const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
   const TENANT_SELECTED_AGENT_STORAGE_KEY = "openclaw:tenant-platform:selected-agent:v1";
   const MEMBER_LAST_SESSION_STORAGE_KEY = "openclaw:tenant-platform:member-chat:last-session:v1";
+  const TENANT_VIEW_QUERY_KEY = "ocTenantView";
+  const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
   const CONTROL_UI_TAB_PATHS = new Set([
     "/agents",
     "/overview",
@@ -79,11 +81,33 @@
     if (stored?.id === tenantAgentId) {
       return stored;
     }
-    return {
-      ...(stored && typeof stored === "object" ? stored : {}),
-      id: tenantAgentId,
-    };
+    return { id: tenantAgentId };
   };
+
+  const hasResolvedSelectedAgent = (agent) => {
+    const tenantAgentId = String(agent?.id || "").trim();
+    const agentId = String(agent?.agentId || agent?.baseAgentId || "").trim();
+    return Boolean(tenantAgentId && agentId);
+  };
+
+  const isSelectorHostPath = (pathname) => {
+    const normalized = normalizePath(pathname);
+    return normalized === "/" || normalized.endsWith("/index.html");
+  };
+
+  const isMemberSelectorRoute = (href = window.location.href, tenantSession = readTenantSession()) => {
+    if (tenantSession?.session?.role !== "member") {
+      return false;
+    }
+    const url = new URL(href, document.baseURI);
+    return (
+      isSelectorHostPath(url.pathname) &&
+      (url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "") === TENANT_AGENT_SELECTOR_VIEW
+    );
+  };
+
+  const buildMemberSelectorRouteUrl = () =>
+    new URL(`./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`, document.baseURI);
 
   const resolveTenantSessionAgentIds = (selectedAgent) => {
     const primary = normalizeTenantValue(selectedAgent?.agentId);
@@ -354,13 +378,27 @@
     if (tenantSession?.session?.role !== "member") {
       return url;
     }
+    const targetTenantAgentId = String(url.searchParams.get("tenantAgentId") || "").trim();
+    const targetTenantView = url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "";
+    if (
+      isMemberSelectorRoute(baseHref, tenantSession) &&
+      (!targetTenantAgentId || targetTenantView === TENANT_AGENT_SELECTOR_VIEW)
+    ) {
+      return buildMemberSelectorRouteUrl();
+    }
     const selectedAgent = readSelectedTenantAgent(url.href);
     const tenantAgentId = String(selectedAgent?.id || "").trim();
     if (!tenantAgentId) {
       return url;
     }
-
     url.searchParams.set("tenantAgentId", tenantAgentId);
+    if (targetTenantView === TENANT_AGENT_SELECTOR_VIEW) {
+      url.searchParams.delete(TENANT_VIEW_QUERY_KEY);
+    }
+    if (!hasResolvedSelectedAgent(selectedAgent)) {
+      url.searchParams.delete("session");
+      return url;
+    }
 
     const querySessionKey = String(url.searchParams.get("session") || "").trim();
     const shouldRespectBlankRuntimeSession =
