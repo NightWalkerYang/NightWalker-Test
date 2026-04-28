@@ -52,6 +52,7 @@ def run_bridge_request(
         resolve_ssh_binary(),
         "-i",
         resolve_ssh_key(ssh_key),
+        "-T",
         "-o",
         "BatchMode=yes",
         "-o",

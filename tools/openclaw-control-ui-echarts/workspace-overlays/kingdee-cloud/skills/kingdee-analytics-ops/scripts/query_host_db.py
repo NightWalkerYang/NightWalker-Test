@@ -138,7 +138,8 @@ def run_write_sql(sql_b64: str, dsn: str, *, allow_destructive: bool) -> dict[st
             cur.execute(sql)
             status_message = cur.statusmessage
             rowcount = cur.rowcount
-        notices = [str(notice).strip() for notice in conn.notices]
+        raw_notices = getattr(conn, "notices", ())
+        notices = [str(notice).strip() for notice in raw_notices]
 
     return {
         "mode": "write_sql",
