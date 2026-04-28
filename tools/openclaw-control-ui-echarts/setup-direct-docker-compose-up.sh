@@ -8,6 +8,7 @@ CONTROL_UI_RUNTIME_SCRIPT="$TOOL_DIR/openclaw-echarts-renderer.js"
 CONTROL_UI_RUNTIME_MODULE_DIR="$TOOL_DIR/runtime"
 CONTROL_UI_STATIC_DIR="$TOOL_DIR/static"
 CONTROL_UI_VENDOR_DIR="$TOOL_DIR/vendor"
+WORKSPACE_OVERLAY_DIR="$TOOL_DIR/workspace-overlays/kingdee-cloud"
 PORTABLE_CONFIG_SCRIPT="$TOOL_DIR/local-runtime/portable-config.mjs"
 PORTABLE_CONFIG_SOURCE="$TOOL_DIR/local-runtime/openclaw.local.example.json5"
 OFFLINE_BUNDLED_USERSCRIPT="$ROOT_DIR/tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js"
@@ -96,6 +97,18 @@ resolve_gateway_port() {
     port="18789"
   fi
   printf '%s\n' "$port"
+}
+
+resolve_openclaw_config_dir() {
+  local dir="${OPENCLAW_CONFIG_DIR:-}"
+  if [[ -z "$dir" ]]; then
+    dir="$(read_dotenv_value OPENCLAW_CONFIG_DIR || true)"
+  fi
+  dir="$(trim_whitespace "$dir")"
+  if [[ -z "$dir" ]]; then
+    dir="$HOME/.openclaw"
+  fi
+  printf '%s\n' "$dir"
 }
 
 should_skip_compose_up() {
@@ -779,6 +792,49 @@ PY
   [[ -f "$vendor_dir/json5.min.js" ]] || fail "Failed to write $vendor_dir/json5.min.js"
 }
 
+sync_workspace_overlay_tree() {
+  local overlay_root="$1"
+  local workspace_dir="$2"
+
+  [[ -d "$overlay_root" ]] || return 0
+  mkdir -p "$workspace_dir"
+
+  while IFS= read -r source_file; do
+    [[ -n "$source_file" ]] || continue
+    local relative_path
+    local destination_file
+    relative_path="${source_file#$overlay_root/}"
+    destination_file="$workspace_dir/$relative_path"
+    mkdir -p "$(dirname "$destination_file")"
+    cp -p "$source_file" "$destination_file"
+  done < <(find "$overlay_root" -type f | sort)
+}
+
+sync_workspace_overlays() {
+  [[ -d "$WORKSPACE_OVERLAY_DIR" ]] || return 0
+
+  local config_dir
+  local workspace_root
+  local matched=0
+
+  config_dir="$(resolve_openclaw_config_dir)"
+  workspace_root="$config_dir/workspace-agents"
+  mkdir -p "$workspace_root"
+
+  while IFS= read -r workspace_dir; do
+    [[ -n "$workspace_dir" ]] || continue
+    sync_workspace_overlay_tree "$WORKSPACE_OVERLAY_DIR" "$workspace_dir"
+    matched=$((matched + 1))
+  done < <(find "$workspace_root" -mindepth 1 -maxdepth 1 -type d \( -name 'kingdee-cloud' -o -name 'tenant-*-kingdee-cloud-*' \) | sort)
+
+  if [[ "$matched" -eq 0 ]]; then
+    sync_workspace_overlay_tree "$WORKSPACE_OVERLAY_DIR" "$workspace_root/kingdee-cloud"
+    matched=1
+  fi
+
+  printf '%s\n' "Synced kingdee-cloud workspace overlay to ${matched} workspace(s) under $workspace_root"
+}
+
 resolve_source_dir() {
   if [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
     printf '%s\n' "$ROOT_DIR/dist/control-ui"
@@ -843,6 +899,7 @@ main() {
   create_echarts_view_route_entry "$OUTPUT_DIR"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
+  sync_workspace_overlays
   sync_portable_baseline_config
   sync_gateway_control_ui_root
   sync_control_ui_allowed_origins

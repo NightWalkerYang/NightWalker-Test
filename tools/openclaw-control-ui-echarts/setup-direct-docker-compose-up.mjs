@@ -8,6 +8,11 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 const buildScriptPath = path.join(here, "build-custom-control-ui.mjs");
+const workspaceOverlayPath = path.join(
+  here,
+  "workspace-overlays",
+  "kingdee-cloud",
+);
 const portableConfigScriptPath = path.join(here, "local-runtime", "portable-config.mjs");
 const portableConfigSourcePath = path.join(
   here,
@@ -79,6 +84,15 @@ function getExtraMounts() {
 function resolveGatewayPort() {
   return String(
     process.env.OPENCLAW_GATEWAY_PORT ?? readDotenvValue("OPENCLAW_GATEWAY_PORT") ?? "18789",
+  ).trim();
+}
+
+function resolveOpenclawConfigDir() {
+  return String(
+    process.env.OPENCLAW_CONFIG_DIR ?? readDotenvValue("OPENCLAW_CONFIG_DIR") ?? path.join(
+      process.env.HOME ?? process.env.USERPROFILE ?? repoRoot,
+      ".openclaw",
+    ),
   ).trim();
 }
 
@@ -541,6 +555,60 @@ function syncPortableBaselineConfig() {
   return true;
 }
 
+function walkFiles(rootDir) {
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFiles(fullPath));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function syncWorkspaceOverlayTree(overlayRoot, workspaceDir) {
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  for (const sourceFile of walkFiles(overlayRoot)) {
+    const relativePath = path.relative(overlayRoot, sourceFile);
+    const destinationFile = path.join(workspaceDir, relativePath);
+    fs.mkdirSync(path.dirname(destinationFile), { recursive: true });
+    fs.copyFileSync(sourceFile, destinationFile);
+    const mode = fs.statSync(sourceFile).mode;
+    fs.chmodSync(destinationFile, mode);
+  }
+}
+
+function syncWorkspaceOverlays() {
+  if (!fs.existsSync(workspaceOverlayPath)) {
+    return 0;
+  }
+
+  const workspaceRoot = path.join(resolveOpenclawConfigDir(), "workspace-agents");
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  const names = fs
+    .readdirSync(workspaceRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter(
+      (name) => name === "kingdee-cloud" || /^tenant-.*-kingdee-cloud-.*$/.test(name),
+    )
+    .sort();
+
+  const targets = names.length > 0 ? names : ["kingdee-cloud"];
+  for (const name of targets) {
+    syncWorkspaceOverlayTree(workspaceOverlayPath, path.join(workspaceRoot, name));
+  }
+  process.stdout.write(
+    `Synced kingdee-cloud workspace overlay to ${targets.length} workspace(s) under ${workspaceRoot}\n`,
+  );
+  return targets.length;
+}
+
 function runTargetedComposeUp() {
   if (shouldSkipComposeUp()) {
     process.stdout.write("Skipped docker compose up because OPENCLAW_SKIP_COMPOSE_UP=1\n");
@@ -580,6 +648,7 @@ function runTargetedComposeUp() {
 function main() {
   buildCustomControlUi();
   const extraMounts = writeRootOverride();
+  syncWorkspaceOverlays();
   syncPortableBaselineConfig();
   syncGatewayControlUiRoot();
   syncControlUiAllowedOrigins();

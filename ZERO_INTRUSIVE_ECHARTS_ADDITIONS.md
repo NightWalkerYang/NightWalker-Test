@@ -165,6 +165,14 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/update-log-dialog.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/update-log-dialog.js`
 
+### Workspace Overlays: Kingdee Cloud
+
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/SKILL.md`
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/_bridge_client.py`
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/query_analytics_db.py`
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/manage_analytics_db.py`
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/query_host_db.py`
+
 ### Sidecar: Tenant Platform
 
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
@@ -301,6 +309,8 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The direct-docker setup helpers now also merge `gateway.controlUi.allowedOrigins` with the proxy-facing local browser origins (`http://127.0.0.1:18789` and `http://localhost:18789` on the published gateway port), so the proxy-fronted Control UI no longer depends on dangerous Host-header origin fallback to complete its WebSocket handshake.
 - The same direct-docker setup helpers now explicitly sync `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=false`, so stale break-glass runtime configs stop overriding the safer allowlist-based path on later redeploys.
 - Local Docker proxy-fronted setup now also syncs `gateway.controlUi.dangerouslyDisableDeviceAuth=true` into the runtime config, because the proxy-fronted `18789` path no longer looks like a direct loopback browser session to the gateway and would otherwise stop on a one-time `pairing required` screen before the tenant shell can render.
+- The zero-intrusive Docker deployment path now also syncs a `kingdee-cloud` workspace overlay into the host `workspace-agents` tree, covering both the base `kingdee-cloud` workspace and existing `tenant-*-kingdee-cloud-*` derived workspaces without touching OpenClaw core source files or rebuilding the image.
+- That overlay upgrades the existing forced-command SSH bridge behind `kingdee-analytics-ops`: read queries still use the same `query_analytics_db.py` path, while a new `manage_analytics_db.py` path can send controlled DDL/DML writes and whitelisted `kingdee_analytics.cli` host commands (`init-db`, `sync-object`, `sync-sales-module`) through the host bridge, so AI can now create tables, insert or update rows, and trigger the real sync engine instead of being limited to the previous read-only bridge.
 - Local edition bootstrap now bypasses platform-admin setup entirely: the first local login initializes a single local tenant admin, members continue to use the tenant login entry, and native root access redirects to the tenant flow instead of the platform-admin flow.
 - Unified `/login` now validates cached sessions before auto-redirect and logout clears both platform/tenant local sessions to prevent login-control redirect loops.
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.

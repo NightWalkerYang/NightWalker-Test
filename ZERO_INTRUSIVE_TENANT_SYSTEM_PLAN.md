@@ -1820,6 +1820,34 @@ sidecar 落点固定为：
   - Docker 零侵入部署下建议显式让 sidecar 走容器内网地址：`OPENCLAW_TENANT_PLATFORM_GATEWAY_URL=ws://openclaw-gateway:18789`
 - 这样同一个租户下不同成员使用同一租户 Agent 时，不再共享同一份记忆/灵魂工作区状态
 
+14. Kingdee analytics 宿主桥接已补齐零侵入写库链路
+
+- 当前 `kingdee-cloud` 类工作区不再只保留只读查询桥
+- 零侵入部署链路现在会把一套 workspace overlay 同步到：
+  - 基础工作区 `workspace-agents/kingdee-cloud`
+  - 现有派生成员工作区 `workspace-agents/tenant-*-kingdee-cloud-*`
+- 同步内容只落在零侵入 overlay 文件，不触碰 OpenClaw 核心源码目录
+- 宿主侧原有 forced-command SSH 入口仍复用同一把 key，但桥接脚本已扩成三种模式：
+  - `query`
+    - 继续承接只读 `select/with/explain`
+  - `write_sql`
+    - 受控承接 `insert/update/create/alter` 等单语句写库
+    - `delete/drop` 这类 destructive 动作要求显式允许
+  - `cli`
+    - 受控转发宿主 `kingdee_analytics.cli`
+    - 当前白名单包含：
+      - `init-db`
+      - `sync-object`
+      - `sync-sales-module`
+- 因此当前真实可运行方案已经支持：
+  - AI 建表
+  - AI 插入/更新 analytics PostgreSQL 数据
+  - AI 通过宿主工程执行 `init-db`、单对象同步、销售模块同步
+- 这里的真实边界也要明确：
+  - 这条桥只解决 `kingdee-cloud` 宿主 analytics 工程与 PostgreSQL 的受控写入
+  - 它不是对所有任意数据库默认放开无限制写权限
+  - DDL/DML 仍要求用户有明确写入意图，且建议写后立即回查验证
+
 ## 十二、当前还需要继续确认的事项
 
 1. 通联聚合接入材料
