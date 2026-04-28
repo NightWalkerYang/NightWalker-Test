@@ -2,7 +2,6 @@ import { createTenantApiClient } from "./api-client.js";
 import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   TENANT_LOGIN_ROUTE,
-  TENANT_STATISTICS_OVERVIEW_VIEW,
   requireTenantSession,
 } from "./tenant-context.js";
 import {
@@ -10,6 +9,7 @@ import {
   refreshTenantOverview,
   renderTenantOverview,
 } from "./tenant-overview-page.js";
+import { renderTenantWalletPage } from "./tenant-wallet-page.js";
 
 const PAGE_SIZE = 8;
 const USAGE_SEARCH_DEBOUNCE_MS = 250;
@@ -400,15 +400,20 @@ function ensureController(root, session, apiClient) {
       "agent-assignment": "",
       "owned-agents": "",
       "usage-stats": "",
+      wallet: "",
     },
     pageBySection: {
       members: 1,
       "agent-assignment": 1,
       "owned-agents": 1,
       "usage-stats": 1,
+      wallet: 1,
     },
     members: [],
     tenantAgents: [],
+    walletData: null,
+    walletActiveOrder: null,
+    walletActiveOrderId: "",
     agentDetailDialog: createAgentDetailDialogState(),
     activeMember: null,
     assignAgentDialog: createAssignAgentDialogState(),
@@ -503,6 +508,20 @@ function paginate(items, page) {
 }
 
 function renderToolbar(controller) {
+  if (controller.section === "wallet") {
+    const pendingCount = Number(controller.walletData?.summary?.pendingOrderCount || 0);
+    return `
+      <div class="data-table-toolbar oc-tenant-table-toolbar">
+        <div class="oc-tenant-wallet-toolbar__summary">
+          待处理订单: ${formatNumber(pendingCount)}
+        </div>
+        <div class="oc-tenant-table-toolbar__actions">
+          <button class="btn" type="button" data-tenant-wallet-refresh>刷新钱包</button>
+        </div>
+      </div>
+    `;
+  }
+
   if (controller.section === "usage-stats") {
     return `
       <div class="data-table-toolbar oc-tenant-table-toolbar">
@@ -1283,13 +1302,14 @@ function render(root, controller) {
   const focusState = captureRenderFocusState(root);
   const isUsageStats = controller.section === "usage-stats";
   const isOverview = controller.section === "statistics-overview";
+  const isWallet = controller.section === "wallet";
   const isOwnedAgents = controller.section === "owned-agents";
   if (controller.section === "agent-assignment") {
     pruneRevokeAssignmentSelection(controller);
     pruneAssignAgentSelection(controller);
   }
   const pagination =
-    isUsageStats || isOverview
+    isUsageStats || isOverview || isWallet
       ? null
       : paginate(
           isOwnedAgents ? filterTenantAgents(controller) : filterMembers(controller),
@@ -1303,6 +1323,8 @@ function render(root, controller) {
     ? renderUsageList(controller)
     : isOverview
       ? renderTenantOverview(controller)
+      : isWallet
+        ? renderTenantWalletPage(controller)
       : isOwnedAgents
         ? `
           <div class="data-table-wrapper">
@@ -1323,12 +1345,12 @@ function render(root, controller) {
 
   root.dataset.ocTenantEmbedded = "true";
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${isUsageStats || isOverview ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
     </section>
     ${
-      isUsageStats || isOverview
+      isUsageStats || isOverview || isWallet
         ? ""
         : isOwnedAgents
           ? `${renderAgentDetailDialog(controller)}`
@@ -1340,7 +1362,7 @@ function render(root, controller) {
     void initTenantOverviewCharts(root, controller);
   }
 
-  if (!isUsageStats && !isOverview) {
+  if (!isUsageStats && !isOverview && !isWallet) {
     if (isOwnedAgents && controller.agentDetailDialog?.open) {
       openDialog(root.querySelector("[data-tenant-agent-detail-dialog]"));
     }
@@ -1371,6 +1393,24 @@ function render(root, controller) {
 }
 
 async function refresh(root, controller) {
+  if (controller.section === "wallet") {
+    controller.walletData = await controller.apiClient.getTenantWallet();
+    if (controller.walletActiveOrderId) {
+      const matchedOrder = (Array.isArray(controller.walletData?.orders)
+        ? controller.walletData.orders
+        : []
+      ).find((order) => String(order?.id || "").trim() === controller.walletActiveOrderId);
+      if (matchedOrder) {
+        controller.walletActiveOrder = matchedOrder;
+      } else {
+        controller.walletActiveOrder = null;
+        controller.walletActiveOrderId = "";
+      }
+    }
+    render(root, controller);
+    return;
+  }
+
   if (controller.section === "usage-stats") {
     const search = getSearchValue(controller).trim();
     const page = getPageValue(controller);
@@ -1688,9 +1728,66 @@ async function revokeSelectedAssignments(root, controller) {
   }
 }
 
+async function queryWalletOrderStatus(root, controller, orderId) {
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!normalizedOrderId) {
+    return;
+  }
+  try {
+    const result = await controller.apiClient.queryTenantPaymentOrder({
+      orderId: normalizedOrderId,
+    });
+    controller.walletActiveOrder = result?.order || null;
+    controller.walletActiveOrderId = String(result?.order?.id || normalizedOrderId).trim();
+    await refresh(root, controller);
+    const status = String(result?.order?.status || result?.provider?.orderStatus || "").trim();
+    if (status === "paid") {
+      setFeedback(root, `订单 ${normalizedOrderId} 已支付并完成入账。`);
+      return;
+    }
+    setFeedback(
+      root,
+      `订单 ${normalizedOrderId} 当前状态: ${String(
+        result?.provider?.retmsg || result?.provider?.retcode || status || "待支付",
+      ).trim()}`,
+    );
+  } catch (error) {
+    setFeedback(root, error instanceof Error ? error.message : String(error), true);
+  }
+}
+
 async function handleClick(root, controller, event) {
   const target = event.target;
   if (!(target instanceof Element)) {
+    return;
+  }
+
+  if (target.closest("[data-tenant-wallet-refresh]")) {
+    void refresh(root, controller);
+    return;
+  }
+
+  const showQrTrigger = target.closest("[data-tenant-wallet-show-qr]");
+  if (showQrTrigger instanceof HTMLElement) {
+    const orderId = String(showQrTrigger.dataset.tenantWalletShowQr || "").trim();
+    const matchedOrder = (Array.isArray(controller.walletData?.orders) ? controller.walletData.orders : []).find(
+      (order) => String(order?.id || "").trim() === orderId,
+    );
+    if (matchedOrder) {
+      controller.walletActiveOrder = matchedOrder;
+      controller.walletActiveOrderId = orderId;
+      render(root, controller);
+    }
+    return;
+  }
+
+  const queryOrderTrigger = target.closest("[data-tenant-wallet-query-order]");
+  if (queryOrderTrigger instanceof HTMLElement) {
+    void queryWalletOrderStatus(
+      root,
+      controller,
+      queryOrderTrigger.dataset.tenantWalletQueryOrder,
+    );
     return;
   }
 
@@ -1873,6 +1970,39 @@ function handleInput(root, controller, event) {
 async function handleSubmit(root, controller, event) {
   const target = event.target;
   if (!(target instanceof HTMLFormElement)) {
+    return;
+  }
+
+  if (target.matches("[data-tenant-wallet-recharge-form]")) {
+    event.preventDefault();
+    try {
+      const payload = Object.fromEntries(new FormData(target).entries());
+      const result = await controller.apiClient.createTenantPaymentOrder(payload);
+      controller.walletActiveOrder = result || null;
+      controller.walletActiveOrderId = String(result?.id || "").trim();
+      await refresh(root, controller);
+      setFeedback(root, `充值订单 ${String(result?.id || "").trim()} 已创建，请直接扫码支付。`);
+      target.reset();
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  if (target.matches("[data-tenant-wallet-transfer-form]")) {
+    event.preventDefault();
+    try {
+      const payload = Object.fromEntries(new FormData(target).entries());
+      const result = await controller.apiClient.transferTenantWalletToAgent(payload);
+      await refresh(root, controller);
+      setFeedback(
+        root,
+        `已划转 ${formatNumber(result?.amountPoints)} 积分，钱包余额 ${formatNumber(result?.walletBalance)}。`,
+      );
+      target.reset();
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
     return;
   }
 
@@ -2074,7 +2204,7 @@ export async function mountTenantConsolePage(root, options = {}) {
     controller.assignAgentDialog = createAssignAgentDialogState();
     controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
   }
-  if (controller.section === "usage-stats") {
+  if (controller.section === "usage-stats" || controller.section === "wallet") {
     controller.dialogs.createMemberOpen = false;
     controller.dialogs.assignOpen = false;
     controller.dialogs.changePasswordOpen = false;

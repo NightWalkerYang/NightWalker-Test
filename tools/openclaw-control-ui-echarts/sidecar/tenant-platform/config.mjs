@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveAllinpaySidecarConfig } from "./allinpay.mjs";
 
 const DEFAULT_PORT = 18801;
 const DEFAULT_API_BASE_PATH = "/tenant-platform-api/v1";
@@ -59,6 +60,12 @@ function parseBooleanFlag(rawValue, fallback) {
   return fallback;
 }
 
+function normalizePublicBaseUrl(rawValue) {
+  return String(rawValue ?? "")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
 function normalizeGatewayWsUrl(rawValue) {
   const normalized = String(rawValue ?? "").trim();
   if (!normalized) {
@@ -105,6 +112,7 @@ export function resolveTenantPlatformConfig(env = process.env) {
     env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
     "openclaw-tenant-platform-dev-secret";
   const configPath = resolveConfigFilePath(configDir);
+  const publicBaseUrl = normalizePublicBaseUrl(env.OPENCLAW_TENANT_PLATFORM_PUBLIC_BASE_URL);
   const localLicensePath =
     env.OPENCLAW_TENANT_PLATFORM_LICENSE_PATH?.trim() ||
     path.join(stateDir, "local-license.json");
@@ -124,6 +132,12 @@ export function resolveTenantPlatformConfig(env = process.env) {
     env.OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE,
     true,
   );
+  const payments = {
+    allinpay: resolveAllinpaySidecarConfig(env, {
+      apiBasePath,
+      publicBaseUrl,
+    }),
+  };
 
   return {
     edition,
@@ -134,6 +148,7 @@ export function resolveTenantPlatformConfig(env = process.env) {
     configPath,
     stateDir,
     dbPath,
+    publicBaseUrl,
     sessionSecret,
     localLicensePath,
     localLicensePublicKey,
@@ -142,6 +157,7 @@ export function resolveTenantPlatformConfig(env = process.env) {
     gatewayToken,
     gatewayPassword,
     execAutoApproveEnabled,
+    payments,
   };
 }
 

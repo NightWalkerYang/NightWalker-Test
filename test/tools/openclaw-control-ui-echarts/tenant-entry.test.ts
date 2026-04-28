@@ -276,6 +276,7 @@ describe("zero-intrusive tenant entry", () => {
       session: {
         role: "tenant_admin",
         username: "tenant-admin",
+        edition: "cloud",
       },
     });
     document.body.innerHTML = `
@@ -300,6 +301,8 @@ describe("zero-intrusive tenant entry", () => {
     const agentItems = agentSection?.querySelectorAll(".nav-item") ?? [];
     const statsSection = document.querySelector(".oc-tenant-stats-section");
     const statsItems = statsSection?.querySelectorAll(".nav-item") ?? [];
+    const walletSection = document.querySelector(".oc-tenant-wallet-section");
+    const walletItems = walletSection?.querySelectorAll(".nav-item") ?? [];
     expect(managementSection).not.toBeNull();
     expect(managementItems).toHaveLength(2);
     expect(managementItems[0]?.textContent).toContain("成员管理");
@@ -323,6 +326,10 @@ describe("zero-intrusive tenant entry", () => {
     );
     expect(statsItems[1]?.textContent).toContain("耗量统计");
     expect(statsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
+    expect(walletSection).not.toBeNull();
+    expect(walletItems).toHaveLength(1);
+    expect(walletItems[0]?.textContent).toContain("钱包充值");
+    expect(walletItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant_admin",
     );
@@ -340,6 +347,31 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[1]?.hidden).toBe(true);
     expect(utilityItems[2]?.hidden).toBe(true);
     expect(utilityItems[3]?.hidden).toBe(false);
+  });
+
+  it("hides the wallet section for local-edition tenant admins", () => {
+    writeTenantSession({
+      token: "tenant-local-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-local-admin",
+        edition: "local",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+
+    bootTenantEntry();
+
+    expect(document.querySelector(".oc-tenant-wallet-section")).toBeNull();
   });
 
   it("injects a member sidebar group with Agent selection and visualization", async () => {

@@ -21,6 +21,8 @@ import {
   TENANT_USAGE_STATS_VIEW,
   TENANT_STATISTICS_OVERVIEW_ROUTE,
   TENANT_STATISTICS_OVERVIEW_VIEW,
+  TENANT_WALLET_ROUTE,
+  TENANT_WALLET_VIEW,
   isTenantLoginView,
   clearPlatformSession,
   clearTenantSession,
@@ -37,8 +39,14 @@ const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
 const AGENT_SECTION_CLASS = "oc-tenant-agent-section";
 const STATS_SECTION_CLASS = "oc-tenant-stats-section";
+const WALLET_SECTION_CLASS = "oc-tenant-wallet-section";
 const MEMBER_VISUALIZATION_SECTION_CLASS = "oc-member-visualization-section";
-const NAV_SECTION_CLASSES = [MANAGEMENT_SECTION_CLASS, AGENT_SECTION_CLASS, STATS_SECTION_CLASS];
+const NAV_SECTION_CLASSES = [
+  MANAGEMENT_SECTION_CLASS,
+  AGENT_SECTION_CLASS,
+  STATS_SECTION_CLASS,
+  WALLET_SECTION_CLASS,
+];
 const NAV_SECTION_SELECTOR = NAV_SECTION_CLASSES.map((name) => `.${name}`).join(", ");
 const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
@@ -88,6 +96,11 @@ const ICONS = {
   stats: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 20V4h2v16Zm4-3V9h2v8Zm4 3V12h2v8Zm4-3V6h2v11Zm4 3v-7h2v7Z"></path>
+    </svg>
+  `,
+  wallet: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h10A2.5 2.5 0 0 1 19 7.5V9h1a1 1 0 0 1 1 1v7a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 16.5Zm2.5-.5a.5.5 0 0 0-.5.5v1h11V7.5a.5.5 0 0 0-.5-.5Zm11.5 4H6v5.5a.5.5 0 0 0 .5.5H19Zm-2 3.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z"></path>
     </svg>
   `,
   dashboard: `
@@ -172,6 +185,7 @@ function getSectionConfigForSession(session) {
     };
   }
   if (role === "tenant_admin") {
+    const isLocalEdition = session?.session?.edition === "local";
     return {
       sections: [
         {
@@ -232,6 +246,24 @@ function getSectionConfigForSession(session) {
             },
           ],
         },
+        ...(isLocalEdition
+          ? []
+          : [
+              {
+                className: WALLET_SECTION_CLASS,
+                label: "钱包",
+                links: [
+                  {
+                    className: "oc-tenant-wallet-link",
+                    href: TENANT_WALLET_ROUTE,
+                    title: "钱包充值",
+                    text: "钱包充值",
+                    icon: ICONS.wallet,
+                    activeView: TENANT_WALLET_VIEW,
+                  },
+                ],
+              },
+            ]),
       ],
     };
   }
@@ -525,6 +557,7 @@ function isManagementViewActive() {
     activeView === TENANT_OWNED_AGENTS_VIEW ||
     activeView === TENANT_USAGE_STATS_VIEW ||
     activeView === TENANT_STATISTICS_OVERVIEW_VIEW ||
+    activeView === TENANT_WALLET_VIEW ||
     activeView === TENANT_AGENT_SELECTOR_VIEW
   );
 }

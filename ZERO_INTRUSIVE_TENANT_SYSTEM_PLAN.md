@@ -386,16 +386,30 @@ sidecar 落点固定为：
 
 第一阶段支付形式确定为：
 
-- 支付宝扫码支付
-- 微信扫码支付
+- 通联 H5 收银台
+- 租户管理员侧可选择：
+  - 通联收银台
+  - 微信支付
+  - 支付宝支付
+
+当前实际实现不是前端直接拿二维码 JSON，而是：
+
+- sidecar 创建充值订单
+- 钱包页在创建订单后直接显示二维码
+- 二维码内容不是原始支付参数，而是同源零侵入支付跳转链接
+- 手机扫码后会打开同源零侵入支付跳转页
+- 跳转页自动提交通联 H5 收银台表单
+- 支付结果优先靠通联异步回调确认
+- 租户管理员也可以在钱包页手动查询订单状态补确认
 
 ### 5.1 公有云部署下的钱包模式
 
 公有云部署下：
 
 - 租户通过在线支付充值
-- 支付成功后先进入待确认订单
-- 订单确认后，钱包增加积分
+- 创建订单后进入通联 H5 收银台
+- 支付成功后订单先保持待处理，再由回调或主动查询确认
+- 订单确认后，钱包按 `1 元 = 1 积分` 增加积分
 - 租户管理员再把积分划转到 Agent
 - 成员使用 Agent 时按规则扣减
 
@@ -659,7 +673,7 @@ sidecar 落点固定为：
 
 - 先完成本地部署授权版
 - 先把本地版做成“可部署、可到期、可续期、可只读”
-- 在线支付、公有云钱包和支付回调后置开发
+- 再补公有云钱包、通联支付和回调确认闭环
 
 第一阶段目标：
 
@@ -1050,34 +1064,28 @@ sidecar 落点固定为：
 
 - 保存支付订单和充值订单
 
-建议字段：
+当前实际字段：
 
 - `id`
 - `tenant_id`
-- `order_no`
-- `payment_channel`
-- `amount`
-- `credits_granted`
+- `amount_cny`
+- `amount_points`
+- `provider`
 - `status`
-- `created_by`
-- `paid_at`
-- `confirmed_at`
+- `provider_order_id`
+- `provider_payload`
 - `created_at`
 - `updated_at`
 
 说明：
 
 - 第一阶段需要支持真实支付
-- 第一阶段支付渠道为支付宝扫码支付和微信扫码支付
+- 第一阶段支付渠道由通联 H5 收银台承接，并在租户管理员页提供通联收银台 / 微信 / 支付宝三种选项
 - 第一阶段不需要平台管理员手动续费、补单、退款
 - 支付成功后先进入待确认订单，再入账
 - 支付接入确认走通联聚合
-- 支付宝和微信扫码支付由通联聚合承接
-- 后续实施时再接入具体参数和接口文档
-
-说明：
-
-- 第一阶段需要支持真实支付
+- 支付宝和微信支付由通联聚合承接
+- `provider_payload` 当前同时保存支付渠道、创建人和最近一次通联返回报文，不再额外拆 `payment_channel` / `created_by` / `confirmed_at` 字段
 
 ### `audit_logs`
 
@@ -1105,25 +1113,11 @@ sidecar 落点固定为：
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
   - 读取配置
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
-  - 数据库连接和迁移
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/identity.mjs`
-  - 解析用户和租户身份
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/authz.mjs`
-  - 权限判断
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/membership.mjs`
-  - 成员和角色管理
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/wallet.mjs`
-  - 钱包和流水处理
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/billing.mjs`
-  - 计费倍率和扣费逻辑
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/agent-assignment.mjs`
-  - Agent 分配逻辑
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/sessions.mjs`
-  - 租户会话列表、创建、归档、绑定 OpenClaw 会话
-- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/audit.mjs`
-  - 审计日志
+  - 数据库连接、迁移、租户、成员、钱包、订单、会话映射和扣费聚合逻辑
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs`
+  - 通联签名、验签、H5 收银台跳转表单和交易查询
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
-  - 路由聚合
+  - 路由聚合、登录守卫、支付跳转页、支付回调和公开解析接口
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
   - 初始化表结构
 
@@ -1435,12 +1429,21 @@ sidecar 落点固定为：
    - 统计和账务流水完全保留
    - 成员失去某个 Agent 分配后，不能再看到该 Agent 历史
 
-8. 公有云模式支付与扣费后置开发
+8. 公有云模式支付与扣费已落地
    - 账号密码登录
    - 最终统一按 `CNY` 结算并按 `1 积分 = 1 人民币` 扣积分；命中本地静态单价的模型优先按 token 本地计费，未命中时再复用源系统 `cost.total`
-   - 支付方式：通联承接支付宝 / 微信扫码
-   - 支付成功后先进入待确认订单
-   - 支付回调自动确认后再入账
+   - 租户管理员原生侧边栏已新增 `钱包 -> 钱包充值`
+   - `统计总览` 已增加钱包余额卡片和 `立即充值` 入口
+   - 当前在线支付实际接法为通联 `4.1 H5收银台`
+   - 当前闭环为：
+     - 创建充值订单
+     - 钱包页直接展示可扫码二维码
+     - 手机扫码后打开同源跳转页并自动提交到通联收银台
+     - 通联异步回调自动确认
+     - 钱包页手动查询订单状态补确认
+     - 支付成功后钱包入账
+     - 租户管理员把钱包积分划转到 Agent
+   - 部署侧必须把 `OPENCLAW_TENANT_PLATFORM_PUBLIC_BASE_URL` 与通联相关 `OPENCLAW_TENANT_PAYMENT_ALLINPAY_*` 变量显式透传到 `openclaw-tenant-platform` 容器；公网支付场景要求这里使用真实可访问的 `https://...` 地址，不能只停留在宿主机 `.env`
    - 每次模型回复完成后同步 usage；若明细缺少 `cost.total`，则回退使用 session 级 `estimatedCostUsd`，并先折算为 `CNY` 后再分摊；若两者都不可用，则按 token 与本地静态单价或 runtime 模型价格估算
    - Agent 积分不足时直接拦截消息发送
 
@@ -1468,6 +1471,7 @@ sidecar 落点固定为：
 - 原生侧边栏“管理”分组
 - 原生单入口平台管理视图：`./?ocTenantView=platform-tenants`
 - 原生单入口平台管理视图：`./?ocTenantView=platform-agent-assignment`
+- 原生单入口租户钱包视图：`./?ocTenantView=tenant-wallet`
 - 成员原生单入口 Agent 选择视图：`./?ocTenantView=tenant-agent-selector`
 
 12. 第一阶段必须新增的零侵入运行时文件
@@ -1488,6 +1492,7 @@ sidecar 落点固定为：
 - `runtime/tenant/member-surface.css`
 - `runtime/tenant/member-chat-surface.js`
 - `runtime/tenant/tenant-console-page.js`
+- `runtime/tenant/tenant-wallet-page.js`
 - `runtime/tenant/platform-console-page.js`
 
 13. 第一阶段必须新增的 sidecar 文件
@@ -1496,16 +1501,16 @@ sidecar 落点固定为：
 - `sidecar/tenant-platform/config.mjs`
 - `sidecar/tenant-platform/db.mjs`
 - `sidecar/tenant-platform/auth.mjs`
+- `sidecar/tenant-platform/allinpay.mjs`
 - `sidecar/tenant-platform/license.mjs`
-- `sidecar/tenant-platform/membership.mjs`
-- `sidecar/tenant-platform/wallet.mjs`
-- `sidecar/tenant-platform/billing.mjs`
-- `sidecar/tenant-platform/payments.mjs`
-- `sidecar/tenant-platform/agent-assignment.mjs`
-- `sidecar/tenant-platform/sessions.mjs`
-- `sidecar/tenant-platform/audit.mjs`
 - `sidecar/tenant-platform/routes.mjs`
 - `sidecar/tenant-platform/migrations/001_init.sql`
+
+当前实际实现没有继续拆出 `membership.mjs / wallet.mjs / billing.mjs / payments.mjs / agent-assignment.mjs / sessions.mjs / audit.mjs` 这些子模块：
+
+- 租户、成员、钱包、订单、扣费和会话映射当前主要集中在 `sidecar/tenant-platform/db.mjs`
+- 路由、登录、支付回调和公开可视化解析集中在 `sidecar/tenant-platform/routes.mjs`
+- 通联签名、验签、H5 收银台跳转和订单查询集中在 `sidecar/tenant-platform/allinpay.mjs`
 
 14. 第一阶段上线后的页面结果
 

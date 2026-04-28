@@ -17,6 +17,7 @@ export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
 export const TENANT_OWNED_AGENTS_VIEW = "tenant-owned-agents";
 export const TENANT_USAGE_STATS_VIEW = "tenant-usage-stats";
 export const TENANT_STATISTICS_OVERVIEW_VIEW = "tenant-statistics-overview";
+export const TENANT_WALLET_VIEW = "tenant-wallet";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
 export const LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`;
 export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
@@ -28,6 +29,7 @@ export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENA
 export const TENANT_OWNED_AGENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_OWNED_AGENTS_VIEW}`;
 export const TENANT_USAGE_STATS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_USAGE_STATS_VIEW}`;
 export const TENANT_STATISTICS_OVERVIEW_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_STATISTICS_OVERVIEW_VIEW}`;
+export const TENANT_WALLET_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_VIEW}`;
 export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
 
 function normalizeTenantSessionValue(value) {
@@ -90,6 +92,7 @@ export function readSessionForCurrentView() {
     view === TENANT_OWNED_AGENTS_VIEW ||
     view === TENANT_USAGE_STATS_VIEW ||
     view === TENANT_STATISTICS_OVERVIEW_VIEW ||
+    view === TENANT_WALLET_VIEW ||
     view === TENANT_AGENT_SELECTOR_VIEW
   ) {
     return readTenantSession();

@@ -72,6 +72,11 @@ async function flush() {
 describe("tenant overview page", () => {
   it("renders Agent display names in the consumption distribution chart", async () => {
     const controller = {
+      session: {
+        session: {
+          edition: "cloud",
+        },
+      },
       overviewData: {
         summary: {
           totalTokens: 1000,
@@ -84,6 +89,7 @@ describe("tenant overview page", () => {
           memberCount: 3,
           walletBalance: 0,
           consumedCredits: 8,
+          pendingPaymentOrderCount: 2,
         },
         trend: [],
         topMembers: [],
@@ -105,6 +111,11 @@ describe("tenant overview page", () => {
     document.body.append(root);
 
     expect(root.querySelectorAll(".oc-tenant-metric-value")[1]?.textContent).toBe("8.00");
+    expect(root.textContent).toContain("钱包余额");
+    expect(root.textContent).toContain("待处理订单: 2");
+    expect(root.querySelector('a[href="./?ocTenantView=tenant-wallet"]')?.textContent).toContain(
+      "立即充值",
+    );
 
     await initTenantOverviewCharts(root, controller);
     await flush();

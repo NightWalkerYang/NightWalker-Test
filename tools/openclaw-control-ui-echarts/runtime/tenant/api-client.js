@@ -225,6 +225,18 @@ export function createTenantApiClient() {
     getTenantOverview() {
       return requestJson("/tenant/admin/overview");
     },
+    getTenantWallet() {
+      return requestJson("/tenant/admin/wallet");
+    },
+    createTenantPaymentOrder(body) {
+      return requestJson("/tenant/admin/payment-orders", { method: "POST", body });
+    },
+    queryTenantPaymentOrder(body) {
+      return requestJson("/tenant/admin/payment-orders/query", { method: "POST", body });
+    },
+    transferTenantWalletToAgent(body) {
+      return requestJson("/tenant/admin/wallet/transfers", { method: "POST", body });
+    },
     listMemberAgents() {
       return requestJson("/member/agents");
     },

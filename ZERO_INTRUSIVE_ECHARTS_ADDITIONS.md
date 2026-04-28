@@ -159,6 +159,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-usage-stats-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-overview-page.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-wallet-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js`
@@ -177,6 +178,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/billing-rates.json5`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/branding.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`

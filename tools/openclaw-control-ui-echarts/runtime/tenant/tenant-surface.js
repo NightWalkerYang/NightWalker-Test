@@ -6,6 +6,7 @@ import {
   TENANT_OWNED_AGENTS_VIEW,
   TENANT_USAGE_STATS_VIEW,
   TENANT_STATISTICS_OVERVIEW_VIEW,
+  TENANT_WALLET_VIEW,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -21,7 +22,8 @@ function isTenantManagementView(view) {
     view === TENANT_AGENT_ASSIGNMENT_VIEW ||
     view === TENANT_OWNED_AGENTS_VIEW ||
     view === TENANT_USAGE_STATS_VIEW ||
-    view === TENANT_STATISTICS_OVERVIEW_VIEW
+    view === TENANT_STATISTICS_OVERVIEW_VIEW ||
+    view === TENANT_WALLET_VIEW
   );
 }
 
@@ -46,6 +48,9 @@ function sectionForView(view) {
   }
   if (view === TENANT_STATISTICS_OVERVIEW_VIEW) {
     return "statistics-overview";
+  }
+  if (view === TENANT_WALLET_VIEW) {
+    return "wallet";
   }
   return "members";
 }

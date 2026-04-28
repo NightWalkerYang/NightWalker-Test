@@ -2,6 +2,16 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import * as parse5 from "parse5";
+import {
+  buildAllinpayLaunchHtml,
+  buildQrSvgDataUrl,
+  getAllinpayOrderReference,
+  getAllinpayProviderOrderId,
+  mapAllinpayResult,
+  normalizeAllinpayNotificationPayload,
+  queryAllinpayOrder,
+  verifyAllinpayFields,
+} from "./allinpay.mjs";
 import { issueSessionToken, readSessionToken, verifyPassword } from "./auth.mjs";
 import {
   createBootstrapLocalTenantAdmin,
@@ -11,8 +21,11 @@ import {
   deleteTenantMember,
   deletePlatformUpdateLog,
   createTenantMember,
+  createTenantPaymentOrder,
   createTenantWithAdmin,
+  confirmTenantPaymentOrderPaid,
   getBootstrapStatus,
+  getTenantPaymentOrderById,
   getTenantContextForUser,
   getUserByUsername,
   assignTenantAgentsToUser,
@@ -25,6 +38,7 @@ import {
   listTenantUsageStats,
   listTenantUsageRecords,
   getTenantOverview,
+  getTenantWalletDashboard,
   logAudit,
   readOpenClawAgentCatalog,
   registerTenantAgentSession,
@@ -32,9 +46,11 @@ import {
   revokeTenantAgentAssignments,
   syncTenantUsageRecords,
   updatePlatformUpdateLog,
+  updateTenantPaymentOrderStatus,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
+  transferTenantWalletToAgent,
   upsertTenantAgent,
   hideTenantAgentSession,
   listTenantAgentSessions,
@@ -69,6 +85,17 @@ function sendBinary(request, response, statusCode, body, contentType) {
   response.end(body);
 }
 
+function sendText(request, response, statusCode, body, contentType = "text/plain; charset=utf-8") {
+  response.writeHead(statusCode, {
+    "content-type": contentType,
+    "cache-control": "no-store",
+    "access-control-allow-origin": request.headers.origin || "*",
+    "access-control-allow-headers": "content-type, authorization",
+    "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+  });
+  response.end(body);
+}
+
 function readJsonBody(request) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -83,6 +110,25 @@ function readJsonBody(request) {
     });
     request.on("error", reject);
   });
+}
+
+function readBodyText(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    request.on("end", () => {
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+    request.on("error", reject);
+  });
+}
+
+async function readFormBody(request) {
+  const text = String(await readBodyText(request)).trim();
+  if (!text) {
+    return {};
+  }
+  return Object.fromEntries(new URLSearchParams(text).entries());
 }
 
 function buildSessionPayload(user, tenantContext, config, localLicenseState) {
@@ -153,6 +199,92 @@ function requireLocalWritable(request, response, deps) {
     },
   });
   return false;
+}
+
+function buildTenantPaymentLaunchToken(order, session, deps) {
+  return issueSessionToken(
+    {
+      purpose: "tenant_payment_launch",
+      orderId: order.id,
+      tenantId: session.tenantId,
+      userId: session.userId,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    },
+    deps.config.sessionSecret,
+  );
+}
+
+function buildTenantPaymentLaunchRelativeHref(order, session, deps) {
+  const token = buildTenantPaymentLaunchToken(order, session, deps);
+  return `${deps.config.apiBasePath}/tenant/admin/payment-orders/launch?token=${encodeURIComponent(token)}`;
+}
+
+function buildTenantPaymentLaunchAbsoluteHref(order, session, deps) {
+  const relativeHref = buildTenantPaymentLaunchRelativeHref(order, session, deps);
+  const publicBaseUrl = String(deps.config?.publicBaseUrl || "").trim().replace(/\/+$/, "");
+  if (!publicBaseUrl) {
+    return "";
+  }
+  return `${publicBaseUrl}${relativeHref}`;
+}
+
+function readTenantPaymentLaunchPayload(token, deps) {
+  const payload = readSessionToken(token, deps.config.sessionSecret);
+  if (!payload || payload.purpose !== "tenant_payment_launch") {
+    return null;
+  }
+  const expiresAt = Number(payload.expiresAt || 0);
+  if (expiresAt > 0 && Date.now() > expiresAt) {
+    return null;
+  }
+  return payload;
+}
+
+function resolveTenantPaymentChannelLabel(order, deps) {
+  const allinpay = deps.config?.payments?.allinpay;
+  const channelId = String(order?.channel || order?.providerPayload?.channel || "").trim();
+  const matched = Array.isArray(allinpay?.channels)
+    ? allinpay.channels.find((entry) => String(entry?.id || "").trim() === channelId)
+    : null;
+  return String(matched?.label || channelId || "通联收银台").trim();
+}
+
+function decorateTenantPaymentOrder(order, session, deps) {
+  const launchHref =
+    order && ["pending_payment", "processing", "pending_confirmation"].includes(order.status)
+      ? buildTenantPaymentLaunchRelativeHref(order, session, deps)
+      : "";
+  const launchScanHref =
+    order && ["pending_payment", "processing", "pending_confirmation"].includes(order.status)
+      ? buildTenantPaymentLaunchAbsoluteHref(order, session, deps)
+      : "";
+  const channelLabel = resolveTenantPaymentChannelLabel(order, deps);
+  return {
+    ...order,
+    channelLabel,
+    providerPayload: {
+      ...(order?.providerPayload && typeof order.providerPayload === "object"
+        ? order.providerPayload
+        : {}),
+      channelLabel,
+    },
+    launchHref,
+    launchScanHref,
+    launchQrDataUrl: launchScanHref ? buildQrSvgDataUrl(launchScanHref) : "",
+  };
+}
+
+function buildTenantPaymentConfigSummary(deps) {
+  const allinpay = deps.config?.payments?.allinpay;
+  return {
+    enabled: Boolean(allinpay?.enabled),
+    providerId: String(allinpay?.providerId || "allinpay").trim(),
+    providerName: String(allinpay?.providerName || "通联支付").trim(),
+    publicBaseUrlConfigured: Boolean(String(allinpay?.publicBaseUrl || "").trim()),
+    notifyUrlConfigured: Boolean(String(allinpay?.notifyUrl || "").trim()),
+    returnUrlConfigured: Boolean(String(allinpay?.returnUrl || "").trim()),
+    channels: Array.isArray(allinpay?.channels) ? allinpay.channels : [],
+  };
 }
 
 function normalizePath(basePath, pathname) {
@@ -2032,6 +2164,323 @@ export function createTenantPlatformRouter(deps) {
           ok: false,
           error: error instanceof Error ? error.message : String(error),
         });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/wallet") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const dashboard = getTenantWalletDashboard(
+          deps.db,
+          { tenantId: session.tenantId, orderLimit: 20, ledgerLimit: 20 },
+          configAgents,
+        );
+        const tenantAgents = listTenantAgents(deps.db, session.tenantId, configAgents, {
+          includeInactive: false,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            ...dashboard,
+            orders: dashboard.orders.map((order) => decorateTenantPaymentOrder(order, session, deps)),
+            tenantAgents,
+            payment: buildTenantPaymentConfigSummary(deps),
+          },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/payment-orders") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (deps.config.edition === "local") {
+        sendJson(request, response, 403, {
+          ok: false,
+          error: "payment_not_supported_in_local_edition",
+        });
+        return;
+      }
+      const allinpay = deps.config?.payments?.allinpay;
+      if (!allinpay?.enabled) {
+        sendJson(request, response, 503, { ok: false, error: "payment_provider_unavailable" });
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const order = createTenantPaymentOrder(deps.db, {
+          tenantId: session.tenantId,
+          createdByUserId: session.userId,
+          amountCny: body.amountCny,
+          provider: "allinpay",
+          channel: body.channel,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.wallet.payment_order.create",
+          resourceType: "payment_order",
+          resourceId: order.id,
+          payloadJson: {
+            amountCny: order.amountCny,
+            amountPoints: order.amountPoints,
+            channel: order.channel,
+            provider: order.provider,
+          },
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: decorateTenantPaymentOrder(order, session, deps),
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/payment-orders/launch") {
+      if (deps.config.edition === "local") {
+        sendText(request, response, 403, "payment_not_supported_in_local_edition");
+        return;
+      }
+      const token = String(url.searchParams.get("token") || "").trim();
+      const payload = readTenantPaymentLaunchPayload(token, deps);
+      if (!payload?.tenantId || !payload?.orderId) {
+        sendText(request, response, 401, "invalid_payment_launch_token");
+        return;
+      }
+      const allinpay = deps.config?.payments?.allinpay;
+      if (!allinpay?.enabled) {
+        sendText(request, response, 503, "payment_provider_unavailable");
+        return;
+      }
+      const order = getTenantPaymentOrderById(deps.db, {
+        tenantId: payload.tenantId,
+        orderId: payload.orderId,
+      });
+      if (!order) {
+        sendText(request, response, 404, "payment_order_not_found");
+        return;
+      }
+      if (!["pending_payment", "processing", "pending_confirmation"].includes(order.status)) {
+        sendText(request, response, 400, "payment_order_not_launchable");
+        return;
+      }
+      const html = buildAllinpayLaunchHtml(
+        {
+          ...order,
+          body: "OpenClaw租户充值",
+        },
+        allinpay,
+      );
+      sendText(request, response, 200, html, "text/html; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/payment-orders/query") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (deps.config.edition === "local") {
+        sendJson(request, response, 403, {
+          ok: false,
+          error: "payment_not_supported_in_local_edition",
+        });
+        return;
+      }
+      const allinpay = deps.config?.payments?.allinpay;
+      if (!allinpay?.enabled) {
+        sendJson(request, response, 503, { ok: false, error: "payment_provider_unavailable" });
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const orderId = String(body.orderId || body.id || "").trim();
+        if (!orderId) {
+          sendJson(request, response, 400, { ok: false, error: "payment_order_id_required" });
+          return;
+        }
+        const order = getTenantPaymentOrderById(deps.db, {
+          tenantId: session.tenantId,
+          orderId,
+        });
+        if (!order) {
+          sendJson(request, response, 404, { ok: false, error: "payment_order_not_found" });
+          return;
+        }
+        if (order.status === "paid") {
+          sendJson(request, response, 200, {
+            ok: true,
+            data: {
+              order: decorateTenantPaymentOrder(order, session, deps),
+              provider: {
+                paid: true,
+                orderStatus: "paid",
+                providerOrderId: order.providerOrderId,
+              },
+            },
+          });
+          return;
+        }
+
+        const providerResult = await queryAllinpayOrder(order, allinpay);
+        const mapped = mapAllinpayResult(providerResult);
+        const providerPayload = {
+          latestProviderResult: providerResult,
+          latestProviderStatus: mapped.providerStatus,
+          lastQueriedAt: new Date().toISOString(),
+        };
+        const settled =
+          mapped.paid
+            ? confirmTenantPaymentOrderPaid(deps.db, {
+                tenantId: session.tenantId,
+                orderId,
+                providerOrderId: mapped.providerOrderId,
+                providerPayload,
+                note: `allinpay_query:${orderId}`,
+                actorUserId: session.userId,
+              }).order
+            : updateTenantPaymentOrderStatus(deps.db, {
+                tenantId: session.tenantId,
+                orderId,
+                status: mapped.orderStatus,
+                providerOrderId: mapped.providerOrderId,
+                providerPayload,
+              });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            order: decorateTenantPaymentOrder(settled, session, deps),
+            provider: mapped,
+          },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/wallet/transfers") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (deps.config.edition === "local") {
+        sendJson(request, response, 403, {
+          ok: false,
+          error: "payment_not_supported_in_local_edition",
+        });
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const result = transferTenantWalletToAgent(deps.db, {
+          tenantId: session.tenantId,
+          tenantAgentId: body.tenantAgentId,
+          actorUserId: session.userId,
+          amountPoints: body.amountPoints,
+          note: body.note,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.wallet.transfer_to_agent",
+          resourceType: "tenant_agent",
+          resourceId: result.tenantAgentId,
+          payloadJson: {
+            amountPoints: result.amountPoints,
+            walletBalance: result.walletBalance,
+            agentBalance: result.agentBalance,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/public/payment/allinpay/notify") {
+      if (deps.config.edition === "local") {
+        sendText(request, response, 403, "fail");
+        return;
+      }
+      const allinpay = deps.config?.payments?.allinpay;
+      if (!allinpay?.enabled) {
+        sendText(request, response, 503, "fail");
+        return;
+      }
+      try {
+        const rawBody = await readFormBody(request);
+        const payload = normalizeAllinpayNotificationPayload(rawBody);
+        if (!verifyAllinpayFields(payload, allinpay)) {
+          sendText(request, response, 400, "fail");
+          return;
+        }
+        const orderId = getAllinpayOrderReference(payload);
+        if (!orderId) {
+          sendText(request, response, 400, "fail");
+          return;
+        }
+        const orderRow = deps.db
+          .prepare(
+            `SELECT tenant_id AS tenantId
+             FROM payment_orders
+             WHERE id = ?
+             LIMIT 1`,
+          )
+          .get(orderId);
+        if (!orderRow?.tenantId) {
+          sendText(request, response, 404, "fail");
+          return;
+        }
+        const mapped = mapAllinpayResult(payload);
+        const providerPayload = {
+          latestProviderResult: payload,
+          latestProviderStatus: mapped.providerStatus,
+          lastNotifiedAt: new Date().toISOString(),
+        };
+        if (mapped.paid) {
+          confirmTenantPaymentOrderPaid(deps.db, {
+            tenantId: orderRow.tenantId,
+            orderId,
+            providerOrderId: getAllinpayProviderOrderId(payload),
+            providerPayload,
+            note: `allinpay_notify:${orderId}`,
+          });
+        } else {
+          updateTenantPaymentOrderStatus(deps.db, {
+            tenantId: orderRow.tenantId,
+            orderId,
+            status: mapped.orderStatus,
+            providerOrderId: getAllinpayProviderOrderId(payload),
+            providerPayload,
+          });
+        }
+        sendText(request, response, 200, "success");
+      } catch {
+        sendText(request, response, 500, "fail");
       }
       return;
     }

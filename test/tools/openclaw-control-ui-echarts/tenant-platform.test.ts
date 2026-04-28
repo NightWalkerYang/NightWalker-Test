@@ -7,10 +7,13 @@ import {
   closeTenantPlatformDb,
   createPlatformUpdateLog,
   createBootstrapPlatformAdmin,
+  createTenantPaymentOrder,
   deleteTenantMember,
   deletePlatformUpdateLog,
   createTenantWithAdmin,
   createTenantMember,
+  confirmTenantPaymentOrderPaid,
+  getTenantPaymentOrderById,
   getUserByUsername,
   listPlatformUpdateLogs,
   listTenantAgents,
@@ -23,9 +26,12 @@ import {
   listAssignedAgentsForUser,
   listAssignedAgentVisualizationsForUser,
   getTenantOverview,
+  getTenantWalletDashboard,
   listTenantUsageRecords,
   syncTenantUsageRecords,
+  transferTenantWalletToAgent,
   updatePlatformUpdateLog,
+  updateTenantPaymentOrderStatus,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
@@ -34,6 +40,7 @@ import {
   buildDashboardManifestHtml,
   rewriteVisualizationHtml,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
+import { buildQrSvgDataUrl } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs";
 import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 
 const cleanupRoots = new Set();
@@ -2235,6 +2242,200 @@ describe("tenant platform database foundation", () => {
         balanceAfter: 9.88,
       });
       expect(String(ledgerRows[0]?.note || "")).toContain("legacy-correct");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("creates tenant payment orders and confirms recharge into wallet idempotently", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "tenant-wallet-order",
+        name: "租户 Wallet Order",
+        adminUsername: "wallet-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const adminUser = getUserByUsername(db, "wallet-admin");
+      if (!adminUser) {
+        throw new Error("Expected tenant admin to exist");
+      }
+
+      const created = createTenantPaymentOrder(db, {
+        tenantId: tenant.id,
+        createdByUserId: adminUser.id,
+        amountCny: 88.5,
+        channel: "allinpay_h5_auto",
+      });
+      expect(created).toMatchObject({
+        tenantId: tenant.id,
+        amountCny: 88.5,
+        amountPoints: 88.5,
+        status: "pending_payment",
+        channel: "allinpay_h5_auto",
+      });
+      expect(getTenantOverview(db, { tenantId: tenant.id }).summary.pendingPaymentOrderCount).toBe(1);
+
+      const processing = updateTenantPaymentOrderStatus(db, {
+        tenantId: tenant.id,
+        orderId: created.id,
+        status: "processing",
+        providerOrderId: "trx-processing-1",
+        providerPayload: {
+          latestProviderStatus: "2008",
+        },
+      });
+      expect(processing?.status).toBe("processing");
+
+      const confirmed = confirmTenantPaymentOrderPaid(db, {
+        tenantId: tenant.id,
+        orderId: created.id,
+        providerOrderId: "trx-success-1",
+        providerPayload: {
+          latestProviderStatus: "0000",
+        },
+      });
+      expect(confirmed.credited).toBe(true);
+      expect(confirmed.alreadyPaid).toBe(false);
+      expect(confirmed.walletBalance).toBeCloseTo(88.5, 8);
+      expect(getTenantPaymentOrderById(db, { tenantId: tenant.id, orderId: created.id })?.status).toBe(
+        "paid",
+      );
+
+      const secondConfirm = confirmTenantPaymentOrderPaid(db, {
+        tenantId: tenant.id,
+        orderId: created.id,
+        providerOrderId: "trx-success-1",
+      });
+      expect(secondConfirm.credited).toBe(false);
+      expect(secondConfirm.alreadyPaid).toBe(true);
+
+      const dashboard = getTenantWalletDashboard(db, { tenantId: tenant.id });
+      expect(dashboard.summary.walletBalance).toBeCloseTo(88.5, 8);
+      expect(dashboard.summary.totalRecharged).toBeCloseTo(88.5, 8);
+      expect(dashboard.summary.pendingOrderCount).toBe(0);
+      expect(dashboard.orders[0]).toMatchObject({
+        id: created.id,
+        status: "paid",
+        providerOrderId: "trx-success-1",
+      });
+      expect(dashboard.ledger[0]).toMatchObject({
+        category: "recharge",
+        direction: "credit",
+        amountPoints: 88.5,
+        balanceAfter: 88.5,
+        paymentOrderId: created.id,
+      });
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("renders payment launch QR codes as inline SVG data URLs", () => {
+    const dataUrl = buildQrSvgDataUrl(
+      "https://example.com/tenant-platform-api/v1/tenant/admin/payment-orders/launch?token=abc123",
+    );
+    expect(dataUrl.startsWith("data:image/svg+xml;charset=utf-8,")).toBe(true);
+    expect(decodeURIComponent(dataUrl.split(",")[1] || "")).toContain("<svg");
+    expect(decodeURIComponent(dataUrl.split(",")[1] || "")).toContain("支付二维码");
+  });
+
+  it("transfers wallet points to tenant agents and records budget ledger", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "tenant-wallet-transfer",
+        name: "租户 Wallet Transfer",
+        adminUsername: "wallet-transfer-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const adminUser = getUserByUsername(db, "wallet-transfer-admin");
+      if (!adminUser) {
+        throw new Error("Expected tenant admin to exist");
+      }
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+
+      const order = createTenantPaymentOrder(db, {
+        tenantId: tenant.id,
+        createdByUserId: adminUser.id,
+        amountCny: 100,
+        channel: "allinpay_h5_auto",
+      });
+      confirmTenantPaymentOrderPaid(db, {
+        tenantId: tenant.id,
+        orderId: order.id,
+        providerOrderId: "trx-fund-transfer",
+      });
+
+      const transfer = transferTenantWalletToAgent(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        actorUserId: adminUser.id,
+        amountPoints: 35.25,
+        note: "首批预算",
+      });
+      expect(transfer).toMatchObject({
+        tenantAgentId,
+        walletBalance: 64.75,
+        agentBalance: 35.25,
+        amountPoints: 35.25,
+      });
+
+      const tenantAgents = listTenantAgents(db, tenant.id, readOpenClawAgentCatalog(sandbox.config.configPath));
+      expect(tenantAgents[0]?.balancePoints).toBeCloseTo(35.25, 8);
+
+      const dashboard = getTenantWalletDashboard(
+        db,
+        { tenantId: tenant.id },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(dashboard.summary.walletBalance).toBeCloseTo(64.75, 8);
+      expect(dashboard.summary.totalRecharged).toBeCloseTo(100, 8);
+      expect(dashboard.summary.totalTransferred).toBeCloseTo(35.25, 8);
+      expect(dashboard.ledger.find((entry) => entry.category === "agent_transfer")).toMatchObject({
+        direction: "debit",
+        amountPoints: 35.25,
+        balanceAfter: 64.75,
+        tenantAgentId,
+        tenantAgentName: "财务分析助手",
+      });
+
+      const budgetRows = db
+        .prepare(
+          `SELECT amount_points AS amountPoints
+           FROM tenant_agent_budgets
+           WHERE tenant_id = ? AND tenant_agent_id = ?`,
+        )
+        .all(tenant.id, tenantAgentId);
+      expect(budgetRows).toHaveLength(1);
+      expect(budgetRows[0]?.amountPoints).toBeCloseTo(35.25, 8);
     } finally {
       closeTenantPlatformDb(db);
     }

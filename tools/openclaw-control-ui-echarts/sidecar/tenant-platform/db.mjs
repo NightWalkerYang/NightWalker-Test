@@ -3589,6 +3589,619 @@ export function listTenantAgentSessions(db, params) {
     .all(params.userId, params.tenantAgentId);
 }
 
+function normalizePaymentAmount(value) {
+  const numeric = Math.round(toFiniteNumber(value, 0) * 100) / 100;
+  return numeric > 0 ? numeric : 0;
+}
+
+function readPaymentProviderPayload(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringifyPaymentProviderPayload(value) {
+  return JSON.stringify(value && typeof value === "object" ? value : {});
+}
+
+function hydratePaymentOrderRow(row) {
+  if (!row) {
+    return null;
+  }
+  const providerPayload = readPaymentProviderPayload(row.providerPayload);
+  return {
+    id: String(row.id || "").trim(),
+    tenantId: String(row.tenantId || row.tenant_id || "").trim(),
+    amountCny: normalizePaymentAmount(row.amountCny ?? row.amount_cny),
+    amountPoints: normalizeNonNegativePoints(row.amountPoints ?? row.amount_points),
+    provider: String(row.provider || "").trim(),
+    status: String(row.status || "").trim(),
+    providerOrderId: String(row.providerOrderId || row.provider_order_id || "").trim(),
+    providerPayload,
+    channel: String(providerPayload.channel || "").trim(),
+    createdAt: String(row.createdAt || row.created_at || "").trim(),
+    updatedAt: String(row.updatedAt || row.updated_at || "").trim(),
+  };
+}
+
+function getTenantWalletBalance(db, tenantId) {
+  return normalizeNonNegativePoints(
+    getScalar(db, "SELECT balance_points FROM tenant_wallets WHERE tenant_id = ?", [tenantId]) || 0,
+  );
+}
+
+function getPendingPaymentOrderCount(db, tenantId) {
+  return Number(
+    getScalar(
+      db,
+      `SELECT COUNT(*)
+       FROM payment_orders
+       WHERE tenant_id = ?
+         AND status IN ('pending_payment', 'processing', 'pending_confirmation')`,
+      [tenantId],
+    ) || 0,
+  );
+}
+
+function resolveTenantAgentDisplayName(agentRow, configMap) {
+  const agentId = String(agentRow?.agentId || agentRow?.agent_id || "").trim();
+  const configEntry = configMap?.get(agentId) ?? null;
+  return (
+    String(configEntry?.name || "").trim() ||
+    String(agentRow?.tenantAgentDescription || agentRow?.description || "").trim() ||
+    agentId ||
+    String(agentRow?.tenantAgentId || agentRow?.tenant_agent_id || "").trim() ||
+    "未知 Agent"
+  );
+}
+
+export function createTenantPaymentOrder(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const createdByUserId = String(params.createdByUserId || "").trim();
+  const provider = String(params.provider || "allinpay").trim() || "allinpay";
+  const amountCny = normalizePaymentAmount(params.amountCny);
+  const amountPoints = normalizePaymentAmount(params.amountPoints || amountCny);
+  const channel = String(params.channel || "").trim() || "allinpay_h5_auto";
+  if (!tenantId || !createdByUserId || amountCny <= 0 || amountPoints <= 0) {
+    throw new Error("missing_fields");
+  }
+
+  const tenant = db
+    .prepare(
+      `SELECT id
+       FROM tenants
+       WHERE id = ?
+       LIMIT 1`,
+    )
+    .get(tenantId);
+  if (!tenant) {
+    throw new Error("tenant_not_found");
+  }
+
+  const now = nowIso();
+  const id = createId("payment");
+  const providerPayload = {
+    channel,
+    createdByUserId,
+    latestProviderResult: null,
+  };
+
+  db.prepare(
+    `INSERT INTO payment_orders (
+       id,
+       tenant_id,
+       amount_cny,
+       amount_points,
+       provider,
+       status,
+       provider_order_id,
+       provider_payload,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @tenantId,
+       @amountCny,
+       @amountPoints,
+       @provider,
+       'pending_payment',
+       NULL,
+       @providerPayload,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id,
+    tenantId,
+    amountCny,
+    amountPoints,
+    provider,
+    providerPayload: stringifyPaymentProviderPayload(providerPayload),
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return getTenantPaymentOrderById(db, {
+    tenantId,
+    orderId: id,
+  });
+}
+
+export function getTenantPaymentOrderById(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const orderId = String(params.orderId || params.id || "").trim();
+  if (!tenantId || !orderId) {
+    return null;
+  }
+  const row = db
+    .prepare(
+      `SELECT
+         id,
+         tenant_id AS tenantId,
+         amount_cny AS amountCny,
+         amount_points AS amountPoints,
+         provider,
+         status,
+         provider_order_id AS providerOrderId,
+         provider_payload AS providerPayload,
+         created_at AS createdAt,
+         updated_at AS updatedAt
+       FROM payment_orders
+       WHERE tenant_id = ? AND id = ?
+       LIMIT 1`,
+    )
+    .get(tenantId, orderId);
+  return hydratePaymentOrderRow(row);
+}
+
+export function listTenantPaymentOrders(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20),
+  );
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  const rows = db
+    .prepare(
+      `SELECT
+         id,
+         tenant_id AS tenantId,
+         amount_cny AS amountCny,
+         amount_points AS amountPoints,
+         provider,
+         status,
+         provider_order_id AS providerOrderId,
+         provider_payload AS providerPayload,
+         created_at AS createdAt,
+         updated_at AS updatedAt
+       FROM payment_orders
+       WHERE tenant_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    )
+    .all(tenantId, limit);
+  return rows.map((row) => hydratePaymentOrderRow(row));
+}
+
+export function listTenantWalletLedgerEntries(db, params, configAgents = []) {
+  const tenantId = String(params.tenantId || "").trim();
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20),
+  );
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  const configMap = new Map((configAgents || []).map((entry) => [entry.id, entry]));
+  const rows = db
+    .prepare(
+      `SELECT
+         l.id,
+         l.direction,
+         l.category,
+         l.amount_points AS amountPoints,
+         l.balance_after AS balanceAfter,
+         l.tenant_agent_id AS tenantAgentId,
+         l.payment_order_id AS paymentOrderId,
+         l.actor_user_id AS actorUserId,
+         l.note,
+         l.created_at AS createdAt,
+         ta.agent_id AS agentId,
+         ta.description AS tenantAgentDescription
+       FROM tenant_wallet_ledger l
+       LEFT JOIN tenant_agents ta ON ta.id = l.tenant_agent_id
+       WHERE l.tenant_id = ?
+       ORDER BY l.created_at DESC
+       LIMIT ?`,
+    )
+    .all(tenantId, limit);
+
+  return rows.map((row) => ({
+    id: String(row.id || "").trim(),
+    direction: String(row.direction || "").trim(),
+    category: String(row.category || "").trim(),
+    amountPoints: normalizeNonNegativePoints(row.amountPoints),
+    balanceAfter: normalizeNonNegativePoints(row.balanceAfter),
+    tenantAgentId: String(row.tenantAgentId || "").trim(),
+    paymentOrderId: String(row.paymentOrderId || "").trim(),
+    actorUserId: String(row.actorUserId || "").trim(),
+    note: String(row.note || "").trim(),
+    createdAt: String(row.createdAt || "").trim(),
+    agentId: String(row.agentId || "").trim(),
+    tenantAgentName: resolveTenantAgentDisplayName(row, configMap),
+  }));
+}
+
+export function getTenantWalletDashboard(db, params, configAgents = []) {
+  const tenantId = String(params.tenantId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+
+  const totalRecharged = normalizeNonNegativePoints(
+    getScalar(
+      db,
+      `SELECT SUM(amount_points)
+       FROM tenant_wallet_ledger
+       WHERE tenant_id = ?
+         AND direction = 'credit'
+         AND category = 'recharge'`,
+      [tenantId],
+    ) || 0,
+  );
+  const totalTransferred = normalizeNonNegativePoints(
+    getScalar(
+      db,
+      `SELECT SUM(amount_points)
+       FROM tenant_wallet_ledger
+       WHERE tenant_id = ?
+         AND direction = 'debit'
+         AND category = 'agent_transfer'`,
+      [tenantId],
+    ) || 0,
+  );
+  const latestPaidOrder = db
+    .prepare(
+      `SELECT updated_at AS updatedAt
+       FROM payment_orders
+       WHERE tenant_id = ? AND status = 'paid'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+    )
+    .get(tenantId);
+
+  return {
+    summary: {
+      walletBalance: getTenantWalletBalance(db, tenantId),
+      totalRecharged,
+      totalTransferred,
+      consumedCredits: getTenantConsumedCredits(db, tenantId),
+      pendingOrderCount: getPendingPaymentOrderCount(db, tenantId),
+      latestPaidAt: String(latestPaidOrder?.updatedAt || "").trim() || null,
+    },
+    orders: listTenantPaymentOrders(db, { tenantId, limit: params.orderLimit || 20 }),
+    ledger: listTenantWalletLedgerEntries(
+      db,
+      { tenantId, limit: params.ledgerLimit || 20 },
+      configAgents,
+    ),
+  };
+}
+
+export function updateTenantPaymentOrderStatus(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const orderId = String(params.orderId || params.id || "").trim();
+  const status = String(params.status || "").trim();
+  if (!tenantId || !orderId || !status) {
+    throw new Error("missing_fields");
+  }
+  return runInTransaction(db, () => {
+    const existing = getTenantPaymentOrderById(db, { tenantId, orderId });
+    if (!existing) {
+      throw new Error("payment_order_not_found");
+    }
+    const providerPayload = {
+      ...existing.providerPayload,
+      ...(params.providerPayload && typeof params.providerPayload === "object"
+        ? params.providerPayload
+        : {}),
+    };
+    const updatedAt = nowIso();
+    db.prepare(
+      `UPDATE payment_orders
+       SET status = @status,
+           provider_order_id = @providerOrderId,
+           provider_payload = @providerPayload,
+           updated_at = @updatedAt
+       WHERE tenant_id = @tenantId AND id = @orderId`,
+    ).run({
+      tenantId,
+      orderId,
+      status,
+      providerOrderId: String(
+        params.providerOrderId || existing.providerOrderId || providerPayload.providerOrderId || "",
+      ).trim() || null,
+      providerPayload: stringifyPaymentProviderPayload(providerPayload),
+      updatedAt,
+    });
+    return getTenantPaymentOrderById(db, { tenantId, orderId });
+  });
+}
+
+export function confirmTenantPaymentOrderPaid(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const orderId = String(params.orderId || params.id || "").trim();
+  const providerOrderId = String(params.providerOrderId || "").trim();
+  if (!tenantId || !orderId) {
+    throw new Error("missing_fields");
+  }
+
+  return runInTransaction(db, () => {
+    const order = getTenantPaymentOrderById(db, { tenantId, orderId });
+    if (!order) {
+      throw new Error("payment_order_not_found");
+    }
+
+    const existingLedger = db
+      .prepare(
+        `SELECT id
+         FROM tenant_wallet_ledger
+         WHERE tenant_id = ?
+           AND payment_order_id = ?
+           AND category = 'recharge'
+         LIMIT 1`,
+      )
+      .get(tenantId, orderId);
+
+    const mergedProviderPayload = {
+      ...order.providerPayload,
+      ...(params.providerPayload && typeof params.providerPayload === "object"
+        ? params.providerPayload
+        : {}),
+    };
+    if (providerOrderId) {
+      mergedProviderPayload.providerOrderId = providerOrderId;
+    }
+    mergedProviderPayload.paidAt = nowIso();
+
+    if (existingLedger) {
+      db.prepare(
+        `UPDATE payment_orders
+         SET status = 'paid',
+             provider_order_id = @providerOrderId,
+             provider_payload = @providerPayload,
+             updated_at = @updatedAt
+         WHERE tenant_id = @tenantId AND id = @orderId`,
+      ).run({
+        tenantId,
+        orderId,
+        providerOrderId: providerOrderId || order.providerOrderId || null,
+        providerPayload: stringifyPaymentProviderPayload(mergedProviderPayload),
+        updatedAt: nowIso(),
+      });
+      return {
+        credited: false,
+        alreadyPaid: true,
+        order: getTenantPaymentOrderById(db, { tenantId, orderId }),
+        walletBalance: getTenantWalletBalance(db, tenantId),
+      };
+    }
+
+    const walletBalanceBefore = getTenantWalletBalance(db, tenantId);
+    const walletBalanceAfter = normalizeNonNegativePoints(walletBalanceBefore + order.amountPoints);
+    const updatedAt = nowIso();
+    db.prepare(
+      `UPDATE tenant_wallets
+       SET balance_points = @balancePoints,
+           updated_at = @updatedAt
+       WHERE tenant_id = @tenantId`,
+    ).run({
+      tenantId,
+      balancePoints: walletBalanceAfter,
+      updatedAt,
+    });
+
+    db.prepare(
+      `UPDATE payment_orders
+       SET status = 'paid',
+           provider_order_id = @providerOrderId,
+           provider_payload = @providerPayload,
+           updated_at = @updatedAt
+       WHERE tenant_id = @tenantId AND id = @orderId`,
+    ).run({
+      tenantId,
+      orderId,
+      providerOrderId: providerOrderId || order.providerOrderId || null,
+      providerPayload: stringifyPaymentProviderPayload(mergedProviderPayload),
+      updatedAt,
+    });
+
+    db.prepare(
+      `INSERT INTO tenant_wallet_ledger (
+         id,
+         tenant_id,
+         direction,
+         category,
+         amount_points,
+         balance_after,
+         payment_order_id,
+         actor_user_id,
+         note,
+         created_at
+       ) VALUES (
+         @id,
+         @tenantId,
+         'credit',
+         'recharge',
+         @amountPoints,
+         @balanceAfter,
+         @paymentOrderId,
+         @actorUserId,
+         @note,
+         @createdAt
+       )`,
+    ).run({
+      id: createId("ledger"),
+      tenantId,
+      amountPoints: order.amountPoints,
+      balanceAfter: walletBalanceAfter,
+      paymentOrderId: order.id,
+      actorUserId: String(
+        params.actorUserId || order.providerPayload.createdByUserId || "",
+      ).trim() || null,
+      note: String(params.note || `recharge:${order.id}`).trim(),
+      createdAt: updatedAt,
+    });
+
+    return {
+      credited: true,
+      alreadyPaid: false,
+      order: getTenantPaymentOrderById(db, { tenantId, orderId }),
+      walletBalance: getTenantWalletBalance(db, tenantId),
+    };
+  });
+}
+
+export function transferTenantWalletToAgent(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const actorUserId = String(params.actorUserId || "").trim();
+  const amountPoints = normalizePaymentAmount(params.amountPoints);
+  if (!tenantId || !tenantAgentId || !actorUserId || amountPoints <= 0) {
+    throw new Error("missing_fields");
+  }
+
+  return runInTransaction(db, () => {
+    const tenantAgent = db
+      .prepare(
+        `SELECT id, tenant_id AS tenantId, agent_id AS agentId, description, balance_points AS balancePoints, status
+         FROM tenant_agents
+         WHERE tenant_id = ? AND id = ?
+         LIMIT 1`,
+      )
+      .get(tenantId, tenantAgentId);
+    if (!tenantAgent) {
+      throw new Error("tenant_agent_not_found");
+    }
+    if (String(tenantAgent.status || "").trim() !== "active") {
+      throw new Error("tenant_agent_inactive");
+    }
+
+    const walletBalanceBefore = getTenantWalletBalance(db, tenantId);
+    if (walletBalanceBefore < amountPoints) {
+      throw new Error("insufficient_wallet_balance");
+    }
+
+    const walletBalanceAfter = normalizeNonNegativePoints(walletBalanceBefore - amountPoints);
+    const agentBalanceAfter = normalizeNonNegativePoints(
+      normalizeNonNegativePoints(tenantAgent.balancePoints) + amountPoints,
+    );
+    const createdAt = nowIso();
+    const budgetId = createId("budget");
+
+    db.prepare(
+      `UPDATE tenant_wallets
+       SET balance_points = @balancePoints,
+           updated_at = @updatedAt
+       WHERE tenant_id = @tenantId`,
+    ).run({
+      tenantId,
+      balancePoints: walletBalanceAfter,
+      updatedAt: createdAt,
+    });
+
+    db.prepare(
+      `UPDATE tenant_agents
+       SET balance_points = @balancePoints,
+           updated_at = @updatedAt
+       WHERE id = @tenantAgentId`,
+    ).run({
+      tenantAgentId,
+      balancePoints: agentBalanceAfter,
+      updatedAt: createdAt,
+    });
+
+    db.prepare(
+      `INSERT INTO tenant_agent_budgets (
+         id,
+         tenant_id,
+         tenant_agent_id,
+         amount_points,
+         created_by_user_id,
+         created_at
+       ) VALUES (
+         @id,
+         @tenantId,
+         @tenantAgentId,
+         @amountPoints,
+         @actorUserId,
+         @createdAt
+       )`,
+    ).run({
+      id: budgetId,
+      tenantId,
+      tenantAgentId,
+      amountPoints,
+      actorUserId,
+      createdAt,
+    });
+
+    db.prepare(
+      `INSERT INTO tenant_wallet_ledger (
+         id,
+         tenant_id,
+         direction,
+         category,
+         amount_points,
+         balance_after,
+         tenant_agent_id,
+         actor_user_id,
+         note,
+         created_at
+       ) VALUES (
+         @id,
+         @tenantId,
+         'debit',
+         'agent_transfer',
+         @amountPoints,
+         @balanceAfter,
+         @tenantAgentId,
+         @actorUserId,
+         @note,
+         @createdAt
+       )`,
+    ).run({
+      id: createId("ledger"),
+      tenantId,
+      amountPoints,
+      balanceAfter: walletBalanceAfter,
+      tenantAgentId,
+      actorUserId,
+      note:
+        String(params.note || "").trim() ||
+        `transfer:${budgetId}:${String(tenantAgent.agentId || "").trim() || tenantAgentId}`,
+      createdAt,
+    });
+
+    return {
+      budgetId,
+      tenantAgentId,
+      walletBalance: walletBalanceAfter,
+      agentBalance: agentBalanceAfter,
+      amountPoints,
+    };
+  });
+}
+
 function getTenantConsumedCredits(db, tenantId) {
   const row = db
     .prepare(
@@ -3651,6 +4264,7 @@ export function getTenantOverview(db, params, configAgents = []) {
     )
     .get(tenantId);
   const consumedCredits = getTenantConsumedCredits(db, tenantId);
+  const pendingPaymentOrderCount = getPendingPaymentOrderCount(db, tenantId);
 
   const dailyUsage = db
     .prepare(
@@ -3707,6 +4321,7 @@ export function getTenantOverview(db, params, configAgents = []) {
       memberCount,
       walletBalance: Number(wallet?.balance || 0),
       consumedCredits,
+      pendingPaymentOrderCount,
     },
     trend: days.map((day) => ({
       day,
