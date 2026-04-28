@@ -212,6 +212,198 @@ function ensurePlatformUpdateLogSchemaCompatibility(db) {
   );
 }
 
+function ensureDataSourceSchemaCompatibility(db) {
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS data_sources (
+       id TEXT PRIMARY KEY,
+       code TEXT NOT NULL UNIQUE,
+       name TEXT NOT NULL,
+       source_type TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'active',
+       connection_json TEXT NOT NULL,
+       source_dbid TEXT,
+       source_tenant_code TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_data_source_bindings (
+       id TEXT PRIMARY KEY,
+       tenant_id TEXT NOT NULL UNIQUE,
+       data_source_id TEXT NOT NULL,
+       bound_by_user_id TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE,
+       FOREIGN KEY (bound_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_member_source_policies (
+       id TEXT PRIMARY KEY,
+       tenant_id TEXT NOT NULL,
+       user_id TEXT NOT NULL,
+       data_source_id TEXT NOT NULL,
+       scope_mode TEXT NOT NULL,
+       created_by_user_id TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       UNIQUE (tenant_id, user_id, data_source_id)
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_member_org_scopes (
+       id TEXT PRIMARY KEY,
+       tenant_id TEXT NOT NULL,
+       user_id TEXT NOT NULL,
+       data_source_id TEXT NOT NULL,
+       org_id TEXT NOT NULL,
+       org_name_snapshot TEXT NOT NULL DEFAULT '',
+       created_at TEXT NOT NULL,
+       UNIQUE (tenant_id, user_id, data_source_id, org_id)
+     );`,
+  );
+}
+
+function parseJsonObject(value, fallback = {}) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON5.parse(normalized);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function serializeDataSourceConnection(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "{}";
+  }
+  const parsed = parseJsonObject(normalized, null);
+  if (!parsed) {
+    throw new Error("connection_json_invalid");
+  }
+  return JSON.stringify(parsed);
+}
+
+function normalizeDataSourceStatus(value) {
+  const normalized = String(value || "active").trim().toLowerCase();
+  return normalized || "active";
+}
+
+function normalizeScopeMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "none" || normalized === "custom" || normalized === "all") {
+    return normalized;
+  }
+  return "";
+}
+
+function normalizeOrgScopeEntries(value) {
+  const entries = [];
+  const seen = new Set();
+  const input = Array.isArray(value) ? value : [];
+  for (const item of input) {
+    const normalizedItem =
+      typeof item === "string"
+        ? {
+            orgId: item,
+            orgNameSnapshot: "",
+          }
+        : item && typeof item === "object"
+          ? item
+          : null;
+    const orgId = String(
+      normalizedItem?.orgId ?? normalizedItem?.id ?? normalizedItem?.value ?? "",
+    ).trim();
+    if (!orgId || seen.has(orgId)) {
+      continue;
+    }
+    seen.add(orgId);
+    entries.push({
+      orgId,
+      orgNameSnapshot: String(
+        normalizedItem?.orgNameSnapshot ?? normalizedItem?.orgName ?? normalizedItem?.label ?? "",
+      ).trim(),
+    });
+  }
+  return entries;
+}
+
+function mapDataSourceRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    sourceType: row.sourceType,
+    status: row.status,
+    connectionJson: row.connectionJson,
+    connection: parseJsonObject(row.connectionJson, {}),
+    sourceDbid: row.sourceDbid ?? null,
+    sourceTenantCode: row.sourceTenantCode ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function mapTenantDataSourceBindingRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    dataSourceId: row.dataSourceId,
+    boundByUserId: row.boundByUserId ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    dataSourceCode: row.dataSourceCode ?? null,
+    dataSourceName: row.dataSourceName ?? null,
+    dataSourceType: row.dataSourceType ?? null,
+    dataSourceStatus: row.dataSourceStatus ?? null,
+    connectionJson: row.connectionJson ?? "{}",
+    connection: parseJsonObject(row.connectionJson, {}),
+    sourceDbid: row.sourceDbid ?? null,
+    sourceTenantCode: row.sourceTenantCode ?? null,
+  };
+}
+
+function getDataSourceById(db, dataSourceId) {
+  return mapDataSourceRow(
+    db
+      .prepare(
+        `SELECT id,
+                code,
+                name,
+                source_type AS sourceType,
+                status,
+                connection_json AS connectionJson,
+                source_dbid AS sourceDbid,
+                source_tenant_code AS sourceTenantCode,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM data_sources
+         WHERE id = ?`,
+      )
+      .get(dataSourceId),
+  );
+}
+
 function getScalar(db, sql, params) {
   const stmt = db.prepare(sql);
   let row;
@@ -376,6 +568,7 @@ function ensureTenantUsageRecordSchemaCompatibility(db) {
 }
 
 function ensureSchemaCompatibility(db) {
+  ensureDataSourceSchemaCompatibility(db);
   const columns = db.prepare("PRAGMA table_info(user_agent_assignments)").all();
   const knownColumns = new Set(columns.map((row) => String(row?.name || "").trim()));
   if (!knownColumns.has("derived_agent_id")) {
@@ -1547,6 +1740,479 @@ export function getUserByUsername(db, username) {
   };
 }
 
+export function listDataSources(db) {
+  return db
+    .prepare(
+      `SELECT id,
+              code,
+              name,
+              source_type AS sourceType,
+              status,
+              connection_json AS connectionJson,
+              source_dbid AS sourceDbid,
+              source_tenant_code AS sourceTenantCode,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM data_sources
+       ORDER BY created_at DESC, updated_at DESC`,
+    )
+    .all()
+    .map(mapDataSourceRow);
+}
+
+export function upsertDataSource(db, params = {}) {
+  const code = String(params.code || "").trim();
+  const name = String(params.name || "").trim();
+  const sourceType = String(params.sourceType || "").trim();
+  if (!code) {
+    throw new Error("data_source_code_required");
+  }
+  if (!name) {
+    throw new Error("data_source_name_required");
+  }
+  if (!sourceType) {
+    throw new Error("data_source_type_required");
+  }
+
+  const existing =
+    (params.id
+      ? db.prepare("SELECT id FROM data_sources WHERE id = ?").get(String(params.id).trim())
+      : null) ?? db.prepare("SELECT id FROM data_sources WHERE code = ?").get(code);
+  const now = nowIso();
+  const connectionJson = serializeDataSourceConnection(
+    params.connection ?? params.connectionJson ?? {},
+  );
+  const status = normalizeDataSourceStatus(params.status);
+
+  if (existing?.id) {
+    db.prepare(
+      `UPDATE data_sources
+       SET code = @code,
+           name = @name,
+           source_type = @sourceType,
+           status = @status,
+           connection_json = @connectionJson,
+           source_dbid = @sourceDbid,
+           source_tenant_code = @sourceTenantCode,
+           updated_at = @updatedAt
+       WHERE id = @id`,
+    ).run({
+      id: existing.id,
+      code,
+      name,
+      sourceType,
+      status,
+      connectionJson,
+      sourceDbid: params.sourceDbid || null,
+      sourceTenantCode: params.sourceTenantCode || null,
+      updatedAt: now,
+    });
+    return getDataSourceById(db, existing.id);
+  }
+
+  const dataSourceId = createId("data_source");
+  db.prepare(
+    `INSERT INTO data_sources (
+       id,
+       code,
+       name,
+       source_type,
+       status,
+       connection_json,
+       source_dbid,
+       source_tenant_code,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @code,
+       @name,
+       @sourceType,
+       @status,
+       @connectionJson,
+       @sourceDbid,
+       @sourceTenantCode,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id: dataSourceId,
+    code,
+    name,
+    sourceType,
+    status,
+    connectionJson,
+    sourceDbid: params.sourceDbid || null,
+    sourceTenantCode: params.sourceTenantCode || null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return getDataSourceById(db, dataSourceId);
+}
+
+export function getTenantDataSourceBinding(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return null;
+  }
+  return mapTenantDataSourceBindingRow(
+    db
+      .prepare(
+        `SELECT b.id,
+                b.tenant_id AS tenantId,
+                b.data_source_id AS dataSourceId,
+                b.bound_by_user_id AS boundByUserId,
+                b.created_at AS createdAt,
+                b.updated_at AS updatedAt,
+                ds.code AS dataSourceCode,
+                ds.name AS dataSourceName,
+                ds.source_type AS dataSourceType,
+                ds.status AS dataSourceStatus,
+                ds.connection_json AS connectionJson,
+                ds.source_dbid AS sourceDbid,
+                ds.source_tenant_code AS sourceTenantCode
+         FROM tenant_data_source_bindings b
+         JOIN data_sources ds ON ds.id = b.data_source_id
+         WHERE b.tenant_id = ?`,
+      )
+      .get(normalizedTenantId),
+  );
+}
+
+export function setTenantDataSourceBinding(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const dataSourceId = String(params.dataSourceId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!dataSourceId) {
+    throw new Error("data_source_id_required");
+  }
+  if (!getDataSourceById(db, dataSourceId)) {
+    throw new Error("data_source_not_found");
+  }
+
+  return runInTransaction(db, () => {
+    const existing = db
+      .prepare(
+        `SELECT id, data_source_id AS dataSourceId
+         FROM tenant_data_source_bindings
+         WHERE tenant_id = ?`,
+      )
+      .get(tenantId);
+    const now = nowIso();
+    if (existing?.id) {
+      db.prepare(
+        `UPDATE tenant_data_source_bindings
+         SET data_source_id = @dataSourceId,
+             bound_by_user_id = @boundByUserId,
+             updated_at = @updatedAt
+         WHERE id = @id`,
+      ).run({
+        id: existing.id,
+        dataSourceId,
+        boundByUserId: params.boundByUserId || null,
+        updatedAt: now,
+      });
+      if (String(existing.dataSourceId || "").trim() !== dataSourceId) {
+        db.prepare("DELETE FROM tenant_member_org_scopes WHERE tenant_id = ?").run(tenantId);
+        db.prepare(
+          `UPDATE tenant_member_source_policies
+           SET scope_mode = 'none',
+               updated_at = @updatedAt
+           WHERE tenant_id = @tenantId`,
+        ).run({
+          tenantId,
+          updatedAt: now,
+        });
+      }
+    } else {
+      db.prepare(
+        `INSERT INTO tenant_data_source_bindings (
+           id,
+           tenant_id,
+           data_source_id,
+           bound_by_user_id,
+           created_at,
+           updated_at
+         ) VALUES (
+           @id,
+           @tenantId,
+           @dataSourceId,
+           @boundByUserId,
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        id: createId("tenant_binding"),
+        tenantId,
+        dataSourceId,
+        boundByUserId: params.boundByUserId || null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    return getTenantDataSourceBinding(db, tenantId);
+  });
+}
+
+export function getTenantMemberOrgScope(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const resolvedDataSourceId =
+    String(params.dataSourceId || "").trim() ||
+    String(getTenantDataSourceBinding(db, tenantId)?.dataSourceId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+
+  const policy =
+    resolvedDataSourceId
+      ? db
+          .prepare(
+            `SELECT id,
+                    scope_mode AS scopeMode,
+                    created_by_user_id AS createdByUserId,
+                    created_at AS createdAt,
+                    updated_at AS updatedAt
+             FROM tenant_member_source_policies
+             WHERE tenant_id = @tenantId
+               AND user_id = @userId
+               AND data_source_id = @dataSourceId`,
+          )
+          .get({
+            tenantId,
+            userId,
+            dataSourceId: resolvedDataSourceId,
+          })
+      : null;
+  const orgScopes =
+    resolvedDataSourceId
+      ? db
+          .prepare(
+            `SELECT org_id AS orgId,
+                    org_name_snapshot AS orgNameSnapshot,
+                    created_at AS createdAt
+             FROM tenant_member_org_scopes
+             WHERE tenant_id = @tenantId
+               AND user_id = @userId
+               AND data_source_id = @dataSourceId
+             ORDER BY org_id ASC`,
+          )
+          .all({
+            tenantId,
+            userId,
+            dataSourceId: resolvedDataSourceId,
+          })
+      : [];
+  const scopeMode = normalizeScopeMode(policy?.scopeMode) || "none";
+
+  return {
+    id: policy?.id ?? null,
+    tenantId,
+    userId,
+    dataSourceId: resolvedDataSourceId || null,
+    scopeMode,
+    orgScopeCount: scopeMode === "custom" ? orgScopes.length : 0,
+    orgScopes,
+    createdByUserId: policy?.createdByUserId ?? null,
+    createdAt: policy?.createdAt ?? null,
+    updatedAt: policy?.updatedAt ?? null,
+  };
+}
+
+export function setTenantMemberOrgScope(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const dataSourceId = String(params.dataSourceId || "").trim();
+  const scopeMode = normalizeScopeMode(params.scopeMode);
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+  if (!dataSourceId) {
+    throw new Error("data_source_id_required");
+  }
+  if (!scopeMode) {
+    throw new Error("scope_mode_invalid");
+  }
+  const binding = getTenantDataSourceBinding(db, tenantId);
+  if (!binding || String(binding.dataSourceId || "").trim() !== dataSourceId) {
+    throw new Error("tenant_data_source_unbound");
+  }
+  if (!getTenantMemberRow(db, tenantId, userId)) {
+    throw new Error("member_not_found");
+  }
+
+  return runInTransaction(db, () => {
+    const now = nowIso();
+    const existing = db
+      .prepare(
+        `SELECT id
+         FROM tenant_member_source_policies
+         WHERE tenant_id = @tenantId
+           AND user_id = @userId
+           AND data_source_id = @dataSourceId`,
+      )
+      .get({
+        tenantId,
+        userId,
+        dataSourceId,
+      });
+    if (existing?.id) {
+      db.prepare(
+        `UPDATE tenant_member_source_policies
+         SET scope_mode = @scopeMode,
+             created_by_user_id = @createdByUserId,
+             updated_at = @updatedAt
+         WHERE id = @id`,
+      ).run({
+        id: existing.id,
+        scopeMode,
+        createdByUserId: params.createdByUserId || null,
+        updatedAt: now,
+      });
+    } else {
+      db.prepare(
+        `INSERT INTO tenant_member_source_policies (
+           id,
+           tenant_id,
+           user_id,
+           data_source_id,
+           scope_mode,
+           created_by_user_id,
+           created_at,
+           updated_at
+         ) VALUES (
+           @id,
+           @tenantId,
+           @userId,
+           @dataSourceId,
+           @scopeMode,
+           @createdByUserId,
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        id: createId("member_scope"),
+        tenantId,
+        userId,
+        dataSourceId,
+        scopeMode,
+        createdByUserId: params.createdByUserId || null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    db.prepare(
+      `DELETE FROM tenant_member_org_scopes
+       WHERE tenant_id = @tenantId
+         AND user_id = @userId
+         AND data_source_id = @dataSourceId`,
+    ).run({
+      tenantId,
+      userId,
+      dataSourceId,
+    });
+
+    if (scopeMode === "custom") {
+      const orgScopes = normalizeOrgScopeEntries(params.orgScopes ?? params.orgIds);
+      const insertScope = db.prepare(
+        `INSERT INTO tenant_member_org_scopes (
+           id,
+           tenant_id,
+           user_id,
+           data_source_id,
+           org_id,
+           org_name_snapshot,
+           created_at
+         ) VALUES (
+           @id,
+           @tenantId,
+           @userId,
+           @dataSourceId,
+           @orgId,
+           @orgNameSnapshot,
+           @createdAt
+         )`,
+      );
+      for (const orgScope of orgScopes) {
+        insertScope.run({
+          id: createId("member_org"),
+          tenantId,
+          userId,
+          dataSourceId,
+          orgId: orgScope.orgId,
+          orgNameSnapshot: orgScope.orgNameSnapshot,
+          createdAt: now,
+        });
+      }
+    }
+
+    return getTenantMemberOrgScope(db, {
+      tenantId,
+      userId,
+      dataSourceId,
+    });
+  });
+}
+
+export function resolveMemberDataAccessContext(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!userId) {
+    throw new Error("user_id_required");
+  }
+  if (!getTenantMemberRow(db, tenantId, userId)) {
+    throw new Error("member_not_found");
+  }
+  const binding = getTenantDataSourceBinding(db, tenantId);
+  if (!binding) {
+    throw new Error("tenant_data_source_unbound");
+  }
+  const dataSource = getDataSourceById(db, binding.dataSourceId);
+  if (!dataSource) {
+    throw new Error("data_source_not_found");
+  }
+  const scope = getTenantMemberOrgScope(db, {
+    tenantId,
+    userId,
+    dataSourceId: binding.dataSourceId,
+  });
+  if (scope.scopeMode === "all") {
+    return {
+      tenantId,
+      userId,
+      dataSourceId: binding.dataSourceId,
+      sourceType: dataSource.sourceType,
+      connection: dataSource.connection,
+      scopeMode: "all",
+      allowedOrgIds: null,
+    };
+  }
+  if (scope.scopeMode === "custom" && scope.orgScopeCount > 0) {
+    return {
+      tenantId,
+      userId,
+      dataSourceId: binding.dataSourceId,
+      sourceType: dataSource.sourceType,
+      connection: dataSource.connection,
+      scopeMode: "custom",
+      allowedOrgIds: scope.orgScopes.map((entry) => entry.orgId),
+    };
+  }
+  throw new Error("member_org_scope_empty");
+}
+
 function mapPlatformUpdateLogRow(row) {
   if (!row) {
     return null;
@@ -1711,15 +2377,20 @@ export function getTenantSummary(db, tenantId) {
         `SELECT t.id, t.code, t.name, t.status, t.deployment_mode AS deploymentMode,
               tq.member_limit AS memberLimit, tq.license_expires_at AS licenseExpiresAt,
               tw.balance_points AS walletBalance,
+              b.data_source_id AS dataSourceId,
+              ds.name AS dataSourceName,
+              ds.source_type AS dataSourceType,
               COUNT(DISTINCT CASE WHEN tm.role = 'member' AND tm.status = 'active' THEN tm.user_id END) AS memberCount,
               COUNT(DISTINCT CASE WHEN ta.status = 'active' THEN ta.id END) AS agentCount
        FROM tenants t
        LEFT JOIN tenant_quotas tq ON tq.tenant_id = t.id
        LEFT JOIN tenant_wallets tw ON tw.tenant_id = t.id
+       LEFT JOIN tenant_data_source_bindings b ON b.tenant_id = t.id
+       LEFT JOIN data_sources ds ON ds.id = b.data_source_id
        LEFT JOIN tenant_memberships tm ON tm.tenant_id = t.id
        LEFT JOIN tenant_agents ta ON ta.tenant_id = t.id
        WHERE t.id = ?
-       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points`,
+       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points, b.data_source_id, ds.name, ds.source_type`,
       )
       .get(tenantId) ?? null
   );
@@ -1731,14 +2402,19 @@ export function listTenants(db) {
       `SELECT t.id, t.code, t.name, t.status, t.deployment_mode AS deploymentMode,
               tq.member_limit AS memberLimit, tq.license_expires_at AS licenseExpiresAt,
               tw.balance_points AS walletBalance,
+              b.data_source_id AS dataSourceId,
+              ds.name AS dataSourceName,
+              ds.source_type AS dataSourceType,
               COUNT(DISTINCT CASE WHEN tm.role = 'member' AND tm.status = 'active' THEN tm.user_id END) AS memberCount,
               COUNT(DISTINCT CASE WHEN ta.status = 'active' THEN ta.id END) AS agentCount
        FROM tenants t
        LEFT JOIN tenant_quotas tq ON tq.tenant_id = t.id
        LEFT JOIN tenant_wallets tw ON tw.tenant_id = t.id
+       LEFT JOIN tenant_data_source_bindings b ON b.tenant_id = t.id
+       LEFT JOIN data_sources ds ON ds.id = b.data_source_id
        LEFT JOIN tenant_memberships tm ON tm.tenant_id = t.id
        LEFT JOIN tenant_agents ta ON ta.tenant_id = t.id
-       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points
+       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points, b.data_source_id, ds.name, ds.source_type
        ORDER BY t.created_at DESC`,
     )
     .all();
@@ -1960,12 +2636,26 @@ function getTenantMemberRow(db, tenantId, userId) {
       .prepare(
         `SELECT u.id, u.username, u.status,
               tm.role, tm.created_at AS createdAt,
-              COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount
+              COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount,
+              COALESCE(sp.scope_mode, 'none') AS orgScopeMode,
+              CASE
+                WHEN COALESCE(sp.scope_mode, 'none') = 'custom' THEN COUNT(DISTINCT os.org_id)
+                ELSE 0
+              END AS orgScopeCount
        FROM users u
        JOIN tenant_memberships tm ON tm.user_id = u.id
        LEFT JOIN user_agent_assignments ua ON ua.user_id = u.id AND ua.status = 'active'
+       LEFT JOIN tenant_data_source_bindings b ON b.tenant_id = tm.tenant_id
+       LEFT JOIN tenant_member_source_policies sp
+         ON sp.tenant_id = tm.tenant_id
+        AND sp.user_id = u.id
+        AND sp.data_source_id = b.data_source_id
+       LEFT JOIN tenant_member_org_scopes os
+         ON os.tenant_id = tm.tenant_id
+        AND os.user_id = u.id
+        AND os.data_source_id = b.data_source_id
        WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted' AND u.id = ?
-       GROUP BY u.id, tm.role, tm.created_at`,
+       GROUP BY u.id, tm.role, tm.created_at, sp.scope_mode`,
       )
       .get(tenantId, userId) ?? null
   );

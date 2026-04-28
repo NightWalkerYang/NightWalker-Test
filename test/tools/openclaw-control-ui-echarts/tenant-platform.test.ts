@@ -12,6 +12,7 @@ import {
   createTenantWithAdmin,
   createTenantMember,
   getUserByUsername,
+  listTenants,
   listPlatformUpdateLogs,
   listTenantAgents,
   listTenantMembers,
@@ -37,6 +38,8 @@ import {
 import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 
 const cleanupRoots = new Set();
+const TENANT_DB_MODULE_PATH =
+  "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 
 function createTempSandbox() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-tenant-platform-"));
@@ -101,6 +104,10 @@ function writeSessionStoreEntry(sandbox, agentId, sessionKey, entry) {
   fs.writeFileSync(storePath, JSON.stringify(current, null, 2), "utf8");
 }
 
+async function loadTenantPlatformDbModule() {
+  return import(TENANT_DB_MODULE_PATH);
+}
+
 afterEach(() => {
   for (const root of cleanupRoots) {
     fs.rmSync(root, { recursive: true, force: true });
@@ -109,6 +116,372 @@ afterEach(() => {
 });
 
 describe("tenant platform database foundation", () => {
+  describe("data source persistence", () => {
+    it("creates and lists data source records", async () => {
+      const { listDataSources, upsertDataSource } = await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        const created = upsertDataSource(db, {
+          code: "kd-main",
+          name: "金蝶主账套",
+          sourceType: "kingdee_analytics",
+          status: "active",
+          connection: {
+            host: "db.internal",
+            port: 5432,
+            database: "kingdee_main",
+          },
+          sourceDbid: "db-main",
+          sourceTenantCode: "tenant-main",
+        });
+
+        expect(created).toMatchObject({
+          code: "kd-main",
+          name: "金蝶主账套",
+          sourceType: "kingdee_analytics",
+          status: "active",
+          sourceDbid: "db-main",
+          sourceTenantCode: "tenant-main",
+        });
+        expect(created.connection).toMatchObject({
+          host: "db.internal",
+          port: 5432,
+          database: "kingdee_main",
+        });
+        expect(listDataSources(db)).toEqual([
+          expect.objectContaining({
+            id: created.id,
+            code: "kd-main",
+            name: "金蝶主账套",
+            sourceType: "kingdee_analytics",
+          }),
+        ]);
+      } finally {
+        closeTenantPlatformDb(db);
+      }
+    });
+
+    it("keeps one data source binding per tenant and exposes binding summaries", async () => {
+      const { getTenantDataSourceBinding, setTenantDataSourceBinding, upsertDataSource } =
+        await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        const platformAdmin = createBootstrapPlatformAdmin(db, {
+          username: "platform-root",
+          password: "secret",
+        });
+        const tenant = createTenantWithAdmin(db, {
+          code: "binding-alpha",
+          name: "租户 Binding Alpha",
+          adminUsername: "binding-alpha-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const firstSource = upsertDataSource(db, {
+          code: "kd-binding-a",
+          name: "绑定账套 A",
+          sourceType: "kingdee_analytics",
+          connection: { host: "db-a.internal" },
+        });
+        const secondSource = upsertDataSource(db, {
+          code: "kd-binding-b",
+          name: "绑定账套 B",
+          sourceType: "kingdee_analytics",
+          connection: { host: "db-b.internal" },
+        });
+
+        setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: firstSource.id,
+          boundByUserId: platformAdmin?.id,
+        });
+        const rebound = setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: secondSource.id,
+          boundByUserId: platformAdmin?.id,
+        });
+
+        expect(rebound).toMatchObject({
+          tenantId: tenant.id,
+          dataSourceId: secondSource.id,
+          dataSourceName: "绑定账套 B",
+          dataSourceType: "kingdee_analytics",
+        });
+        expect(getTenantDataSourceBinding(db, tenant.id)).toMatchObject({
+          tenantId: tenant.id,
+          dataSourceId: secondSource.id,
+          dataSourceName: "绑定账套 B",
+          dataSourceType: "kingdee_analytics",
+        });
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_data_source_bindings
+               WHERE tenant_id = ?`,
+            )
+            .get(tenant.id)?.count,
+        ).toBe(1);
+        expect(listTenants(db)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: tenant.id,
+              dataSourceId: secondSource.id,
+              dataSourceName: "绑定账套 B",
+              dataSourceType: "kingdee_analytics",
+            }),
+          ]),
+        );
+      } finally {
+        closeTenantPlatformDb(db);
+      }
+    });
+
+    it("stores binding-aware data source org scopes and clears custom scopes after rebinding", async () => {
+      const {
+        getTenantDataSourceBinding,
+        getTenantMemberOrgScope,
+        resolveMemberDataAccessContext,
+        setTenantDataSourceBinding,
+        setTenantMemberOrgScope,
+        upsertDataSource,
+      } = await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        createBootstrapPlatformAdmin(db, {
+          username: "platform-root",
+          password: "secret",
+        });
+        const tenant = createTenantWithAdmin(db, {
+          code: "scope-alpha",
+          name: "租户 Scope Alpha",
+          adminUsername: "scope-alpha-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const tenantAdmin = getUserByUsername(db, "scope-alpha-admin");
+        const member = createTenantMember(db, {
+          tenantId: tenant.id,
+          username: "scope-member",
+          password: "secret",
+        });
+        const firstSource = upsertDataSource(db, {
+          code: "kd-scope-a",
+          name: "组织账套 A",
+          sourceType: "kingdee_analytics",
+          connection: {
+            host: "db-scope-a.internal",
+            database: "scope_a",
+          },
+        });
+        const secondSource = upsertDataSource(db, {
+          code: "kd-scope-b",
+          name: "组织账套 B",
+          sourceType: "kingdee_analytics",
+          connection: {
+            host: "db-scope-b.internal",
+            database: "scope_b",
+          },
+        });
+
+        setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: firstSource.id,
+          boundByUserId: tenantAdmin?.id,
+        });
+        expect(listTenantMembers(db, tenant.id)).toEqual([
+          expect.objectContaining({
+            id: member.id,
+            orgScopeMode: "none",
+            orgScopeCount: 0,
+          }),
+        ]);
+
+        setTenantMemberOrgScope(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: firstSource.id,
+          scopeMode: "custom",
+          createdByUserId: tenantAdmin?.id,
+          orgScopes: [
+            {
+              orgId: "1001",
+              orgNameSnapshot: "华东事业部",
+            },
+            {
+              orgId: "1002",
+              orgNameSnapshot: "华南事业部",
+            },
+          ],
+        });
+
+        expect(
+          db
+            .prepare(
+              `SELECT scope_mode AS scopeMode
+               FROM tenant_member_source_policies
+               WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?`,
+            )
+            .get(tenant.id, member.id, firstSource.id),
+        ).toMatchObject({
+          scopeMode: "custom",
+        });
+        expect(
+          db
+            .prepare(
+              `SELECT org_id AS orgId, org_name_snapshot AS orgNameSnapshot
+               FROM tenant_member_org_scopes
+               WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?
+               ORDER BY org_id ASC`,
+            )
+            .all(tenant.id, member.id, firstSource.id),
+        ).toEqual([
+          {
+            orgId: "1001",
+            orgNameSnapshot: "华东事业部",
+          },
+          {
+            orgId: "1002",
+            orgNameSnapshot: "华南事业部",
+          },
+        ]);
+        expect(
+          getTenantMemberOrgScope(db, {
+            tenantId: tenant.id,
+            userId: member.id,
+            dataSourceId: firstSource.id,
+          }),
+        ).toMatchObject({
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: firstSource.id,
+          scopeMode: "custom",
+          orgScopeCount: 2,
+        });
+        expect(listTenantMembers(db, tenant.id)).toEqual([
+          expect.objectContaining({
+            id: member.id,
+            orgScopeMode: "custom",
+            orgScopeCount: 2,
+          }),
+        ]);
+        expect(
+          resolveMemberDataAccessContext(db, {
+            tenantId: tenant.id,
+            userId: member.id,
+          }),
+        ).toMatchObject({
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: firstSource.id,
+          sourceType: "kingdee_analytics",
+          scopeMode: "custom",
+          allowedOrgIds: ["1001", "1002"],
+        });
+
+        setTenantMemberOrgScope(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: firstSource.id,
+          scopeMode: "all",
+          createdByUserId: tenantAdmin?.id,
+        });
+        expect(
+          getTenantMemberOrgScope(db, {
+            tenantId: tenant.id,
+            userId: member.id,
+            dataSourceId: firstSource.id,
+          }),
+        ).toMatchObject({
+          scopeMode: "all",
+          orgScopeCount: 0,
+        });
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_org_scopes
+               WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?`,
+            )
+            .get(tenant.id, member.id, firstSource.id)?.count,
+        ).toBe(0);
+
+        setTenantMemberOrgScope(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: firstSource.id,
+          scopeMode: "custom",
+          createdByUserId: tenantAdmin?.id,
+          orgScopes: [
+            {
+              orgId: "2001",
+              orgNameSnapshot: "华北事业部",
+            },
+          ],
+        });
+        setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: secondSource.id,
+          boundByUserId: tenantAdmin?.id,
+        });
+
+        expect(getTenantDataSourceBinding(db, tenant.id)).toMatchObject({
+          tenantId: tenant.id,
+          dataSourceId: secondSource.id,
+          dataSourceName: "组织账套 B",
+        });
+        expect(
+          db
+            .prepare(
+              `SELECT scope_mode AS scopeMode
+               FROM tenant_member_source_policies
+               WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?`,
+            )
+            .get(tenant.id, member.id, firstSource.id),
+        ).toMatchObject({
+          scopeMode: "none",
+        });
+        expect(
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM tenant_member_org_scopes
+               WHERE tenant_id = ?`,
+            )
+            .get(tenant.id)?.count,
+        ).toBe(0);
+        expect(
+          getTenantMemberOrgScope(db, {
+            tenantId: tenant.id,
+            userId: member.id,
+            dataSourceId: secondSource.id,
+          }),
+        ).toMatchObject({
+          scopeMode: "none",
+          orgScopeCount: 0,
+        });
+        expect(listTenantMembers(db, tenant.id)).toEqual([
+          expect.objectContaining({
+            id: member.id,
+            orgScopeMode: "none",
+            orgScopeCount: 0,
+          }),
+        ]);
+      } finally {
+        closeTenantPlatformDb(db);
+      }
+    });
+  });
+
   it("creates a bootstrap platform admin and a tenant with an admin", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
