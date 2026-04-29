@@ -327,13 +327,15 @@ describe("zero-intrusive tenant entry", () => {
     expect(statsItems[1]?.textContent).toContain("耗量统计");
     expect(statsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
     expect(walletSection).not.toBeNull();
-    expect(walletItems).toHaveLength(3);
+    expect(walletItems).toHaveLength(4);
     expect(walletItems[0]?.textContent).toContain("钱包充值");
     expect(walletItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet");
     expect(walletItems[1]?.textContent).toContain("充值订单");
     expect(walletItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet-orders");
-    expect(walletItems[2]?.textContent).toContain("钱包流水");
+    expect(walletItems[2]?.textContent).toContain("模型耗用");
     expect(walletItems[2]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet-ledger");
+    expect(walletItems[3]?.textContent).toContain("钱包流水");
+    expect(walletItems[3]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet-flow");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant_admin",
     );

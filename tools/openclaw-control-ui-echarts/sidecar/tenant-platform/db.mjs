@@ -2547,6 +2547,7 @@ export function assignTenantAgentsToUser(db, params) {
 
 export function revokePlatformTenantAgents(db, params) {
   const tenantId = String(params.tenantId || "").trim();
+  const actorUserId = String(params.actorUserId || "").trim();
   const tenantAgentIds = Array.isArray(params.tenantAgentIds)
     ? [
         ...new Set(
@@ -2567,9 +2568,10 @@ export function revokePlatformTenantAgents(db, params) {
 
   return runInTransaction(db, () => {
     const placeholders = tenantAgentIds.map(() => "?").join(", ");
+    const updatedAt = nowIso();
     const selectedTenantAgents = db
       .prepare(
-        `SELECT id
+        `SELECT id, agent_id AS agentId, balance_points AS balancePoints
          FROM tenant_agents
          WHERE tenant_id = ? AND status = 'active' AND id IN (${placeholders})`,
       )
@@ -2589,6 +2591,13 @@ export function revokePlatformTenantAgents(db, params) {
       .map((tenantAgent) => String(tenantAgent.id || "").trim())
       .filter(Boolean);
     const resolvedPlaceholders = revokedTenantAgentIds.map(() => "?").join(", ");
+    const refundableAgents = selectedTenantAgents
+      .map((tenantAgent) => ({
+        id: String(tenantAgent.id || "").trim(),
+        agentId: String(tenantAgent.agentId || "").trim(),
+        balancePoints: normalizeNonNegativePoints(tenantAgent.balancePoints),
+      }))
+      .filter((tenantAgent) => tenantAgent.id);
     const revokedAssignments = db
       .prepare(
         `SELECT id, user_id AS userId
@@ -2600,9 +2609,67 @@ export function revokePlatformTenantAgents(db, params) {
     db.prepare(
       `UPDATE tenant_agents
        SET status = 'inactive',
+           balance_points = 0,
            updated_at = ?
        WHERE tenant_id = ? AND status = 'active' AND id IN (${resolvedPlaceholders})`,
-    ).run(nowIso(), tenantId, ...revokedTenantAgentIds);
+    ).run(updatedAt, tenantId, ...revokedTenantAgentIds);
+
+    let refundedPoints = 0;
+    let walletBalanceAfter = getTenantWalletBalance(db, tenantId);
+    for (const tenantAgent of refundableAgents) {
+      if (tenantAgent.balancePoints <= 0) {
+        continue;
+      }
+      refundedPoints = normalizeNonNegativePoints(refundedPoints + tenantAgent.balancePoints);
+      walletBalanceAfter = normalizeNonNegativePoints(walletBalanceAfter + tenantAgent.balancePoints);
+      db.prepare(
+        `INSERT INTO tenant_wallet_ledger (
+           id,
+           tenant_id,
+           direction,
+           category,
+           amount_points,
+           balance_after,
+           tenant_agent_id,
+           actor_user_id,
+           note,
+           created_at
+         ) VALUES (
+           @id,
+           @tenantId,
+           'credit',
+           'agent_revoke_refund',
+           @amountPoints,
+           @balanceAfter,
+           @tenantAgentId,
+           @actorUserId,
+           @note,
+           @createdAt
+         )`,
+      ).run({
+        id: createId("ledger"),
+        tenantId,
+        amountPoints: tenantAgent.balancePoints,
+        balanceAfter: walletBalanceAfter,
+        tenantAgentId: tenantAgent.id,
+        actorUserId: actorUserId || null,
+        note: `revoke:${tenantAgent.id}:${tenantAgent.agentId || tenantAgent.id}`,
+        createdAt: updatedAt,
+      });
+    }
+
+    if (refundedPoints > 0) {
+      db.prepare(
+        `UPDATE tenant_wallets
+         SET balance_points = @balancePoints,
+             updated_at = @updatedAt
+         WHERE tenant_id = @tenantId`,
+      ).run({
+        tenantId,
+        balancePoints: walletBalanceAfter,
+        updatedAt,
+      });
+    }
 
     if (revokedAssignments.length) {
       db.prepare(
@@ -2619,6 +2686,8 @@ export function revokePlatformTenantAgents(db, params) {
       tenantAgentIds: revokedTenantAgentIds,
       affectedUserIds,
       affectedMemberCount: affectedUserIds.length,
+      refundedPoints,
+      walletBalance: walletBalanceAfter,
     };
   });
 }
@@ -3857,7 +3926,7 @@ export function listTenantPaymentOrders(db, params) {
   }).items;
 }
 
-export function listTenantWalletLedgerEntriesPage(db, params, configAgents = []) {
+export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [], options = {}) {
   const tenantId = String(params.tenantId || "").trim();
   const page = normalizePagedListPage(params.page);
   const pageSize = normalizePagedListSize(params.pageSize, 20);
@@ -3867,6 +3936,34 @@ export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [])
     throw new Error("tenant_id_required");
   }
   const configMap = new Map((configAgents || []).map((entry) => [entry.id, entry]));
+  const categories = Array.isArray(options.categories)
+    ? [...new Set(options.categories.map((category) => String(category || "").trim()).filter(Boolean))]
+    : [];
+  const excludeCategories = Array.isArray(options.excludeCategories)
+    ? [
+        ...new Set(
+          options.excludeCategories.map((category) => String(category || "").trim()).filter(Boolean),
+        ),
+      ]
+    : [];
+  let categoryClause = "";
+  const categoryBindings = {};
+  const countCategoryBindings = {};
+  if (categories.length) {
+    const placeholders = categories.map((_, index) => `@category_${index}`).join(", ");
+    categoryClause = ` AND l.category IN (${placeholders})`;
+    categories.forEach((category, index) => {
+      categoryBindings[`category_${index}`] = category;
+      countCategoryBindings[`category_${index}`] = category;
+    });
+  } else if (excludeCategories.length) {
+    const placeholders = excludeCategories.map((_, index) => `@exclude_category_${index}`).join(", ");
+    categoryClause = ` AND l.category NOT IN (${placeholders})`;
+    excludeCategories.forEach((category, index) => {
+      categoryBindings[`exclude_category_${index}`] = category;
+      countCategoryBindings[`exclude_category_${index}`] = category;
+    });
+  }
   const searchClause = search
     ? `
          AND (
@@ -3885,20 +3982,24 @@ export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [])
         search,
         limit: pageSize,
         offset,
+        ...categoryBindings,
       }
     : {
         tenantId,
         limit: pageSize,
         offset,
+        ...categoryBindings,
       };
-  const countBindings = search ? { tenantId, search } : { tenantId };
+  const countBindings = search
+    ? { tenantId, search, ...countCategoryBindings }
+    : { tenantId, ...countCategoryBindings };
   const total = Number(
     getScalar(
       db,
       `SELECT COUNT(*) AS value
        FROM tenant_wallet_ledger l
        LEFT JOIN tenant_agents ta ON ta.id = l.tenant_agent_id
-       WHERE l.tenant_id = @tenantId${searchClause}`,
+       WHERE l.tenant_id = @tenantId${categoryClause}${searchClause}`,
       countBindings,
     ) || 0,
   );
@@ -3919,7 +4020,7 @@ export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [])
          ta.description AS tenantAgentDescription
        FROM tenant_wallet_ledger l
        LEFT JOIN tenant_agents ta ON ta.id = l.tenant_agent_id
-       WHERE l.tenant_id = @tenantId${searchClause}
+       WHERE l.tenant_id = @tenantId${categoryClause}${searchClause}
        ORDER BY l.created_at DESC
        LIMIT @limit OFFSET @offset`,
     )
@@ -3944,6 +4045,24 @@ export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [])
     page,
     pageSize,
   };
+}
+
+export function listTenantModelUsageEntriesPage(db, params, configAgents = []) {
+  return listTenantWalletLedgerEntriesPage(
+    db,
+    params,
+    configAgents,
+    { categories: ["usage_charge"] },
+  );
+}
+
+export function listTenantWalletFlowEntriesPage(db, params, configAgents = []) {
+  return listTenantWalletLedgerEntriesPage(
+    db,
+    params,
+    configAgents,
+    { excludeCategories: ["usage_charge"] },
+  );
 }
 
 export function listTenantWalletLedgerEntries(db, params, configAgents = []) {

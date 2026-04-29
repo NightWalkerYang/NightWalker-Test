@@ -1073,7 +1073,7 @@ describe("tenant surface", () => {
     expect(surfaceRoot?.querySelector("[data-tenant-page='next']")).not.toBeNull();
   });
 
-  it("mounts the native tenant wallet ledger view with search and pagination", async () => {
+  it("mounts the native tenant model usage view with search and pagination", async () => {
     writeTenantSession({
       token: "tenant-token",
       session: {
@@ -1103,14 +1103,14 @@ describe("tenant surface", () => {
                   items: [
                     {
                       id: "ledger-1",
-                      category: "recharge",
-                      direction: "credit",
-                      amountPoints: 88.5,
-                      balanceAfter: 120.5,
-                      paymentOrderId: "payment-1",
-                      note: "首笔充值",
+                      category: "usage_charge",
+                      direction: "debit",
+                      amountPoints: 2.5,
+                      balanceAfter: 16.5,
+                      paymentOrderId: "",
+                      note: "usage:test-session:usage-1",
                       createdAt: "2026-04-15T08:00:00.000Z",
-                      tenantAgentName: "",
+                      tenantAgentName: "财务分析助手",
                     },
                   ],
                   total: 1,
@@ -1132,14 +1132,80 @@ describe("tenant surface", () => {
     expect(requests.some((url) => url.includes("/tenant/admin/wallet-ledger?page=1&pageSize=8"))).toBe(
       true,
     );
-    expect(surfaceRoot?.textContent).toContain("钱包流水");
-    expect(surfaceRoot?.textContent).toContain("payment-1");
+    expect(surfaceRoot?.textContent).toContain("模型耗用");
+    expect(surfaceRoot?.textContent).toContain("模型扣费");
     expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-page='prev']")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-page='next']")).not.toBeNull();
   });
 
-  it("transfers points from the owned-agent card", async () => {
+  it("mounts the native tenant wallet flow view with search and pagination", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-wallet-flow");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const requests = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/wallet-flow?page=1&pageSize=8")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  items: [
+                    {
+                      id: "ledger-flow-1",
+                      category: "agent_revoke_refund",
+                      direction: "credit",
+                      amountPoints: 28,
+                      balanceAfter: 128,
+                      paymentOrderId: "",
+                      note: "revoke:tenant-agent-1:finance",
+                      createdAt: "2026-04-15T09:00:00.000Z",
+                      tenantAgentName: "财务分析助手",
+                    },
+                  ],
+                  total: 1,
+                  page: 1,
+                  pageSize: 8,
+                },
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(requests.some((url) => url.includes("/tenant/admin/wallet-flow?page=1&pageSize=8"))).toBe(
+      true,
+    );
+    expect(surfaceRoot?.textContent).toContain("钱包流水");
+    expect(surfaceRoot?.textContent).toContain("Agent 撤回回退");
+    expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-page='prev']")).not.toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-page='next']")).not.toBeNull();
+  });
+
+  it("opens a transfer modal from the owned-agent card and submits the transfer", async () => {
     writeTenantSession({
       token: "tenant-token",
       session: {
@@ -1230,8 +1296,23 @@ describe("tenant surface", () => {
     await flush();
 
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
-    expect(surfaceRoot?.textContent).toContain("划转积分");
-    const transferForm = surfaceRoot?.querySelector("[data-tenant-agent-transfer-form]");
+    const agentCard = surfaceRoot?.querySelector("[data-tenant-agent-card='tenant-agent-1']");
+    expect(agentCard?.textContent).toContain("划转积分");
+    expect(agentCard?.textContent).not.toContain("计费倍率");
+    expect(agentCard?.querySelector("[data-tenant-agent-transfer-form]")).toBeNull();
+
+    const transferDialogBeforeClick = surfaceRoot?.querySelector("[data-tenant-agent-transfer-dialog]");
+    expect(transferDialogBeforeClick?.querySelector("[data-tenant-agent-transfer-form]")).toBeNull();
+
+    (
+      surfaceRoot?.querySelector("[data-tenant-open-agent-transfer='tenant-agent-1']") as
+        | HTMLButtonElement
+        | null
+    )?.click();
+    await flush();
+
+    const transferDialog = document.querySelector("[data-tenant-agent-transfer-dialog]");
+    const transferForm = transferDialog?.querySelector("[data-tenant-agent-transfer-form]");
     expect(transferForm).not.toBeNull();
     const amountInput = transferForm?.querySelector("input[name='amountPoints']");
     const noteInput = transferForm?.querySelector("input[name='note']");

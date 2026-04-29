@@ -234,6 +234,9 @@ export function createTenantApiClient() {
     listTenantWalletLedger({ page = 1, pageSize = 8, search = "" } = {}) {
       return requestJson(withQuery("/tenant/admin/wallet-ledger", { page, pageSize, search }));
     },
+    listTenantWalletFlow({ page = 1, pageSize = 8, search = "" } = {}) {
+      return requestJson(withQuery("/tenant/admin/wallet-flow", { page, pageSize, search }));
+    },
     createTenantPaymentOrder(body) {
       return requestJson("/tenant/admin/payment-orders", { method: "POST", body });
     },

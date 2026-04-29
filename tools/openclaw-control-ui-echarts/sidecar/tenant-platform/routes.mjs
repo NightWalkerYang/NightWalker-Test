@@ -38,7 +38,8 @@ import {
   listTenantUsageStats,
   listTenantUsageRecords,
   listTenantPaymentOrdersPage,
-  listTenantWalletLedgerEntriesPage,
+  listTenantModelUsageEntriesPage,
+  listTenantWalletFlowEntriesPage,
   getTenantOverview,
   getTenantWalletDashboard,
   logAudit,
@@ -1835,6 +1836,7 @@ export function createTenantPlatformRouter(deps) {
         const result = revokePlatformTenantAgents(deps.db, {
           tenantId,
           tenantAgentIds,
+          actorUserId: session.userId,
         });
         logAudit(deps.db, {
           userId: session.userId,
@@ -1849,6 +1851,8 @@ export function createTenantPlatformRouter(deps) {
             revokedTenantAgentCount: result.revokedTenantAgentCount,
             revokedAssignmentCount: result.revokedAssignmentCount,
             affectedUserIds: result.affectedUserIds,
+            refundedPoints: result.refundedPoints,
+            walletBalance: result.walletBalance,
           },
         });
         sendJson(request, response, 200, { ok: true, data: result });
@@ -2477,7 +2481,39 @@ export function createTenantPlatformRouter(deps) {
         const page = Number.parseInt(String(url.searchParams.get("page") || "1"), 10) || 1;
         const pageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
         const search = String(url.searchParams.get("search") || "").trim();
-        const result = listTenantWalletLedgerEntriesPage(
+        const result = listTenantModelUsageEntriesPage(
+          deps.db,
+          {
+            tenantId: session.tenantId,
+            page,
+            pageSize,
+            search,
+          },
+          configAgents,
+        );
+        sendJson(request, response, 200, {
+          ok: true,
+          data: result,
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/wallet-flow") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const page = Number.parseInt(String(url.searchParams.get("page") || "1"), 10) || 1;
+        const pageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
+        const search = String(url.searchParams.get("search") || "").trim();
+        const result = listTenantWalletFlowEntriesPage(
           deps.db,
           {
             tenantId: session.tenantId,

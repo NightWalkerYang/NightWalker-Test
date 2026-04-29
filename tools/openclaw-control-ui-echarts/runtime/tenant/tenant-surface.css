@@ -299,6 +299,8 @@
 .oc-tenant-agent-card__actions {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .oc-tenant-agent-detail {

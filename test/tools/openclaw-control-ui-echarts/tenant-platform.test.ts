@@ -20,7 +20,9 @@ import {
   listTenantAgents,
   listTenantMembers,
   listTenantPaymentOrdersPage,
+  listTenantModelUsageEntriesPage,
   listTenantWalletLedgerEntriesPage,
+  listTenantWalletFlowEntriesPage,
   readOpenClawAgentCatalog,
   repairTenantUsageCostGaps,
   upsertTenantAgent,
@@ -969,9 +971,36 @@ describe("tenant platform database foundation", () => {
         revokedTenantAgentCount: 1,
         revokedAssignmentCount: 2,
         affectedMemberCount: 2,
+        refundedPoints: 18,
+        walletBalance: 18,
       });
       expect(result.tenantAgentIds).toEqual([tenantAgentId]);
       expect(result.affectedUserIds.toSorted()).toEqual([memberA.id, memberB.id].toSorted());
+
+      const wallet = db
+        .prepare(
+          `SELECT balance_points AS balancePoints
+           FROM tenant_wallets
+           WHERE tenant_id = ?`,
+        )
+        .get(tenant.id);
+      expect(wallet?.balancePoints).toBeCloseTo(18, 8);
+
+      const refundLedger = db
+        .prepare(
+          `SELECT category, direction, amount_points AS amountPoints, balance_after AS balanceAfter
+           FROM tenant_wallet_ledger
+           WHERE tenant_id = ?
+           ORDER BY created_at DESC
+           LIMIT 1`,
+        )
+        .get(tenant.id);
+      expect(refundLedger).toMatchObject({
+        category: "agent_revoke_refund",
+        direction: "credit",
+        amountPoints: 18,
+        balanceAfter: 18,
+      });
 
       expect(listTenantAgents(db, tenant.id, catalog)).toHaveLength(0);
       expect(
@@ -2558,7 +2587,7 @@ describe("tenant platform database foundation", () => {
     }
   });
 
-  it("lists tenant wallet ledger entries with paging and search", () => {
+  it("lists model usage and wallet flow entries with paging and search", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
     try {
@@ -2589,6 +2618,18 @@ describe("tenant platform database foundation", () => {
         balancePoints: 0,
         status: "active",
       });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "wallet-ledger-member",
+        password: "secret",
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
 
       const order = createTenantPaymentOrder(db, {
         tenantId: tenant.id,
@@ -2608,6 +2649,28 @@ describe("tenant platform database foundation", () => {
         amountPoints: 35.25,
         note: "首批预算",
       });
+      syncTenantUsageRecords(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        openclawSessionKey: "agent:finance:tenant:wallet-ledger-member:chat:ledger",
+        records: [
+          {
+            sourceFingerprint: "usage-flow-1",
+            messageTimestamp: "2026-04-16T08:30:00.000Z",
+            usageDay: "2026-04-16",
+            provider: "openai",
+            model: "openai/gpt-5.4",
+            inputTokens: 1000,
+            outputTokens: 400,
+            totalTokens: 1400,
+            totalCost: 0.12,
+          },
+        ],
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const configAgents = readOpenClawAgentCatalog(sandbox.config.configPath);
 
       const paged = listTenantWalletLedgerEntriesPage(
         db,
@@ -2617,7 +2680,7 @@ describe("tenant platform database foundation", () => {
           pageSize: 1,
           search: "首批预算",
         },
-        readOpenClawAgentCatalog(sandbox.config.configPath),
+        configAgents,
       );
       expect(paged).toMatchObject({
         total: 1,
@@ -2632,6 +2695,35 @@ describe("tenant platform database foundation", () => {
         tenantAgentName: "财务分析助手",
       });
 
+      const modelUsage = listTenantModelUsageEntriesPage(
+        db,
+        {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 10,
+          search: "usage-flow-1",
+        },
+        configAgents,
+      );
+      expect(modelUsage.total).toBe(1);
+      expect(modelUsage.items[0]).toMatchObject({
+        category: "usage_charge",
+        tenantAgentName: "财务分析助手",
+      });
+
+      const walletFlow = listTenantWalletFlowEntriesPage(
+        db,
+        {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 10,
+          search: order.id,
+        },
+        configAgents,
+      );
+      expect(walletFlow.total).toBe(1);
+      expect(walletFlow.items[0]?.paymentOrderId).toBe(order.id);
+
       const orderSearch = listTenantWalletLedgerEntriesPage(
         db,
         {
@@ -2640,7 +2732,7 @@ describe("tenant platform database foundation", () => {
           pageSize: 10,
           search: order.id,
         },
-        readOpenClawAgentCatalog(sandbox.config.configPath),
+        configAgents,
       );
       expect(orderSearch.total).toBe(1);
       expect(orderSearch.items[0]?.paymentOrderId).toBe(order.id);

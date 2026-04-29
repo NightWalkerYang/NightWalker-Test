@@ -79,6 +79,8 @@ function resolveLedgerCategoryLabel(category) {
       return "充值入账";
     case "agent_transfer":
       return "划转 Agent";
+    case "agent_revoke_refund":
+      return "Agent 撤回回退";
     case "usage_charge":
       return "模型扣费";
     default:
@@ -274,7 +276,8 @@ export function renderTenantWalletOrdersTable(orders = []) {
   `;
 }
 
-export function renderTenantWalletLedgerTable(ledger = []) {
+export function renderTenantWalletLedgerTable(ledger = [], options = {}) {
+  const emptyText = String(options.emptyText || "").trim() || "暂无钱包流水";
   return `
     <div class="data-table-container">
       <table class="data-table">
@@ -313,7 +316,7 @@ export function renderTenantWalletLedgerTable(ledger = []) {
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="6" class="oc-tenant-table-empty">暂无钱包流水</td></tr>`
+              : `<tr><td colspan="6" class="oc-tenant-table-empty">${escapeHtml(emptyText)}</td></tr>`
           }
         </tbody>
       </table>

@@ -70,7 +70,12 @@ function formatCredits(value) {
 }
 
 function isRemoteSearchSection(section) {
-  return section === "usage-stats" || section === "wallet-orders" || section === "wallet-ledger";
+  return (
+    section === "usage-stats" ||
+    section === "wallet-orders" ||
+    section === "wallet-ledger" ||
+    section === "wallet-flow"
+  );
 }
 
 function dispatchWalletSummary(summary) {
@@ -140,11 +145,25 @@ function createAgentDetailDialogState() {
   };
 }
 
+function createAgentTransferDialogState() {
+  return {
+    open: false,
+    agentId: "",
+  };
+}
+
 function getAgentDetailDialog(controller) {
   if (!(controller?.agentDetailDialog && typeof controller.agentDetailDialog === "object")) {
     controller.agentDetailDialog = createAgentDetailDialogState();
   }
   return controller.agentDetailDialog;
+}
+
+function getAgentTransferDialog(controller) {
+  if (!(controller?.agentTransferDialog && typeof controller.agentTransferDialog === "object")) {
+    controller.agentTransferDialog = createAgentTransferDialogState();
+  }
+  return controller.agentTransferDialog;
 }
 
 function getTenantAgentDisplayName(agent) {
@@ -423,6 +442,7 @@ function ensureController(root, session, apiClient) {
       wallet: "",
       "wallet-orders": "",
       "wallet-ledger": "",
+      "wallet-flow": "",
     },
     pageBySection: {
       members: 1,
@@ -432,6 +452,7 @@ function ensureController(root, session, apiClient) {
       wallet: 1,
       "wallet-orders": 1,
       "wallet-ledger": 1,
+      "wallet-flow": 1,
     },
     members: [],
     tenantAgents: [],
@@ -445,7 +466,11 @@ function ensureController(root, session, apiClient) {
     walletLedgerItems: [],
     walletLedgerTotal: 0,
     walletLedgerPageSize: PAGE_SIZE,
+    walletFlowItems: [],
+    walletFlowTotal: 0,
+    walletFlowPageSize: PAGE_SIZE,
     agentDetailDialog: createAgentDetailDialogState(),
+    agentTransferDialog: createAgentTransferDialogState(),
     activeMember: null,
     assignAgentDialog: createAssignAgentDialogState(),
     passwordMember: null,
@@ -493,6 +518,9 @@ function ensureController(root, session, apiClient) {
     }
     if (event.target.matches("[data-tenant-agent-detail-dialog]")) {
       controller.agentDetailDialog = createAgentDetailDialogState();
+    }
+    if (event.target.matches("[data-tenant-agent-transfer-dialog]")) {
+      controller.agentTransferDialog = createAgentTransferDialogState();
     }
     if (event.target.matches("[data-tenant-revoke-assignment-dialog]")) {
       controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
@@ -584,6 +612,21 @@ function renderToolbar(controller) {
   }
 
   if (controller.section === "wallet-ledger") {
+    return `
+      <div class="data-table-toolbar oc-tenant-table-toolbar">
+        <label class="data-table-search">
+          <input
+            type="search"
+            placeholder="搜索模型扣费、Agent 或备注"
+            value="${escapeHtml(getSearchValue(controller))}"
+            data-tenant-search
+          />
+        </label>
+      </div>
+    `;
+  }
+
+  if (controller.section === "wallet-flow") {
     return `
       <div class="data-table-toolbar oc-tenant-table-toolbar">
         <label class="data-table-search">
@@ -772,7 +815,6 @@ function filterTenantAgents(controller) {
 
 function renderOwnedAgentsCards(rows, controller) {
   const localEdition = isLocalEdition(controller);
-  const walletBalance = formatCredits(controller.walletSummary?.walletBalance);
   if (!rows.length) {
     return `<div class="callout info oc-tenant-agent-empty">当前租户还没有可查看的 Agent。</div>`;
   }
@@ -799,44 +841,22 @@ function renderOwnedAgentsCards(rows, controller) {
                     ? `<div><dt>部署模式</dt><dd>本地版</dd></div>`
                     : `<div><dt>余额积分</dt><dd>${formatCredits(agent.balancePoints)}</dd></div>`
                 }
-                <div><dt>计费倍率</dt><dd>${formatCredits(agent.rateMultiplier || 1)}</dd></div>
                 <div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(agent.updatedAt || agent.createdAt))}</dd></div>
               </dl>
-              ${
-                localEdition
-                  ? ""
-                  : `
-                    <div class="oc-tenant-agent-card__transfer">
-                      <div class="oc-tenant-agent-card__transfer-header">
-                        <div class="oc-tenant-agent-card__transfer-title">划转积分</div>
-                        <div class="oc-tenant-agent-card__transfer-meta">钱包余额 ${walletBalance}</div>
-                      </div>
-                      <form class="oc-tenant-agent-card__transfer-form" data-tenant-agent-transfer-form>
-                        <input type="hidden" name="tenantAgentId" value="${escapeAttribute(agent.id)}" />
-                        <label class="field">
-                          <span>划转积分</span>
-                          <input
-                            type="number"
-                            name="amountPoints"
-                            min="0.01"
-                            step="0.01"
-                            inputmode="decimal"
-                            placeholder="请输入积分"
-                            required
-                          />
-                        </label>
-                        <label class="field">
-                          <span>备注</span>
-                          <input type="text" name="note" maxlength="120" placeholder="可选，用于流水备注" />
-                        </label>
-                        <div class="oc-tenant-agent-card__transfer-actions">
-                          <button class="btn primary" type="submit">划转积分</button>
-                        </div>
-                      </form>
-                    </div>
-                  `
-              }
               <div class="oc-tenant-agent-card__actions">
+                ${
+                  localEdition
+                    ? ""
+                    : `
+                      <button
+                        class="btn primary"
+                        type="button"
+                        data-tenant-open-agent-transfer="${escapeAttribute(agent.id)}"
+                      >
+                        划转积分
+                      </button>
+                    `
+                }
                 <button
                   class="btn"
                   type="button"
@@ -855,6 +875,19 @@ function renderOwnedAgentsCards(rows, controller) {
 
 function getAgentDetailTarget(controller) {
   const dialog = getAgentDetailDialog(controller);
+  const agentId = String(dialog.agentId || "").trim();
+  if (!agentId) {
+    return null;
+  }
+  return (
+    (Array.isArray(controller.tenantAgents) ? controller.tenantAgents : []).find(
+      (agent) => String(agent?.id || "").trim() === agentId,
+    ) || null
+  );
+}
+
+function getAgentTransferTarget(controller) {
+  const dialog = getAgentTransferDialog(controller);
   const agentId = String(dialog.agentId || "").trim();
   if (!agentId) {
     return null;
@@ -921,6 +954,64 @@ function renderAgentDetailDialog(controller) {
                 </div>
               `
               : `<div class="callout info">未找到对应的 Agent 详情。</div>`
+          }
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderAgentTransferDialog(controller) {
+  const agent = getAgentTransferTarget(controller);
+  const walletBalance = formatCredits(controller.walletSummary?.walletBalance);
+  return `
+    <dialog class="oc-tenant-modal" data-tenant-agent-transfer-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">划转积分</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="transfer">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
+          ${
+            agent
+              ? `
+                <form class="oc-tenant-modal__form" data-tenant-agent-transfer-form>
+                  <input type="hidden" name="tenantAgentId" value="${escapeAttribute(agent.id)}" />
+                  <label class="field">
+                    <span>目标 Agent</span>
+                    <input type="text" value="${escapeAttribute(getTenantAgentDisplayName(agent))}" disabled />
+                  </label>
+                  <label class="field">
+                    <span>钱包余额</span>
+                    <input type="text" value="${escapeAttribute(walletBalance)}" disabled />
+                  </label>
+                  <label class="field">
+                    <span>当前 Agent 积分</span>
+                    <input type="text" value="${escapeAttribute(formatCredits(agent.balancePoints))}" disabled />
+                  </label>
+                  <label class="field">
+                    <span>划转积分</span>
+                    <input
+                      type="number"
+                      name="amountPoints"
+                      min="0.01"
+                      step="0.01"
+                      inputmode="decimal"
+                      placeholder="请输入积分"
+                      required
+                    />
+                  </label>
+                  <label class="field">
+                    <span>备注</span>
+                    <input type="text" name="note" maxlength="120" placeholder="可选，用于流水备注" />
+                  </label>
+                  <div class="oc-tenant-modal__actions">
+                    <button class="btn" type="button" data-tenant-close-dialog="transfer">取消</button>
+                    <button class="btn primary" type="submit">确认划转</button>
+                  </div>
+                </form>
+              `
+              : `<div class="callout info">请选择目标 Agent 后再操作。</div>`
           }
         </div>
       </div>
@@ -1357,6 +1448,15 @@ function totalWalletLedgerPages(controller) {
   );
 }
 
+function totalWalletFlowPages(controller) {
+  return Math.max(
+    1,
+    Math.ceil(
+      (Number(controller.walletFlowTotal || 0) || 0) / (controller.walletFlowPageSize || PAGE_SIZE),
+    ),
+  );
+}
+
 function findWalletOrderById(controller, orderId) {
   const normalizedOrderId = String(orderId || "").trim();
   if (!normalizedOrderId) {
@@ -1404,14 +1504,33 @@ function renderWalletLedgerList(controller) {
     <div class="oc-tenant-wallet">
       <section class="oc-tenant-card oc-tenant-wallet-table-card">
         <div class="oc-tenant-card-header">
-          <h3 class="oc-tenant-card-title">钱包流水</h3>
-          <div class="oc-tenant-wallet-panel__meta">展示钱包充值、划转和扣费流水</div>
+          <h3 class="oc-tenant-card-title">模型耗用</h3>
+          <div class="oc-tenant-wallet-panel__meta">展示租户模型扣费明细</div>
         </div>
-        ${renderTenantWalletLedgerTable(controller.walletLedgerItems)}
+        ${renderTenantWalletLedgerTable(controller.walletLedgerItems, { emptyText: "暂无模型耗用" })}
         ${renderPagination({
           totalItems: controller.walletLedgerTotal,
           page: getPageValue(controller),
           totalPages: totalWalletLedgerPages(controller),
+        })}
+      </section>
+    </div>
+  `;
+}
+
+function renderWalletFlowList(controller) {
+  return `
+    <div class="oc-tenant-wallet">
+      <section class="oc-tenant-card oc-tenant-wallet-table-card">
+        <div class="oc-tenant-card-header">
+          <h3 class="oc-tenant-card-title">钱包流水</h3>
+          <div class="oc-tenant-wallet-panel__meta">展示充值入账、划转扣减和撤回回退</div>
+        </div>
+        ${renderTenantWalletLedgerTable(controller.walletFlowItems)}
+        ${renderPagination({
+          totalItems: controller.walletFlowTotal,
+          page: getPageValue(controller),
+          totalPages: totalWalletFlowPages(controller),
         })}
       </section>
     </div>
@@ -1482,13 +1601,14 @@ function render(root, controller) {
   const isWallet = controller.section === "wallet";
   const isWalletOrders = controller.section === "wallet-orders";
   const isWalletLedger = controller.section === "wallet-ledger";
+  const isWalletFlow = controller.section === "wallet-flow";
   const isOwnedAgents = controller.section === "owned-agents";
   if (controller.section === "agent-assignment") {
     pruneRevokeAssignmentSelection(controller);
     pruneAssignAgentSelection(controller);
   }
   const pagination =
-    isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger
+    isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow
       ? null
       : paginate(
           isOwnedAgents ? filterTenantAgents(controller) : filterMembers(controller),
@@ -1508,6 +1628,8 @@ function render(root, controller) {
           ? renderWalletOrdersList(controller)
           : isWalletLedger
             ? renderWalletLedgerList(controller)
+            : isWalletFlow
+              ? renderWalletFlowList(controller)
       : isOwnedAgents
         ? `
           <div class="data-table-wrapper">
@@ -1528,15 +1650,15 @@ function render(root, controller) {
 
   root.dataset.ocTenantEmbedded = "true";
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
     </section>
     ${
-      isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger
+      isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow
         ? ""
         : isOwnedAgents
-          ? `${renderAgentDetailDialog(controller)}`
+          ? `${renderAgentDetailDialog(controller)}${renderAgentTransferDialog(controller)}`
           : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderDeleteMemberDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
     }
   `;
@@ -1545,9 +1667,12 @@ function render(root, controller) {
     void initTenantOverviewCharts(root, controller);
   }
 
-  if (!isUsageStats && !isOverview && !isWallet && !isWalletOrders && !isWalletLedger) {
+  if (!isUsageStats && !isOverview && !isWallet && !isWalletOrders && !isWalletLedger && !isWalletFlow) {
     if (isOwnedAgents && controller.agentDetailDialog?.open) {
       openDialog(root.querySelector("[data-tenant-agent-detail-dialog]"));
+    }
+    if (isOwnedAgents && controller.agentTransferDialog?.open) {
+      openDialog(root.querySelector("[data-tenant-agent-transfer-dialog]"));
     }
     if (controller.dialogs.createMemberOpen) {
       openDialog(root.querySelector("[data-tenant-create-dialog]"));
@@ -1640,6 +1765,28 @@ async function refresh(root, controller) {
     const totalPages = totalWalletLedgerPages(controller);
     controller.pageBySection["wallet-ledger"] = Math.min(Math.max(1, currentPage), totalPages);
     if (controller.pageBySection["wallet-ledger"] !== currentPage) {
+      return refresh(root, controller);
+    }
+    render(root, controller);
+    return;
+  }
+
+  if (controller.section === "wallet-flow") {
+    const search = getSearchValue(controller).trim();
+    const page = getPageValue(controller);
+    const data = await controller.apiClient.listTenantWalletFlow({
+      page,
+      pageSize: controller.walletFlowPageSize || PAGE_SIZE,
+      search,
+    });
+    controller.walletFlowItems = Array.isArray(data?.items) ? data.items : [];
+    controller.walletFlowTotal = Number(data?.total || 0);
+    controller.walletFlowPageSize =
+      Number(data?.pageSize || controller.walletFlowPageSize || PAGE_SIZE) || PAGE_SIZE;
+    const currentPage = Number(data?.page || page) || 1;
+    const totalPages = totalWalletFlowPages(controller);
+    controller.pageBySection["wallet-flow"] = Math.min(Math.max(1, currentPage), totalPages);
+    if (controller.pageBySection["wallet-flow"] !== currentPage) {
       return refresh(root, controller);
     }
     render(root, controller);
@@ -1863,6 +2010,23 @@ async function openAssignAgentDialog(root, controller, memberId) {
   }
 }
 
+function openAgentTransferDialog(root, controller, tenantAgentId) {
+  if (isLocalEdition(controller)) {
+    return;
+  }
+  const agent = (Array.isArray(controller.tenantAgents) ? controller.tenantAgents : []).find(
+    (item) => String(item?.id || "").trim() === String(tenantAgentId || "").trim(),
+  );
+  if (!agent) {
+    return;
+  }
+  controller.agentTransferDialog = {
+    open: true,
+    agentId: String(agent.id || "").trim(),
+  };
+  render(root, controller);
+}
+
 async function openRevokeAssignmentConfirmDialog(root, controller) {
   const dialog = controller.revokeAssignmentDialog;
   if (!dialog?.open || dialog.loading || dialog.busy) {
@@ -2068,6 +2232,12 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  const agentTransferTrigger = target.closest("[data-tenant-open-agent-transfer]");
+  if (agentTransferTrigger instanceof HTMLElement) {
+    openAgentTransferDialog(root, controller, agentTransferTrigger.dataset.tenantOpenAgentTransfer);
+    return;
+  }
+
   const passwordTrigger = target.closest("[data-tenant-open-member-password]");
   if (passwordTrigger instanceof HTMLElement) {
     controller.passwordMember = memberById(
@@ -2114,6 +2284,10 @@ async function handleClick(root, controller, event) {
     if (dialogKind === "agent-detail") {
       controller.agentDetailDialog = createAgentDetailDialogState();
       closeDialog(root.querySelector("[data-tenant-agent-detail-dialog]"));
+    }
+    if (dialogKind === "transfer") {
+      controller.agentTransferDialog = createAgentTransferDialogState();
+      closeDialog(root.querySelector("[data-tenant-agent-transfer-dialog]"));
     }
     if (dialogKind === "revoke") {
       controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
@@ -2242,12 +2416,12 @@ async function handleSubmit(root, controller, event) {
     try {
       const payload = Object.fromEntries(new FormData(target).entries());
       const result = await controller.apiClient.transferTenantWalletToAgent(payload);
+      controller.agentTransferDialog = createAgentTransferDialogState();
       await refresh(root, controller);
       setFeedback(
         root,
         `已划转 ${formatNumber(result?.amountPoints)} 积分，钱包余额 ${formatNumber(result?.walletBalance)}。`,
       );
-      target.reset();
     } catch (error) {
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }
@@ -2445,6 +2619,7 @@ export async function mountTenantConsolePage(root, options = {}) {
   }
   if (controller.section !== "owned-agents") {
     controller.agentDetailDialog = createAgentDetailDialogState();
+    controller.agentTransferDialog = createAgentTransferDialogState();
   }
   if (controller.section !== "agent-assignment") {
     controller.dialogs.assignOpen = false;
@@ -2456,7 +2631,8 @@ export async function mountTenantConsolePage(root, options = {}) {
     controller.section === "usage-stats" ||
     controller.section === "wallet" ||
     controller.section === "wallet-orders" ||
-    controller.section === "wallet-ledger"
+    controller.section === "wallet-ledger" ||
+    controller.section === "wallet-flow"
   ) {
     controller.dialogs.createMemberOpen = false;
     controller.dialogs.assignOpen = false;
@@ -2465,6 +2641,7 @@ export async function mountTenantConsolePage(root, options = {}) {
     controller.passwordMember = null;
     controller.deleteMemberTarget = createDeleteMemberDialogState();
     controller.agentDetailDialog = createAgentDetailDialogState();
+    controller.agentTransferDialog = createAgentTransferDialogState();
     controller.activeMember = null;
     controller.assignAgentDialog = createAssignAgentDialogState();
     controller.revokeAssignmentDialog = createRevokeAssignmentDialogState();
