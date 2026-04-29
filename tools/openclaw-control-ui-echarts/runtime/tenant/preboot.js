@@ -338,6 +338,59 @@
   const buildSettingsStorageKey = (gatewayUrl) =>
     `openclaw.control.settings.v1:${normalizeGatewayScope(gatewayUrl)}`;
 
+  const clearPersistedControlUiSession = (routeLike = window.location.href) => {
+    const routeUrl = routeLike instanceof URL ? routeLike : new URL(routeLike, window.location.href);
+    const proto = routeUrl.protocol === "https:" ? "wss" : "ws";
+    const rootGatewayUrl = `${proto}://${routeUrl.host}`;
+    const basePath = inferBasePathFromPathname(routeUrl.pathname);
+    const gatewayScopeUrl = `${proto}://${routeUrl.host}${basePath}`;
+    const rootScope = normalizeGatewayScope(rootGatewayUrl);
+    const scope = normalizeGatewayScope(gatewayScopeUrl);
+    const storage = safeStorage(window.localStorage);
+    if (!storage) {
+      return;
+    }
+    for (const key of new Set([
+      buildSettingsStorageKey(rootGatewayUrl),
+      buildSettingsStorageKey(gatewayScopeUrl),
+    ])) {
+      const existing = readJson(storage, key);
+      if (!existing || typeof existing !== "object") {
+        continue;
+      }
+      const next = { ...existing };
+      delete next.sessionKey;
+      delete next.lastActiveSessionKey;
+      if (next.sessionsByGateway && typeof next.sessionsByGateway === "object") {
+        const sessionsByGateway = { ...next.sessionsByGateway };
+        for (const sessionScope of new Set([rootScope, scope])) {
+          const scopedValue = sessionsByGateway[sessionScope];
+          if (!scopedValue || typeof scopedValue !== "object") {
+            continue;
+          }
+          const nextScopedValue = { ...scopedValue };
+          delete nextScopedValue.sessionKey;
+          delete nextScopedValue.lastActiveSessionKey;
+          if (Object.keys(nextScopedValue).length > 0) {
+            sessionsByGateway[sessionScope] = nextScopedValue;
+          } else {
+            delete sessionsByGateway[sessionScope];
+          }
+        }
+        if (Object.keys(sessionsByGateway).length > 0) {
+          next.sessionsByGateway = sessionsByGateway;
+        } else {
+          delete next.sessionsByGateway;
+        }
+      }
+      if (Object.keys(next).length > 0) {
+        storage.setItem(key, JSON.stringify(next));
+      } else {
+        storage.removeItem(key);
+      }
+    }
+  };
+
   const persistControlUiSession = (sessionKey) => {
     const normalizedSessionKey = normalizeTenantValue(sessionKey);
     if (!normalizedSessionKey) {
@@ -476,6 +529,9 @@
   document.documentElement.setAttribute("data-oc-tenant-preboot", "true");
 
   const normalizedCurrent = resolveMemberRouteUrl(window.location.href, window.location.href);
+  if (isMemberSelectorRoute(normalizedCurrent, readTenantSession())) {
+    clearPersistedControlUiSession(normalizedCurrent);
+  }
   persistRouteState(normalizedCurrent);
 
   if (!window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__) {
@@ -489,6 +545,9 @@
           return original(state, unused, url);
         }
         const normalized = resolveMemberRouteUrl(url, window.location.href);
+        if (isMemberSelectorRoute(normalized, readTenantSession())) {
+          clearPersistedControlUiSession(normalized);
+        }
         persistRouteState(normalized);
         return original(state, unused, normalized.toString());
       };

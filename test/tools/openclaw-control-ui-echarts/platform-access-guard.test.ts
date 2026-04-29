@@ -2,13 +2,60 @@
  * @vitest-environment jsdom
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isNativeControlUiPath,
   resolveMemberChatBootstrapHref,
   resolvePlatformAccessDecision,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js";
-import { isTenantMemberSessionKey } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
+import {
+  isTenantMemberSessionKey,
+  writeTenantSession,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
+
+const ORIGINAL_PUSH_STATE = window.history.pushState.bind(window.history);
+const ORIGINAL_REPLACE_STATE = window.history.replaceState.bind(window.history);
+
+function readControlUiSettings() {
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  const key = `openclaw.control.settings.v1:${proto}://${window.location.host}`;
+  return JSON.parse(window.localStorage.getItem(key) || "{}");
+}
+
+function writeControlUiSettings(sessionKey) {
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  const scope = `${proto}://${window.location.host}`;
+  window.localStorage.setItem(
+    `openclaw.control.settings.v1:${scope}`,
+    JSON.stringify({
+      gatewayUrl: scope,
+      sessionKey,
+      lastActiveSessionKey: sessionKey,
+      sessionsByGateway: {
+        [scope]: {
+          sessionKey,
+          lastActiveSessionKey: sessionKey,
+        },
+      },
+    }),
+  );
+}
+
+async function importTenantPreboot() {
+  vi.resetModules();
+  await import("../../../tools/openclaw-control-ui-echarts/runtime/tenant/preboot.js");
+}
+
+afterEach(() => {
+  window.localStorage.clear();
+  window.history.pushState = ORIGINAL_PUSH_STATE;
+  window.history.replaceState = ORIGINAL_REPLACE_STATE;
+  delete window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__;
+  delete window.__OPENCLAW_CONTROL_UI_BASE_PATH__;
+  document.documentElement.removeAttribute("data-oc-tenant-preboot");
+  window.history.replaceState({}, "", "/");
+  vi.restoreAllMocks();
+});
 
 describe("platform access guard", () => {
   it("recognizes native control-ui routes", () => {
@@ -252,5 +299,51 @@ describe("platform access guard", () => {
         selectedAgent,
       }),
     ).toBe(existingHref);
+  });
+
+  it("clears stale native control-ui session recovery state on the member selector route", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-agent-selector");
+    writeControlUiSettings(
+      "agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+
+    await importTenantPreboot();
+
+    const settings = readControlUiSettings();
+    expect(settings.sessionKey).toBeUndefined();
+    expect(settings.lastActiveSessionKey).toBeUndefined();
+    expect(settings.sessionsByGateway?.["wss://www.hailstone.cn:18789"]?.sessionKey).toBeUndefined();
+    expect(settings.sessionsByGateway?.["wss://www.hailstone.cn:18789"]?.lastActiveSessionKey).toBeUndefined();
+  });
+
+  it("normalizes invalid member chat restores back to the selector route", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-agent-selector");
+
+    await importTenantPreboot();
+
+    window.history.pushState(
+      {},
+      "",
+      "/chat?ocTenantView=tenant-agent-selector&session=agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
   });
 });
