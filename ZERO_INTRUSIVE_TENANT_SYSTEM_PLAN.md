@@ -18,6 +18,7 @@
 
 4. Docker 侧部署流程以 `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh` 为准。
    - 零侵入页面、运行时脚本和 sidecar 相关能力，默认都要经过这条部署路径。
+   - `tools/openclaw-control-ui-echarts/generated/control-ui/index.html` 里会通过零侵入 auto-token bootstrap 嵌入 `OPENCLAW_GATEWAY_TOKEN`；因此跨机器部署时，不能直接复用另一台机器上已经构建好的 `generated/control-ui/` 成品，必须在目标机器上用该机器当前容器/配置里的 `OPENCLAW_GATEWAY_TOKEN` 重新生成，或至少定向重写嵌入 token。否则浏览器会落回原生 Control UI 连接门，并报 `unauthorized: gateway token mismatch`。
    - 这条部署路径产出的 `generated/control-ui/assets/vendor/` 必须同步零侵入层完整 vendor 目录，而不只是离线 userscript 内嵌的 `echarts.min.js/json5.min.js`；否则 AI 生成的大屏一旦引用 `ECharts-GL`、`GSAP`、`tsParticles`、`PixiJS`、`Babylon.js`、`Three.js` 就会在正式环境直接 `404`。
    - 这条部署路径生成完 `docker-compose.override.yml` 后，还必须默认执行一次定向 `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy`；否则浏览器侧即使已经能拿到最新 HTML，gateway/proxy 也可能仍然跑在旧容器配置上，导致刷新后 `workspace-agent-downloads/.../__openclaw_echarts_view__-*` 这类重写脚本资源继续 `404`。
    - 本地 Docker 部署必须通过部署层追加同源反向代理容器，对浏览器暴露的 `18789` 端口不再直接映射原始 gateway；代理层负责把 `/tenant-platform-api/` 转发到 tenant sidecar，把其它 HTTP/WebSocket 流量转发回 gateway，从而避免修改 gateway 源码，同时避开浏览器对 `18801` 跨端口请求的 CSP 限制。
