@@ -18,7 +18,10 @@ export const TENANT_OWNED_AGENTS_VIEW = "tenant-owned-agents";
 export const TENANT_USAGE_STATS_VIEW = "tenant-usage-stats";
 export const TENANT_STATISTICS_OVERVIEW_VIEW = "tenant-statistics-overview";
 export const TENANT_WALLET_VIEW = "tenant-wallet";
+export const TENANT_WALLET_ORDERS_VIEW = "tenant-wallet-orders";
+export const TENANT_WALLET_LEDGER_VIEW = "tenant-wallet-ledger";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
+export const TENANT_WALLET_SUMMARY_EVENT = "openclaw:tenant-wallet-summary";
 export const LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`;
 export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
 export const TENANT_LOGIN_ROUTE = LOGIN_ROUTE;
@@ -30,6 +33,8 @@ export const TENANT_OWNED_AGENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_O
 export const TENANT_USAGE_STATS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_USAGE_STATS_VIEW}`;
 export const TENANT_STATISTICS_OVERVIEW_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_STATISTICS_OVERVIEW_VIEW}`;
 export const TENANT_WALLET_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_VIEW}`;
+export const TENANT_WALLET_ORDERS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_ORDERS_VIEW}`;
+export const TENANT_WALLET_LEDGER_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_LEDGER_VIEW}`;
 export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
 
 function normalizeTenantSessionValue(value) {
@@ -93,6 +98,8 @@ export function readSessionForCurrentView() {
     view === TENANT_USAGE_STATS_VIEW ||
     view === TENANT_STATISTICS_OVERVIEW_VIEW ||
     view === TENANT_WALLET_VIEW ||
+    view === TENANT_WALLET_ORDERS_VIEW ||
+    view === TENANT_WALLET_LEDGER_VIEW ||
     view === TENANT_AGENT_SELECTOR_VIEW
   ) {
     return readTenantSession();

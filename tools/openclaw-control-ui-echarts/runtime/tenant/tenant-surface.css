@@ -260,6 +260,42 @@
   word-break: break-word;
 }
 
+.oc-tenant-agent-card__transfer {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+
+.oc-tenant-agent-card__transfer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.oc-tenant-agent-card__transfer-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.oc-tenant-agent-card__transfer-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.oc-tenant-agent-card__transfer-form {
+  display: grid;
+  gap: 12px;
+}
+
+.oc-tenant-agent-card__transfer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .oc-tenant-agent-card__actions {
   display: flex;
   justify-content: flex-end;

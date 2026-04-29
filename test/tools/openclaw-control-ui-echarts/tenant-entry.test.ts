@@ -327,15 +327,22 @@ describe("zero-intrusive tenant entry", () => {
     expect(statsItems[1]?.textContent).toContain("耗量统计");
     expect(statsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
     expect(walletSection).not.toBeNull();
-    expect(walletItems).toHaveLength(1);
+    expect(walletItems).toHaveLength(3);
     expect(walletItems[0]?.textContent).toContain("钱包充值");
     expect(walletItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet");
+    expect(walletItems[1]?.textContent).toContain("充值订单");
+    expect(walletItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet-orders");
+    expect(walletItems[2]?.textContent).toContain("钱包流水");
+    expect(walletItems[2]?.getAttribute("href")).toContain("ocTenantView=tenant-wallet-ledger");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant_admin",
     );
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "tenant-admin",
     );
+    const topbarText = document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "";
+    expect(topbarText).toContain("积分余额");
+    expect(topbarText.indexOf("积分余额")).toBeLessThan(topbarText.indexOf("当前角色"));
     expect(document.documentElement.getAttribute("data-oc-tenant-role-context")).toBe(
       "tenant_admin",
     );
@@ -1148,12 +1155,11 @@ describe("zero-intrusive tenant entry", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "").toContain(
-      "tenant_admin",
-    );
-    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "").toContain(
-      "tenant-admin",
-    );
+    const topbarText = document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "";
+    expect(topbarText).toContain("tenant_admin");
+    expect(topbarText).toContain("tenant-admin");
+    expect(topbarText).toContain("积分余额");
+    expect(topbarText.indexOf("积分余额")).toBeLessThan(topbarText.indexOf("当前角色"));
     const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
     expect(utilityItems).toHaveLength(1);
     expect(utilityItems[0]?.textContent).toContain("版本");

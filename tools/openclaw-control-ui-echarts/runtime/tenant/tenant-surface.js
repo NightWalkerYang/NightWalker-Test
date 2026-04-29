@@ -7,6 +7,8 @@ import {
   TENANT_USAGE_STATS_VIEW,
   TENANT_STATISTICS_OVERVIEW_VIEW,
   TENANT_WALLET_VIEW,
+  TENANT_WALLET_ORDERS_VIEW,
+  TENANT_WALLET_LEDGER_VIEW,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -23,7 +25,9 @@ function isTenantManagementView(view) {
     view === TENANT_OWNED_AGENTS_VIEW ||
     view === TENANT_USAGE_STATS_VIEW ||
     view === TENANT_STATISTICS_OVERVIEW_VIEW ||
-    view === TENANT_WALLET_VIEW
+    view === TENANT_WALLET_VIEW ||
+    view === TENANT_WALLET_ORDERS_VIEW ||
+    view === TENANT_WALLET_LEDGER_VIEW
   );
 }
 
@@ -51,6 +55,12 @@ function sectionForView(view) {
   }
   if (view === TENANT_WALLET_VIEW) {
     return "wallet";
+  }
+  if (view === TENANT_WALLET_ORDERS_VIEW) {
+    return "wallet-orders";
+  }
+  if (view === TENANT_WALLET_LEDGER_VIEW) {
+    return "wallet-ledger";
   }
   return "members";
 }

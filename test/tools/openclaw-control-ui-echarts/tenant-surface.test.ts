@@ -873,6 +873,29 @@ describe("tenant surface", () => {
             },
           };
         }
+        if (url.includes("/tenant/admin/wallet")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  summary: {
+                    walletBalance: 300,
+                  },
+                  orders: [],
+                  ledger: [],
+                  tenantAgents: [],
+                  payment: {
+                    providerName: "通联支付",
+                    enabled: true,
+                    channels: [],
+                  },
+                },
+              };
+            },
+          };
+        }
         throw new Error(`unexpected request: ${url}`);
       }),
     );
@@ -896,5 +919,342 @@ describe("tenant surface", () => {
     expect(detailDialog?.textContent).toContain("subotech-finance");
     expect(detailDialog?.textContent).toContain("1.5");
     expect(detailDialog?.textContent).toContain("2026/04/14");
+  });
+
+  it("mounts the native tenant wallet recharge view without embedded order and ledger lists", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-wallet");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/tenant/admin/wallet")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  summary: {
+                    walletBalance: 120.5,
+                    pendingOrderCount: 1,
+                    totalRecharged: 200,
+                    totalTransferred: 79.5,
+                    latestPaidAt: "2026-04-15T08:00:00.000Z",
+                  },
+                  orders: [
+                    {
+                      id: "payment-1",
+                      amountCny: 88.5,
+                      status: "pending_payment",
+                      launchHref: "/pay",
+                      launchQrDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E",
+                    },
+                  ],
+                  ledger: [
+                    {
+                      id: "ledger-1",
+                      category: "recharge",
+                      direction: "credit",
+                      amountPoints: 88.5,
+                      balanceAfter: 120.5,
+                      paymentOrderId: "payment-1",
+                      createdAt: "2026-04-15T08:00:00.000Z",
+                    },
+                  ],
+                  tenantAgents: [],
+                  payment: {
+                    providerName: "通联支付",
+                    enabled: true,
+                    channels: [
+                      {
+                        id: "allinpay_h5_auto",
+                        label: "支付宝/微信",
+                      },
+                    ],
+                  },
+                },
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.textContent).toContain("在线充值");
+    expect(surfaceRoot?.textContent).toContain("钱包余额");
+    expect(surfaceRoot?.querySelector("[data-tenant-wallet-recharge-form]")).not.toBeNull();
+    expect(surfaceRoot?.textContent).not.toContain("充值订单");
+    expect(surfaceRoot?.textContent).not.toContain("钱包流水");
+    expect(surfaceRoot?.textContent).not.toContain("划转积分");
+    expect(surfaceRoot?.querySelector("[data-tenant-agent-transfer-form]")).toBeNull();
+  });
+
+  it("mounts the native tenant wallet orders view with search and pagination", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-wallet-orders");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const requests = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/payment-orders?page=1&pageSize=8")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  items: [
+                    {
+                      id: "payment-1",
+                      amountCny: 88.5,
+                      amountPoints: 88.5,
+                      status: "pending_payment",
+                      providerOrderId: "trx-001",
+                      channelLabel: "支付宝/微信",
+                      launchHref: "/pay",
+                      launchQrDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E",
+                      createdAt: "2026-04-15T08:00:00.000Z",
+                      updatedAt: "2026-04-15T08:00:00.000Z",
+                    },
+                  ],
+                  total: 1,
+                  page: 1,
+                  pageSize: 8,
+                },
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(requests.some((url) => url.includes("/tenant/admin/payment-orders?page=1&pageSize=8"))).toBe(
+      true,
+    );
+    expect(surfaceRoot?.textContent).toContain("充值订单");
+    expect(surfaceRoot?.textContent).toContain("payment-1");
+    expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-page='prev']")).not.toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-page='next']")).not.toBeNull();
+  });
+
+  it("mounts the native tenant wallet ledger view with search and pagination", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-wallet-ledger");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const requests = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/wallet-ledger?page=1&pageSize=8")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  items: [
+                    {
+                      id: "ledger-1",
+                      category: "recharge",
+                      direction: "credit",
+                      amountPoints: 88.5,
+                      balanceAfter: 120.5,
+                      paymentOrderId: "payment-1",
+                      note: "首笔充值",
+                      createdAt: "2026-04-15T08:00:00.000Z",
+                      tenantAgentName: "",
+                    },
+                  ],
+                  total: 1,
+                  page: 1,
+                  pageSize: 8,
+                },
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(requests.some((url) => url.includes("/tenant/admin/wallet-ledger?page=1&pageSize=8"))).toBe(
+      true,
+    );
+    expect(surfaceRoot?.textContent).toContain("钱包流水");
+    expect(surfaceRoot?.textContent).toContain("payment-1");
+    expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-page='prev']")).not.toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-page='next']")).not.toBeNull();
+  });
+
+  it("transfers points from the owned-agent card", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-owned-agents");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      walletBalance: 300,
+      tenantAgents: [
+        {
+          id: "tenant-agent-1",
+          agentId: "subotech-finance",
+          agentName: "苏博泰克财务分析助手",
+          description: "财务分析与预算评估",
+          status: "active",
+          rateMultiplier: 1.5,
+          balancePoints: 128.5,
+          createdAt: "2026-04-01T08:00:00.000Z",
+          updatedAt: "2026-04-14T11:30:00.000Z",
+          emoji: "💼",
+        },
+      ],
+      transferCalls: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson(state.tenantAgents);
+        }
+        if (url.includes("/tenant/admin/wallet") && method === "GET") {
+          return okJson({
+            summary: {
+              walletBalance: state.walletBalance,
+            },
+            orders: [],
+            ledger: [],
+            tenantAgents: state.tenantAgents,
+            payment: {
+              providerName: "通联支付",
+              enabled: true,
+              channels: [],
+            },
+          });
+        }
+        if (url.endsWith("/tenant/admin/wallet/transfers") && method === "POST") {
+          state.transferCalls.push(body);
+          state.walletBalance -= Number(body.amountPoints || 0);
+          state.tenantAgents = state.tenantAgents.map((agent) =>
+            agent.id === body.tenantAgentId
+              ? {
+                  ...agent,
+                  balancePoints: Number(agent.balancePoints || 0) + Number(body.amountPoints || 0),
+                }
+              : agent,
+          );
+          return okJson({
+            tenantAgentId: body.tenantAgentId,
+            amountPoints: Number(body.amountPoints || 0),
+            walletBalance: state.walletBalance,
+            agentBalance: state.tenantAgents[0]?.balancePoints,
+          });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.textContent).toContain("划转积分");
+    const transferForm = surfaceRoot?.querySelector("[data-tenant-agent-transfer-form]");
+    expect(transferForm).not.toBeNull();
+    const amountInput = transferForm?.querySelector("input[name='amountPoints']");
+    const noteInput = transferForm?.querySelector("input[name='note']");
+    if (amountInput instanceof HTMLInputElement) {
+      amountInput.value = "20";
+    }
+    if (noteInput instanceof HTMLInputElement) {
+      noteInput.value = "补充预算";
+    }
+    transferForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.transferCalls).toEqual([
+      {
+        tenantAgentId: "tenant-agent-1",
+        amountPoints: "20",
+        note: "补充预算",
+      },
+    ]);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "已划转 20 积分",
+    );
+    expect(surfaceRoot?.textContent).toContain("148.5");
   });
 });

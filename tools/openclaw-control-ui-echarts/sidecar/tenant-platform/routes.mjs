@@ -37,6 +37,8 @@ import {
   listTenantMembers,
   listTenantUsageStats,
   listTenantUsageRecords,
+  listTenantPaymentOrdersPage,
+  listTenantWalletLedgerEntriesPage,
   getTenantOverview,
   getTenantWalletDashboard,
   logAudit,
@@ -2257,6 +2259,37 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/tenant/admin/payment-orders") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const page = Number.parseInt(String(url.searchParams.get("page") || "1"), 10) || 1;
+        const pageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
+        const search = String(url.searchParams.get("search") || "").trim();
+        const result = listTenantPaymentOrdersPage(deps.db, {
+          tenantId: session.tenantId,
+          page,
+          pageSize,
+          search,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            ...result,
+            items: result.items.map((order) => decorateTenantPaymentOrder(order, session, deps)),
+          },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     if (request.method === "POST" && relativePath === "/tenant/admin/payment-orders") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
@@ -2425,6 +2458,38 @@ export function createTenantPlatformRouter(deps) {
             order: decorateTenantPaymentOrder(settled, session, deps),
             provider: mapped,
           },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/wallet-ledger") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const page = Number.parseInt(String(url.searchParams.get("page") || "1"), 10) || 1;
+        const pageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
+        const search = String(url.searchParams.get("search") || "").trim();
+        const result = listTenantWalletLedgerEntriesPage(
+          deps.db,
+          {
+            tenantId: session.tenantId,
+            page,
+            pageSize,
+            search,
+          },
+          configAgents,
+        );
+        sendJson(request, response, 200, {
+          ok: true,
+          data: result,
         });
       } catch (error) {
         sendJson(request, response, 400, {

@@ -228,6 +228,12 @@ export function createTenantApiClient() {
     getTenantWallet() {
       return requestJson("/tenant/admin/wallet");
     },
+    listTenantPaymentOrders({ page = 1, pageSize = 8, search = "" } = {}) {
+      return requestJson(withQuery("/tenant/admin/payment-orders", { page, pageSize, search }));
+    },
+    listTenantWalletLedger({ page = 1, pageSize = 8, search = "" } = {}) {
+      return requestJson(withQuery("/tenant/admin/wallet-ledger", { page, pageSize, search }));
+    },
     createTenantPaymentOrder(body) {
       return requestJson("/tenant/admin/payment-orders", { method: "POST", body });
     },

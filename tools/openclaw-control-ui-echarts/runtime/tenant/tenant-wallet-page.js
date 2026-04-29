@@ -202,7 +202,7 @@ function renderTransferPanel(tenantAgents = []) {
   `;
 }
 
-function renderOrdersTable(orders = []) {
+export function renderTenantWalletOrdersTable(orders = []) {
   return `
     <div class="data-table-container">
       <table class="data-table">
@@ -274,7 +274,7 @@ function renderOrdersTable(orders = []) {
   `;
 }
 
-function renderLedgerTable(ledger = []) {
+export function renderTenantWalletLedgerTable(ledger = []) {
   return `
     <div class="data-table-container">
       <table class="data-table">
@@ -321,7 +321,7 @@ function renderLedgerTable(ledger = []) {
   `;
 }
 
-function renderActiveOrderPanel(activeOrder) {
+export function renderTenantWalletActiveOrderPanel(activeOrder) {
   if (!activeOrder) {
     return "";
   }
@@ -377,10 +377,8 @@ export function renderTenantWalletPage(controller) {
   }
 
   const summary = walletData.summary || {};
-  const tenantAgents = Array.isArray(walletData.tenantAgents) ? walletData.tenantAgents : [];
   const payment = walletData.payment || {};
   const orders = Array.isArray(walletData.orders) ? walletData.orders : [];
-  const ledger = Array.isArray(walletData.ledger) ? walletData.ledger : [];
   const activeOrderId = String(controller.walletActiveOrderId || "").trim();
   const activeOrder =
     orders.find((order) => String(order?.id || "").trim() === activeOrderId) ||
@@ -390,7 +388,7 @@ export function renderTenantWalletPage(controller) {
   return `
     <div class="oc-tenant-wallet">
       ${renderWalletMetrics(summary)}
-      ${renderActiveOrderPanel(activeOrder)}
+      ${renderTenantWalletActiveOrderPanel(activeOrder)}
 
       <div class="oc-tenant-wallet-panels">
         <section class="oc-tenant-card oc-tenant-wallet-panel">
@@ -400,33 +398,7 @@ export function renderTenantWalletPage(controller) {
           </div>
           ${renderRechargePanel(payment)}
         </section>
-
-        <section class="oc-tenant-card oc-tenant-wallet-panel">
-          <div class="oc-tenant-card-header">
-            <h3 class="oc-tenant-card-title">划转到 Agent</h3>
-            <div class="oc-tenant-wallet-panel__meta">
-              最近入账: ${escapeHtml(summary.latestPaidAt ? formatDateTime(summary.latestPaidAt) : "-")}
-            </div>
-          </div>
-          ${renderTransferPanel(tenantAgents)}
-        </section>
       </div>
-
-      <section class="oc-tenant-card oc-tenant-wallet-table-card">
-        <div class="oc-tenant-card-header">
-          <h3 class="oc-tenant-card-title">充值订单</h3>
-          <div class="oc-tenant-wallet-panel__meta">支付完成后点击“刷新状态”即可入账</div>
-        </div>
-        ${renderOrdersTable(orders)}
-      </section>
-
-      <section class="oc-tenant-card oc-tenant-wallet-table-card">
-        <div class="oc-tenant-card-header">
-          <h3 class="oc-tenant-card-title">钱包流水</h3>
-          <div class="oc-tenant-wallet-panel__meta">展示最近的钱包充值、划转和扣费流水</div>
-        </div>
-        ${renderLedgerTable(ledger)}
-      </section>
     </div>
   `;
 }

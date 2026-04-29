@@ -3761,15 +3761,63 @@ export function getTenantPaymentOrderById(db, params) {
   return hydratePaymentOrderRow(row);
 }
 
-export function listTenantPaymentOrders(db, params) {
+function normalizePagedListSize(value, fallback = 20) {
+  return Math.min(100, Math.max(1, Number.parseInt(String(value || fallback), 10) || fallback));
+}
+
+function normalizePagedListPage(value) {
+  return Math.max(1, Number.parseInt(String(value || "1"), 10) || 1);
+}
+
+function normalizeLikeSearch(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  return `%${normalized.replace(/[\\%_]/g, "\\$&")}%`;
+}
+
+export function listTenantPaymentOrdersPage(db, params) {
   const tenantId = String(params.tenantId || "").trim();
-  const limit = Math.min(
-    100,
-    Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20),
-  );
+  const page = normalizePagedListPage(params.page);
+  const pageSize = normalizePagedListSize(params.pageSize, 20);
+  const offset = (page - 1) * pageSize;
+  const search = normalizeLikeSearch(params.search);
   if (!tenantId) {
     throw new Error("tenant_id_required");
   }
+
+  const searchClause = search
+    ? `
+         AND (
+           id LIKE @search ESCAPE '\\'
+           OR status LIKE @search ESCAPE '\\'
+           OR provider LIKE @search ESCAPE '\\'
+           OR provider_order_id LIKE @search ESCAPE '\\'
+         )`
+    : "";
+  const bindings = search
+    ? {
+        tenantId,
+        search,
+        limit: pageSize,
+        offset,
+      }
+    : {
+        tenantId,
+        limit: pageSize,
+        offset,
+      };
+  const countBindings = search ? { tenantId, search } : { tenantId };
+  const total = Number(
+    getScalar(
+      db,
+      `SELECT COUNT(*) AS value
+       FROM payment_orders
+       WHERE tenant_id = @tenantId${searchClause}`,
+      countBindings,
+    ) || 0,
+  );
   const rows = db
     .prepare(
       `SELECT
@@ -3784,24 +3832,76 @@ export function listTenantPaymentOrders(db, params) {
          created_at AS createdAt,
          updated_at AS updatedAt
        FROM payment_orders
-       WHERE tenant_id = ?
+       WHERE tenant_id = @tenantId${searchClause}
        ORDER BY created_at DESC
-       LIMIT ?`,
+       LIMIT @limit OFFSET @offset`,
     )
-    .all(tenantId, limit);
-  return rows.map((row) => hydratePaymentOrderRow(row));
+    .all(bindings);
+  return {
+    items: rows.map((row) => hydratePaymentOrderRow(row)),
+    total,
+    page,
+    pageSize,
+  };
 }
 
-export function listTenantWalletLedgerEntries(db, params, configAgents = []) {
-  const tenantId = String(params.tenantId || "").trim();
+export function listTenantPaymentOrders(db, params) {
   const limit = Math.min(
     100,
     Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20),
   );
+  return listTenantPaymentOrdersPage(db, {
+    tenantId: params.tenantId,
+    page: 1,
+    pageSize: limit,
+  }).items;
+}
+
+export function listTenantWalletLedgerEntriesPage(db, params, configAgents = []) {
+  const tenantId = String(params.tenantId || "").trim();
+  const page = normalizePagedListPage(params.page);
+  const pageSize = normalizePagedListSize(params.pageSize, 20);
+  const offset = (page - 1) * pageSize;
+  const search = normalizeLikeSearch(params.search);
   if (!tenantId) {
     throw new Error("tenant_id_required");
   }
   const configMap = new Map((configAgents || []).map((entry) => [entry.id, entry]));
+  const searchClause = search
+    ? `
+         AND (
+           l.id LIKE @search ESCAPE '\\'
+           OR l.category LIKE @search ESCAPE '\\'
+           OR l.direction LIKE @search ESCAPE '\\'
+           OR l.payment_order_id LIKE @search ESCAPE '\\'
+           OR l.note LIKE @search ESCAPE '\\'
+           OR ta.agent_id LIKE @search ESCAPE '\\'
+           OR ta.description LIKE @search ESCAPE '\\'
+         )`
+    : "";
+  const bindings = search
+    ? {
+        tenantId,
+        search,
+        limit: pageSize,
+        offset,
+      }
+    : {
+        tenantId,
+        limit: pageSize,
+        offset,
+      };
+  const countBindings = search ? { tenantId, search } : { tenantId };
+  const total = Number(
+    getScalar(
+      db,
+      `SELECT COUNT(*) AS value
+       FROM tenant_wallet_ledger l
+       LEFT JOIN tenant_agents ta ON ta.id = l.tenant_agent_id
+       WHERE l.tenant_id = @tenantId${searchClause}`,
+      countBindings,
+    ) || 0,
+  );
   const rows = db
     .prepare(
       `SELECT
@@ -3819,26 +3919,47 @@ export function listTenantWalletLedgerEntries(db, params, configAgents = []) {
          ta.description AS tenantAgentDescription
        FROM tenant_wallet_ledger l
        LEFT JOIN tenant_agents ta ON ta.id = l.tenant_agent_id
-       WHERE l.tenant_id = ?
+       WHERE l.tenant_id = @tenantId${searchClause}
        ORDER BY l.created_at DESC
-       LIMIT ?`,
+       LIMIT @limit OFFSET @offset`,
     )
-    .all(tenantId, limit);
+    .all(bindings);
 
-  return rows.map((row) => ({
-    id: String(row.id || "").trim(),
-    direction: String(row.direction || "").trim(),
-    category: String(row.category || "").trim(),
-    amountPoints: normalizeNonNegativePoints(row.amountPoints),
-    balanceAfter: normalizeNonNegativePoints(row.balanceAfter),
-    tenantAgentId: String(row.tenantAgentId || "").trim(),
-    paymentOrderId: String(row.paymentOrderId || "").trim(),
-    actorUserId: String(row.actorUserId || "").trim(),
-    note: String(row.note || "").trim(),
-    createdAt: String(row.createdAt || "").trim(),
-    agentId: String(row.agentId || "").trim(),
-    tenantAgentName: resolveTenantAgentDisplayName(row, configMap),
-  }));
+  return {
+    items: rows.map((row) => ({
+      id: String(row.id || "").trim(),
+      direction: String(row.direction || "").trim(),
+      category: String(row.category || "").trim(),
+      amountPoints: normalizeNonNegativePoints(row.amountPoints),
+      balanceAfter: normalizeNonNegativePoints(row.balanceAfter),
+      tenantAgentId: String(row.tenantAgentId || "").trim(),
+      paymentOrderId: String(row.paymentOrderId || "").trim(),
+      actorUserId: String(row.actorUserId || "").trim(),
+      note: String(row.note || "").trim(),
+      createdAt: String(row.createdAt || "").trim(),
+      agentId: String(row.agentId || "").trim(),
+      tenantAgentName: resolveTenantAgentDisplayName(row, configMap),
+    })),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+export function listTenantWalletLedgerEntries(db, params, configAgents = []) {
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20),
+  );
+  return listTenantWalletLedgerEntriesPage(
+    db,
+    {
+      tenantId: params.tenantId,
+      page: 1,
+      pageSize: limit,
+    },
+    configAgents,
+  ).items;
 }
 
 export function getTenantWalletDashboard(db, params, configAgents = []) {

@@ -23,6 +23,11 @@ import {
   TENANT_STATISTICS_OVERVIEW_VIEW,
   TENANT_WALLET_ROUTE,
   TENANT_WALLET_VIEW,
+  TENANT_WALLET_ORDERS_ROUTE,
+  TENANT_WALLET_ORDERS_VIEW,
+  TENANT_WALLET_LEDGER_ROUTE,
+  TENANT_WALLET_LEDGER_VIEW,
+  TENANT_WALLET_SUMMARY_EVENT,
   isTenantLoginView,
   clearPlatformSession,
   clearTenantSession,
@@ -53,6 +58,7 @@ const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
 const TOPBAR_META_MODE_ATTR = "data-oc-platform-search-mode";
 const TOPBAR_META_ROLE_ATTR = "data-oc-platform-role";
 const TOPBAR_META_USER_ATTR = "data-oc-platform-user";
+const TOPBAR_META_BALANCE_ATTR = "data-oc-platform-balance";
 const TOPBAR_HIDDEN_ATTR = "data-oc-platform-search-hidden";
 const TOPBAR_META_ROOT_SELECTOR = "[data-oc-platform-topbar-meta]";
 const TOPBAR_PROFILE_SELECTOR = "[data-oc-platform-profile]";
@@ -66,6 +72,12 @@ const MEMBER_VISUALIZATION_CACHE = new Map();
 const MEMBER_VISUALIZATION_SIGNATURE_ATTR = "data-oc-member-visualization-signature";
 const MEMBER_VISUALIZATION_POLL_INTERVAL_MS = 5000;
 const MEMBER_VISUALIZATION_POLL_TIMER_KEY = "__openclawMemberVisualizationPollTimer";
+const TENANT_WALLET_BALANCE_CACHE = {
+  sessionToken: "",
+  balanceText: "",
+  loading: false,
+  promise: null,
+};
 
 const ICONS = {
   tenants: `
@@ -260,6 +272,22 @@ function getSectionConfigForSession(session) {
                     text: "钱包充值",
                     icon: ICONS.wallet,
                     activeView: TENANT_WALLET_VIEW,
+                  },
+                  {
+                    className: "oc-tenant-wallet-orders-link",
+                    href: TENANT_WALLET_ORDERS_ROUTE,
+                    title: "充值订单",
+                    text: "充值订单",
+                    icon: ICONS.wallet,
+                    activeView: TENANT_WALLET_ORDERS_VIEW,
+                  },
+                  {
+                    className: "oc-tenant-wallet-ledger-link",
+                    href: TENANT_WALLET_LEDGER_ROUTE,
+                    title: "钱包流水",
+                    text: "钱包流水",
+                    icon: ICONS.wallet,
+                    activeView: TENANT_WALLET_LEDGER_VIEW,
                   },
                 ],
               },
@@ -558,6 +586,8 @@ function isManagementViewActive() {
     activeView === TENANT_USAGE_STATS_VIEW ||
     activeView === TENANT_STATISTICS_OVERVIEW_VIEW ||
     activeView === TENANT_WALLET_VIEW ||
+    activeView === TENANT_WALLET_ORDERS_VIEW ||
+    activeView === TENANT_WALLET_LEDGER_VIEW ||
     activeView === TENANT_AGENT_SELECTOR_VIEW
   );
 }
@@ -719,6 +749,73 @@ function normalizeText(value) {
   return String(value ?? "")
     .replace(/\s+/g, "")
     .trim();
+}
+
+function formatWalletBalance(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) {
+    return "--";
+  }
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric);
+}
+
+function resetTenantWalletBalanceCache() {
+  TENANT_WALLET_BALANCE_CACHE.sessionToken = "";
+  TENANT_WALLET_BALANCE_CACHE.balanceText = "";
+  TENANT_WALLET_BALANCE_CACHE.loading = false;
+  TENANT_WALLET_BALANCE_CACHE.promise = null;
+}
+
+function getCachedTenantWalletBalanceText(session) {
+  const sessionToken = String(session?.token || "").trim();
+  if (!sessionToken || TENANT_WALLET_BALANCE_CACHE.sessionToken !== sessionToken) {
+    return "";
+  }
+  return TENANT_WALLET_BALANCE_CACHE.balanceText || "";
+}
+
+function updateTenantWalletBalanceCache(session, summary) {
+  const sessionToken = String(session?.token || "").trim();
+  if (!sessionToken) {
+    return "";
+  }
+  const balanceText = formatWalletBalance(summary?.walletBalance);
+  TENANT_WALLET_BALANCE_CACHE.sessionToken = sessionToken;
+  TENANT_WALLET_BALANCE_CACHE.balanceText = balanceText;
+  return balanceText;
+}
+
+async function ensureTenantWalletBalance(session) {
+  if (String(session?.session?.role || "").trim() !== "tenant_admin") {
+    return;
+  }
+  const sessionToken = String(session?.token || "").trim();
+  if (!sessionToken) {
+    return;
+  }
+  if (TENANT_WALLET_BALANCE_CACHE.sessionToken !== sessionToken) {
+    resetTenantWalletBalanceCache();
+    TENANT_WALLET_BALANCE_CACHE.sessionToken = sessionToken;
+  }
+  if (TENANT_WALLET_BALANCE_CACHE.balanceText || TENANT_WALLET_BALANCE_CACHE.loading) {
+    return;
+  }
+  TENANT_WALLET_BALANCE_CACHE.loading = true;
+  TENANT_WALLET_BALANCE_CACHE.promise = createTenantApiClient()
+    .getTenantWallet()
+    .then((wallet) => {
+      updateTenantWalletBalanceCache(session, wallet?.summary);
+      syncPlatformTopbarMeta(readSessionForCurrentView());
+    })
+    .catch(() => {})
+    .finally(() => {
+      TENANT_WALLET_BALANCE_CACHE.loading = false;
+      TENANT_WALLET_BALANCE_CACHE.promise = null;
+    });
+  await TENANT_WALLET_BALANCE_CACHE.promise;
 }
 
 function syncSidebarNavForRole(container, role) {
@@ -889,8 +986,20 @@ function renderProfileDialog(session) {
   }
   const role = String(session?.session?.role || "").trim();
   const username = String(session?.session?.username || "").trim();
+  const balanceText =
+    role === "tenant_admin" ? getCachedTenantWalletBalanceText(session) || "--" : "";
   content.innerHTML = `
     <dl class="oc-platform-topbar-dialog__meta">
+      ${
+        role === "tenant_admin"
+          ? `
+            <div>
+              <dt>积分余额</dt>
+              <dd>${balanceText}</dd>
+            </div>
+          `
+          : ""
+      }
       <div>
         <dt>当前角色</dt>
         <dd>${role}</dd>
@@ -916,10 +1025,13 @@ function syncPlatformTopbarMeta(session) {
   }
   const role = String(session?.session?.role || "").trim();
   const username = String(session?.session?.username || "").trim();
+  const balanceText =
+    role === "tenant_admin" ? getCachedTenantWalletBalanceText(session) || "--" : "";
   if (
     root.getAttribute(TOPBAR_META_MODE_ATTR) === "meta" &&
     root.getAttribute(TOPBAR_META_ROLE_ATTR) === role &&
-    root.getAttribute(TOPBAR_META_USER_ATTR) === username
+    root.getAttribute(TOPBAR_META_USER_ATTR) === username &&
+    root.getAttribute(TOPBAR_META_BALANCE_ATTR) === balanceText
   ) {
     return;
   }
@@ -927,12 +1039,21 @@ function syncPlatformTopbarMeta(session) {
   root.setAttribute(TOPBAR_META_MODE_ATTR, "meta");
   root.setAttribute(TOPBAR_META_ROLE_ATTR, role);
   root.setAttribute(TOPBAR_META_USER_ATTR, username);
+  root.setAttribute(TOPBAR_META_BALANCE_ATTR, balanceText);
   root.innerHTML = `
+    ${
+      role === "tenant_admin"
+        ? `<span class="pill"><span>积分余额</span><span class="mono">${balanceText}</span></span>`
+        : ""
+    }
     <span class="pill"><span>当前角色</span><span class="mono">${role}</span></span>
     <button class="btn btn--ghost" type="button" data-oc-platform-profile>当前登录<span class="mono">${username}</span></button>
     <button class="btn btn--ghost" type="button" data-oc-platform-logout>退出登录</button>
   `;
   renderProfileDialog(session);
+  if (role === "tenant_admin") {
+    void ensureTenantWalletBalance(session);
+  }
 }
 
 function clearPlatformTopbarMeta() {
@@ -1019,9 +1140,29 @@ function ensureTopbarLogoutHandler() {
     clearPlatformSession();
     clearTenantSession();
     clearSelectedTenantAgent();
+    resetTenantWalletBalanceCache();
     closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
     window.location.replace(LOGIN_ROUTE);
+  });
+}
+
+function ensureTenantWalletBalanceSyncHandler() {
+  if (document.documentElement.dataset.ocTenantWalletBalanceHandler === "true") {
+    return;
+  }
+  document.documentElement.dataset.ocTenantWalletBalanceHandler = "true";
+  window.addEventListener(TENANT_WALLET_SUMMARY_EVENT, (event) => {
+    const session = readSessionForCurrentView();
+    if (String(session?.session?.role || "").trim() !== "tenant_admin") {
+      return;
+    }
+    const detail = event instanceof CustomEvent ? event.detail : null;
+    if (!(detail?.summary && typeof detail.summary === "object")) {
+      return;
+    }
+    updateTenantWalletBalanceCache(session, detail?.summary);
+    syncPlatformTopbarMeta(session);
   });
 }
 
@@ -1035,6 +1176,7 @@ export function bootTenantEntry() {
   window.__openclawTenantEntryBooted = true;
   bootTenantRouteSync();
   ensureTopbarLogoutHandler();
+  ensureTenantWalletBalanceSyncHandler();
   bootUpdateLogDialogs();
 
   const scan = (root = document) => {

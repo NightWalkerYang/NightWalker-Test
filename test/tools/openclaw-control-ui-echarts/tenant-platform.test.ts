@@ -19,6 +19,8 @@ import {
   listPlatformUpdateLogs,
   listTenantAgents,
   listTenantMembers,
+  listTenantPaymentOrdersPage,
+  listTenantWalletLedgerEntriesPage,
   readOpenClawAgentCatalog,
   repairTenantUsageCostGaps,
   upsertTenantAgent,
@@ -2355,6 +2357,80 @@ describe("tenant platform database foundation", () => {
     expect(decodeURIComponent(dataUrl.split(",")[1] || "")).toContain("支付二维码");
   });
 
+  it("lists tenant payment orders with paging and search", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "tenant-wallet-order-list",
+        name: "租户 Wallet Order List",
+        adminUsername: "wallet-order-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const adminUser = getUserByUsername(db, "wallet-order-admin");
+      if (!adminUser) {
+        throw new Error("Expected tenant admin to exist");
+      }
+
+      const firstOrder = createTenantPaymentOrder(db, {
+        tenantId: tenant.id,
+        createdByUserId: adminUser.id,
+        amountCny: 18,
+        channel: "allinpay_h5_auto",
+      });
+      const secondOrder = createTenantPaymentOrder(db, {
+        tenantId: tenant.id,
+        createdByUserId: adminUser.id,
+        amountCny: 28,
+        channel: "allinpay_h5_auto",
+      });
+      updateTenantPaymentOrderStatus(db, {
+        tenantId: tenant.id,
+        orderId: secondOrder.id,
+        status: "processing",
+        providerOrderId: "trx-search-2",
+      });
+
+      const paged = listTenantPaymentOrdersPage(db, {
+        tenantId: tenant.id,
+        page: 1,
+        pageSize: 1,
+        search: "trx-search-2",
+      });
+      expect(paged).toMatchObject({
+        total: 1,
+        page: 1,
+        pageSize: 1,
+      });
+      expect(paged.items).toHaveLength(1);
+      expect(paged.items[0]).toMatchObject({
+        id: secondOrder.id,
+        status: "processing",
+        providerOrderId: "trx-search-2",
+      });
+
+      const statusSearch = listTenantPaymentOrdersPage(db, {
+        tenantId: tenant.id,
+        page: 1,
+        pageSize: 10,
+        search: "pending_payment",
+      });
+      expect(statusSearch.total).toBe(1);
+      expect(statusSearch.items[0]?.id).toBe(firstOrder.id);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("uses the official allinpay endpoints and signtype field", () => {
     const { privateKey, publicKey } = generateKeyPairSync("rsa", {
       modulusLength: 2048,
@@ -2388,7 +2464,7 @@ describe("tenant platform database foundation", () => {
       config,
     );
     expect(descriptor.fields.signtype).toBe("RSA");
-    expect("sign_type" in descriptor.fields).toBe(false);
+      expect("sign_type" in descriptor.fields).toBe(false);
   });
 
   it("transfers wallet points to tenant agents and records budget ledger", () => {
@@ -2477,6 +2553,97 @@ describe("tenant platform database foundation", () => {
         .all(tenant.id, tenantAgentId);
       expect(budgetRows).toHaveLength(1);
       expect(budgetRows[0]?.amountPoints).toBeCloseTo(35.25, 8);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("lists tenant wallet ledger entries with paging and search", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "tenant-wallet-ledger-list",
+        name: "租户 Wallet Ledger List",
+        adminUsername: "wallet-ledger-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const adminUser = getUserByUsername(db, "wallet-ledger-admin");
+      if (!adminUser) {
+        throw new Error("Expected tenant admin to exist");
+      }
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+
+      const order = createTenantPaymentOrder(db, {
+        tenantId: tenant.id,
+        createdByUserId: adminUser.id,
+        amountCny: 100,
+        channel: "allinpay_h5_auto",
+      });
+      confirmTenantPaymentOrderPaid(db, {
+        tenantId: tenant.id,
+        orderId: order.id,
+        providerOrderId: "trx-ledger-list",
+      });
+      transferTenantWalletToAgent(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        actorUserId: adminUser.id,
+        amountPoints: 35.25,
+        note: "首批预算",
+      });
+
+      const paged = listTenantWalletLedgerEntriesPage(
+        db,
+        {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 1,
+          search: "首批预算",
+        },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(paged).toMatchObject({
+        total: 1,
+        page: 1,
+        pageSize: 1,
+      });
+      expect(paged.items).toHaveLength(1);
+      expect(paged.items[0]).toMatchObject({
+        category: "agent_transfer",
+        paymentOrderId: "",
+        note: "首批预算",
+        tenantAgentName: "财务分析助手",
+      });
+
+      const orderSearch = listTenantWalletLedgerEntriesPage(
+        db,
+        {
+          tenantId: tenant.id,
+          page: 1,
+          pageSize: 10,
+          search: order.id,
+        },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(orderSearch.total).toBe(1);
+      expect(orderSearch.items[0]?.paymentOrderId).toBe(order.id);
     } finally {
       closeTenantPlatformDb(db);
     }
