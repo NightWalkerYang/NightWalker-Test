@@ -74,6 +74,17 @@ describe("platform surface", () => {
           },
         };
       }
+      if (url.includes("/platform/nodes")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data: [],
+            };
+          },
+        };
+      }
       if (url.includes("/platform/tenant-members")) {
         return {
           ok: true,
@@ -170,6 +181,17 @@ describe("platform surface", () => {
           },
         };
       }
+      if (url.includes("/platform/nodes")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data: [],
+            };
+          },
+        };
+      }
       if (url.includes("/platform/tenant-members")) {
         return {
           ok: true,
@@ -210,6 +232,147 @@ describe("platform surface", () => {
     expect(tableBody?.textContent).not.toContain("人数调整");
     expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")).toBeNull();
+  });
+
+  it("mounts a dedicated node management view and saves nodes through the zero-intrusive dialog", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=platform-nodes");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state: {
+      tenants: Array<Record<string, unknown>>;
+      nodes: Array<Record<string, unknown>>;
+      saveCalls: Array<Record<string, unknown>>;
+    } = {
+      tenants: [
+        {
+          id: "tenant-1",
+          code: "alpha",
+          name: "租户 Alpha",
+          deploymentMode: "cloud",
+          memberCount: 2,
+          walletBalance: 8,
+          agentCount: 1,
+          memberLimit: 10,
+          licenseExpiresAt: null,
+          status: "active",
+        },
+      ],
+      nodes: [],
+      saveCalls: [],
+    };
+    const okJson = (data: unknown) => ({
+      ok: true,
+      async json() {
+        return {
+          ok: true,
+          data,
+        };
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        if (url.includes("/platform/tenants") && method === "GET") {
+          return okJson(state.tenants);
+        }
+        if (url.includes("/platform/catalog-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.includes("/platform/nodes") && method === "GET") {
+          return okJson(state.nodes);
+        }
+        if (url.endsWith("/platform/nodes") && method === "POST") {
+          state.saveCalls.push(body);
+          const savedNode = {
+            id: String(body.id || ""),
+            name: String(body.name || ""),
+            status: String(body.status || "active"),
+            leaseStatus: String(body.leaseStatus || "active"),
+            leaseExpiresAt: String(body.leaseExpiresAt || "2099-06-01T00:00:00.000Z"),
+            boundTenantCount: 0,
+            agentCount: 1,
+            lastHeartbeatAt: null,
+            desiredRevision: 2,
+            lastAppliedRevision: 0,
+          };
+          state.nodes = [
+            savedNode,
+            ...state.nodes.filter((entry) => String(entry.id) !== savedNode.id),
+          ];
+          return okJson(savedNode);
+        }
+        return okJson([]);
+      }),
+    );
+
+    await bootPlatformSurface();
+    await flush();
+
+    expect(document.querySelector("[data-platform-open-create]")).toBeNull();
+    const createNodeButton = document.querySelector("[data-platform-open-node]");
+    expect(createNodeButton).not.toBeNull();
+    createNodeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const nodeDialog = document.querySelector("[data-platform-node-dialog]");
+    expect(nodeDialog?.open).toBe(true);
+    const nodeForm = nodeDialog?.querySelector("[data-platform-node-form]");
+    expect(nodeForm instanceof HTMLFormElement).toBe(true);
+
+    const idInput = nodeForm?.querySelector('input[name="id"]');
+    const nameInput = nodeForm?.querySelector('input[name="name"]');
+    const sharedSecretInput = nodeForm?.querySelector('input[name="sharedSecret"]');
+    const expiresAtInput = nodeForm?.querySelector('input[name="leaseExpiresAt"]');
+    if (idInput instanceof HTMLInputElement) {
+      idInput.value = "node-shanghai";
+    }
+    if (nameInput instanceof HTMLInputElement) {
+      nameInput.value = "上海受管节点";
+    }
+    if (sharedSecretInput instanceof HTMLInputElement) {
+      sharedSecretInput.value = "node-secret";
+    }
+    if (expiresAtInput instanceof HTMLInputElement) {
+      expiresAtInput.value = "2099-06-01T08:00";
+    }
+    nodeForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.saveCalls).toEqual([
+      expect.objectContaining({
+        id: "node-shanghai",
+        name: "上海受管节点",
+        sharedSecret: "node-secret",
+      }),
+    ]);
+    const tableBody = document.querySelector("[data-oc-platform-surface-root] tbody");
+    expect(tableBody?.textContent).toContain("node-shanghai");
+    expect(tableBody?.textContent).toContain("上海受管节点");
+
+    const editButton = document.querySelector("[data-platform-open-edit-node='node-shanghai']");
+    expect(editButton).not.toBeNull();
+    editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const editDialog = document.querySelector("[data-platform-node-dialog]");
+    const editNameInput = editDialog?.querySelector('input[name="name"]');
+    expect(editDialog?.open).toBe(true);
+    expect(editNameInput instanceof HTMLInputElement ? editNameInput.value : "").toBe("上海受管节点");
   });
 
   it("opens an assign dialog and batch-assigns selectable catalog agents", async () => {
@@ -294,6 +457,9 @@ describe("platform surface", () => {
         }
         if (url.includes("/platform/catalog-agents") && method === "GET") {
           return okJson(state.catalogAgents);
+        }
+        if (url.includes("/platform/nodes") && method === "GET") {
+          return okJson([]);
         }
         if (url.includes("/platform/tenant-members") && method === "GET") {
           return okJson([]);
@@ -519,6 +685,9 @@ describe("platform surface", () => {
         if (url.includes("/platform/catalog-agents") && method === "GET") {
           return okJson([]);
         }
+        if (url.includes("/platform/nodes") && method === "GET") {
+          return okJson([]);
+        }
         if (url.includes("/platform/tenant-agents") && method === "GET") {
           const parsed = new URL(url, window.location.href);
           const tenantId = parsed.searchParams.get("tenantId") || "";
@@ -651,6 +820,14 @@ describe("platform surface", () => {
           };
         }
         if (url.includes("/platform/catalog-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/platform/nodes")) {
           return {
             ok: true,
             async json() {
@@ -806,6 +983,14 @@ describe("platform surface", () => {
           };
         }
         if (url.includes("/platform/catalog-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/platform/nodes")) {
           return {
             ok: true,
             async json() {

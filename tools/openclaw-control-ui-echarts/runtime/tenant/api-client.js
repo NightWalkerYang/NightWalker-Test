@@ -159,6 +159,15 @@ export function createTenantApiClient() {
     listPlatformCatalogAgents() {
       return requestJson("/platform/catalog-agents");
     },
+    listPlatformNodes() {
+      return requestJson("/platform/nodes");
+    },
+    savePlatformNode(body) {
+      return requestJson("/platform/nodes", { method: "POST", body });
+    },
+    bindPlatformTenantNode(body) {
+      return requestJson("/platform/tenant-node-binding", { method: "POST", body });
+    },
     savePlatformBranding(body) {
       return requestJson("/platform/branding", { method: "PUT", body });
     },

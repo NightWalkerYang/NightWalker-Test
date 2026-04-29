@@ -226,11 +226,13 @@ describe("zero-intrusive tenant entry", () => {
     );
 
     const items = managementSection?.querySelectorAll(".nav-item") ?? [];
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]?.textContent).toContain("租户管理");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=platform-tenants");
     expect(items[1]?.textContent).toContain("Agent 分配");
     expect(items[1]?.getAttribute("href")).toContain("ocTenantView=platform-agent-assignment");
+    expect(items[2]?.textContent).toContain("节点管理");
+    expect(items[2]?.getAttribute("href")).toContain("ocTenantView=platform-nodes");
 
     const chatGroup = document.querySelector('[data-native-group="chat"]');
     expect(managementSection?.nextElementSibling).toBe(chatGroup);
@@ -381,6 +383,59 @@ describe("zero-intrusive tenant entry", () => {
     bootTenantEntry();
 
     expect(document.querySelector(".oc-tenant-wallet-section")).toBeNull();
+  });
+
+  it("hides member-management and wallet sections for managed-node tenant admins", () => {
+    writeTenantSession({
+      token: "tenant-managed-node-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-managed-node-admin",
+        edition: "cloud",
+        nodeRole: "managed-node",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">文档</a>
+        <a class="sidebar-utility-link oc-knowledge-graph-link">知识图谱</a>
+        <a class="sidebar-utility-link oc-tenant-user-link">租户登录</a>
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+
+    bootTenantEntry();
+
+    const managementSection = document.querySelector(".oc-platform-management-section");
+    const agentSection = document.querySelector(".oc-tenant-agent-section");
+    const agentItems = agentSection?.querySelectorAll(".nav-item") ?? [];
+    const statsSection = document.querySelector(".oc-tenant-stats-section");
+    const statsItems = statsSection?.querySelectorAll(".nav-item") ?? [];
+    const walletSection = document.querySelector(".oc-tenant-wallet-section");
+    expect(managementSection).toBeNull();
+    expect(agentSection).not.toBeNull();
+    expect(agentItems).toHaveLength(1);
+    expect(agentItems[0]?.textContent).toContain("已有Agent");
+    expect(statsSection).not.toBeNull();
+    expect(statsItems).toHaveLength(2);
+    expect(statsItems[0]?.textContent).toContain("统计总览");
+    expect(statsItems[1]?.textContent).toContain("耗量统计");
+    expect(walletSection).toBeNull();
+    const topbarText = document.querySelector("[data-oc-platform-topbar-meta]")?.textContent ?? "";
+    expect(topbarText).toContain("tenant_admin");
+    expect(topbarText).toContain("tenant-managed-node-admin");
+    expect(topbarText).toContain("积分余额");
+    const utilityItems = [...document.querySelectorAll(".sidebar-utility-group > *")];
+    expect(utilityItems).toHaveLength(4);
+    expect(utilityItems[0]?.hidden).toBe(true);
+    expect(utilityItems[1]?.hidden).toBe(true);
+    expect(utilityItems[2]?.hidden).toBe(true);
+    expect(utilityItems[3]?.hidden).toBe(false);
   });
 
   it("injects a member sidebar group with Agent selection and visualization", async () => {

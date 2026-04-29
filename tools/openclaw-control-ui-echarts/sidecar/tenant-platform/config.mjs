@@ -6,7 +6,11 @@ import { resolveAllinpaySidecarConfig } from "./allinpay.mjs";
 const DEFAULT_PORT = 18801;
 const DEFAULT_API_BASE_PATH = "/tenant-platform-api/v1";
 const DEFAULT_TENANT_PLATFORM_EDITION = "cloud";
+const DEFAULT_CONTROL_PLANE_NODE_ROLE = "control-plane";
+const DEFAULT_MANAGED_NODE_ROLE = "managed-node";
+const DEFAULT_STANDALONE_LOCAL_NODE_ROLE = "standalone-local";
 const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789";
+const DEFAULT_MANAGED_NODE_SYNC_INTERVAL_MS = 15_000;
 
 function resolveHomeDir() {
   return process.env.HOME?.trim() || os.homedir();
@@ -36,7 +40,31 @@ function resolveEdition(env) {
     : "cloud";
 }
 
+function resolveNodeRole(env, edition) {
+  const explicit = String(env.OPENCLAW_TENANT_PLATFORM_NODE_ROLE || "")
+    .trim()
+    .toLowerCase();
+  if (
+    explicit === DEFAULT_CONTROL_PLANE_NODE_ROLE ||
+    explicit === DEFAULT_MANAGED_NODE_ROLE ||
+    explicit === DEFAULT_STANDALONE_LOCAL_NODE_ROLE
+  ) {
+    return explicit;
+  }
+  return edition === "local"
+    ? DEFAULT_STANDALONE_LOCAL_NODE_ROLE
+    : DEFAULT_CONTROL_PLANE_NODE_ROLE;
+}
+
 function parsePort(rawValue, fallback) {
+  const parsed = Number.parseInt(String(rawValue ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function parsePositiveInteger(rawValue, fallback) {
   const parsed = Number.parseInt(String(rawValue ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
@@ -96,10 +124,36 @@ function resolveGatewayUrl(env) {
   return DEFAULT_GATEWAY_URL;
 }
 
+function resolveControlPlaneUrl(env) {
+  return normalizePublicBaseUrl(env.OPENCLAW_TENANT_PLATFORM_CONTROL_PLANE_URL);
+}
+
+function resolveNodeId(env, nodeRole) {
+  const explicit = String(env.OPENCLAW_TENANT_PLATFORM_NODE_ID || "")
+    .trim()
+    .toLowerCase();
+  if (explicit) {
+    return explicit;
+  }
+  if (nodeRole === DEFAULT_MANAGED_NODE_ROLE) {
+    return String(os.hostname() || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+  return "";
+}
+
+function resolveNodeName(env) {
+  return String(env.OPENCLAW_TENANT_PLATFORM_NODE_NAME || os.hostname() || "").trim();
+}
+
 export function resolveTenantPlatformConfig(env = process.env) {
   const configDir = resolveConfigDir();
   const stateDir = path.join(configDir, "tenant-platform");
   const edition = resolveEdition(env);
+  const nodeRole = resolveNodeRole(env, edition);
   const dbPath =
     env.OPENCLAW_TENANT_PLATFORM_DB_PATH?.trim() ||
     path.join(stateDir, "tenant-platform.sqlite");
@@ -128,6 +182,14 @@ export function resolveTenantPlatformConfig(env = process.env) {
     env.OPENCLAW_TENANT_PLATFORM_GATEWAY_PASSWORD?.trim() ||
     env.OPENCLAW_GATEWAY_PASSWORD?.trim() ||
     "";
+  const controlPlaneUrl = resolveControlPlaneUrl(env);
+  const nodeId = resolveNodeId(env, nodeRole);
+  const nodeName = resolveNodeName(env);
+  const nodeSecret = String(env.OPENCLAW_TENANT_PLATFORM_NODE_SECRET || "").trim();
+  const managedNodeSyncIntervalMs = parsePositiveInteger(
+    env.OPENCLAW_TENANT_PLATFORM_SYNC_INTERVAL_MS,
+    DEFAULT_MANAGED_NODE_SYNC_INTERVAL_MS,
+  );
   const execAutoApproveEnabled = parseBooleanFlag(
     env.OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE,
     true,
@@ -141,6 +203,7 @@ export function resolveTenantPlatformConfig(env = process.env) {
 
   return {
     edition,
+    nodeRole,
     bindHost,
     port,
     apiBasePath,
@@ -156,6 +219,11 @@ export function resolveTenantPlatformConfig(env = process.env) {
     gatewayUrl,
     gatewayToken,
     gatewayPassword,
+    controlPlaneUrl,
+    nodeId,
+    nodeName,
+    nodeSecret,
+    managedNodeSyncIntervalMs,
     execAutoApproveEnabled,
     payments,
   };

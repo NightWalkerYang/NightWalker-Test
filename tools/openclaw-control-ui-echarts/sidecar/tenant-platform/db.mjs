@@ -260,6 +260,94 @@ function normalizeIsoTimestamp(value, fallback = nowIso()) {
   return new Date(parsed).toISOString();
 }
 
+function normalizeManagedNodeId(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  if (!normalized) {
+    throw new Error("managed_node_id_required");
+  }
+  return normalized;
+}
+
+function normalizeManagedNodeName(value) {
+  const normalized = String(value || "").trim().slice(0, 120);
+  if (!normalized) {
+    throw new Error("managed_node_name_required");
+  }
+  return normalized;
+}
+
+function normalizeManagedNodeStatus(value) {
+  return String(value || "").trim().toLowerCase() === "disabled" ? "disabled" : "active";
+}
+
+function normalizeManagedNodeLeaseStatus(value) {
+  return String(value || "").trim().toLowerCase() === "disabled" ? "disabled" : "active";
+}
+
+function summarizeManagedNodeLeaseRow(row) {
+  if (!row) {
+    return {
+      status: "missing",
+      expiresAt: null,
+      readonly: true,
+      remainingDays: null,
+      reason: "node_lease_missing",
+    };
+  }
+  const configuredStatus = normalizeManagedNodeLeaseStatus(row.leaseStatus || row.status);
+  const expiresAt = String(row.expiresAt || "").trim() || null;
+  const readonlyAfterExpiry = Number(row.readonlyAfterExpiry || 0) !== 0;
+  if (configuredStatus === "disabled") {
+    return {
+      status: "disabled",
+      expiresAt,
+      readonly: true,
+      remainingDays: null,
+      reason: "node_lease_disabled",
+    };
+  }
+  if (expiresAt) {
+    const expiresAtMs = Date.parse(expiresAt);
+    if (Number.isFinite(expiresAtMs)) {
+      const remainingDays = Math.ceil((expiresAtMs - Date.now()) / 86_400_000);
+      if (expiresAtMs < Date.now()) {
+        return {
+          status: "expired",
+          expiresAt,
+          readonly: readonlyAfterExpiry,
+          remainingDays,
+          reason: "node_lease_expired",
+        };
+      }
+      return {
+        status: "active",
+        expiresAt,
+        readonly: false,
+        remainingDays,
+        reason: "node_lease_active",
+      };
+    }
+  }
+  return {
+    status: "active",
+    expiresAt,
+    readonly: false,
+    remainingDays: null,
+    reason: "node_lease_active",
+  };
+}
+
+function buildManagedNodeAssignmentKey(params = {}) {
+  const userId = String(params.userId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  return `${userId}::${tenantAgentId}`;
+}
+
 function normalizeUpdateLogText(value, { maxLength = 4000, preserveNewlines = false } = {}) {
   const raw = String(value ?? "");
   const normalized = preserveNewlines
@@ -1577,8 +1665,11 @@ export function closeTenantPlatformDb(db) {
   }
 }
 
-export function getBootstrapStatus(db, edition = "cloud") {
+export function getBootstrapStatus(db, edition = "cloud", nodeRole = "control-plane") {
   const normalizedEdition = String(edition || "cloud")
+    .trim()
+    .toLowerCase();
+  const normalizedNodeRole = String(nodeRole || "control-plane")
     .trim()
     .toLowerCase();
   const platformAdminCount = Number(
@@ -1593,10 +1684,24 @@ export function getBootstrapStatus(db, edition = "cloud") {
        WHERE tm.role = 'tenant_admin' AND t.deployment_mode = 'local'`,
     ) || 0,
   );
+  const managedNodeTenantAdminCount = Number(
+    getScalar(
+      db,
+      `SELECT COUNT(*) AS value
+       FROM tenant_memberships
+       WHERE role = 'tenant_admin' AND status = 'active'`,
+    ) || 0,
+  );
   return {
-    initialized: normalizedEdition === "local" ? localTenantAdminCount > 0 : platformAdminCount > 0,
+    initialized:
+      normalizedNodeRole === "managed-node"
+        ? managedNodeTenantAdminCount > 0
+        : normalizedEdition === "local"
+          ? localTenantAdminCount > 0
+          : platformAdminCount > 0,
     platformAdminCount,
     localTenantAdminCount,
+    managedNodeTenantAdminCount,
   };
 }
 
@@ -1833,6 +1938,1049 @@ export function deletePlatformUpdateLog(db, params) {
   return mapPlatformUpdateLogRow(existing);
 }
 
+function mapManagedNodeRow(row) {
+  if (!row) {
+    return null;
+  }
+  const lease = summarizeManagedNodeLeaseRow(row);
+  return {
+    id: String(row.id || "").trim(),
+    name: String(row.name || "").trim(),
+    status: normalizeManagedNodeStatus(row.status),
+    nodeRole: String(row.nodeRole || "managed-node").trim() || "managed-node",
+    createdAt: String(row.createdAt || "").trim(),
+    updatedAt: String(row.updatedAt || "").trim(),
+    desiredRevision: Number(row.desiredRevision || 1),
+    lastAppliedRevision: Number(row.lastAppliedRevision || 0),
+    lastRegisteredAt: String(row.lastRegisteredAt || "").trim() || null,
+    lastHeartbeatAt: String(row.lastHeartbeatAt || "").trim() || null,
+    lastInventoryAt: String(row.lastInventoryAt || "").trim() || null,
+    lastSyncAt: String(row.lastSyncAt || "").trim() || null,
+    lastSeenIp: String(row.lastSeenIp || "").trim() || null,
+    lastError: String(row.lastError || "").trim() || null,
+    boundTenantCount: Number(row.boundTenantCount || 0),
+    agentCount: Number(row.agentCount || 0),
+    leaseStatus: lease.status,
+    leaseExpiresAt: lease.expiresAt,
+    leaseReadonly: lease.readonly,
+    leaseRemainingDays: lease.remainingDays,
+    leaseReason: lease.reason,
+  };
+}
+
+function getManagedNodeSummary(db, nodeId) {
+  return mapManagedNodeRow(
+    db
+      .prepare(
+        `SELECT n.id,
+                n.name,
+                n.status,
+                n.node_role AS nodeRole,
+                n.created_at AS createdAt,
+                n.updated_at AS updatedAt,
+                ms.desired_revision AS desiredRevision,
+                ms.last_applied_revision AS lastAppliedRevision,
+                ms.last_registered_at AS lastRegisteredAt,
+                ms.last_heartbeat_at AS lastHeartbeatAt,
+                ms.last_inventory_at AS lastInventoryAt,
+                ms.last_sync_at AS lastSyncAt,
+                ms.last_seen_ip AS lastSeenIp,
+                ms.last_error AS lastError,
+                ml.lease_status AS leaseStatus,
+                ml.expires_at AS expiresAt,
+                ml.readonly_after_expiry AS readonlyAfterExpiry,
+                COUNT(DISTINCT tnb.tenant_id) AS boundTenantCount,
+                COUNT(DISTINCT CASE WHEN mai.status = 'active' THEN mai.agent_id END) AS agentCount
+         FROM managed_nodes n
+         LEFT JOIN managed_node_sync_state ms ON ms.node_id = n.id
+         LEFT JOIN managed_node_leases ml ON ml.node_id = n.id
+         LEFT JOIN tenant_node_bindings tnb ON tnb.node_id = n.id
+         LEFT JOIN managed_node_agent_inventory mai ON mai.node_id = n.id
+         WHERE n.id = ?
+         GROUP BY n.id, n.name, n.status, n.node_role, n.created_at, n.updated_at,
+                  ms.desired_revision, ms.last_applied_revision, ms.last_registered_at,
+                  ms.last_heartbeat_at, ms.last_inventory_at, ms.last_sync_at,
+                  ms.last_seen_ip, ms.last_error, ml.lease_status, ml.expires_at,
+                  ml.readonly_after_expiry`,
+      )
+      .get(nodeId),
+  );
+}
+
+function ensureManagedNodeSyncStateRow(db, nodeId) {
+  const normalizedNodeId = normalizeManagedNodeId(nodeId);
+  db.prepare(
+    `INSERT INTO managed_node_sync_state (
+       node_id,
+       desired_revision,
+       last_applied_revision,
+       updated_at
+     )
+     VALUES (@nodeId, 1, 0, @updatedAt)
+     ON CONFLICT(node_id) DO NOTHING`,
+  ).run({
+    nodeId: normalizedNodeId,
+    updatedAt: nowIso(),
+  });
+}
+
+function bumpManagedNodeDesiredRevisionByNodeId(db, nodeId) {
+  const normalizedNodeId = normalizeManagedNodeId(nodeId);
+  ensureManagedNodeSyncStateRow(db, normalizedNodeId);
+  db.prepare(
+    `UPDATE managed_node_sync_state
+     SET desired_revision = desired_revision + 1,
+         updated_at = @updatedAt
+     WHERE node_id = @nodeId`,
+  ).run({
+    nodeId: normalizedNodeId,
+    updatedAt: nowIso(),
+  });
+}
+
+function bumpManagedNodeDesiredRevisionForTenant(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return;
+  }
+  const rows = db
+    .prepare(
+      `SELECT node_id AS nodeId
+       FROM tenant_node_bindings
+       WHERE tenant_id = ?`,
+    )
+    .all(normalizedTenantId);
+  for (const row of rows) {
+    const nodeId = String(row?.nodeId || "").trim();
+    if (nodeId) {
+      bumpManagedNodeDesiredRevisionByNodeId(db, nodeId);
+    }
+  }
+}
+
+function syncManagedNodeInventory(db, params) {
+  const nodeId = normalizeManagedNodeId(params?.nodeId);
+  const catalog = Array.isArray(params?.agentCatalog) ? params.agentCatalog : [];
+  const now = nowIso();
+  const activeAgentIds = new Set();
+  for (const entry of catalog) {
+    const agentId = String(entry?.id || "").trim();
+    if (!agentId) {
+      continue;
+    }
+    activeAgentIds.add(agentId);
+    db.prepare(
+      `INSERT INTO managed_node_agent_inventory (
+         id,
+         node_id,
+         agent_id,
+         agent_name,
+         agent_emoji,
+         status,
+         updated_at
+       )
+       VALUES (@id, @nodeId, @agentId, @agentName, @agentEmoji, 'active', @updatedAt)
+       ON CONFLICT(node_id, agent_id) DO UPDATE SET
+         agent_name = excluded.agent_name,
+         agent_emoji = excluded.agent_emoji,
+         status = 'active',
+         updated_at = excluded.updated_at`,
+    ).run({
+      id: createId("node_agent"),
+      nodeId,
+      agentId,
+      agentName: String(entry?.name || entry?.agentName || agentId).trim() || agentId,
+      agentEmoji: String(entry?.emoji || entry?.identity?.emoji || "").trim() || null,
+      updatedAt: now,
+    });
+  }
+  const existing = db
+    .prepare(
+      `SELECT agent_id AS agentId
+       FROM managed_node_agent_inventory
+       WHERE node_id = ?`,
+    )
+    .all(nodeId);
+  for (const row of existing) {
+    const agentId = String(row?.agentId || "").trim();
+    if (!agentId || activeAgentIds.has(agentId)) {
+      continue;
+    }
+    db.prepare(
+      `UPDATE managed_node_agent_inventory
+       SET status = 'inactive',
+           updated_at = @updatedAt
+       WHERE node_id = @nodeId AND agent_id = @agentId`,
+    ).run({
+      nodeId,
+      agentId,
+      updatedAt: now,
+    });
+  }
+}
+
+export function getManagedNodeLeaseState(db, nodeId) {
+  const normalizedNodeId = String(nodeId || "").trim();
+  if (!normalizedNodeId) {
+    return summarizeManagedNodeLeaseRow(null);
+  }
+  const row = db
+    .prepare(
+      `SELECT node_id AS nodeId,
+              lease_status AS leaseStatus,
+              expires_at AS expiresAt,
+              readonly_after_expiry AS readonlyAfterExpiry
+       FROM managed_node_leases
+       WHERE node_id = ?`,
+    )
+    .get(normalizedNodeId);
+  return summarizeManagedNodeLeaseRow(row);
+}
+
+export function getManagedNodeSyncCheckpoint(db, nodeId) {
+  const normalizedNodeId = normalizeManagedNodeId(nodeId);
+  const existingNode = db.prepare("SELECT id FROM managed_nodes WHERE id = ?").get(normalizedNodeId);
+  if (existingNode) {
+    ensureManagedNodeSyncStateRow(db, normalizedNodeId);
+  }
+  const row = db
+    .prepare(
+      `SELECT desired_revision AS desiredRevision,
+              last_applied_revision AS lastAppliedRevision,
+              last_registered_at AS lastRegisteredAt,
+              last_heartbeat_at AS lastHeartbeatAt,
+              last_inventory_at AS lastInventoryAt,
+              last_sync_at AS lastSyncAt,
+              last_seen_ip AS lastSeenIp,
+              last_error AS lastError
+       FROM managed_node_sync_state
+       WHERE node_id = ?`,
+    )
+    .get(normalizedNodeId);
+  return {
+    nodeId: normalizedNodeId,
+    desiredRevision: Number(row?.desiredRevision || 1),
+    lastAppliedRevision: Number(row?.lastAppliedRevision || 0),
+    lastRegisteredAt: String(row?.lastRegisteredAt || "").trim() || null,
+    lastHeartbeatAt: String(row?.lastHeartbeatAt || "").trim() || null,
+    lastInventoryAt: String(row?.lastInventoryAt || "").trim() || null,
+    lastSyncAt: String(row?.lastSyncAt || "").trim() || null,
+    lastSeenIp: String(row?.lastSeenIp || "").trim() || null,
+    lastError: String(row?.lastError || "").trim() || null,
+  };
+}
+
+export function recordManagedNodeSyncError(db, params = {}) {
+  const nodeId = normalizeManagedNodeId(params?.nodeId);
+  const existingNode = db.prepare("SELECT id FROM managed_nodes WHERE id = ?").get(nodeId);
+  if (!existingNode) {
+    return {
+      ...getManagedNodeSyncCheckpoint(db, nodeId),
+      lastError: String(params?.lastError || "").trim() || null,
+    };
+  }
+  ensureManagedNodeSyncStateRow(db, nodeId);
+  db.prepare(
+    `UPDATE managed_node_sync_state
+     SET last_error = @lastError,
+         updated_at = @updatedAt
+     WHERE node_id = @nodeId`,
+  ).run({
+    nodeId,
+    lastError: String(params?.lastError || "").trim() || null,
+    updatedAt: nowIso(),
+  });
+  return getManagedNodeSyncCheckpoint(db, nodeId);
+}
+
+export function listManagedNodes(db) {
+  return db
+    .prepare(
+      `SELECT n.id,
+              n.name,
+              n.status,
+              n.node_role AS nodeRole,
+              n.created_at AS createdAt,
+              n.updated_at AS updatedAt,
+              ms.desired_revision AS desiredRevision,
+              ms.last_applied_revision AS lastAppliedRevision,
+              ms.last_registered_at AS lastRegisteredAt,
+              ms.last_heartbeat_at AS lastHeartbeatAt,
+              ms.last_inventory_at AS lastInventoryAt,
+              ms.last_sync_at AS lastSyncAt,
+              ms.last_seen_ip AS lastSeenIp,
+              ms.last_error AS lastError,
+              ml.lease_status AS leaseStatus,
+              ml.expires_at AS expiresAt,
+              ml.readonly_after_expiry AS readonlyAfterExpiry,
+              COUNT(DISTINCT tnb.tenant_id) AS boundTenantCount,
+              COUNT(DISTINCT CASE WHEN mai.status = 'active' THEN mai.agent_id END) AS agentCount
+       FROM managed_nodes n
+       LEFT JOIN managed_node_sync_state ms ON ms.node_id = n.id
+       LEFT JOIN managed_node_leases ml ON ml.node_id = n.id
+       LEFT JOIN tenant_node_bindings tnb ON tnb.node_id = n.id
+       LEFT JOIN managed_node_agent_inventory mai ON mai.node_id = n.id
+       GROUP BY n.id, n.name, n.status, n.node_role, n.created_at, n.updated_at,
+                ms.desired_revision, ms.last_applied_revision, ms.last_registered_at,
+                ms.last_heartbeat_at, ms.last_inventory_at, ms.last_sync_at,
+                ms.last_seen_ip, ms.last_error, ml.lease_status, ml.expires_at,
+                ml.readonly_after_expiry
+       ORDER BY n.created_at DESC`,
+    )
+    .all()
+    .map(mapManagedNodeRow)
+    .filter(Boolean);
+}
+
+export function upsertManagedNode(db, params = {}) {
+  const nodeId = normalizeManagedNodeId(params?.id || params?.nodeId);
+  const name = normalizeManagedNodeName(params?.name);
+  const sharedSecret = String(params?.sharedSecret || "").trim();
+  const status = normalizeManagedNodeStatus(params?.status);
+  const leaseStatus = normalizeManagedNodeLeaseStatus(params?.leaseStatus);
+  const leaseExpiresAt = String(params?.leaseExpiresAt || "").trim()
+    ? normalizeIsoTimestamp(params.leaseExpiresAt)
+    : null;
+  const readonlyAfterExpiry = Number(params?.readonlyAfterExpiry ?? 1) === 0 ? 0 : 1;
+  const existing = db
+    .prepare(
+      `SELECT id,
+              shared_secret_hash AS sharedSecretHash
+       FROM managed_nodes
+       WHERE id = ?`,
+    )
+    .get(nodeId);
+  if (!existing && !sharedSecret) {
+    throw new Error("managed_node_secret_required");
+  }
+  runInTransaction(db, () => {
+    const now = nowIso();
+    if (existing) {
+      db.prepare(
+        `UPDATE managed_nodes
+         SET name = @name,
+             shared_secret_hash = @sharedSecretHash,
+             status = @status,
+             node_role = 'managed-node',
+             updated_at = @updatedAt
+         WHERE id = @id`,
+      ).run({
+        id: nodeId,
+        name,
+        sharedSecretHash: sharedSecret ? hashPassword(sharedSecret) : existing.sharedSecretHash,
+        status,
+        updatedAt: now,
+      });
+    } else {
+      db.prepare(
+        `INSERT INTO managed_nodes (
+           id,
+           name,
+           shared_secret_hash,
+           status,
+           node_role,
+           created_at,
+           updated_at
+         )
+         VALUES (
+           @id,
+           @name,
+           @sharedSecretHash,
+           @status,
+           'managed-node',
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        id: nodeId,
+        name,
+        sharedSecretHash: hashPassword(sharedSecret),
+        status,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    db.prepare(
+      `INSERT INTO managed_node_leases (
+         node_id,
+         lease_status,
+         expires_at,
+         readonly_after_expiry,
+         issued_at,
+         updated_at
+       )
+       VALUES (
+         @nodeId,
+         @leaseStatus,
+         @expiresAt,
+         @readonlyAfterExpiry,
+         @issuedAt,
+         @updatedAt
+       )
+       ON CONFLICT(node_id) DO UPDATE SET
+         lease_status = excluded.lease_status,
+         expires_at = excluded.expires_at,
+         readonly_after_expiry = excluded.readonly_after_expiry,
+         updated_at = excluded.updated_at`,
+    ).run({
+      nodeId,
+      leaseStatus,
+      expiresAt: leaseExpiresAt,
+      readonlyAfterExpiry,
+      issuedAt: now,
+      updatedAt: now,
+    });
+    ensureManagedNodeSyncStateRow(db, nodeId);
+    if (existing) {
+      bumpManagedNodeDesiredRevisionByNodeId(db, nodeId);
+    }
+  });
+  return getManagedNodeSummary(db, nodeId);
+}
+
+export function bindTenantToManagedNode(db, params = {}) {
+  const tenantId = String(params?.tenantId || "").trim();
+  const nextNodeId = String(params?.nodeId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  runInTransaction(db, () => {
+    const tenant = db.prepare("SELECT id FROM tenants WHERE id = ?").get(tenantId);
+    if (!tenant) {
+      throw new Error("tenant_not_found");
+    }
+    const previous = db
+      .prepare(
+        `SELECT node_id AS nodeId
+         FROM tenant_node_bindings
+         WHERE tenant_id = ?`,
+      )
+      .get(tenantId);
+    const previousNodeId = String(previous?.nodeId || "").trim();
+    const now = nowIso();
+    if (nextNodeId) {
+      const normalizedNodeId = normalizeManagedNodeId(nextNodeId);
+      const node = db.prepare("SELECT id FROM managed_nodes WHERE id = ?").get(normalizedNodeId);
+      if (!node) {
+        throw new Error("managed_node_not_found");
+      }
+      db.prepare(
+        `INSERT INTO tenant_node_bindings (tenant_id, node_id, created_at, updated_at)
+         VALUES (@tenantId, @nodeId, @createdAt, @updatedAt)
+         ON CONFLICT(tenant_id) DO UPDATE SET
+           node_id = excluded.node_id,
+           updated_at = excluded.updated_at`,
+      ).run({
+        tenantId,
+        nodeId: normalizedNodeId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (previousNodeId && previousNodeId !== normalizedNodeId) {
+        bumpManagedNodeDesiredRevisionByNodeId(db, previousNodeId);
+      }
+      bumpManagedNodeDesiredRevisionByNodeId(db, normalizedNodeId);
+      return;
+    }
+    db.prepare("DELETE FROM tenant_node_bindings WHERE tenant_id = ?").run(tenantId);
+    if (previousNodeId) {
+      bumpManagedNodeDesiredRevisionByNodeId(db, previousNodeId);
+    }
+  });
+  return getTenantSummary(db, tenantId);
+}
+
+export function registerManagedNodeHeartbeat(db, params = {}) {
+  const nodeId = normalizeManagedNodeId(params?.nodeId);
+  const node = db
+    .prepare(
+      `SELECT id
+       FROM managed_nodes
+       WHERE id = ?`,
+    )
+    .get(nodeId);
+  if (!node) {
+    throw new Error("managed_node_not_found");
+  }
+  runInTransaction(db, () => {
+    const now = nowIso();
+    ensureManagedNodeSyncStateRow(db, nodeId);
+    if (String(params?.nodeName || "").trim()) {
+      db.prepare(
+        `UPDATE managed_nodes
+         SET name = @name,
+             updated_at = @updatedAt
+         WHERE id = @id`,
+      ).run({
+        id: nodeId,
+        name: normalizeManagedNodeName(params.nodeName),
+        updatedAt: now,
+      });
+    }
+    if (Array.isArray(params?.agentCatalog)) {
+      syncManagedNodeInventory(db, {
+        nodeId,
+        agentCatalog: params.agentCatalog,
+      });
+    }
+    db.prepare(
+      `UPDATE managed_node_sync_state
+       SET last_registered_at = CASE
+             WHEN @registeredAt IS NOT NULL THEN @registeredAt
+             ELSE last_registered_at
+           END,
+           last_heartbeat_at = @heartbeatAt,
+           last_inventory_at = CASE
+             WHEN @inventoryAt IS NOT NULL THEN @inventoryAt
+             ELSE last_inventory_at
+           END,
+           last_applied_revision = CASE
+             WHEN @lastAppliedRevision IS NOT NULL THEN @lastAppliedRevision
+             ELSE last_applied_revision
+           END,
+           last_seen_ip = @lastSeenIp,
+           last_error = @lastError,
+           updated_at = @updatedAt
+       WHERE node_id = @nodeId`,
+    ).run({
+      nodeId,
+      registeredAt: params?.registration ? now : null,
+      heartbeatAt: now,
+      inventoryAt: Array.isArray(params?.agentCatalog) ? now : null,
+      lastAppliedRevision:
+        params?.lastAppliedRevision === undefined || params?.lastAppliedRevision === null
+          ? null
+          : Math.max(0, Number.parseInt(String(params.lastAppliedRevision), 10) || 0),
+      lastSeenIp: String(params?.lastSeenIp || "").trim() || null,
+      lastError: String(params?.lastError || "").trim() || null,
+      updatedAt: now,
+    });
+  });
+  return getManagedNodeSummary(db, nodeId);
+}
+
+export function buildManagedNodeDesiredState(db, params = {}) {
+  const nodeId = normalizeManagedNodeId(params?.nodeId);
+  const node = getManagedNodeSummary(db, nodeId);
+  if (!node) {
+    throw new Error("managed_node_not_found");
+  }
+  const bindingRows = db
+    .prepare(
+      `SELECT tenant_id AS tenantId
+       FROM tenant_node_bindings
+       WHERE node_id = ?
+       ORDER BY updated_at ASC, created_at ASC`,
+    )
+    .all(nodeId);
+  const tenantIds = bindingRows
+    .map((row) => String(row?.tenantId || "").trim())
+    .filter(Boolean);
+  const checkpoint = getManagedNodeSyncCheckpoint(db, nodeId);
+  if (!tenantIds.length) {
+    return {
+      node,
+      lease: getManagedNodeLeaseState(db, nodeId),
+      desiredRevision: checkpoint.desiredRevision,
+      tenants: [],
+      users: [],
+      memberships: [],
+      tenantAgents: [],
+      userAssignments: [],
+      generatedAt: nowIso(),
+    };
+  }
+  const placeholders = tenantIds.map(() => "?").join(", ");
+  const tenants = db
+    .prepare(
+      `SELECT t.id,
+              t.code,
+              t.name,
+              t.status,
+              t.deployment_mode AS deploymentMode,
+              t.created_at AS createdAt,
+              t.updated_at AS updatedAt,
+              tq.member_limit AS memberLimit,
+              tq.license_expires_at AS licenseExpiresAt,
+              tq.readonly_after_expiry AS readonlyAfterExpiry,
+              COALESCE(tw.balance_points, 0) AS walletBalance
+       FROM tenants t
+       LEFT JOIN tenant_quotas tq ON tq.tenant_id = t.id
+       LEFT JOIN tenant_wallets tw ON tw.tenant_id = t.id
+       WHERE t.id IN (${placeholders})
+       ORDER BY t.created_at ASC`,
+    )
+    .all(...tenantIds);
+  const users = db
+    .prepare(
+      `SELECT DISTINCT u.id,
+              u.username,
+              u.password_hash AS passwordHash,
+              u.role,
+              u.status,
+              u.created_at AS createdAt,
+              u.updated_at AS updatedAt
+       FROM users u
+       JOIN tenant_memberships tm ON tm.user_id = u.id
+       WHERE tm.tenant_id IN (${placeholders})
+       ORDER BY u.created_at ASC`,
+    )
+    .all(...tenantIds);
+  const memberships = db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              user_id AS userId,
+              role,
+              status,
+              created_at AS createdAt
+       FROM tenant_memberships
+       WHERE tenant_id IN (${placeholders})
+       ORDER BY created_at ASC`,
+    )
+    .all(...tenantIds);
+  const tenantAgents = db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              agent_id AS agentId,
+              description,
+              rate_multiplier AS rateMultiplier,
+              status,
+              balance_points AS balancePoints,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM tenant_agents
+       WHERE tenant_id IN (${placeholders})
+       ORDER BY created_at ASC`,
+    )
+    .all(...tenantIds);
+  const userAssignments = db
+    .prepare(
+      `SELECT ua.tenant_id AS tenantId,
+              ua.user_id AS userId,
+              ua.tenant_agent_id AS tenantAgentId
+       FROM user_agent_assignments ua
+       JOIN tenant_agents ta ON ta.id = ua.tenant_agent_id
+       WHERE ua.status = 'active'
+         AND ta.status = 'active'
+         AND ua.tenant_id IN (${placeholders})
+       ORDER BY ua.created_at ASC`,
+    )
+    .all(...tenantIds);
+  return {
+    node,
+    lease: getManagedNodeLeaseState(db, nodeId),
+    desiredRevision: checkpoint.desiredRevision,
+    tenants,
+    users,
+    memberships,
+    tenantAgents,
+    userAssignments,
+    generatedAt: nowIso(),
+  };
+}
+
+export function applyManagedNodeDesiredState(db, params = {}) {
+  const nodeId = normalizeManagedNodeId(params?.nodeId || params?.node?.id);
+  const desiredRevision = Math.max(0, Number.parseInt(String(params?.desiredRevision || "0"), 10) || 0);
+  const node = params?.node && typeof params.node === "object" ? params.node : { id: nodeId };
+  const lease = params?.lease && typeof params.lease === "object" ? params.lease : {};
+  const tenants = Array.isArray(params?.tenants) ? params.tenants : [];
+  const users = Array.isArray(params?.users) ? params.users : [];
+  const memberships = Array.isArray(params?.memberships) ? params.memberships : [];
+  const tenantAgents = Array.isArray(params?.tenantAgents) ? params.tenantAgents : [];
+  const userAssignments = Array.isArray(params?.userAssignments) ? params.userAssignments : [];
+  const configPath = String(params?.configPath || "").trim();
+  const configDir = String(params?.configDir || "").trim();
+  const tenantIds = tenants.map((entry) => String(entry?.id || "").trim()).filter(Boolean);
+  const userIds = users.map((entry) => String(entry?.id || "").trim()).filter(Boolean);
+  const membershipKeys = new Set(
+    memberships.map((entry) => `${String(entry?.tenantId || "").trim()}::${String(entry?.userId || "").trim()}`),
+  );
+  const tenantAgentIds = new Set(
+    tenantAgents.map((entry) => String(entry?.id || "").trim()).filter(Boolean),
+  );
+  const activeAssignmentKeys = new Set(
+    userAssignments.map((entry) =>
+      buildManagedNodeAssignmentKey({
+        userId: entry?.userId,
+        tenantAgentId: entry?.tenantAgentId,
+      }),
+    ),
+  );
+  return runInTransaction(db, () => {
+    const now = nowIso();
+    db.prepare(
+      `INSERT INTO managed_nodes (
+         id,
+         name,
+         shared_secret_hash,
+         status,
+         node_role,
+         created_at,
+         updated_at
+       )
+       VALUES (
+         @id,
+         @name,
+         @sharedSecretHash,
+         @status,
+         'managed-node',
+         @createdAt,
+         @updatedAt
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         status = excluded.status,
+         node_role = excluded.node_role,
+         updated_at = excluded.updated_at`,
+    ).run({
+      id: nodeId,
+      name: normalizeManagedNodeName(node?.name || nodeId),
+      // The local node never authenticates inbound requests with this hash, so preserve or seed a placeholder.
+      sharedSecretHash: hashPassword(`managed-node:${nodeId}`),
+      status: normalizeManagedNodeStatus(node?.status),
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.prepare(
+      `INSERT INTO managed_node_leases (
+         node_id,
+         lease_status,
+         expires_at,
+         readonly_after_expiry,
+         issued_at,
+         updated_at
+       )
+       VALUES (
+         @nodeId,
+         @leaseStatus,
+         @expiresAt,
+         @readonlyAfterExpiry,
+         @issuedAt,
+         @updatedAt
+       )
+       ON CONFLICT(node_id) DO UPDATE SET
+         lease_status = excluded.lease_status,
+         expires_at = excluded.expires_at,
+         readonly_after_expiry = excluded.readonly_after_expiry,
+         updated_at = excluded.updated_at`,
+    ).run({
+      nodeId,
+      leaseStatus: lease?.status === "disabled" ? "disabled" : "active",
+      expiresAt: String(lease?.expiresAt || "").trim() ? normalizeIsoTimestamp(lease.expiresAt) : null,
+      readonlyAfterExpiry: lease?.readonly === false ? 0 : 1,
+      issuedAt: now,
+      updatedAt: now,
+    });
+    ensureManagedNodeSyncStateRow(db, nodeId);
+    db.prepare(
+      `UPDATE managed_node_sync_state
+       SET desired_revision = CASE
+             WHEN @desiredRevision > desired_revision THEN @desiredRevision
+             ELSE desired_revision
+           END,
+           last_error = NULL,
+           updated_at = @updatedAt
+       WHERE node_id = @nodeId`,
+    ).run({
+      nodeId,
+      desiredRevision: desiredRevision > 0 ? desiredRevision : 1,
+      updatedAt: now,
+    });
+
+    if (tenantIds.length) {
+      const tenantPlaceholders = tenantIds.map(() => "?").join(", ");
+      db.prepare(`DELETE FROM tenants WHERE id NOT IN (${tenantPlaceholders})`).run(...tenantIds);
+      const userPlaceholders = userIds.length ? userIds.map(() => "?").join(", ") : "";
+      if (userIds.length) {
+        db.prepare(`DELETE FROM users WHERE id NOT IN (${userPlaceholders})`).run(...userIds);
+      } else {
+        db.prepare("DELETE FROM users").run();
+      }
+      for (const tenant of tenants) {
+        const tenantId = String(tenant?.id || "").trim();
+        if (!tenantId) {
+          continue;
+        }
+        db.prepare(
+          `INSERT INTO tenants (id, code, name, status, deployment_mode, created_at, updated_at)
+           VALUES (@id, @code, @name, @status, @deploymentMode, @createdAt, @updatedAt)
+           ON CONFLICT(id) DO UPDATE SET
+             code = excluded.code,
+             name = excluded.name,
+             status = excluded.status,
+             deployment_mode = excluded.deployment_mode,
+             updated_at = excluded.updated_at`,
+        ).run({
+          id: tenantId,
+          code: String(tenant?.code || tenantId).trim() || tenantId,
+          name: String(tenant?.name || tenantId).trim() || tenantId,
+          status: String(tenant?.status || "active").trim() || "active",
+          deploymentMode: String(tenant?.deploymentMode || "cloud").trim() === "local" ? "local" : "cloud",
+          createdAt: normalizeIsoTimestamp(tenant?.createdAt, now),
+          updatedAt: normalizeIsoTimestamp(tenant?.updatedAt, now),
+        });
+        db.prepare(
+          `INSERT INTO tenant_quotas (
+             tenant_id,
+             member_limit,
+             license_expires_at,
+             renewal_code,
+             readonly_after_expiry,
+             created_at,
+             updated_at
+           )
+           VALUES (@tenantId, @memberLimit, @licenseExpiresAt, NULL, @readonlyAfterExpiry, @createdAt, @updatedAt)
+           ON CONFLICT(tenant_id) DO UPDATE SET
+             member_limit = excluded.member_limit,
+             license_expires_at = excluded.license_expires_at,
+             readonly_after_expiry = excluded.readonly_after_expiry,
+             updated_at = excluded.updated_at`,
+        ).run({
+          tenantId,
+          memberLimit: Math.max(1, Number.parseInt(String(tenant?.memberLimit || "1"), 10) || 1),
+          licenseExpiresAt: String(tenant?.licenseExpiresAt || "").trim() || null,
+          readonlyAfterExpiry: Number(tenant?.readonlyAfterExpiry || 0) === 0 ? 0 : 1,
+          createdAt: normalizeIsoTimestamp(tenant?.createdAt, now),
+          updatedAt: normalizeIsoTimestamp(tenant?.updatedAt, now),
+        });
+        db.prepare(
+          `INSERT INTO tenant_wallets (tenant_id, balance_points, created_at, updated_at)
+           VALUES (@tenantId, @balancePoints, @createdAt, @updatedAt)
+           ON CONFLICT(tenant_id) DO UPDATE SET
+             balance_points = excluded.balance_points,
+             updated_at = excluded.updated_at`,
+        ).run({
+          tenantId,
+          balancePoints: roundPoints(toFiniteNumber(tenant?.walletBalance, 0)),
+          createdAt: normalizeIsoTimestamp(tenant?.createdAt, now),
+          updatedAt: normalizeIsoTimestamp(tenant?.updatedAt, now),
+        });
+      }
+    } else {
+      db.prepare("DELETE FROM tenants").run();
+      db.prepare("DELETE FROM users").run();
+    }
+
+    for (const user of users) {
+      const userId = String(user?.id || "").trim();
+      if (!userId) {
+        continue;
+      }
+      db.prepare(
+        `INSERT INTO users (id, username, password_hash, role, status, created_at, updated_at)
+         VALUES (@id, @username, @passwordHash, @role, @status, @createdAt, @updatedAt)
+         ON CONFLICT(id) DO UPDATE SET
+           username = excluded.username,
+           password_hash = excluded.password_hash,
+           role = excluded.role,
+           status = excluded.status,
+           updated_at = excluded.updated_at`,
+      ).run({
+        id: userId,
+        username: String(user?.username || userId).trim() || userId,
+        passwordHash: String(user?.passwordHash || "").trim(),
+        role: String(user?.role || "member").trim() || "member",
+        status: String(user?.status || "active").trim() || "active",
+        createdAt: normalizeIsoTimestamp(user?.createdAt, now),
+        updatedAt: normalizeIsoTimestamp(user?.updatedAt, now),
+      });
+    }
+
+    for (const membership of memberships) {
+      const tenantId = String(membership?.tenantId || "").trim();
+      const userId = String(membership?.userId || "").trim();
+      if (!tenantId || !userId) {
+        continue;
+      }
+      db.prepare(
+        `INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at)
+         VALUES (@id, @tenantId, @userId, @role, @status, @createdAt)
+         ON CONFLICT(tenant_id, user_id) DO UPDATE SET
+           role = excluded.role,
+           status = excluded.status`,
+      ).run({
+        id: String(membership?.id || createId("membership")).trim(),
+        tenantId,
+        userId,
+        role: String(membership?.role || "member").trim() || "member",
+        status: String(membership?.status || "active").trim() || "active",
+        createdAt: normalizeIsoTimestamp(membership?.createdAt, now),
+      });
+    }
+
+    if (tenantIds.length) {
+      const tenantPlaceholders = tenantIds.map(() => "?").join(", ");
+      const localMemberships = db
+        .prepare(
+          `SELECT tenant_id AS tenantId, user_id AS userId
+           FROM tenant_memberships
+           WHERE tenant_id IN (${tenantPlaceholders})`,
+        )
+        .all(...tenantIds);
+      for (const row of localMemberships) {
+        const membershipKey = `${String(row?.tenantId || "").trim()}::${String(row?.userId || "").trim()}`;
+        if (membershipKeys.has(membershipKey)) {
+          continue;
+        }
+        db.prepare(
+          `DELETE FROM tenant_memberships
+           WHERE tenant_id = @tenantId AND user_id = @userId`,
+        ).run({
+          tenantId: String(row?.tenantId || "").trim(),
+          userId: String(row?.userId || "").trim(),
+        });
+      }
+    }
+
+    for (const tenantAgent of tenantAgents) {
+      const tenantAgentId = String(tenantAgent?.id || "").trim();
+      if (!tenantAgentId) {
+        continue;
+      }
+      db.prepare(
+        `INSERT INTO tenant_agents (
+           id,
+           tenant_id,
+           agent_id,
+           description,
+           rate_multiplier,
+           status,
+           balance_points,
+           created_at,
+           updated_at
+         )
+         VALUES (
+           @id,
+           @tenantId,
+           @agentId,
+           @description,
+           @rateMultiplier,
+           @status,
+           @balancePoints,
+           @createdAt,
+           @updatedAt
+         )
+         ON CONFLICT(id) DO UPDATE SET
+           tenant_id = excluded.tenant_id,
+           agent_id = excluded.agent_id,
+           description = excluded.description,
+           rate_multiplier = excluded.rate_multiplier,
+           status = excluded.status,
+           balance_points = excluded.balance_points,
+           updated_at = excluded.updated_at`,
+      ).run({
+        id: tenantAgentId,
+        tenantId: String(tenantAgent?.tenantId || "").trim(),
+        agentId: String(tenantAgent?.agentId || "").trim(),
+        description: String(tenantAgent?.description || "").trim() || null,
+        rateMultiplier: toFiniteNumber(tenantAgent?.rateMultiplier, 1),
+        status: String(tenantAgent?.status || "active").trim() || "active",
+        balancePoints: roundPoints(toFiniteNumber(tenantAgent?.balancePoints, 0)),
+        createdAt: normalizeIsoTimestamp(tenantAgent?.createdAt, now),
+        updatedAt: normalizeIsoTimestamp(tenantAgent?.updatedAt, now),
+      });
+    }
+
+    if (tenantIds.length) {
+      const tenantPlaceholders = tenantIds.map(() => "?").join(", ");
+      const localTenantAgents = db
+        .prepare(
+          `SELECT id
+           FROM tenant_agents
+           WHERE tenant_id IN (${tenantPlaceholders})`,
+        )
+        .all(...tenantIds);
+      for (const row of localTenantAgents) {
+        const tenantAgentId = String(row?.id || "").trim();
+        if (!tenantAgentId || tenantAgentIds.has(tenantAgentId)) {
+          continue;
+        }
+        db.prepare(
+          `UPDATE tenant_agents
+           SET status = 'inactive',
+               updated_at = @updatedAt
+           WHERE id = @tenantAgentId`,
+        ).run({
+          tenantAgentId,
+          updatedAt: now,
+        });
+      }
+    }
+
+    if (tenantIds.length) {
+      const tenantPlaceholders = tenantIds.map(() => "?").join(", ");
+      const localAssignments = db
+        .prepare(
+          `SELECT ua.user_id AS userId,
+                  ua.tenant_agent_id AS tenantAgentId
+           FROM user_agent_assignments ua
+           WHERE ua.tenant_id IN (${tenantPlaceholders}) AND ua.status = 'active'`,
+        )
+        .all(...tenantIds);
+      for (const assignment of userAssignments) {
+        const tenantId = String(assignment?.tenantId || "").trim();
+        const userId = String(assignment?.userId || "").trim();
+        const tenantAgentId = String(assignment?.tenantAgentId || "").trim();
+        if (!tenantId || !userId || !tenantAgentId) {
+          continue;
+        }
+        // Managed-node reconciliation already owns the transaction and must not
+        // mutate the control-plane desired revision locally.
+        assignTenantAgentToUserCore(db, {
+          tenantId,
+          userId,
+          tenantAgentId,
+          configPath,
+          configDir,
+        });
+      }
+      for (const row of localAssignments) {
+        const assignmentKey = buildManagedNodeAssignmentKey(row);
+        if (activeAssignmentKeys.has(assignmentKey)) {
+          continue;
+        }
+        db.prepare(
+          `UPDATE user_agent_assignments
+           SET status = 'inactive'
+           WHERE user_id = @userId AND tenant_agent_id = @tenantAgentId`,
+        ).run({
+          userId: String(row?.userId || "").trim(),
+          tenantAgentId: String(row?.tenantAgentId || "").trim(),
+        });
+      }
+    }
+
+    db.prepare(
+      `UPDATE managed_node_sync_state
+       SET desired_revision = CASE
+             WHEN @desiredRevision > desired_revision THEN @desiredRevision
+             ELSE desired_revision
+           END,
+           last_applied_revision = @lastAppliedRevision,
+           last_sync_at = @lastSyncAt,
+           last_error = NULL,
+           updated_at = @updatedAt
+       WHERE node_id = @nodeId`,
+    ).run({
+      nodeId,
+      desiredRevision: desiredRevision > 0 ? desiredRevision : 1,
+      lastAppliedRevision: desiredRevision > 0 ? desiredRevision : 0,
+      lastSyncAt: now,
+      updatedAt: now,
+    });
+    return {
+      nodeId,
+      tenantCount: tenantIds.length,
+      userCount: userIds.length,
+      assignmentCount: activeAssignmentKeys.size,
+      desiredRevision: desiredRevision > 0 ? desiredRevision : 1,
+    };
+  });
+}
+
 export function getTenantSummary(db, tenantId) {
   return (
     db
@@ -1840,15 +2988,19 @@ export function getTenantSummary(db, tenantId) {
         `SELECT t.id, t.code, t.name, t.status, t.deployment_mode AS deploymentMode,
               tq.member_limit AS memberLimit, tq.license_expires_at AS licenseExpiresAt,
               tw.balance_points AS walletBalance,
+              tnb.node_id AS boundNodeId,
+              mn.name AS boundNodeName,
               COUNT(DISTINCT CASE WHEN tm.role = 'member' AND tm.status = 'active' THEN tm.user_id END) AS memberCount,
               COUNT(DISTINCT CASE WHEN ta.status = 'active' THEN ta.id END) AS agentCount
        FROM tenants t
        LEFT JOIN tenant_quotas tq ON tq.tenant_id = t.id
        LEFT JOIN tenant_wallets tw ON tw.tenant_id = t.id
+       LEFT JOIN tenant_node_bindings tnb ON tnb.tenant_id = t.id
+       LEFT JOIN managed_nodes mn ON mn.id = tnb.node_id
        LEFT JOIN tenant_memberships tm ON tm.tenant_id = t.id
        LEFT JOIN tenant_agents ta ON ta.tenant_id = t.id
        WHERE t.id = ?
-       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points`,
+       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points, tnb.node_id, mn.name`,
       )
       .get(tenantId) ?? null
   );
@@ -1860,14 +3012,18 @@ export function listTenants(db) {
       `SELECT t.id, t.code, t.name, t.status, t.deployment_mode AS deploymentMode,
               tq.member_limit AS memberLimit, tq.license_expires_at AS licenseExpiresAt,
               tw.balance_points AS walletBalance,
+              tnb.node_id AS boundNodeId,
+              mn.name AS boundNodeName,
               COUNT(DISTINCT CASE WHEN tm.role = 'member' AND tm.status = 'active' THEN tm.user_id END) AS memberCount,
               COUNT(DISTINCT CASE WHEN ta.status = 'active' THEN ta.id END) AS agentCount
        FROM tenants t
        LEFT JOIN tenant_quotas tq ON tq.tenant_id = t.id
        LEFT JOIN tenant_wallets tw ON tw.tenant_id = t.id
+       LEFT JOIN tenant_node_bindings tnb ON tnb.tenant_id = t.id
+       LEFT JOIN managed_nodes mn ON mn.id = tnb.node_id
        LEFT JOIN tenant_memberships tm ON tm.tenant_id = t.id
        LEFT JOIN tenant_agents ta ON ta.tenant_id = t.id
-       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points
+       GROUP BY t.id, tq.member_limit, tq.license_expires_at, tw.balance_points, tnb.node_id, mn.name
        ORDER BY t.created_at DESC`,
     )
     .all();
@@ -1966,6 +3122,7 @@ export function updateTenantMemberLimit(db, params) {
     updatedAt: nowIso(),
   });
 
+  bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
   return getTenantSummary(db, tenantId);
 }
 
@@ -2071,6 +3228,7 @@ export function createTenantMember(db, params) {
     return nextUserId;
   });
 
+  bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
   return (
     db
       .prepare(
@@ -2155,6 +3313,7 @@ export function updateTenantMemberPassword(db, params) {
       passwordHash: hashPassword(password),
       updatedAt: nowIso(),
     });
+    bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
     return getTenantMemberRow(db, tenantId, userId);
   });
 }
@@ -2195,6 +3354,7 @@ export function updateTenantMemberStatus(db, params) {
       status,
       updatedAt: nowIso(),
     });
+    bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
     return getTenantMemberRow(db, tenantId, userId);
   });
 }
@@ -2221,6 +3381,7 @@ export function deleteTenantMember(db, params) {
       configDir: params.configDir,
       configPath: params.configPath,
     });
+    bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
 
     return {
       id: current.id,
@@ -2258,6 +3419,7 @@ export function upsertTenantAgent(db, params) {
       balancePoints: params.balancePoints ?? existing.balancePoints ?? 0,
       updatedAt: now,
     });
+    bumpManagedNodeDesiredRevisionForTenant(db, params.tenantId);
     return existing.id;
   }
 
@@ -2276,6 +3438,7 @@ export function upsertTenantAgent(db, params) {
     createdAt: now,
     updatedAt: now,
   });
+  bumpManagedNodeDesiredRevisionForTenant(db, params.tenantId);
   return tenantAgentId;
 }
 
@@ -2494,7 +3657,9 @@ function assignTenantAgentToUserCore(db, params) {
 }
 
 export function assignTenantAgentToUser(db, params) {
-  return runInTransaction(db, () => assignTenantAgentToUserCore(db, params));
+  const result = runInTransaction(db, () => assignTenantAgentToUserCore(db, params));
+  bumpManagedNodeDesiredRevisionForTenant(db, params.tenantId);
+  return result;
 }
 
 export function assignTenantAgentsToUser(db, params) {
@@ -2515,7 +3680,7 @@ export function assignTenantAgentsToUser(db, params) {
     throw new Error("tenant_agent_ids_required");
   }
 
-  return runInTransaction(db, () => {
+  const result = runInTransaction(db, () => {
     const assignmentIds = [];
     const derivedAgentIds = [];
     for (const tenantAgentId of tenantAgentIds) {
@@ -2543,6 +3708,8 @@ export function assignTenantAgentsToUser(db, params) {
       affectedMemberCount: affectedUserIds.length,
     };
   });
+  bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
+  return result;
 }
 
 export function revokePlatformTenantAgents(db, params) {
@@ -2566,7 +3733,7 @@ export function revokePlatformTenantAgents(db, params) {
     throw new Error("tenant_agent_ids_required");
   }
 
-  return runInTransaction(db, () => {
+  const result = runInTransaction(db, () => {
     const placeholders = tenantAgentIds.map(() => "?").join(", ");
     const updatedAt = nowIso();
     const selectedTenantAgents = db
@@ -2690,6 +3857,8 @@ export function revokePlatformTenantAgents(db, params) {
       walletBalance: walletBalanceAfter,
     };
   });
+  bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
+  return result;
 }
 
 export function revokeTenantAgentAssignments(db, params) {
@@ -2714,7 +3883,7 @@ export function revokeTenantAgentAssignments(db, params) {
     throw new Error("user_ids_required");
   }
 
-  return runInTransaction(db, () => {
+  const result = runInTransaction(db, () => {
     if (assignmentIds.length) {
       const placeholders = assignmentIds.map(() => "?").join(", ");
       const selectClauses = ["tenant_id = ?", "status = 'active'", `id IN (${placeholders})`];
@@ -2785,6 +3954,8 @@ export function revokeTenantAgentAssignments(db, params) {
       affectedMemberCount: affectedUserIds.length,
     };
   });
+  bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
+  return result;
 }
 
 export function listAssignedAgentsForUser(db, params, configAgents = []) {

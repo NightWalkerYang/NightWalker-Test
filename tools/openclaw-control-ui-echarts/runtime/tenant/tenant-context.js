@@ -12,6 +12,7 @@ export const PLATFORM_TENANTS_VIEW = "platform-tenants";
 // without breaking the whole zero-intrusive module graph during incremental upgrades.
 export const PLATFORM_TENANT_MANAGEMENT_VIEW = PLATFORM_TENANTS_VIEW;
 export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
+export const PLATFORM_NODE_MANAGEMENT_VIEW = "platform-nodes";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
 export const TENANT_OWNED_AGENTS_VIEW = "tenant-owned-agents";
@@ -28,6 +29,7 @@ export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
 export const TENANT_LOGIN_ROUTE = LOGIN_ROUTE;
 export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_TENANTS_VIEW}`;
 export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
+export const PLATFORM_NODE_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_NODE_MANAGEMENT_VIEW}`;
 export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
 export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
 export const TENANT_OWNED_AGENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_OWNED_AGENTS_VIEW}`;
@@ -86,7 +88,8 @@ export function readSessionForCurrentView() {
   if (
     view === PLATFORM_LOGIN_VIEW ||
     view === PLATFORM_TENANTS_VIEW ||
-    view === PLATFORM_AGENT_ASSIGNMENT_VIEW
+    view === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
+    view === PLATFORM_NODE_MANAGEMENT_VIEW
   ) {
     return readPlatformSession();
   }
@@ -369,6 +372,10 @@ export function createTenantMemberSessionKey(session, selectedAgent) {
 
 export function isLocalEditionSession(session) {
   return session?.session?.edition === "local";
+}
+
+export function isManagedNodeSession(session) {
+  return session?.session?.nodeRole === "managed-node";
 }
 
 export function isReadonlySession(session) {

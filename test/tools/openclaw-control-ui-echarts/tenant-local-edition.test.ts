@@ -10,6 +10,7 @@ import {
   openTenantPlatformDb,
   upsertTenantAgent,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
+import { runManagedNodeSyncOnce } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/managed-node-sync.mjs";
 import { createTenantPlatformRouter } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 
 const cleanupRoots = new Set();
@@ -80,6 +81,7 @@ function createSandbox() {
     privateKey,
     config: {
       edition: "local",
+      nodeRole: "standalone-local",
       bindHost: "127.0.0.1",
       port: 0,
       apiBasePath: "/tenant-platform-api/v1",
@@ -91,6 +93,70 @@ function createSandbox() {
       localLicensePath: path.join(stateDir, "local-license.json"),
       localLicensePublicKey: publicKey.export({ type: "spki", format: "pem" }).toString("utf8"),
       localLicensePublicKeyPath: path.join(stateDir, "license-public.pem"),
+    },
+  };
+}
+
+function createCloudSandbox(
+  options: {
+    nodeRole?: string;
+    controlPlaneUrl?: string;
+    nodeId?: string;
+    nodeName?: string;
+    nodeSecret?: string;
+  } = {},
+) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-tenant-cloud-"));
+  cleanupRoots.add(root);
+  const configDir = path.join(root, ".openclaw");
+  const stateDir = path.join(configDir, "tenant-platform");
+  fs.mkdirSync(configDir, { recursive: true });
+  const configPath = path.join(configDir, "openclaw.json");
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      agents: {
+        list: [
+          {
+            id: "finance",
+            name: "财务分析助手",
+            identity: { emoji: "💼" },
+          },
+        ],
+      },
+    }),
+    "utf8",
+  );
+  return {
+    root,
+    config: {
+      edition: "cloud",
+      nodeRole: String(options.nodeRole || "control-plane"),
+      bindHost: "127.0.0.1",
+      port: 0,
+      apiBasePath: "/tenant-platform-api/v1",
+      configDir,
+      configPath,
+      stateDir,
+      dbPath: path.join(stateDir, "tenant-platform.sqlite"),
+      sessionSecret: `tenant-platform-${String(options.nodeRole || "control-plane")}-test-secret`,
+      localLicensePath: path.join(stateDir, "local-license.json"),
+      localLicensePublicKey: "",
+      localLicensePublicKeyPath: path.join(stateDir, "license-public.pem"),
+      gatewayUrl: "ws://127.0.0.1:18789",
+      gatewayToken: "",
+      gatewayPassword: "",
+      publicBaseUrl: "",
+      controlPlaneUrl: String(options.controlPlaneUrl || ""),
+      nodeId: String(options.nodeId || ""),
+      nodeName: String(options.nodeName || ""),
+      nodeSecret: String(options.nodeSecret || ""),
+      managedNodeSyncIntervalMs: 1000,
+      payments: {
+        allinpay: {
+          enabled: false,
+        },
+      },
     },
   };
 }
@@ -116,6 +182,7 @@ async function startSandboxServer(sandbox) {
     throw new Error("tenant_platform_server_address_invalid");
   }
   return {
+    origin: `http://127.0.0.1:${address.port}`,
     baseUrl: `http://127.0.0.1:${address.port}${sandbox.config.apiBasePath}`,
     db,
     server,
@@ -1619,5 +1686,192 @@ describe("tenant platform local edition", () => {
       .prepare("SELECT COUNT(*) AS total FROM tenant_wallet_ledger WHERE tenant_id = ?")
       .get(tenantId);
     expect(ledgerCount?.total).toBe(0);
+  });
+});
+
+describe("tenant platform managed node sync", () => {
+  it("syncs control-plane tenant state into a managed node and blocks local writes there", async () => {
+    const controlPlane = createCloudSandbox();
+    const { baseUrl: controlPlaneBaseUrl, origin: controlPlaneOrigin } =
+      await startSandboxServer(controlPlane);
+
+    const platformSetup = await requestJson(controlPlaneBaseUrl, "/setup/platform-admin", {
+      method: "POST",
+      body: {
+        username: "platform-root",
+        password: "secret",
+      },
+    });
+    expect(platformSetup.status).toBe(200);
+    const platformToken = platformSetup.payload.data.token;
+
+    const createdTenant = await requestJson(controlPlaneBaseUrl, "/platform/tenants", {
+      method: "POST",
+      token: platformToken,
+      body: {
+        code: "managed-alpha",
+        name: "受管租户 Alpha",
+        adminUsername: "tenant-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+      },
+    });
+    expect(createdTenant.status).toBe(200);
+    const tenantId = createdTenant.payload.data.id;
+
+    const tenantAdminLogin = await requestJson(controlPlaneBaseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "tenant-admin",
+        password: "secret",
+      },
+    });
+    expect(tenantAdminLogin.status).toBe(200);
+    const tenantAdminToken = tenantAdminLogin.payload.data.token;
+
+    const createdMember = await requestJson(controlPlaneBaseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const tenantAgent = await requestJson(controlPlaneBaseUrl, "/platform/tenant-agents", {
+      method: "POST",
+      token: platformToken,
+      body: {
+        tenantId,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1.25,
+        balancePoints: 18,
+      },
+    });
+    expect(tenantAgent.status).toBe(200);
+
+    const assigned = await requestJson(controlPlaneBaseUrl, "/tenant/admin/assign-agent", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        userId: createdMember.payload.data.id,
+        tenantAgentIds: [tenantAgent.payload.data.id],
+      },
+    });
+    expect(assigned.status).toBe(200);
+    expect(assigned.payload.data.assignedAssignmentCount).toBe(1);
+
+    const createdNode = await requestJson(controlPlaneBaseUrl, "/platform/nodes", {
+      method: "POST",
+      token: platformToken,
+      body: {
+        id: "node-shanghai",
+        name: "上海受管节点",
+        sharedSecret: "node-secret",
+        status: "active",
+        leaseStatus: "active",
+        leaseExpiresAt: "2099-06-01T00:00:00.000Z",
+      },
+    });
+    expect(createdNode.status).toBe(200);
+    expect(createdNode.payload.data.id).toBe("node-shanghai");
+
+    const binding = await requestJson(controlPlaneBaseUrl, "/platform/tenant-node-binding", {
+      method: "POST",
+      token: platformToken,
+      body: {
+        tenantId,
+        nodeId: "node-shanghai",
+      },
+    });
+    expect(binding.status).toBe(200);
+    expect(binding.payload.data.boundNodeId).toBe("node-shanghai");
+
+    const managedNode = createCloudSandbox({
+      nodeRole: "managed-node",
+      controlPlaneUrl: controlPlaneOrigin,
+      nodeId: "node-shanghai",
+      nodeName: "上海受管节点",
+      nodeSecret: "node-secret",
+    });
+    const { baseUrl: managedNodeBaseUrl, db: managedNodeDb } = await startSandboxServer(managedNode);
+
+    const syncResult = await runManagedNodeSyncOnce({
+      config: managedNode.config,
+      db: managedNodeDb,
+      registration: true,
+    });
+    expect(syncResult?.tenantCount).toBe(1);
+    expect(syncResult?.assignmentCount).toBe(1);
+
+    const controlPlaneNodes = await requestJson(controlPlaneBaseUrl, "/platform/nodes", {
+      token: platformToken,
+    });
+    expect(controlPlaneNodes.status).toBe(200);
+    expect(controlPlaneNodes.payload.data).toEqual([
+      expect.objectContaining({
+        id: "node-shanghai",
+        name: "上海受管节点",
+        leaseStatus: "active",
+      }),
+    ]);
+    expect(controlPlaneNodes.payload.data[0]?.lastHeartbeatAt).toBeTruthy();
+    expect(Number(controlPlaneNodes.payload.data[0]?.lastAppliedRevision || 0)).toBeGreaterThan(0);
+
+    const managedBootstrap = await requestJson(managedNodeBaseUrl, "/bootstrap");
+    expect(managedBootstrap.status).toBe(200);
+    expect(managedBootstrap.payload.data.nodeRole).toBe("managed-node");
+    expect(managedBootstrap.payload.data.initialized).toBe(true);
+    expect(managedBootstrap.payload.data.nodeLease.status).toBe("active");
+    expect(managedBootstrap.payload.data.managedNode.id).toBe("node-shanghai");
+    expect(Number(managedBootstrap.payload.data.managedNodeSync.lastAppliedRevision || 0)).toBeGreaterThan(
+      0,
+    );
+
+    const managedTenantAdminLogin = await requestJson(managedNodeBaseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "tenant-admin",
+        password: "secret",
+      },
+    });
+    expect(managedTenantAdminLogin.status).toBe(200);
+    expect(managedTenantAdminLogin.payload.data.session.nodeRole).toBe("managed-node");
+
+    const blockedWrite = await requestJson(managedNodeBaseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: managedTenantAdminLogin.payload.data.token,
+      body: {
+        username: "member-blocked",
+        password: "secret",
+      },
+    });
+    expect(blockedWrite.status).toBe(403);
+    expect(blockedWrite.payload.error).toBe("managed_node_controlled");
+
+    const managedMemberLogin = await requestJson(managedNodeBaseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-a",
+        password: "secret",
+      },
+    });
+    expect(managedMemberLogin.status).toBe(200);
+    expect(managedMemberLogin.payload.data.session.nodeRole).toBe("managed-node");
+
+    const memberAgents = await requestJson(managedNodeBaseUrl, "/member/agents", {
+      token: managedMemberLogin.payload.data.token,
+    });
+    expect(memberAgents.status).toBe(200);
+    expect(memberAgents.payload.data).toEqual([
+      expect.objectContaining({
+        baseAgentId: "finance",
+        agentName: "财务分析助手",
+        balancePoints: 18,
+      }),
+    ]);
   });
 });

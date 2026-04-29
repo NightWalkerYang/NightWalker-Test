@@ -184,6 +184,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/managed-node-sync.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
@@ -315,6 +316,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The zero-intrusive Docker deployment path now also syncs a `kingdee-cloud` workspace overlay into the host `workspace-agents` tree, covering both the base `kingdee-cloud` workspace and existing `tenant-*-kingdee-cloud-*` derived workspaces without touching OpenClaw core source files or rebuilding the image.
 - That overlay upgrades the existing forced-command SSH bridge behind `kingdee-analytics-ops`: read queries still use the same `query_analytics_db.py` path, while a new `manage_analytics_db.py` path can send controlled DDL/DML writes and whitelisted `kingdee_analytics.cli` host commands (`init-db`, `sync-object`, `sync-sales-module`) through the host bridge, so AI can now create tables, insert or update rows, and trigger the real sync engine instead of being limited to the previous read-only bridge.
 - Local edition bootstrap now bypasses platform-admin setup entirely: the first local login initializes a single local tenant admin, members continue to use the tenant login entry, and native root access redirects to the tenant flow instead of the platform-admin flow.
+- The tenant sidecar now supports a three-role node topology without touching core OpenClaw source files: `control-plane` remains the source of truth for tenants, members, tenant Agents, and tenant-to-node bindings; `managed-node` now registers outbound, sends heartbeats plus local Agent inventory, pulls desired state, applies it into the local SQLite/workspace view, and blocks local management writes with `managed_node_controlled`; `standalone-local` keeps the signed-license single-machine flow.
 - Unified `/login` now validates cached sessions before auto-redirect and logout clears both platform/tenant local sessions to prevent login-control redirect loops.
 - The Docker setup helpers now auto-sync `gateway.controlUi.root=/app/dist/control-ui` so root and `/login` routes keep serving after redeploys.
 - The custom Control UI build chain now generates stable `/login` aliases (`login/index.html` and `login.html`) without the previous directory/file collision, so zero-intrusive redeploys no longer fail or regress into `Not Found` because of broken login entry artifacts.

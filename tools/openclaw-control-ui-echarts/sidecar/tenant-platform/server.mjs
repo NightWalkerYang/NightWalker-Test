@@ -1,5 +1,6 @@
 import http from "node:http";
 import { resolveTenantPlatformConfig } from "./config.mjs";
+import { createManagedNodeSyncWorker } from "./managed-node-sync.mjs";
 import { openTenantPlatformDb } from "./db.mjs";
 import { createTenantExecApprovalAutoApprover } from "./exec-approval-auto-approve.mjs";
 import { createTenantPlatformRouter } from "./routes.mjs";
@@ -8,10 +9,17 @@ const config = resolveTenantPlatformConfig();
 const db = openTenantPlatformDb(config);
 const handler = createTenantPlatformRouter({ config, db });
 const execApprovalAutoApprover = createTenantExecApprovalAutoApprover({ config });
+const managedNodeSyncWorker = createManagedNodeSyncWorker({ config, db });
 
 void execApprovalAutoApprover.start().catch((error) => {
   process.stderr.write(
     `[tenant-platform exec-auto-approve] startup failed: ${error instanceof Error ? error.message : String(error)}\n`,
+  );
+});
+
+void managedNodeSyncWorker.start().catch((error) => {
+  process.stderr.write(
+    `[tenant-platform managed-node-sync] startup failed: ${error instanceof Error ? error.message : String(error)}\n`,
   );
 });
 

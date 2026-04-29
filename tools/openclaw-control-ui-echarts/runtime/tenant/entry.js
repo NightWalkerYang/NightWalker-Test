@@ -7,6 +7,8 @@ import {
   LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
+  PLATFORM_NODE_MANAGEMENT_ROUTE,
+  PLATFORM_NODE_MANAGEMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
   TENANT_AGENT_ASSIGNMENT_ROUTE,
@@ -35,6 +37,7 @@ import {
   clearTenantSession,
   clearSelectedTenantAgent,
   clearTenantViewFromHref,
+  isManagedNodeSession,
   readSelectedTenantAgent,
   readSessionForCurrentView,
   readTenantView,
@@ -193,6 +196,14 @@ function getSectionConfigForSession(session) {
               icon: ICONS.agentAllocation,
               activeView: PLATFORM_AGENT_ASSIGNMENT_VIEW,
             },
+            {
+              className: "oc-platform-node-link",
+              href: PLATFORM_NODE_MANAGEMENT_ROUTE,
+              title: "节点管理",
+              text: "节点管理",
+              icon: ICONS.tenants,
+              activeView: PLATFORM_NODE_MANAGEMENT_VIEW,
+            },
           ],
         },
       ],
@@ -200,30 +211,35 @@ function getSectionConfigForSession(session) {
   }
   if (role === "tenant_admin") {
     const isLocalEdition = session?.session?.edition === "local";
+    const isManagedNode = isManagedNodeSession(session);
     return {
       sections: [
-        {
-          className: MANAGEMENT_SECTION_CLASS,
-          label: "管理",
-          links: [
-            {
-              className: "oc-tenant-members-link",
-              href: TENANT_MEMBER_MANAGEMENT_ROUTE,
-              title: "成员管理",
-              text: "成员管理",
-              icon: ICONS.members,
-              activeView: TENANT_MEMBERS_VIEW,
-            },
-            {
-              className: "oc-tenant-agent-link",
-              href: TENANT_AGENT_ASSIGNMENT_ROUTE,
-              title: "Agent 分配",
-              text: "Agent 分配",
-              icon: ICONS.agentAllocation,
-              activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
-            },
-          ],
-        },
+        ...(isManagedNode
+          ? []
+          : [
+              {
+                className: MANAGEMENT_SECTION_CLASS,
+                label: "管理",
+                links: [
+                  {
+                    className: "oc-tenant-members-link",
+                    href: TENANT_MEMBER_MANAGEMENT_ROUTE,
+                    title: "成员管理",
+                    text: "成员管理",
+                    icon: ICONS.members,
+                    activeView: TENANT_MEMBERS_VIEW,
+                  },
+                  {
+                    className: "oc-tenant-agent-link",
+                    href: TENANT_AGENT_ASSIGNMENT_ROUTE,
+                    title: "Agent 分配",
+                    text: "Agent 分配",
+                    icon: ICONS.agentAllocation,
+                    activeView: TENANT_AGENT_ASSIGNMENT_VIEW,
+                  },
+                ],
+              },
+            ]),
         {
           className: AGENT_SECTION_CLASS,
           label: "Agent",
@@ -260,7 +276,7 @@ function getSectionConfigForSession(session) {
             },
           ],
         },
-        ...(isLocalEdition
+        ...(isLocalEdition || isManagedNode
           ? []
           : [
               {
@@ -590,6 +606,7 @@ function isManagementViewActive() {
   return (
     activeView === PLATFORM_TENANT_MANAGEMENT_VIEW ||
     activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
+    activeView === PLATFORM_NODE_MANAGEMENT_VIEW ||
     activeView === TENANT_MEMBERS_VIEW ||
     activeView === TENANT_AGENT_ASSIGNMENT_VIEW ||
     activeView === TENANT_OWNED_AGENTS_VIEW ||

@@ -1,6 +1,7 @@
 import { mountPlatformConsolePage } from "./platform-console-page.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
+  PLATFORM_NODE_MANAGEMENT_VIEW,
   PLATFORM_TENANTS_VIEW,
   readPlatformSession,
   readTenantView,
@@ -15,7 +16,11 @@ const STYLE_ATTR = "data-oc-platform-surface-style";
 const ACTIVE_ATTR = "data-oc-platform-surface-active";
 const SECTION_ATTR = "data-oc-platform-section";
 function isPlatformManagementView(view) {
-  return view === PLATFORM_TENANTS_VIEW || view === PLATFORM_AGENT_ASSIGNMENT_VIEW;
+  return (
+    view === PLATFORM_TENANTS_VIEW ||
+    view === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
+    view === PLATFORM_NODE_MANAGEMENT_VIEW
+  );
 }
 
 function isRootControlPath(pathname = window.location.pathname) {
@@ -28,7 +33,13 @@ function isPlatformManagementRoute() {
 }
 
 function sectionForView(view) {
-  return view === PLATFORM_AGENT_ASSIGNMENT_VIEW ? "agent-allocation" : "tenants";
+  if (view === PLATFORM_AGENT_ASSIGNMENT_VIEW) {
+    return "agent-allocation";
+  }
+  if (view === PLATFORM_NODE_MANAGEMENT_VIEW) {
+    return "nodes";
+  }
+  return "tenants";
 }
 
 function ensureStyle() {

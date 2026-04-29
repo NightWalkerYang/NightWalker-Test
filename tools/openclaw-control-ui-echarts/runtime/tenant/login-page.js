@@ -27,6 +27,22 @@ function describeLocalLicense(localLicense) {
   return "当前本地授权无效。租户管理员仍可登录以重新导入授权，成员暂不可登录。";
 }
 
+function describeManagedNodeLease(nodeLease) {
+  if (!nodeLease || typeof nodeLease !== "object") {
+    return "当前受管节点尚未收到平台授权。租户管理员可只读登录，成员暂不可登录。";
+  }
+  if (nodeLease.status === "active") {
+    return `当前受管节点授权有效，到期时间：${nodeLease.expiresAt || "-"}`;
+  }
+  if (nodeLease.status === "expired") {
+    return `当前受管节点授权已到期，到期时间：${nodeLease.expiresAt || "-"}。当前仅允许只读查看历史和统计。`;
+  }
+  if (nodeLease.status === "disabled") {
+    return "当前受管节点已被平台停用。租户管理员可只读登录，成员暂不可登录。";
+  }
+  return "当前受管节点尚未收到平台授权。租户管理员可只读登录，成员暂不可登录。";
+}
+
 function setFeedback(root, text, isError = false) {
   const feedback = root.querySelector("[data-tenant-feedback]");
   if (!(feedback instanceof HTMLElement)) {
@@ -57,7 +73,7 @@ function showSetupMode(root, showSetup) {
   }
 }
 
-async function redirectIfAuthenticated({ root, apiClient, isLocalEdition }) {
+async function redirectIfAuthenticated({ root, apiClient, nodeRole }) {
   const tenantSession = readTenantSession();
   if (tenantSession?.token && tenantSession?.session?.role && tenantSession.session.role !== "platform_admin") {
     try {
@@ -73,7 +89,7 @@ async function redirectIfAuthenticated({ root, apiClient, isLocalEdition }) {
   }
 
   const platformSession = readPlatformSession();
-  if (isLocalEdition) {
+  if (nodeRole !== "control-plane") {
     if (platformSession?.session?.role === "platform_admin") {
       clearPlatformSession();
     }
@@ -104,12 +120,14 @@ export async function mountTenantLoginPage(root) {
   const apiClient = createTenantApiClient();
   let bootstrap;
   let isLocalEdition = false;
+  let nodeRole = "control-plane";
   let needsSetup = false;
   let setupMode = "";
 
   try {
     bootstrap = await apiClient.bootstrap();
     isLocalEdition = bootstrap.edition === "local";
+    nodeRole = String(bootstrap.nodeRole || (isLocalEdition ? "standalone-local" : "control-plane")).trim();
   } catch (error) {
     renderTenantAuthLayout(root, {
       title: "统一登录",
@@ -128,29 +146,36 @@ export async function mountTenantLoginPage(root) {
   }
 
   renderTenantAuthLayout(root, {
-    title: isLocalEdition ? "本地部署登录" : "统一登录",
-    subtitle: isLocalEdition
-      ? "本地部署版只保留租户管理员和租户成员入口。"
-      : "平台管理员、租户管理员和租户成员使用同一入口登录。",
+    title:
+      nodeRole === "managed-node" ? "受管节点登录" : isLocalEdition ? "本地部署登录" : "统一登录",
+    subtitle:
+      nodeRole === "managed-node"
+        ? "当前节点由平台统一授权并下发租户、成员与 Agent 分配。平台管理员不在此登录。"
+        : isLocalEdition
+          ? "本地部署版只保留租户管理员和租户成员入口。"
+          : "平台管理员、租户管理员和租户成员使用同一入口登录。",
     switchHref: "",
     switchLabel: "",
     switchAttr: "",
     loginTitle: "账号密码登录",
-    loginSubtitle: isLocalEdition
-      ? "仅限本地部署版租户管理员和租户成员使用。平台管理员不在本地版启用。"
-      : "平台管理员、租户管理员和租户成员可使用账号密码登录。",
+    loginSubtitle:
+      nodeRole === "managed-node"
+        ? "仅限当前节点已同步下发的租户管理员和租户成员使用。"
+        : isLocalEdition
+          ? "仅限本地部署版租户管理员和租户成员使用。平台管理员不在本地版启用。"
+          : "平台管理员、租户管理员和租户成员可使用账号密码登录。",
     loginSubmitLabel: "登录",
     setup: null,
   });
 
-  if (isLocalEdition) {
+  if (nodeRole !== "control-plane") {
     clearPlatformSession();
   }
-  if (await redirectIfAuthenticated({ root, apiClient, isLocalEdition })) {
+  if (await redirectIfAuthenticated({ root, apiClient, nodeRole })) {
     return null;
   }
 
-  needsSetup = !bootstrap.initialized;
+  needsSetup = nodeRole === "managed-node" ? false : !bootstrap.initialized;
   if (needsSetup) {
     setupMode = isLocalEdition ? "local-tenant-admin" : "platform-admin";
     renderTenantAuthLayout(root, {
@@ -192,12 +217,28 @@ export async function mountTenantLoginPage(root) {
       false,
     );
   } else {
+    if (nodeRole === "managed-node" && !bootstrap.initialized) {
+      root.querySelector("[data-tenant-login-form]")?.setAttribute("hidden", "");
+      setFeedback(
+        root,
+        "当前受管节点尚未同步到租户数据，请先在控制面绑定节点并等待同步完成。",
+        false,
+      );
+      return { root };
+    }
     root.querySelector("[data-tenant-login-form]")?.removeAttribute("hidden");
-    const localMessage = describeLocalLicense(bootstrap.localLicense);
+    const localMessage =
+      nodeRole === "managed-node"
+        ? describeManagedNodeLease(bootstrap.nodeLease)
+        : describeLocalLicense(bootstrap.localLicense);
     setFeedback(
       root,
       localMessage || "请输入账号密码登录。",
-      Boolean(isLocalEdition && bootstrap.localLicense?.status === "invalid"),
+      Boolean(
+        (isLocalEdition && bootstrap.localLicense?.status === "invalid") ||
+          (nodeRole === "managed-node" &&
+            (bootstrap.nodeLease?.status === "disabled" || bootstrap.nodeLease?.status === "missing")),
+      ),
     );
   }
 
@@ -210,9 +251,9 @@ export async function mountTenantLoginPage(root) {
     try {
       const payload = Object.fromEntries(new FormData(form).entries());
       const result = await apiClient.login(payload);
-      if (isLocalEdition && result?.session?.role === "platform_admin") {
+      if (nodeRole !== "control-plane" && result?.session?.role === "platform_admin") {
         clearPlatformSession();
-        setFeedback(root, "本地部署模式不支持平台管理员登录。", true);
+        setFeedback(root, "当前节点不支持平台管理员登录。", true);
         return;
       }
       apiClient.persistSession(result);

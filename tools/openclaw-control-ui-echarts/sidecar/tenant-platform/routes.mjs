@@ -18,6 +18,8 @@ import {
   assignTenantAgentToUser,
   createPlatformUpdateLog,
   createBootstrapPlatformAdmin,
+  bindTenantToManagedNode,
+  buildManagedNodeDesiredState,
   deleteTenantMember,
   deletePlatformUpdateLog,
   createTenantMember,
@@ -25,12 +27,15 @@ import {
   createTenantWithAdmin,
   confirmTenantPaymentOrderPaid,
   getBootstrapStatus,
+  getManagedNodeLeaseState,
+  getManagedNodeSyncCheckpoint,
   getTenantPaymentOrderById,
   getTenantContextForUser,
   getUserByUsername,
   assignTenantAgentsToUser,
   listAssignedAgentsForUser,
   listAssignedAgentVisualizationsForUser,
+  listManagedNodes,
   listPlatformUpdateLogs,
   listTenants,
   listTenantAgents,
@@ -49,6 +54,8 @@ import {
   revokeTenantAgentAssignments,
   syncTenantUsageRecords,
   updatePlatformUpdateLog,
+  upsertManagedNode,
+  registerManagedNodeHeartbeat,
   updateTenantPaymentOrderStatus,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
@@ -191,8 +198,40 @@ async function readFormBody(request) {
   return Object.fromEntries(new URLSearchParams(text).entries());
 }
 
-function buildSessionPayload(user, tenantContext, config, localLicenseState) {
-  const localReadonly = Boolean(config.edition === "local" && localLicenseState?.readonly);
+function readManagedNodeRuntimeLease(deps) {
+  if (deps.config.nodeRole !== "managed-node") {
+    return null;
+  }
+  return getManagedNodeLeaseState(deps.db, deps.config.nodeId);
+}
+
+function buildNodeAccessState(deps, localLicenseState) {
+  if (deps.config.nodeRole === "managed-node") {
+    return {
+      mode: "managed-node",
+      lease: readManagedNodeRuntimeLease(deps),
+      localLicense: null,
+    };
+  }
+  if (deps.config.nodeRole === "standalone-local") {
+    return {
+      mode: "standalone-local",
+      lease: null,
+      localLicense: localLicenseState,
+    };
+  }
+  return {
+    mode: "control-plane",
+    lease: null,
+    localLicense: localLicenseState,
+  };
+}
+
+function buildSessionPayload(user, tenantContext, config, localLicenseState, managedNodeLeaseState = null) {
+  const readonly =
+    config.nodeRole === "managed-node"
+      ? Boolean(managedNodeLeaseState?.readonly)
+      : Boolean(config.edition === "local" && localLicenseState?.readonly);
   return {
     userId: user.id,
     username: user.username,
@@ -200,10 +239,13 @@ function buildSessionPayload(user, tenantContext, config, localLicenseState) {
     tenantId: tenantContext?.tenantId ?? null,
     tenantName: tenantContext?.tenantName ?? null,
     deploymentMode: config.edition === "local" ? "local" : (tenantContext?.deploymentMode ?? null),
-    readonly: localReadonly,
+    readonly,
     edition: config.edition,
+    nodeRole: config.nodeRole,
     licenseStatus: localLicenseState?.status ?? null,
     licenseExpiresAt: localLicenseState?.expiresAt ?? tenantContext?.licenseExpiresAt ?? null,
+    nodeLeaseStatus: managedNodeLeaseState?.status ?? null,
+    nodeLeaseExpiresAt: managedNodeLeaseState?.expiresAt ?? null,
     customerName: localLicenseState?.customerName ?? null,
   };
 }
@@ -244,6 +286,17 @@ function requireEditionRole(request, response, session, deps, cloudRoles, localR
 }
 
 function requireLocalWritable(request, response, deps) {
+  if (deps.config.nodeRole === "managed-node") {
+    sendJson(request, response, 403, {
+      ok: false,
+      error: "managed_node_controlled",
+      data: {
+        nodeRole: deps.config.nodeRole,
+        nodeLease: readManagedNodeRuntimeLease(deps),
+      },
+    });
+    return false;
+  }
   if (deps.config.edition !== "local") {
     return true;
   }
@@ -259,6 +312,53 @@ function requireLocalWritable(request, response, deps) {
     },
   });
   return false;
+}
+
+function requireControlPlaneNodeRoutes(request, response, deps) {
+  if (deps.config.nodeRole === "control-plane") {
+    return true;
+  }
+  sendJson(request, response, 404, { ok: false, error: "not_found" });
+  return false;
+}
+
+function readManagedNodeRequestAuth(request, body = null) {
+  const bodyNodeId = body && typeof body === "object" ? body.nodeId : "";
+  const bodyNodeSecret = body && typeof body === "object" ? body.nodeSecret : "";
+  return {
+    nodeId:
+      String(request.headers["x-openclaw-managed-node-id"] || bodyNodeId || "")
+        .trim()
+        .toLowerCase(),
+    nodeSecret: String(request.headers["x-openclaw-managed-node-secret"] || bodyNodeSecret || "").trim(),
+  };
+}
+
+function requireManagedNodeAuth(request, response, deps, body = null) {
+  const auth = readManagedNodeRequestAuth(request, body);
+  if (!auth.nodeId || !auth.nodeSecret) {
+    sendJson(request, response, 401, { ok: false, error: "managed_node_auth_required" });
+    return null;
+  }
+  const node = deps.db
+    .prepare(
+      `SELECT id,
+              name,
+              status,
+              shared_secret_hash AS sharedSecretHash
+       FROM managed_nodes
+       WHERE id = ?`,
+    )
+    .get(auth.nodeId);
+  if (!node || !verifyPassword(auth.nodeSecret, String(node.sharedSecretHash || ""))) {
+    sendJson(request, response, 401, { ok: false, error: "managed_node_auth_invalid" });
+    return null;
+  }
+  return {
+    id: String(node.id || "").trim(),
+    name: String(node.name || "").trim(),
+    status: String(node.status || "").trim() || "active",
+  };
 }
 
 function buildTenantPaymentLaunchToken(order, session, deps) {
@@ -1263,6 +1363,7 @@ export function createTenantPlatformRouter(deps) {
     const relativePath = normalizePath(deps.config.apiBasePath, url.pathname);
     const configAgents = readOpenClawAgentCatalog(deps.config.configPath);
     const localLicense = readLocalLicenseState(deps.config);
+    const nodeAccessState = buildNodeAccessState(deps, localLicense);
 
     if (request.method === "OPTIONS") {
       sendJson(request, response, 204, {});
@@ -1280,13 +1381,25 @@ export function createTenantPlatformRouter(deps) {
     }
 
     if (request.method === "GET" && relativePath === "/bootstrap") {
+      const bootstrapStatus = getBootstrapStatus(
+        deps.db,
+        deps.config.edition,
+        deps.config.nodeRole,
+      );
       sendJson(request, response, 200, {
         ok: true,
         data: {
-          ...getBootstrapStatus(deps.db, deps.config.edition),
+          ...bootstrapStatus,
           apiBasePath: deps.config.apiBasePath,
           edition: deps.config.edition,
+          nodeRole: deps.config.nodeRole,
           localLicense,
+          nodeLease: nodeAccessState.lease,
+          managedNode: deps.config.nodeRole === "managed-node" ? { id: deps.config.nodeId } : null,
+          managedNodeSync:
+            deps.config.nodeRole === "managed-node"
+              ? getManagedNodeSyncCheckpoint(deps.db, deps.config.nodeId)
+              : null,
           configAgents,
         },
       });
@@ -1312,6 +1425,10 @@ export function createTenantPlatformRouter(deps) {
     }
 
     if (request.method === "POST" && relativePath === "/setup/platform-admin") {
+      if (deps.config.nodeRole !== "control-plane") {
+        sendJson(request, response, 400, { ok: false, error: "platform_admin_setup_not_supported" });
+        return;
+      }
       if (deps.config.edition === "local") {
         sendJson(request, response, 400, { ok: false, error: "local_edition_uses_tenant_admin" });
         return;
@@ -1322,7 +1439,7 @@ export function createTenantPlatformRouter(deps) {
           username: String(body.username || "").trim(),
           password: String(body.password || ""),
         });
-        const session = buildSessionPayload(user, null, deps.config, localLicense);
+        const session = buildSessionPayload(user, null, deps.config, localLicense, nodeAccessState.lease);
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -1340,6 +1457,10 @@ export function createTenantPlatformRouter(deps) {
     }
 
     if (request.method === "POST" && relativePath === "/setup/local-tenant-admin") {
+      if (deps.config.nodeRole !== "standalone-local") {
+        sendJson(request, response, 400, { ok: false, error: "standalone_local_required" });
+        return;
+      }
       if (deps.config.edition !== "local") {
         sendJson(request, response, 400, { ok: false, error: "local_edition_required" });
         return;
@@ -1352,7 +1473,13 @@ export function createTenantPlatformRouter(deps) {
           tenantName: localLicense.customerName || "本地租户",
         });
         const tenantContext = getTenantContextForUser(deps.db, user.id);
-        const session = buildSessionPayload(user, tenantContext, deps.config, localLicense);
+        const session = buildSessionPayload(
+          user,
+          tenantContext,
+          deps.config,
+          localLicense,
+          nodeAccessState.lease,
+        );
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -1381,9 +1508,16 @@ export function createTenantPlatformRouter(deps) {
           sendJson(request, response, 403, { ok: false, error: "account_disabled" });
           return;
         }
+        if (deps.config.nodeRole !== "control-plane" && user.role === "platform_admin") {
+          sendJson(request, response, 403, {
+            ok: false,
+            error: "platform_admin_login_not_supported",
+          });
+          return;
+        }
         const tenantContext = user.tenantId ? getTenantContextForUser(deps.db, user.id) : null;
         if (
-          deps.config.edition === "local" &&
+          deps.config.nodeRole === "standalone-local" &&
           user.role === "member" &&
           (localLicense.status === "missing" || localLicense.status === "invalid")
         ) {
@@ -1394,11 +1528,33 @@ export function createTenantPlatformRouter(deps) {
           });
           return;
         }
+        if (
+          deps.config.nodeRole === "managed-node" &&
+          user.role === "member" &&
+          (!nodeAccessState.lease ||
+            nodeAccessState.lease.status === "missing" ||
+            nodeAccessState.lease.status === "disabled")
+        ) {
+          sendJson(request, response, 403, {
+            ok: false,
+            error: "node_lease_unavailable",
+            data: {
+              nodeLease: nodeAccessState.lease,
+            },
+          });
+          return;
+        }
         if (tenantContext?.tenantStatus === "frozen") {
           sendJson(request, response, 403, { ok: false, error: "tenant_frozen" });
           return;
         }
-        const session = buildSessionPayload(user, tenantContext, deps.config, localLicense);
+        const session = buildSessionPayload(
+          user,
+          tenantContext,
+          deps.config,
+          localLicense,
+          nodeAccessState.lease,
+        );
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -1461,13 +1617,22 @@ export function createTenantPlatformRouter(deps) {
         return;
       }
       const tenant = session.tenantId ? getTenantContextForUser(deps.db, session.userId) : null;
+      const effectiveSession = buildSessionPayload(
+        user,
+        tenant,
+        deps.config,
+        localLicense,
+        nodeAccessState.lease,
+      );
       sendJson(request, response, 200, {
         ok: true,
         data: {
-          session,
+          session: effectiveSession,
           tenant,
           edition: deps.config.edition,
+          nodeRole: deps.config.nodeRole,
           localLicense,
+          nodeLease: nodeAccessState.lease,
         },
       });
       return;
@@ -1637,6 +1802,190 @@ export function createTenantPlatformRouter(deps) {
         const body = await readJsonBody(request);
         const nextLicense = applyLocalRenewalCode(deps.config, body.renewalCode);
         sendJson(request, response, 200, { ok: true, data: nextLicense });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/platform/nodes") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listManagedNodes(deps.db),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/nodes") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireControlPlaneNodeRoutes(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const node = upsertManagedNode(deps.db, {
+          id: body.id || body.nodeId,
+          nodeId: body.id || body.nodeId,
+          name: body.name,
+          sharedSecret: body.sharedSecret,
+          status: body.status,
+          leaseStatus: body.leaseStatus,
+          leaseExpiresAt: body.leaseExpiresAt,
+          readonlyAfterExpiry: body.readonlyAfterExpiry,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.managed_node.upsert",
+          resourceType: "managed_node",
+          resourceId: node?.id || null,
+          payloadJson: {
+            nodeId: node?.id || null,
+            status: node?.status || null,
+            leaseStatus: node?.leaseStatus || null,
+            leaseExpiresAt: node?.leaseExpiresAt || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: node });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/tenant-node-binding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireControlPlaneNodeRoutes(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenant = bindTenantToManagedNode(deps.db, {
+          tenantId: body.tenantId,
+          nodeId: body.nodeId,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: tenant?.id || String(body.tenantId || "").trim() || null,
+          action: "platform.tenant.bind_node",
+          resourceType: "tenant",
+          resourceId: tenant?.id || String(body.tenantId || "").trim() || null,
+          payloadJson: {
+            nodeId: String(body.nodeId || "").trim() || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: tenant });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/node/register") {
+      if (!requireControlPlaneNodeRoutes(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const node = requireManagedNodeAuth(request, response, deps, body);
+        if (!node) {
+          return;
+        }
+        const summary = registerManagedNodeHeartbeat(deps.db, {
+          nodeId: node.id,
+          nodeName: body.nodeName || node.name,
+          registration: true,
+          agentCatalog: body.agentCatalog,
+          lastAppliedRevision: body.lastAppliedRevision,
+          lastError: body.lastError,
+          lastSeenIp: request.socket.remoteAddress,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            node: summary,
+            lease: getManagedNodeLeaseState(deps.db, node.id),
+            sync: getManagedNodeSyncCheckpoint(deps.db, node.id),
+          },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/node/heartbeat") {
+      if (!requireControlPlaneNodeRoutes(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const node = requireManagedNodeAuth(request, response, deps, body);
+        if (!node) {
+          return;
+        }
+        const summary = registerManagedNodeHeartbeat(deps.db, {
+          nodeId: node.id,
+          nodeName: body.nodeName || node.name,
+          agentCatalog: body.agentCatalog,
+          lastAppliedRevision: body.lastAppliedRevision,
+          lastError: body.lastError,
+          lastSeenIp: request.socket.remoteAddress,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            node: summary,
+            lease: getManagedNodeLeaseState(deps.db, node.id),
+            sync: getManagedNodeSyncCheckpoint(deps.db, node.id),
+          },
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/node/sync") {
+      if (!requireControlPlaneNodeRoutes(request, response, deps)) {
+        return;
+      }
+      const node = requireManagedNodeAuth(request, response, deps);
+      if (!node) {
+        return;
+      }
+      try {
+        const desiredState = buildManagedNodeDesiredState(deps.db, {
+          nodeId: node.id,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: desiredState,
+        });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,

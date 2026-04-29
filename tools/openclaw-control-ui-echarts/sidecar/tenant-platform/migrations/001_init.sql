@@ -190,6 +190,61 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS managed_nodes (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  shared_secret_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  node_role TEXT NOT NULL DEFAULT 'managed-node',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS managed_node_leases (
+  node_id TEXT PRIMARY KEY,
+  lease_status TEXT NOT NULL DEFAULT 'active',
+  expires_at TEXT,
+  readonly_after_expiry INTEGER NOT NULL DEFAULT 1,
+  issued_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (node_id) REFERENCES managed_nodes(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS managed_node_agent_inventory (
+  id TEXT PRIMARY KEY,
+  node_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  agent_name TEXT NOT NULL,
+  agent_emoji TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  updated_at TEXT NOT NULL,
+  UNIQUE(node_id, agent_id),
+  FOREIGN KEY (node_id) REFERENCES managed_nodes(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS tenant_node_bindings (
+  tenant_id TEXT PRIMARY KEY,
+  node_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (node_id) REFERENCES managed_nodes(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS managed_node_sync_state (
+  node_id TEXT PRIMARY KEY,
+  desired_revision INTEGER NOT NULL DEFAULT 1,
+  last_applied_revision INTEGER NOT NULL DEFAULT 0,
+  last_registered_at TEXT,
+  last_heartbeat_at TEXT,
+  last_inventory_at TEXT,
+  last_sync_at TEXT,
+  last_seen_ip TEXT,
+  last_error TEXT,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (node_id) REFERENCES managed_nodes(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_tenant_memberships_tenant_role
   ON tenant_memberships (tenant_id, role);
 
@@ -216,3 +271,9 @@ CREATE INDEX IF NOT EXISTS idx_payment_orders_tenant_status
 
 CREATE INDEX IF NOT EXISTS idx_platform_update_logs_published
   ON platform_update_logs (published_at DESC, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_managed_node_agent_inventory_node_status
+  ON managed_node_agent_inventory (node_id, status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_node_bindings_node
+  ON tenant_node_bindings (node_id, updated_at DESC);

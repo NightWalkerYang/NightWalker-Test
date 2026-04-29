@@ -143,6 +143,7 @@ export function resolveRuntimeEnv(rootDir, processEnv = process.env) {
       merged.OPENCLAW_GATEWAY_TOKEN || DEFAULT_GATEWAY_TOKEN,
     ).trim(),
     OPENCLAW_TENANT_PLATFORM_EDITION: "local",
+    OPENCLAW_TENANT_PLATFORM_NODE_ROLE: "standalone-local",
     OPENCLAW_TENANT_PLATFORM_BIND: String(
       merged.OPENCLAW_TENANT_PLATFORM_BIND || "0.0.0.0",
     ).trim(),

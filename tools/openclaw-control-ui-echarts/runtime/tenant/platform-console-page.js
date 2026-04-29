@@ -3,6 +3,7 @@ import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_LOGIN_ROUTE,
+  PLATFORM_NODE_MANAGEMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
   requireTenantSession,
 } from "./tenant-context.js";
@@ -19,9 +20,13 @@ function escapeHtml(value) {
 }
 
 function currentSectionHref(section) {
-  return section === "agent-allocation"
-    ? `./?ocTenantView=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`
-    : `./?ocTenantView=${PLATFORM_TENANT_MANAGEMENT_VIEW}`;
+  if (section === "agent-allocation") {
+    return `./?ocTenantView=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
+  }
+  if (section === "nodes") {
+    return `./?ocTenantView=${PLATFORM_NODE_MANAGEMENT_VIEW}`;
+  }
+  return `./?ocTenantView=${PLATFORM_TENANT_MANAGEMENT_VIEW}`;
 }
 
 function isLocalEdition(controller) {
@@ -50,6 +55,27 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(timestamp));
+}
+
+function formatDateTimeInputValue(value) {
+  if (!value) {
+    return "";
+  }
+  const timestamp = Date.parse(String(value));
+  if (Number.isNaN(timestamp)) {
+    return String(value);
+  }
+  const date = new Date(timestamp);
+  const parts = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ];
+  const time = [
+    String(date.getHours()).padStart(2, "0"),
+    String(date.getMinutes()).padStart(2, "0"),
+  ];
+  return `${parts[0]}-${parts[1]}-${parts[2]}T${time[0]}:${time[1]}`;
 }
 
 function deploymentModeLabel(mode) {
@@ -152,6 +178,28 @@ function getRevokeTenantAgentDialog(controller) {
     controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
   }
   return controller.revokeTenantAgentDialog;
+}
+
+function createNodeDialogState() {
+  return {
+    id: "",
+    name: "",
+    sharedSecret: "",
+    status: "active",
+    leaseStatus: "active",
+    leaseExpiresAt: "",
+    error: "",
+    editing: false,
+  };
+}
+
+function createBindNodeDialogState() {
+  return {
+    tenantId: "",
+    tenantName: "",
+    nodeId: "",
+    error: "",
+  };
 }
 
 function isTenantRevokeSelectionTarget(tenant) {
@@ -307,12 +355,15 @@ function ensureController(root, session, apiClient) {
     searchBySection: {
       tenants: "",
       "agent-allocation": "",
+      nodes: "",
     },
     pageBySection: {
       tenants: 1,
       "agent-allocation": 1,
+      nodes: 1,
     },
     tenants: [],
+    nodes: [],
     catalogAgents: [],
     rateDialogAgents: [],
     dialogs: {
@@ -321,9 +372,14 @@ function ensureController(root, session, apiClient) {
       assignOpen: false,
       rateOpen: false,
       localLicenseOpen: false,
+      nodeOpen: false,
+      bindNodeOpen: false,
     },
     activeTenant: null,
+    activeNode: null,
     assignTenantAgentDialog: createAssignTenantAgentDialogState(),
+    nodeDialog: createNodeDialogState(),
+    bindNodeDialog: createBindNodeDialogState(),
     loadingRateAgents: false,
     localLicense: null,
     revokeTenantAgentDialog: createRevokeTenantAgentDialogState(),
@@ -360,6 +416,14 @@ function ensureController(root, session, apiClient) {
     if (event.target.matches("[data-platform-local-license-dialog]")) {
       controller.dialogs.localLicenseOpen = false;
     }
+    if (event.target.matches("[data-platform-node-dialog]")) {
+      controller.dialogs.nodeOpen = false;
+      controller.nodeDialog = createNodeDialogState();
+    }
+    if (event.target.matches("[data-platform-bind-node-dialog]")) {
+      controller.dialogs.bindNodeOpen = false;
+      controller.bindNodeDialog = createBindNodeDialogState();
+    }
     if (event.target.matches("[data-platform-revoke-tenant-agent-dialog]")) {
       controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
     }
@@ -391,7 +455,26 @@ function filterTenants(controller) {
     return controller.tenants;
   }
   return controller.tenants.filter((tenant) =>
-    [tenant.name, tenant.code, deploymentModeLabel(tenant.deploymentMode), tenant.status]
+    [
+      tenant.name,
+      tenant.code,
+      deploymentModeLabel(tenant.deploymentMode),
+      tenant.status,
+      tenant.boundNodeName,
+      tenant.boundNodeId,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query)),
+  );
+}
+
+function filterNodes(controller) {
+  const query = getSearchValue(controller).trim().toLowerCase();
+  if (!query) {
+    return controller.nodes;
+  }
+  return controller.nodes.filter((node) =>
+    [node.id, node.name, node.status, node.leaseStatus]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query)),
   );
@@ -411,13 +494,16 @@ function paginate(items, page) {
 
 function renderToolbar(controller) {
   const isTenantSection = controller.section === "tenants";
+  const isNodeSection = controller.section === "nodes";
   const localEdition = isLocalEdition(controller);
   return `
     <div class="data-table-toolbar oc-platform-table-toolbar">
       <label class="data-table-search">
         <input
           type="search"
-          placeholder="${isTenantSection ? "搜索租户名称或编码" : "搜索租户名称或编码"}"
+          placeholder="${
+            isNodeSection ? "搜索节点名称或标识" : isTenantSection ? "搜索租户名称或编码" : "搜索租户名称或编码"
+          }"
           value="${escapeHtml(getSearchValue(controller))}"
           data-platform-search
         />
@@ -425,6 +511,11 @@ function renderToolbar(controller) {
       ${
         isTenantSection
           ? `<button class="btn primary" type="button" data-platform-open-create>创建租户</button>`
+          : ""
+      }
+      ${
+        isNodeSection
+          ? `<button class="btn primary" type="button" data-platform-open-node>创建节点</button>`
           : ""
       }
       ${
@@ -448,7 +539,7 @@ function renderTenantManagementTable(controller, rows) {
             <th>状态</th>
             <th>成员数</th>
             <th>人数上限</th>
-            ${localEdition ? "" : "<th>部署模式</th><th>钱包积分</th><th>到期日期</th>"}
+            ${localEdition ? "" : "<th>部署模式</th><th>受管节点</th><th>钱包积分</th><th>到期日期</th>"}
             <th>操作</th>
           </tr>
         </thead>
@@ -469,6 +560,7 @@ function renderTenantManagementTable(controller, rows) {
                             ? ""
                             : `
                               <td>${escapeHtml(deploymentModeLabel(tenant.deploymentMode))}</td>
+                              <td>${escapeHtml(String(tenant.boundNodeName || tenant.boundNodeId || "未绑定").trim() || "未绑定")}</td>
                               <td>${formatNumber(tenant.walletBalance)}</td>
                               <td>${escapeHtml(formatDateTime(tenant.licenseExpiresAt))}</td>
                             `
@@ -476,13 +568,69 @@ function renderTenantManagementTable(controller, rows) {
                         <td>
                           <div class="oc-platform-table-actions">
                             <button class="btn" type="button" data-platform-open-member-limit="${escapeHtml(tenant.id)}">人数调整</button>
+                            ${
+                              localEdition
+                                ? ""
+                                : `<button class="btn" type="button" data-platform-open-bind-node="${escapeHtml(tenant.id)}">节点绑定</button>`
+                            }
                           </div>
                         </td>
                       </tr>
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="${localEdition ? 6 : 9}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
+              : `<tr><td colspan="${localEdition ? 6 : 10}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderNodeManagementTable(rows) {
+  return `
+    <div class="data-table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>节点标识</th>
+            <th>节点名称</th>
+            <th>状态</th>
+            <th>授权状态</th>
+            <th>授权到期</th>
+            <th>已绑定租户</th>
+            <th>本机 Agent</th>
+            <th>最后心跳</th>
+            <th>同步版本</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rows.length
+              ? rows
+                  .map(
+                    (node) => `
+                      <tr>
+                        <td>${escapeHtml(node.id)}</td>
+                        <td>${escapeHtml(node.name)}</td>
+                        <td><span class="data-table-badge data-table-badge--${node.status === "active" ? "direct" : "unknown"}">${escapeHtml(node.status)}</span></td>
+                        <td>${escapeHtml(node.leaseStatus || "-")}</td>
+                        <td>${escapeHtml(formatDateTime(node.leaseExpiresAt))}</td>
+                        <td>${formatNumber(node.boundTenantCount)}</td>
+                        <td>${formatNumber(node.agentCount)}</td>
+                        <td>${escapeHtml(formatDateTime(node.lastHeartbeatAt))}</td>
+                        <td>${escapeHtml(`${formatNumber(node.lastAppliedRevision)} / ${formatNumber(node.desiredRevision)}`)}</td>
+                        <td>
+                          <div class="oc-platform-table-actions">
+                            <button class="btn" type="button" data-platform-open-edit-node="${escapeHtml(node.id)}">编辑</button>
+                          </div>
+                        </td>
+                      </tr>
+                    `,
+                  )
+                  .join("")
+              : `<tr><td colspan="10" class="oc-platform-table-empty">暂无节点数据</td></tr>`
           }
         </tbody>
       </table>
@@ -1047,6 +1195,107 @@ function renderLocalLicenseDialog(controller) {
   `;
 }
 
+function renderNodeDialog(controller) {
+  if (!controller.dialogs.nodeOpen) {
+    return "";
+  }
+  const dialog = controller.nodeDialog || createNodeDialogState();
+  return `
+    <dialog class="oc-platform-modal oc-platform-modal--wide" data-platform-node-dialog>
+      <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
+        <header class="oc-platform-modal__header">
+          <h3 class="oc-platform-modal__title">${dialog.editing ? "编辑节点" : "创建节点"}</h3>
+          <button class="btn" type="button" data-platform-close-dialog="node">关闭</button>
+        </header>
+        <div class="oc-platform-modal__body">
+          <form class="oc-platform-modal__form" data-platform-node-form>
+            <label class="field">
+              <span>节点标识</span>
+              <input name="id" type="text" value="${escapeHtml(dialog.id)}" ${dialog.editing ? "disabled" : ""} required />
+            </label>
+            <label class="field">
+              <span>节点名称</span>
+              <input name="name" type="text" value="${escapeHtml(dialog.name)}" required />
+            </label>
+            <label class="field">
+              <span>共享密钥${dialog.editing ? "（留空则保持不变）" : ""}</span>
+              <input name="sharedSecret" type="text" value="" ${dialog.editing ? "" : "required"} />
+            </label>
+            <label class="field">
+              <span>节点状态</span>
+              <select name="status">
+                <option value="active" ${dialog.status === "active" ? "selected" : ""}>active</option>
+                <option value="disabled" ${dialog.status === "disabled" ? "selected" : ""}>disabled</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>授权状态</span>
+              <select name="leaseStatus">
+                <option value="active" ${dialog.leaseStatus === "active" ? "selected" : ""}>active</option>
+                <option value="disabled" ${dialog.leaseStatus === "disabled" ? "selected" : ""}>disabled</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>授权到期时间（可选）</span>
+              <input name="leaseExpiresAt" type="datetime-local" value="${escapeHtml(dialog.leaseExpiresAt)}" />
+            </label>
+            <div class="oc-platform-modal__actions">
+              <button class="btn" type="button" data-platform-close-dialog="node">取消</button>
+              <button class="btn primary" type="submit">${dialog.editing ? "保存节点" : "创建节点"}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderBindNodeDialog(controller) {
+  if (!controller.dialogs.bindNodeOpen) {
+    return "";
+  }
+  const dialog = controller.bindNodeDialog || createBindNodeDialogState();
+  const nodeOptions = Array.isArray(controller.nodes) ? controller.nodes : [];
+  return `
+    <dialog class="oc-platform-modal" data-platform-bind-node-dialog>
+      <div class="oc-platform-modal__panel">
+        <header class="oc-platform-modal__header">
+          <h3 class="oc-platform-modal__title">节点绑定</h3>
+          <button class="btn" type="button" data-platform-close-dialog="bind-node">关闭</button>
+        </header>
+        <div class="oc-platform-modal__body">
+          <form class="oc-platform-modal__form" data-platform-bind-node-form>
+            <input type="hidden" name="tenantId" value="${escapeHtml(dialog.tenantId)}" />
+            <label class="field">
+              <span>目标租户</span>
+              <input type="text" value="${escapeHtml(dialog.tenantName || dialog.tenantId)}" disabled />
+            </label>
+            <label class="field">
+              <span>受管节点</span>
+              <select name="nodeId">
+                <option value="">未绑定</option>
+                ${nodeOptions
+                  .map(
+                    (node) => `
+                      <option value="${escapeHtml(node.id)}" ${dialog.nodeId === node.id ? "selected" : ""}>
+                        ${escapeHtml(node.name)} (${escapeHtml(node.id)})
+                      </option>
+                    `,
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <div class="oc-platform-modal__actions">
+              <button class="btn" type="button" data-platform-close-dialog="bind-node">取消</button>
+              <button class="btn primary" type="submit">保存绑定</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
 function captureRenderFocusState(root) {
   const active = document.activeElement;
   if (!(active instanceof HTMLInputElement) || !root.contains(active)) {
@@ -1132,13 +1381,19 @@ function syncRevokeTenantAgentSelectionState(root, controller) {
 
 function render(root, controller) {
   const focusState = captureRenderFocusState(root);
+  const isNodeSection = controller.section === "nodes";
   if (controller.section === "agent-allocation") {
     pruneAssignTenantAgentSelection(controller);
     pruneRevokeTenantAgentSelection(controller);
   }
-  const filtered = filterTenants(controller);
+  const filtered = isNodeSection ? filterNodes(controller) : filterTenants(controller);
   const pagination = paginate(filtered, getPageValue(controller));
   setPageValue(controller, pagination.page);
+  const contentMarkup = isNodeSection
+    ? renderNodeManagementTable(pagination.items)
+    : controller.section === "agent-allocation"
+      ? renderAgentAssignmentTable(controller, pagination.items)
+      : renderTenantManagementTable(controller, pagination.items);
 
   root.setAttribute(BODY_SECTION_ATTR, controller.section);
   root.dataset.ocPlatformEmbedded = "true";
@@ -1146,11 +1401,7 @@ function render(root, controller) {
     <section class="oc-platform-list-view">
       ${renderToolbar(controller)}
       <div class="data-table-wrapper">
-        ${
-          controller.section === "agent-allocation"
-            ? renderAgentAssignmentTable(controller, pagination.items)
-            : renderTenantManagementTable(controller, pagination.items)
-        }
+        ${contentMarkup}
         ${renderPagination(controller, pagination)}
       </div>
     </section>
@@ -1161,6 +1412,8 @@ function render(root, controller) {
     ${renderRevokeTenantAgentDialog(controller)}
     ${renderRevokeTenantAgentConfirmDialog(controller)}
     ${renderLocalLicenseDialog(controller)}
+    ${renderNodeDialog(controller)}
+    ${renderBindNodeDialog(controller)}
   `;
 
   if (controller.dialogs.createTenantOpen) {
@@ -1184,6 +1437,12 @@ function render(root, controller) {
   if (controller.dialogs.localLicenseOpen) {
     openDialog(root.querySelector("[data-platform-local-license-dialog]"));
   }
+  if (controller.dialogs.nodeOpen) {
+    openDialog(root.querySelector("[data-platform-node-dialog]"));
+  }
+  if (controller.dialogs.bindNodeOpen) {
+    openDialog(root.querySelector("[data-platform-bind-node-dialog]"));
+  }
   if (controller.section === "agent-allocation") {
     syncAssignTenantAgentSelectionState(root, controller);
     syncRevokeTenantAgentSelectionState(root, controller);
@@ -1192,21 +1451,28 @@ function render(root, controller) {
 }
 
 async function refresh(root, controller) {
-  const tasks = [
+  const includeNodes = !isLocalEdition(controller);
+  const [tenants, catalogAgents, nodes, localLicense] = await Promise.all([
     controller.apiClient.listPlatformTenants(),
     controller.apiClient.listPlatformCatalogAgents(),
-  ];
-  if (isLocalEdition(controller)) {
-    tasks.push(controller.apiClient.getLocalLicense());
-  }
-  const [tenants, catalogAgents, localLicense = null] = await Promise.all(tasks);
+    includeNodes ? controller.apiClient.listPlatformNodes() : Promise.resolve([]),
+    isLocalEdition(controller) ? controller.apiClient.getLocalLicense() : Promise.resolve(null),
+  ]);
   controller.tenants = tenants;
   controller.catalogAgents = catalogAgents;
+  controller.nodes = Array.isArray(nodes) ? nodes : [];
   controller.localLicense = localLicense;
   if (controller.assignTenantAgentDialog?.open) {
     controller.assignTenantAgentDialog.agents = Array.isArray(catalogAgents)
       ? catalogAgents.slice()
       : [];
+  }
+  if (controller.bindNodeDialog?.tenantId) {
+    const nextTenant = tenantById(controller, controller.bindNodeDialog.tenantId);
+    if (nextTenant) {
+      controller.bindNodeDialog.tenantName = nextTenant.name;
+      controller.bindNodeDialog.nodeId = String(nextTenant.boundNodeId || "").trim();
+    }
   }
   if (
     controller.activeTenant &&
@@ -1214,11 +1480,18 @@ async function refresh(root, controller) {
   ) {
     controller.activeTenant = null;
   }
+  if (controller.activeNode && !controller.nodes.some((node) => node.id === controller.activeNode.id)) {
+    controller.activeNode = null;
+  }
   render(root, controller);
 }
 
 function tenantById(controller, tenantId) {
   return controller.tenants.find((tenant) => tenant.id === tenantId) ?? null;
+}
+
+function nodeById(controller, nodeId) {
+  return controller.nodes.find((node) => node.id === nodeId) ?? null;
 }
 
 async function openAssignTenantAgentDialog(root, controller, tenantId) {
@@ -1466,6 +1739,65 @@ async function revokeSelectedTenantAgents(root, controller) {
   }
 }
 
+function openCreateNodeDialog(root, controller) {
+  controller.activeNode = null;
+  controller.dialogs.nodeOpen = true;
+  controller.nodeDialog = createNodeDialogState();
+  render(root, controller);
+}
+
+function openEditNodeDialog(root, controller, nodeId) {
+  const node = nodeById(controller, nodeId);
+  if (!node) {
+    setFeedback(root, "未找到节点信息。", true);
+    return;
+  }
+  controller.activeNode = node;
+  controller.dialogs.nodeOpen = true;
+  controller.nodeDialog = {
+    id: node.id,
+    name: node.name,
+    sharedSecret: "",
+    status: node.status || "active",
+    leaseStatus: node.leaseStatus || "active",
+    leaseExpiresAt: formatDateTimeInputValue(node.leaseExpiresAt),
+    error: "",
+    editing: true,
+  };
+  render(root, controller);
+}
+
+function openBindNodeDialog(root, controller, tenantId) {
+  const tenant = tenantById(controller, tenantId);
+  if (!tenant) {
+    setFeedback(root, "未找到租户信息。", true);
+    return;
+  }
+  controller.activeTenant = tenant;
+  controller.dialogs.bindNodeOpen = true;
+  controller.bindNodeDialog = {
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+    nodeId: String(tenant.boundNodeId || "").trim(),
+    error: "",
+  };
+  render(root, controller);
+}
+
+function updateSectionLinkState(section) {
+  const sectionByHref = new Map([
+    [currentSectionHref("tenants"), "tenants"],
+    [currentSectionHref("agent-allocation"), "agent-allocation"],
+    [currentSectionHref("nodes"), "nodes"],
+  ]);
+  for (const [href, targetSection] of sectionByHref.entries()) {
+    const links = document.querySelectorAll(`a[href="${href}"]`);
+    for (const link of links) {
+      link.classList.toggle("active", targetSection === section);
+    }
+  }
+}
+
 async function handleClick(root, controller, event) {
   const target = event.target;
   if (!(target instanceof Element)) {
@@ -1522,7 +1854,35 @@ async function handleClick(root, controller, event) {
       controller.dialogs.localLicenseOpen = false;
       closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
     }
+    if (dialogKind === "node") {
+      controller.dialogs.nodeOpen = false;
+      controller.activeNode = null;
+      controller.nodeDialog = createNodeDialogState();
+      closeDialog(root.querySelector("[data-platform-node-dialog]"));
+    }
+    if (dialogKind === "bind-node") {
+      controller.dialogs.bindNodeOpen = false;
+      controller.bindNodeDialog = createBindNodeDialogState();
+      closeDialog(root.querySelector("[data-platform-bind-node-dialog]"));
+    }
     render(root, controller);
+    return;
+  }
+
+  if (target.closest("[data-platform-open-node]")) {
+    openCreateNodeDialog(root, controller);
+    return;
+  }
+
+  const editNodeTrigger = target.closest("[data-platform-open-edit-node]");
+  if (editNodeTrigger instanceof HTMLElement) {
+    openEditNodeDialog(root, controller, editNodeTrigger.dataset.platformOpenEditNode || "");
+    return;
+  }
+
+  const bindNodeTrigger = target.closest("[data-platform-open-bind-node]");
+  if (bindNodeTrigger instanceof HTMLElement) {
+    openBindNodeDialog(root, controller, bindNodeTrigger.dataset.platformOpenBindNode || "");
     return;
   }
 
@@ -1851,6 +2211,48 @@ async function handleSubmit(root, controller, event) {
     } catch (error) {
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }
+    return;
+  }
+
+  if (target.matches("[data-platform-node-form]")) {
+    event.preventDefault();
+    try {
+      const formData = new FormData(target);
+      const dialog = controller.nodeDialog || createNodeDialogState();
+      const payload = {
+        id: dialog.editing ? dialog.id : String(formData.get("id") || "").trim(),
+        name: String(formData.get("name") || "").trim(),
+        sharedSecret: String(formData.get("sharedSecret") || "").trim(),
+        status: String(formData.get("status") || "active").trim(),
+        leaseStatus: String(formData.get("leaseStatus") || "active").trim(),
+        leaseExpiresAt: String(formData.get("leaseExpiresAt") || "").trim(),
+        readonlyAfterExpiry: 1,
+      };
+      controller.activeNode = await controller.apiClient.savePlatformNode(payload);
+      controller.dialogs.nodeOpen = false;
+      controller.nodeDialog = createNodeDialogState();
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-platform-node-dialog]"));
+      setFeedback(root, dialog.editing ? "节点已更新。" : "节点已创建。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  if (target.matches("[data-platform-bind-node-form]")) {
+    event.preventDefault();
+    try {
+      const payload = Object.fromEntries(new FormData(target).entries());
+      controller.activeTenant = await controller.apiClient.bindPlatformTenantNode(payload);
+      controller.dialogs.bindNodeOpen = false;
+      controller.bindNodeDialog = createBindNodeDialogState();
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-platform-bind-node-dialog]"));
+      setFeedback(root, "节点绑定已更新。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
   }
 }
 
@@ -1880,19 +2282,16 @@ export async function mountPlatformConsolePage(root, options = {}) {
     controller.assignTenantAgentDialog = createAssignTenantAgentDialogState();
     controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
   }
-  const sectionLinks = root.querySelectorAll("[href]");
-  for (const link of sectionLinks) {
-    if (!(link instanceof HTMLAnchorElement)) {
-      continue;
-    }
-    const href = link.getAttribute("href") || "";
-    if (href === currentSectionHref("tenants")) {
-      link.classList.toggle("active", controller.section === "tenants");
-    }
-    if (href === currentSectionHref("agent-allocation")) {
-      link.classList.toggle("active", controller.section === "agent-allocation");
-    }
+  if (controller.section !== "nodes") {
+    controller.dialogs.nodeOpen = false;
+    controller.activeNode = null;
+    controller.nodeDialog = createNodeDialogState();
   }
+  if (controller.section !== "tenants") {
+    controller.dialogs.bindNodeOpen = false;
+    controller.bindNodeDialog = createBindNodeDialogState();
+  }
+  updateSectionLinkState(controller.section);
 
   await refresh(root, controller);
   return { root };
