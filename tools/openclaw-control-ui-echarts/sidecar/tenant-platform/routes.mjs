@@ -13,9 +13,12 @@ import {
   createTenantMember,
   createTenantWithAdmin,
   getBootstrapStatus,
+  getTenantDataSourceBinding,
+  getTenantMemberOrgScope,
   getTenantContextForUser,
   getUserByUsername,
   assignTenantAgentsToUser,
+  listDataSources,
   listAssignedAgentsForUser,
   listAssignedAgentVisualizationsForUser,
   listPlatformUpdateLogs,
@@ -35,9 +38,13 @@ import {
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
+  setTenantDataSourceBinding,
+  setTenantMemberOrgScope,
   upsertTenantAgent,
+  upsertDataSource,
   hideTenantAgentSession,
   listTenantAgentSessions,
+  listAssignedAgentSandboxesForUser,
 } from "./db.mjs";
 import {
   readBrandingLogoAsset,
@@ -46,6 +53,11 @@ import {
   saveBrandingState,
 } from "./branding.mjs";
 import { applyLocalRenewalCode, importLocalLicense, readLocalLicenseState } from "./license.mjs";
+import {
+  isSupportedDataSourceType,
+  listOrganizationsForDataSource as defaultListOrganizationsForDataSource,
+  validateOrganizationIds as defaultValidateOrganizationIds,
+} from "./data-source-client.mjs";
 
 function sendJson(request, response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -155,6 +167,29 @@ function requireLocalWritable(request, response, deps) {
   return false;
 }
 
+const KNOWN_TENANT_PLATFORM_ERROR_STATUSES = new Map([
+  ["data_source_not_found", 404],
+  ["data_source_already_bound", 409],
+  ["org_directory_driver_unavailable", 503],
+  ["member_not_found", 404],
+  ["org_directory_unavailable", 503],
+  ["forbidden", 403],
+  ["missing_token", 401],
+  ["invalid_token", 401],
+]);
+
+function readTenantPlatformErrorCode(error) {
+  return error instanceof Error ? error.message : String(error || "").trim();
+}
+
+function sendTenantPlatformError(request, response, error, fallbackStatusCode = 400) {
+  const errorCode = readTenantPlatformErrorCode(error);
+  sendJson(request, response, KNOWN_TENANT_PLATFORM_ERROR_STATUSES.get(errorCode) ?? fallbackStatusCode, {
+    ok: false,
+    error: errorCode,
+  });
+}
+
 function normalizePath(basePath, pathname) {
   if (!pathname.startsWith(basePath)) {
     return null;
@@ -172,6 +207,65 @@ function readUserIds(value) {
   }
   const normalized = String(value || "").trim();
   return normalized ? [normalized] : [];
+}
+
+function readOrganizationIds(value) {
+  if (Array.isArray(value)) {
+    return [
+      ...new Set(
+        value
+          .map((item) => {
+            if (item && typeof item === "object") {
+              return String(item.orgId ?? item.id ?? item.value ?? "").trim();
+            }
+            return String(item || "").trim();
+          })
+          .filter(Boolean),
+      ),
+    ];
+  }
+  const normalized = String(value || "").trim();
+  return normalized ? [normalized] : [];
+}
+
+function readSourceTypeValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function sanitizeTenantPlatformConnection(connection) {
+  if (!connection || typeof connection !== "object" || Array.isArray(connection)) {
+    return {
+      connection: {},
+      connectionJson: "{}",
+      connectionPasswordStored: false,
+    };
+  }
+  const sanitizedConnection = { ...connection };
+  const connectionPasswordStored =
+    typeof sanitizedConnection.password === "string" && sanitizedConnection.password.length > 0;
+  delete sanitizedConnection.password;
+  return {
+    connection: sanitizedConnection,
+    connectionJson: JSON.stringify(sanitizedConnection),
+    connectionPasswordStored,
+  };
+}
+
+function sanitizeTenantPlatformDataSourceRecord(record) {
+  if (!record || typeof record !== "object") {
+    return record;
+  }
+  const {
+    connection,
+    connectionJson,
+    connectionPasswordStored,
+  } = sanitizeTenantPlatformConnection(record.connection);
+  return {
+    ...record,
+    connection,
+    connectionJson,
+    connectionPasswordStored,
+  };
 }
 
 function readAssignmentIds(value) {
@@ -194,8 +288,30 @@ function readVisualizationToken(value) {
   return String(value || "").trim();
 }
 
+function getTenantMemberForScope(db, tenantId, userId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedTenantId || !normalizedUserId) {
+    return null;
+  }
+  return (
+    db
+      .prepare(
+        `SELECT u.id, u.username, u.status
+         FROM users u
+         JOIN tenant_memberships tm ON tm.user_id = u.id
+         WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted' AND u.id = ?`,
+      )
+      .get(normalizedTenantId, normalizedUserId) ?? null
+  );
+}
+
 function buildEchartsViewHref(token) {
   return `/echarts-view/?token=${encodeURIComponent(token)}`;
+}
+
+function buildSandboxViewHref(token) {
+  return `/sandbox-view/?token=${encodeURIComponent(token)}`;
 }
 
 const ECHARTS_VIEW_INLINE_SCRIPT_DIR = "__openclaw_echarts_view__";
@@ -981,6 +1097,31 @@ function readMemberVisualizationTokenPayload(token, secret) {
   };
 }
 
+function readMemberSandboxTokenPayload(token, secret) {
+  const payload = readSessionToken(token, secret);
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  if (String(payload.purpose || "").trim() !== "member_sandbox") {
+    return null;
+  }
+  const tenantId = String(payload.tenantId || "").trim();
+  const userId = String(payload.userId || "").trim();
+  const tenantAgentId = String(payload.tenantAgentId || "").trim();
+  const derivedAgentId = String(payload.derivedAgentId || "").trim();
+  const sandboxFileName = String(payload.sandboxFileName || "").trim();
+  if (!tenantId || !userId || !sandboxFileName || (!tenantAgentId && !derivedAgentId)) {
+    return null;
+  }
+  return {
+    tenantId,
+    userId,
+    tenantAgentId,
+    derivedAgentId,
+    sandboxFileName,
+  };
+}
+
 const DASHBOARD_MANIFEST_PAYLOAD_SCRIPT_ID = "oc-dashboard-manifest-payload";
 const DASHBOARD_MANIFEST_ROOT_ID = "oc-dashboard-root";
 const DASHBOARD_MANIFEST_STYLE_HREF = "/assets/runtime/dashboard-manifest/styles.css";
@@ -1066,6 +1207,10 @@ export function buildDashboardManifestHtml(manifest, options = {}) {
 }
 
 export function createTenantPlatformRouter(deps) {
+  const dataSourceClient = deps.dataSourceClient ?? {
+    listOrganizationsForDataSource: defaultListOrganizationsForDataSource,
+    validateOrganizationIds: defaultValidateOrganizationIds,
+  };
   return async function handleTenantPlatformRequest(request, response) {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
     const relativePath = normalizePath(deps.config.apiBasePath, url.pathname);
@@ -1543,6 +1688,126 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/platform/data-sources") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listDataSources(deps.db).map(sanitizeTenantPlatformDataSourceRecord),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/data-sources") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const sourceType = readSourceTypeValue(body.sourceType || body.source_type);
+        if (!sourceType) {
+          throw new Error("data_source_type_required");
+        }
+        if (!isSupportedDataSourceType(sourceType)) {
+          throw new Error("data_source_type_unsupported");
+        }
+        const dataSource = upsertDataSource(deps.db, {
+          code: String(body.code || "").trim(),
+          name: String(body.name || "").trim(),
+          sourceType,
+          status: String(body.status || "").trim() || "active",
+          connection: body.connection ?? body.connectionJson ?? body.connection_json,
+          sourceDbid: String(body.sourceDbid || body.source_dbid || "").trim() || null,
+          sourceTenantCode:
+            String(body.sourceTenantCode || body.source_tenant_code || "").trim() || null,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: sanitizeTenantPlatformDataSourceRecord(dataSource),
+        });
+      } catch (error) {
+        sendTenantPlatformError(request, response, error);
+      }
+      return;
+    }
+
+    if (request.method === "PUT" && relativePath === "/platform/data-sources") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const sourceType = readSourceTypeValue(body.sourceType || body.source_type);
+        if (!sourceType) {
+          throw new Error("data_source_type_required");
+        }
+        if (!isSupportedDataSourceType(sourceType)) {
+          throw new Error("data_source_type_unsupported");
+        }
+        const dataSource = upsertDataSource(deps.db, {
+          id: String(body.id || "").trim() || null,
+          code: String(body.code || "").trim(),
+          name: String(body.name || "").trim(),
+          sourceType,
+          status: String(body.status || "").trim() || "active",
+          connection: body.connection ?? body.connectionJson ?? body.connection_json,
+          sourceDbid: String(body.sourceDbid || body.source_dbid || "").trim() || null,
+          sourceTenantCode:
+            String(body.sourceTenantCode || body.source_tenant_code || "").trim() || null,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: sanitizeTenantPlatformDataSourceRecord(dataSource),
+        });
+      } catch (error) {
+        sendTenantPlatformError(request, response, error);
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/platform/tenant-data-source-binding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      const tenantId = readTenantId(url.searchParams.get("tenantId"));
+      if (!tenantId) {
+        sendJson(request, response, 400, { ok: false, error: "tenant_id_required" });
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: sanitizeTenantPlatformDataSourceRecord(getTenantDataSourceBinding(deps.db, tenantId)),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/tenant-data-source-binding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const binding = setTenantDataSourceBinding(deps.db, {
+          tenantId: readTenantId(body.tenantId),
+          dataSourceId: String(body.dataSourceId || "").trim(),
+          boundByUserId: session.userId,
+        });
+        sendJson(request, response, 200, {
+          ok: true,
+          data: sanitizeTenantPlatformDataSourceRecord(binding),
+        });
+      } catch (error) {
+        sendTenantPlatformError(request, response, error);
+      }
+      return;
+    }
+
     if (request.method === "GET" && relativePath === "/platform/catalog-agents") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["platform_admin"])) {
@@ -1679,6 +1944,130 @@ export function createTenantPlatformRouter(deps) {
         ok: true,
         data: listTenantMembers(deps.db, session.tenantId),
       });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/data-source-binding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: sanitizeTenantPlatformDataSourceRecord(
+          getTenantDataSourceBinding(deps.db, session.tenantId),
+        ),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/orgs") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        if (!binding) {
+          throw new Error("tenant_data_source_unbound");
+        }
+        const organizations = await dataSourceClient.listOrganizationsForDataSource(binding);
+        sendJson(request, response, 200, {
+          ok: true,
+          data: organizations,
+        });
+      } catch (error) {
+        sendTenantPlatformError(request, response, error);
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/member-org-scope") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const userId = String(url.searchParams.get("userId") || "").trim();
+        if (!userId) {
+          throw new Error("user_id_required");
+        }
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        if (!binding) {
+          throw new Error("tenant_data_source_unbound");
+        }
+        if (!getTenantMemberForScope(deps.db, session.tenantId, userId)) {
+          throw new Error("member_not_found");
+        }
+        sendJson(request, response, 200, {
+          ok: true,
+          data: getTenantMemberOrgScope(deps.db, {
+            tenantId: session.tenantId,
+            userId,
+            dataSourceId: binding.dataSourceId,
+          }),
+        });
+      } catch (error) {
+        sendTenantPlatformError(request, response, error);
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/member-org-scope") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const userId = String(body.userId || "").trim();
+        if (!userId) {
+          throw new Error("user_id_required");
+        }
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        if (!binding) {
+          throw new Error("tenant_data_source_unbound");
+        }
+        if (!getTenantMemberForScope(deps.db, session.tenantId, userId)) {
+          throw new Error("member_not_found");
+        }
+        const scopeMode = String(body.scopeMode || body.scope_mode || "").trim().toLowerCase();
+        let orgScopes = [];
+        if (scopeMode === "custom") {
+          const orgIds = readOrganizationIds(body.orgIds ?? body.org_ids ?? body.orgScopes);
+          if (orgIds.length === 0) {
+            throw new Error("member_org_scope_empty");
+          }
+          const validatedOrganizations = await dataSourceClient.validateOrganizationIds(binding, orgIds);
+          const validatedOrgIds = new Set(
+            validatedOrganizations.map((entry) => String(entry.orgId || "").trim()).filter(Boolean),
+          );
+          if (
+            validatedOrgIds.size !== orgIds.length ||
+            orgIds.some((orgId) => !validatedOrgIds.has(orgId))
+          ) {
+            throw new Error("member_org_scope_invalid_org_ids");
+          }
+          orgScopes = validatedOrganizations.map((entry) => ({
+            orgId: String(entry.orgId || "").trim(),
+            orgNameSnapshot: String(entry.orgName || "").trim(),
+          }));
+          if (orgScopes.length === 0) {
+            throw new Error("member_org_scope_empty");
+          }
+        }
+        const scope = setTenantMemberOrgScope(deps.db, {
+          tenantId: session.tenantId,
+          userId,
+          dataSourceId: binding.dataSourceId,
+          scopeMode,
+          createdByUserId: session.userId,
+          orgScopes,
+        });
+        sendJson(request, response, 200, { ok: true, data: scope });
+      } catch (error) {
+        sendTenantPlatformError(request, response, error);
+      }
       return;
     }
 
@@ -2056,6 +2445,51 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/member/sandboxes") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const sandboxes = listAssignedAgentSandboxesForUser(
+        deps.db,
+        {
+          ...session,
+          configPath: deps.config.configPath,
+          configDir: deps.config.configDir,
+        },
+        configAgents,
+      ).map((item) => {
+        const token = issueSessionToken(
+          {
+            purpose: "member_sandbox",
+            tenantId: item.tenantId,
+            userId: item.userId,
+            tenantAgentId: item.tenantAgentId,
+            derivedAgentId: item.derivedAgentId,
+            sandboxFileName: item.sandboxFileName,
+          },
+          deps.config.sessionSecret,
+        );
+        const title = item.agentName ? `${item.sandboxName} · ${item.agentName}` : item.sandboxName;
+        return {
+          id: `${item.derivedAgentId}:${item.sandboxFileName}`,
+          agentId: item.derivedAgentId,
+          baseAgentId: item.baseAgentId,
+          agentName: item.agentName,
+          sandboxFileName: item.sandboxFileName,
+          sandboxName: item.sandboxName,
+          title,
+          token,
+          href: buildSandboxViewHref(token),
+        };
+      });
+      sendJson(request, response, 200, {
+        ok: true,
+        data: sandboxes,
+      });
+      return;
+    }
+
     if (request.method === "GET" && relativePath === "/member/visualizations") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["member"])) {
@@ -2199,6 +2633,64 @@ export function createTenantPlatformRouter(deps) {
         sendJson(request, response, 404, {
           ok: false,
           error: "visualization_not_found",
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/sandboxes/resolve") {
+      const token = readVisualizationToken(url.searchParams.get("token"));
+      if (!token) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      const payload = readMemberSandboxTokenPayload(token, deps.config.sessionSecret);
+      if (!payload) {
+        sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+        return;
+      }
+      const sandboxes = listAssignedAgentSandboxesForUser(
+        deps.db,
+        {
+          tenantId: payload.tenantId,
+          userId: payload.userId,
+          configPath: deps.config.configPath,
+          configDir: deps.config.configDir,
+        },
+        configAgents,
+      );
+      const match = sandboxes.find(
+        (item) =>
+          item.derivedAgentId === payload.derivedAgentId &&
+          item.sandboxFileName === payload.sandboxFileName,
+      );
+      if (!match) {
+        sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+        return;
+      }
+      const workspaceRoot = String(match.derivedWorkspaceDir || "").trim();
+      if (!workspaceRoot) {
+        sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+        return;
+      }
+      const sandboxPath = path.join(workspaceRoot, "Sandbox", match.sandboxFileName);
+      try {
+        const rawPayload = JSON.parse(fs.readFileSync(sandboxPath, "utf8").replace(/^\uFEFF/, ""));
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            ...rawPayload,
+            sandboxName: match.sandboxName,
+            sandboxFileName: match.sandboxFileName,
+            agentName: match.agentName,
+            agentId: match.derivedAgentId,
+            href: buildSandboxViewHref(token),
+          },
+        });
+      } catch {
+        sendJson(request, response, 404, {
+          ok: false,
+          error: "sandbox_not_found",
         });
       }
       return;

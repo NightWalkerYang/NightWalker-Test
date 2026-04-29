@@ -1600,6 +1600,23 @@ sidecar 落点固定为：
 - 平台管理员、租户管理员和租户成员登录进入工作视图后，会自动弹出当前最新更新日志
 - 当前自动弹窗按浏览器本地已读签名控制，不额外引入服务端已读状态表
 
+6.2 平台级数据源管理与租户绑定已落地
+
+- 平台管理员原生壳层已新增独立的 `创建数据源` 视图
+- 当前可以维护 `kingdee_analytics` 数据源目录，并保存：
+  - 数据源编码
+  - 名称
+  - 状态
+  - `sourceDbid`
+  - `sourceTenantCode`
+  - Postgres 连接信息
+- 平台租户与数据源当前已按一对一关系落地：
+  - 一个租户只能绑定一套数据源
+  - 一套数据源只能归属一个平台租户
+- `租户管理 -> 绑定数据源` 弹窗保留原功能，用于租户视角切换绑定
+- 后端和前端都会同时拦截“同一数据源重复绑定多个平台租户”的场景
+- 绑定切换后会继续清理旧成员 org 范围，避免沿用错误权限
+
 7. 租户管理员基础能力已落地
    - 租户管理员登录
    - 租户管理员已切换为原生控制台内容区视图，不再依赖独立租户管理员页
@@ -1631,6 +1648,11 @@ sidecar 落点固定为：
    - 当前角色
    - 当前登录
    - 退出登录
+   - 租户管理员当前可以读取本租户绑定的数据源，并为成员配置 org 可见范围
+   - 组织范围入口当前为 `选择组织范围` 弹窗：
+     - 支持 `none / custom / all`
+     - 支持搜索组织
+     - 支持仅对当前可见结果执行“全选”
    - 租户成员创建
    - 租户管理员给成员分配已下发到本租户的 Agent
    - 租户管理员撤回成员已接收的 Agent 分配
@@ -1678,6 +1700,10 @@ sidecar 落点固定为：
    - SQLite 持久化已打通
    - 平台初始化、登录、租户创建、成员管理、Agent 下发等第一阶段基础接口已打通
    - 服务器侧 `openclaw-tenant-platform` 已并入部署链路
+   - 数据源目录、租户绑定、成员 org 范围策略已并入 sidecar SQLite
+   - 当前实际可运行方案里，tenant sidecar 访问 `kingdee_analytics` 所需的 `pg` 驱动不再依赖根 `package.json`
+   - direct-docker 零侵入部署会在 `tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules` 下单独准备 sidecar 运行依赖，并通过生成的 `docker-compose.override.yml` 挂载进 `openclaw-tenant-platform`
+   - analytics 相关环境变量也通过生成的 override 注入 sidecar，不再要求修改根 `docker-compose.yml`
 
 10. 当前暂时保留但不再作为主路线的兼容页面
 
@@ -1756,6 +1782,7 @@ sidecar 落点固定为：
 - 即使客户误删 `data/.openclaw/openclaw.json`，启动准备层也会按包内模板自动补回
 - 当前已补齐非 Docker 运行包兼容层：
   - 打包脚本会额外把运行时缺失的依赖一起装进运行包
+  - 其中也包含 tenant sidecar 访问 `kingdee_analytics` 所需的 `pg` 驱动
   - 运行包内会为 `file-type/core.js` 自动生成兼容入口
   - 本地版默认 `OPENCLAW_GATEWAY_BIND` 已收敛为 `loopback`
   - 目标是避免 Windows 测试机出现缺包启动失败和非法 bind 值启动失败

@@ -98,6 +98,64 @@ function memberStatusToggleLabel(status) {
   return String(status || "").trim() === "active" ? "禁用成员" : "启用成员";
 }
 
+function normalizeMemberOrgScopeMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "all" || normalized === "custom" ? normalized : "none";
+}
+
+function normalizeSearchQuery(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getCurrentTenantDataSourceBinding(controller) {
+  if (!(controller?.currentDataSourceBinding && typeof controller.currentDataSourceBinding === "object")) {
+    return null;
+  }
+  return controller.currentDataSourceBinding;
+}
+
+function hasCurrentTenantBoundDataSource(controller) {
+  const binding = getCurrentTenantDataSourceBinding(controller);
+  return Boolean(
+    String(binding?.dataSourceId || binding?.dataSourceName || binding?.name || "").trim(),
+  );
+}
+
+function getMemberOrgScopeSummary(member, controller) {
+  if (!hasCurrentTenantBoundDataSource(controller)) {
+    return "未绑定数据源";
+  }
+  const scopeMode = normalizeMemberOrgScopeMode(member?.orgScopeMode);
+  if (scopeMode === "all") {
+    return "全部组织";
+  }
+  if (scopeMode === "custom") {
+    return `${formatNumber(member?.orgScopeCount)} 个组织`;
+  }
+  return "未分配";
+}
+
+function getEffectiveMemberStatus(controller, member) {
+  const userId = String(member?.id || "").trim();
+  const pendingStatus =
+    userId && controller?.pendingMemberStatuses instanceof Map
+      ? String(controller.pendingMemberStatuses.get(userId) || "").trim()
+      : "";
+  if (pendingStatus === "active" || pendingStatus === "inactive") {
+    return pendingStatus;
+  }
+  return String(member?.status || "").trim();
+}
+
+function isMemberStatusBusy(controller, userId) {
+  const normalized = String(userId || "").trim();
+  return Boolean(
+    normalized &&
+      controller?.busyMemberStatusIds instanceof Set &&
+      controller.busyMemberStatusIds.has(normalized),
+  );
+}
+
 function createDeleteMemberDialogState() {
   return {
     id: "",
@@ -385,6 +443,92 @@ function syncAssignAgentSelectionState(root, controller) {
   selectAll.disabled = selectableAgents.length === 0 || dialog.loading || dialog.busy;
 }
 
+function createMemberOrgScopeDialogState() {
+  return {
+    open: false,
+    loading: false,
+    busy: false,
+    memberId: "",
+    memberUsername: "",
+    dataSourceName: "",
+    dataSourceId: "",
+    scopeMode: "none",
+    orgs: [],
+    selectedOrgIds: new Set(),
+    searchQuery: "",
+    error: "",
+    requestToken: 0,
+  };
+}
+
+function getMemberOrgScopeDialog(controller) {
+  if (
+    !(controller?.memberOrgScopeDialog && typeof controller.memberOrgScopeDialog === "object")
+  ) {
+    controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();
+  }
+  return controller.memberOrgScopeDialog;
+}
+
+function getMemberOrgScopeSelectableOrgs(dialog) {
+  if (!Array.isArray(dialog?.orgs)) {
+    return [];
+  }
+  return dialog.orgs.filter((org) => Boolean(String(org?.orgId || "").trim()));
+}
+
+function getVisibleMemberOrgScopeOrgs(dialog) {
+  const selectableOrgs = getMemberOrgScopeSelectableOrgs(dialog);
+  const query = normalizeSearchQuery(dialog?.searchQuery);
+  if (!query) {
+    return selectableOrgs;
+  }
+  return selectableOrgs.filter((org) =>
+    [org?.orgNumber, org?.orgId, org?.orgName]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query)),
+  );
+}
+
+function setMemberOrgScopeSelected(controller, orgId, selected) {
+  const normalized = String(orgId || "").trim();
+  if (!normalized) {
+    return;
+  }
+  const dialog = getMemberOrgScopeDialog(controller);
+  if (selected) {
+    dialog.selectedOrgIds.add(normalized);
+    return;
+  }
+  dialog.selectedOrgIds.delete(normalized);
+}
+
+function setMemberOrgScopeMode(controller, mode) {
+  getMemberOrgScopeDialog(controller).scopeMode = normalizeMemberOrgScopeMode(mode);
+}
+
+function syncMemberOrgScopeSelectionState(root, controller) {
+  const dialog = controller.memberOrgScopeDialog;
+  if (controller.section !== "members" || !dialog?.open || dialog.scopeMode !== "custom") {
+    return;
+  }
+  const selectAll = root.querySelector("[data-tenant-member-org-scope-select-all]");
+  if (!(selectAll instanceof HTMLInputElement)) {
+    return;
+  }
+  const selectableOrgs = getVisibleMemberOrgScopeOrgs(dialog);
+  const selectedOrgs = selectableOrgs.filter((org) =>
+    dialog.selectedOrgIds.has(String(org.orgId || "").trim()),
+  );
+  selectAll.checked =
+    selectableOrgs.length > 0 &&
+    selectedOrgs.length === selectableOrgs.length &&
+    !dialog.loading &&
+    !dialog.busy;
+  selectAll.indeterminate = selectedOrgs.length > 0 && selectedOrgs.length < selectableOrgs.length;
+  selectAll.disabled = selectableOrgs.length === 0 || dialog.loading || dialog.busy;
+}
+
 function ensureController(root, session, apiClient) {
   if (root.__ocTenantConsoleController) {
     root.__ocTenantConsoleController.session = session;
@@ -408,10 +552,14 @@ function ensureController(root, session, apiClient) {
       "usage-stats": 1,
     },
     members: [],
+    currentDataSourceBinding: null,
     tenantAgents: [],
+    busyMemberStatusIds: new Set(),
+    pendingMemberStatuses: new Map(),
     agentDetailDialog: createAgentDetailDialogState(),
     activeMember: null,
     assignAgentDialog: createAssignAgentDialogState(),
+    memberOrgScopeDialog: createMemberOrgScopeDialogState(),
     passwordMember: null,
     deleteMemberTarget: createDeleteMemberDialogState(),
     revokeAssignmentDialog: createRevokeAssignmentDialogState(),
@@ -446,6 +594,9 @@ function ensureController(root, session, apiClient) {
     }
     if (event.target.matches("[data-tenant-assign-dialog]")) {
       controller.dialogs.assignOpen = false;
+    }
+    if (event.target.matches("[data-tenant-member-org-scope-dialog]")) {
+      controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();
     }
     if (event.target.matches("[data-tenant-member-password-dialog]")) {
       controller.dialogs.changePasswordOpen = false;
@@ -554,7 +705,7 @@ function renderToolbar(controller) {
   `;
 }
 
-function renderMembersTable(rows) {
+function renderMembersTable(rows, controller) {
   return `
     <div class="data-table-container">
       <table class="data-table">
@@ -562,6 +713,7 @@ function renderMembersTable(rows) {
           <tr>
             <th>成员账号</th>
             <th>状态</th>
+            <th>组织范围</th>
             <th>已分配 Agent</th>
             <th>创建时间</th>
             <th>操作</th>
@@ -571,15 +723,30 @@ function renderMembersTable(rows) {
           ${
             rows.length
               ? rows
-                  .map(
-                    (member) => `
+                  .map((member) => {
+                    const effectiveStatus = getEffectiveMemberStatus(controller, member);
+                    const statusBusy = isMemberStatusBusy(controller, member.id);
+                    return `
                       <tr>
                         <td>${escapeHtml(member.username)}</td>
-                        <td><span class="data-table-badge data-table-badge--${member.status === "active" ? "direct" : "unknown"}">${escapeHtml(member.status)}</span></td>
+                        <td><span class="data-table-badge data-table-badge--${effectiveStatus === "active" ? "direct" : "unknown"}">${escapeHtml(effectiveStatus)}</span></td>
+                        <td>
+                          <div class="oc-tenant-member-org-scope-summary">
+                            ${escapeHtml(getMemberOrgScopeSummary(member, controller))}
+                          </div>
+                        </td>
                         <td>${formatNumber(member.assignedAgentCount)}</td>
                         <td>${escapeHtml(formatDateTime(member.createdAt))}</td>
                         <td>
                           <div class="oc-tenant-table-actions oc-tenant-member-actions">
+                            <button
+                              class="btn"
+                              type="button"
+                              data-tenant-open-member-org-scope="${escapeHtml(member.id)}"
+                              ${hasCurrentTenantBoundDataSource(controller) ? "" : "disabled"}
+                            >
+                              选择组织范围
+                            </button>
                             <button class="btn" type="button" data-tenant-open-member-password="${escapeHtml(member.id)}">更改密码</button>
                             <button
                               class="btn oc-tenant-destructive-action"
@@ -593,21 +760,22 @@ function renderMembersTable(rows) {
                                 type="checkbox"
                                 role="switch"
                                 data-tenant-member-status-toggle="${escapeHtml(member.id)}"
-                                ${member.status === "active" ? "checked" : ""}
-                                aria-label="${escapeHtml(memberStatusToggleLabel(member.status))}"
+                                ${effectiveStatus === "active" ? "checked" : ""}
+                                ${statusBusy ? "disabled" : ""}
+                                aria-label="${escapeHtml(memberStatusToggleLabel(effectiveStatus))}"
                               />
                               <span class="oc-tenant-member-switch__track" aria-hidden="true">
                                 <span class="oc-tenant-member-switch__thumb"></span>
                               </span>
-                              <span class="oc-tenant-member-switch__label">${escapeHtml(memberStatusLabel(member.status))}</span>
+                              <span class="oc-tenant-member-switch__label">${escapeHtml(memberStatusLabel(effectiveStatus))}</span>
                             </label>
                           </div>
                         </td>
                       </tr>
-                    `,
-                  )
+                    `;
+                  })
                   .join("")
-              : `<tr><td colspan="5" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
+              : `<tr><td colspan="6" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
           }
         </tbody>
       </table>
@@ -893,6 +1061,162 @@ function renderDeleteMemberDialog(controller) {
                   <div class="oc-tenant-modal__actions">
                     <button class="btn" type="button" data-tenant-close-dialog="delete-member">取消</button>
                     <button class="btn oc-tenant-destructive-action" type="submit">确认删除</button>
+                  </div>
+                </form>
+              `
+              : `<div class="callout info">请选择成员后再操作。</div>`
+          }
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderMemberOrgScopeDialog(controller) {
+  const dialog = getMemberOrgScopeDialog(controller);
+  const selectableOrgs = getMemberOrgScopeSelectableOrgs(dialog);
+  const visibleOrgs = getVisibleMemberOrgScopeOrgs(dialog);
+  const selectedCount = dialog.selectedOrgIds.size;
+  const visibleSelectedCount = visibleOrgs.filter((org) =>
+    dialog.selectedOrgIds.has(String(org.orgId || "").trim()),
+  ).length;
+  const allSelected = visibleOrgs.length > 0 && visibleSelectedCount === visibleOrgs.length;
+  const hasBinding = Boolean(String(dialog.dataSourceId || "").trim());
+  const showCustomOrgs = !dialog.loading && hasBinding && dialog.scopeMode === "custom";
+  const statusMarkup = dialog.loading
+    ? `<div class="callout info">正在加载成员组织范围...</div>`
+    : dialog.error
+      ? `<div class="callout info">${escapeHtml(dialog.error)}</div>`
+      : !hasBinding
+        ? `<div class="callout info">当前租户未绑定数据源，无法配置组织范围。</div>`
+        : "";
+  const customListMarkup = showCustomOrgs
+    ? selectableOrgs.length
+      ? `
+        <div class="field">
+          <span>可访问组织</span>
+          <div class="oc-tenant-revoke-assignment-toolbar">
+            <label class="oc-tenant-revoke-assignment-toolbar__select-all">
+              <input
+                type="checkbox"
+                data-tenant-member-org-scope-select-all
+                aria-label="全选可访问组织"
+                ${dialog.busy ? "disabled" : ""}
+                ${allSelected ? "checked" : ""}
+              />
+              <span>全选</span>
+            </label>
+            <label class="data-table-search oc-tenant-inline-search">
+              <input
+                type="search"
+                placeholder="搜索组织编码或名称"
+                value="${escapeHtml(dialog.searchQuery || "")}"
+                data-tenant-member-org-scope-search
+                ${dialog.busy ? "disabled" : ""}
+              />
+            </label>
+            <span class="oc-tenant-revoke-assignment-toolbar__summary">
+              已选择 ${formatNumber(selectedCount)} 个组织
+            </span>
+          </div>
+          ${
+            visibleOrgs.length
+              ? `
+                <div class="data-table-container oc-tenant-revoke-assignment-list">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th class="oc-tenant-assignment-select-col"></th>
+                        <th>组织编码</th>
+                        <th>组织名称</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${visibleOrgs
+                        .map(
+                          (org) => `
+                            <tr>
+                              <td class="oc-tenant-assignment-select-cell">
+                                <input
+                                  type="checkbox"
+                                  data-tenant-member-org-scope-org="${escapeHtml(org.orgId)}"
+                                  aria-label="选择 ${escapeHtml(org.orgName || org.orgId || "-")}"
+                                  ${dialog.busy ? "disabled" : ""}
+                                  ${dialog.selectedOrgIds.has(String(org.orgId || "").trim()) ? "checked" : ""}
+                                />
+                              </td>
+                              <td>${escapeHtml(org.orgNumber || org.orgId || "-")}</td>
+                              <td>${escapeHtml(org.orgName || "-")}</td>
+                            </tr>
+                          `,
+                        )
+                        .join("")}
+                    </tbody>
+                  </table>
+                </div>
+              `
+              : `<div class="callout info">没有匹配的组织，请调整搜索条件。</div>`
+          }
+        </div>
+      `
+      : `<div class="callout info">当前数据源没有可选择的组织。</div>`
+    : "";
+  return `
+    <dialog class="oc-tenant-modal oc-tenant-modal--wide" data-tenant-member-org-scope-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">成员组织范围</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="org-scope">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
+          ${
+            dialog.memberId
+              ? `
+                <form class="oc-tenant-modal__form" data-tenant-member-org-scope-form>
+                  <input type="hidden" name="userId" value="${escapeHtml(dialog.memberId)}" />
+                  <label class="field">
+                    <span>目标成员</span>
+                    <input type="text" value="${escapeHtml(dialog.memberUsername || dialog.memberId)}" disabled />
+                  </label>
+                  <label class="field">
+                    <span>已绑定数据源</span>
+                    <input type="text" value="${escapeHtml(dialog.dataSourceName || "未绑定数据源")}" disabled />
+                  </label>
+                  <div class="field">
+                    <span>组织访问范围</span>
+                    <div class="oc-tenant-member-org-scope-modes">
+                      ${["none", "custom", "all"]
+                        .map((mode) => {
+                          const label =
+                            mode === "none" ? "未分配" : mode === "custom" ? "指定组织" : "全部组织";
+                          return `
+                            <label class="oc-tenant-member-org-scope-mode">
+                              <input
+                                type="radio"
+                                name="scopeMode"
+                                value="${mode}"
+                                data-tenant-member-org-scope-mode="${mode}"
+                                ${dialog.busy || !hasBinding ? "disabled" : ""}
+                                ${dialog.scopeMode === mode ? "checked" : ""}
+                              />
+                              <span>${label}</span>
+                            </label>
+                          `;
+                        })
+                        .join("")}
+                    </div>
+                  </div>
+                  ${statusMarkup}
+                  ${customListMarkup}
+                  <div class="oc-tenant-modal__actions">
+                    <button class="btn" type="button" data-tenant-close-dialog="org-scope">取消</button>
+                    <button
+                      class="btn primary"
+                      type="submit"
+                      ${dialog.loading || dialog.busy || !hasBinding ? "disabled" : ""}
+                    >
+                      保存设置
+                    </button>
                   </div>
                 </form>
               `
@@ -1234,6 +1558,13 @@ function captureRenderFocusState(root) {
       selectionEnd: active.selectionEnd,
     };
   }
+  if (active.hasAttribute("data-tenant-member-org-scope-search")) {
+    return {
+      kind: "member-org-scope-search",
+      selectionStart: active.selectionStart,
+      selectionEnd: active.selectionEnd,
+    };
+  }
   return null;
 }
 
@@ -1243,6 +1574,19 @@ function restoreRenderFocusState(root, state) {
   }
   if (state.kind === "search") {
     const input = root.querySelector("[data-tenant-search]");
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      if (typeof state.selectionStart === "number" && typeof state.selectionEnd === "number") {
+        try {
+          input.setSelectionRange(state.selectionStart, state.selectionEnd);
+        } catch {
+          // Ignore unsupported selection restoration.
+        }
+      }
+    }
+  }
+  if (state.kind === "member-org-scope-search") {
+    const input = root.querySelector("[data-tenant-member-org-scope-search]");
     if (input instanceof HTMLInputElement) {
       input.focus();
       if (typeof state.selectionStart === "number" && typeof state.selectionEnd === "number") {
@@ -1315,9 +1659,9 @@ function render(root, controller) {
           ${
             controller.section === "agent-assignment"
               ? renderAssignmentTable(pagination.items, controller)
-              : renderMembersTable(pagination.items)
-          }
-          ${renderPagination(pagination)}
+              : renderMembersTable(pagination.items, controller)
+           }
+           ${renderPagination(pagination)}
         </div>
       `;
 
@@ -1332,7 +1676,7 @@ function render(root, controller) {
         ? ""
         : isOwnedAgents
           ? `${renderAgentDetailDialog(controller)}`
-          : `${renderCreateMemberDialog()}${renderChangePasswordDialog(controller)}${renderDeleteMemberDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
+          : `${renderCreateMemberDialog()}${renderMemberOrgScopeDialog(controller)}${renderChangePasswordDialog(controller)}${renderDeleteMemberDialog(controller)}${renderAssignDialog(controller)}${renderRevokeAssignmentDialog(controller)}${renderRevokeAssignmentConfirmDialog(controller)}`
     }
   `;
 
@@ -1346,6 +1690,9 @@ function render(root, controller) {
     }
     if (controller.dialogs.createMemberOpen) {
       openDialog(root.querySelector("[data-tenant-create-dialog]"));
+    }
+    if (controller.memberOrgScopeDialog?.open) {
+      openDialog(root.querySelector("[data-tenant-member-org-scope-dialog]"));
     }
     if (controller.dialogs.changePasswordOpen) {
       openDialog(root.querySelector("[data-tenant-member-password-dialog]"));
@@ -1366,6 +1713,9 @@ function render(root, controller) {
   if (controller.section === "agent-assignment") {
     syncRevokeAssignmentSelectionState(root, controller);
     syncAssignAgentSelectionState(root, controller);
+  }
+  if (controller.section === "members") {
+    syncMemberOrgScopeSelectionState(root, controller);
   }
   restoreRenderFocusState(root, focusState);
 }
@@ -1405,12 +1755,16 @@ async function refresh(root, controller) {
     return;
   }
 
-  const [members, tenantAgents] = await Promise.all([
+  const [members, tenantAgents, binding] = await Promise.all([
     controller.apiClient.listTenantMembers(),
     controller.apiClient.listTenantAgents(),
+    controller.section === "members"
+      ? controller.apiClient.getCurrentTenantDataSourceBinding()
+      : Promise.resolve(controller.currentDataSourceBinding),
   ]);
   controller.members = members;
   controller.tenantAgents = tenantAgents;
+  controller.currentDataSourceBinding = binding && typeof binding === "object" ? binding : null;
   if (
     controller.activeMember &&
     !members.some((member) => member.id === controller.activeMember.id)
@@ -1423,6 +1777,12 @@ async function refresh(root, controller) {
   ) {
     controller.dialogs.deleteMemberOpen = false;
     controller.deleteMemberTarget = createDeleteMemberDialogState();
+  }
+  if (
+    controller.memberOrgScopeDialog?.memberId &&
+    !members.some((member) => member.id === controller.memberOrgScopeDialog.memberId)
+  ) {
+    controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();
   }
   render(root, controller);
 }
@@ -1448,21 +1808,102 @@ function openDeleteMemberDialog(root, controller, memberId) {
 async function updateMemberStatus(root, controller, input) {
   const userId = String(input.dataset.tenantMemberStatusToggle || "").trim();
   const member = memberById(controller, userId);
-  if (!userId || !member) {
+  if (!userId || !member || isMemberStatusBusy(controller, userId)) {
     return;
   }
   const nextStatus = input.checked ? "active" : "inactive";
-  input.disabled = true;
+  controller.busyMemberStatusIds.add(userId);
+  controller.pendingMemberStatuses.set(userId, nextStatus);
+  render(root, controller);
   try {
     await controller.apiClient.updateTenantMemberStatus({
       userId,
       status: nextStatus,
     });
     await refresh(root, controller);
+    controller.busyMemberStatusIds.delete(userId);
+    controller.pendingMemberStatuses.delete(userId);
+    render(root, controller);
     setFeedback(root, nextStatus === "active" ? "成员已启用。" : "成员已禁用。");
   } catch (error) {
+    controller.busyMemberStatusIds.delete(userId);
+    controller.pendingMemberStatuses.delete(userId);
     render(root, controller);
     setFeedback(root, error instanceof Error ? error.message : String(error), true);
+  }
+}
+
+async function openMemberOrgScopeDialog(root, controller, memberId) {
+  const member = memberById(controller, memberId);
+  if (!member) {
+    return;
+  }
+
+  const previousToken = Number(controller.memberOrgScopeDialog?.requestToken || 0);
+  controller.memberOrgScopeDialog = {
+    ...createMemberOrgScopeDialogState(),
+    open: true,
+    loading: true,
+    memberId: member.id,
+    memberUsername: member.username,
+    dataSourceName: String(
+      getCurrentTenantDataSourceBinding(controller)?.dataSourceName ||
+        getCurrentTenantDataSourceBinding(controller)?.name ||
+        "",
+    ).trim(),
+    requestToken: previousToken + 1,
+  };
+  render(root, controller);
+
+  const requestToken = controller.memberOrgScopeDialog.requestToken;
+  try {
+    const [binding, orgs, scope] = await Promise.all([
+      controller.apiClient.getCurrentTenantDataSourceBinding(),
+      controller.apiClient.listTenantOrganizations(),
+      controller.apiClient.getTenantMemberOrgScope(member.id),
+    ]);
+    const currentDialog = controller.memberOrgScopeDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.memberId !== member.id
+    ) {
+      return;
+    }
+    currentDialog.dataSourceId = String(binding?.dataSourceId || "").trim();
+    currentDialog.dataSourceName = String(
+      binding?.dataSourceName || binding?.name || currentDialog.dataSourceName || "",
+    ).trim();
+    currentDialog.orgs = Array.isArray(orgs) ? orgs : [];
+    const availableOrgIds = new Set(
+      currentDialog.orgs
+        .map((org) => String(org?.orgId || "").trim())
+        .filter(Boolean),
+    );
+    currentDialog.scopeMode = normalizeMemberOrgScopeMode(scope?.scopeMode);
+    currentDialog.selectedOrgIds = new Set(
+      (Array.isArray(scope?.orgScopes) ? scope.orgScopes : [])
+        .map((org) => String(org?.orgId || "").trim())
+        .filter((orgId) => availableOrgIds.has(orgId)),
+    );
+    currentDialog.loading = false;
+    currentDialog.error = "";
+    render(root, controller);
+  } catch (error) {
+    const currentDialog = controller.memberOrgScopeDialog;
+    if (
+      !currentDialog ||
+      !currentDialog.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.memberId !== member.id
+    ) {
+      return;
+    }
+    currentDialog.loading = false;
+    currentDialog.error = error instanceof Error ? error.message : String(error);
+    render(root, controller);
+    setFeedback(root, currentDialog.error, true);
   }
 }
 
@@ -1713,6 +2154,16 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  const memberOrgScopeTrigger = target.closest("[data-tenant-open-member-org-scope]");
+  if (memberOrgScopeTrigger instanceof HTMLElement) {
+    await openMemberOrgScopeDialog(
+      root,
+      controller,
+      memberOrgScopeTrigger.dataset.tenantOpenMemberOrgScope,
+    );
+    return;
+  }
+
   const agentDetailTrigger = target.closest("[data-tenant-open-agent-detail]");
   if (agentDetailTrigger instanceof HTMLElement) {
     controller.agentDetailDialog = {
@@ -1755,6 +2206,10 @@ async function handleClick(root, controller, event) {
       controller.activeMember = null;
       controller.assignAgentDialog = createAssignAgentDialogState();
       closeDialog(root.querySelector("[data-tenant-assign-dialog]"));
+    }
+    if (dialogKind === "org-scope") {
+      controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();
+      closeDialog(root.querySelector("[data-tenant-member-org-scope-dialog]"));
     }
     if (dialogKind === "password") {
       controller.dialogs.changePasswordOpen = false;
@@ -1808,6 +2263,34 @@ function handleInput(root, controller, event) {
   }
   if (target.hasAttribute("data-tenant-member-status-toggle")) {
     void updateMemberStatus(root, controller, target);
+    return;
+  }
+  if (target.hasAttribute("data-tenant-member-org-scope-mode")) {
+    setMemberOrgScopeMode(controller, target.dataset.tenantMemberOrgScopeMode);
+    render(root, controller);
+    return;
+  }
+  if (target.hasAttribute("data-tenant-member-org-scope-search")) {
+    getMemberOrgScopeDialog(controller).searchQuery = target.value;
+    render(root, controller);
+    return;
+  }
+  if (target.hasAttribute("data-tenant-member-org-scope-select-all")) {
+    const dialog = getMemberOrgScopeDialog(controller);
+    const selected = target.checked;
+    for (const org of getVisibleMemberOrgScopeOrgs(dialog)) {
+      setMemberOrgScopeSelected(controller, org.orgId, selected);
+    }
+    render(root, controller);
+    return;
+  }
+  if (target.hasAttribute("data-tenant-member-org-scope-org")) {
+    setMemberOrgScopeSelected(
+      controller,
+      target.dataset.tenantMemberOrgScopeOrg,
+      target.checked,
+    );
+    render(root, controller);
     return;
   }
   if (target.hasAttribute("data-tenant-revoke-assignment-select-all")) {
@@ -1903,6 +2386,51 @@ async function handleSubmit(root, controller, event) {
       setFeedback(root, "成员密码已更新。");
     } catch (error) {
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  if (target.matches("[data-tenant-member-org-scope-form]")) {
+    event.preventDefault();
+    const dialog = getMemberOrgScopeDialog(controller);
+    if (!dialog.open || dialog.loading || dialog.busy) {
+      return;
+    }
+    const scopeMode = normalizeMemberOrgScopeMode(dialog.scopeMode);
+    const selectableOrgIds = new Set(
+      getMemberOrgScopeSelectableOrgs(dialog)
+        .map((org) => String(org?.orgId || "").trim())
+        .filter(Boolean),
+    );
+    const orgIds = Array.from(dialog.selectedOrgIds).filter((orgId) => selectableOrgIds.has(orgId));
+    if (scopeMode === "custom" && orgIds.length === 0) {
+      dialog.error = "请至少选择 1 个组织。";
+      render(root, controller);
+      setFeedback(root, dialog.error, true);
+      return;
+    }
+    const memberLabel = dialog.memberUsername || dialog.memberId || "该成员";
+    dialog.busy = true;
+    render(root, controller);
+    try {
+      await controller.apiClient.setTenantMemberOrgScope({
+        userId: dialog.memberId,
+        scopeMode,
+        ...(scopeMode === "custom" ? { orgIds } : {}),
+      });
+      controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-tenant-member-org-scope-dialog]"));
+      setFeedback(root, `成员“${memberLabel}”组织范围已更新。`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const currentDialog = controller.memberOrgScopeDialog;
+      if (currentDialog?.open && currentDialog.memberId === dialog.memberId) {
+        currentDialog.busy = false;
+        currentDialog.error = errorMessage;
+      }
+      render(root, controller);
+      setFeedback(root, errorMessage, true);
     }
     return;
   }
@@ -2060,6 +2588,7 @@ export async function mountTenantConsolePage(root, options = {}) {
   }
   if (controller.section !== "members") {
     controller.dialogs.createMemberOpen = false;
+    controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();
     controller.dialogs.changePasswordOpen = false;
     controller.dialogs.deleteMemberOpen = false;
     controller.passwordMember = null;

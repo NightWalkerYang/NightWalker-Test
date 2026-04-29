@@ -154,6 +154,51 @@ describe("tenant login page", () => {
     expect(root.textContent).not.toContain("API 暂不可用");
   });
 
+  it("ignores a stale direct-sidecar API override before bootstrapping login", async () => {
+    window.history.replaceState({}, "", "/login");
+    window.localStorage.setItem("openclaw:tenant-platform:api-base:v1", "http://127.0.0.1:18801");
+    const fetchMock = vi.fn(async (input) => {
+      if (String(input) === "/tenant-platform-api/v1/bootstrap") {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              ok: true,
+              data: { initialized: true, edition: "cloud" },
+            };
+          },
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        async json() {
+          return {
+            ok: false,
+            error: "not_found",
+          };
+        },
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const root = document.createElement("main");
+    document.body.append(root);
+
+    await mountTenantLoginPage(root);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/tenant-platform-api/v1/bootstrap",
+      expect.objectContaining({
+        method: "GET",
+      }),
+    );
+    expect(root.textContent).toContain("统一登录");
+    expect(root.textContent).not.toContain("API 暂不可用");
+    expect(window.localStorage.getItem("openclaw:tenant-platform:api-base:v1")).toBeNull();
+  });
+
   it("redirects tenant admins to the statistics overview after login", async () => {
     window.history.replaceState({}, "", "/login");
     const redirectSpy = vi

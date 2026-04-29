@@ -8,6 +8,7 @@ import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
 import { injectAutoGatewayTokenBootstrap } from "./runtime/branding/auto-token.js";
 import { injectEchartsViewPublicBootstrap } from "./runtime/echarts-view/bootstrap.js";
 import { injectLufengPublicBootstrap } from "./runtime/lufeng/bootstrap.js";
+import { injectSandboxViewPublicBootstrap } from "./runtime/sandbox-view/bootstrap.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -231,6 +232,23 @@ function buildEchartsViewEntryHtml() {
   ].join("\n");
 }
 
+function buildSandboxViewEntryHtml() {
+  return [
+    "<!doctype html>",
+    '<html lang="zh-CN">',
+    "  <head>",
+    '    <meta charset="utf-8" />',
+    '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
+    "    <title>沙盒模拟</title>",
+    "  </head>",
+    "  <body>",
+    '    <script type="module" src="/assets/openclaw-echarts-renderer.js"></script>',
+    "  </body>",
+    "</html>",
+    "",
+  ].join("\n");
+}
+
 function writeLoginRouteAliases(outputDir, indexContent) {
   const loginIndexPath = path.join(outputDir, "login", "index.html");
   const loginHtmlPath = path.join(outputDir, "login.html");
@@ -241,6 +259,11 @@ function writeLoginRouteAliases(outputDir, indexContent) {
 function writeEchartsViewRouteEntry(outputDir) {
   const echartsViewIndexPath = path.join(outputDir, "echarts-view", "index.html");
   writeTextIntoOutput(buildEchartsViewEntryHtml(), echartsViewIndexPath);
+}
+
+function writeSandboxViewRouteEntry(outputDir) {
+  const sandboxViewIndexPath = path.join(outputDir, "sandbox-view", "index.html");
+  writeTextIntoOutput(buildSandboxViewEntryHtml(), sandboxViewIndexPath);
 }
 
 function extractEmbeddedLibraries(bundleSource) {
@@ -291,7 +314,7 @@ function main() {
     replaceBrandFavicons(
       injectAutoGatewayTokenBootstrap(
         injectLufengPublicBootstrap(
-          injectEchartsViewPublicBootstrap(outputIndex),
+          injectSandboxViewPublicBootstrap(injectEchartsViewPublicBootstrap(outputIndex)),
           autoGatewayToken,
         ),
         autoGatewayToken,
@@ -301,6 +324,7 @@ function main() {
   fs.writeFileSync(outputIndexPath, finalizedIndexHtml, "utf8");
   writeLoginRouteAliases(outputDir, buildLoginEntryHtml(finalizedIndexHtml));
   writeEchartsViewRouteEntry(outputDir);
+  writeSandboxViewRouteEntry(outputDir);
 
   const embeddedLibraries = extractEmbeddedLibraries(
     fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),

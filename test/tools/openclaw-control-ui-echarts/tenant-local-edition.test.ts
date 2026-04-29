@@ -711,6 +711,237 @@ describe("tenant platform local edition", () => {
     expect(generatedHandlerScriptContent).toContain("window.top.location.href =");
   });
 
+  it("lists current member sandboxes and resolves sandbox payloads", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-sandbox",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-sandbox",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const assignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const sandboxDir = path.join(
+      sandbox.config.configDir,
+      "workspace-agents",
+      String(assignment.derivedAgentId),
+      "Sandbox",
+    );
+    fs.mkdirSync(sandboxDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sandboxDir, "采购沙盒模拟_sandbox.json"),
+      `\uFEFF${JSON.stringify(
+        {
+          sandboxName: "采购沙盒模拟",
+          summary: {
+            forecastDemandQty: 150,
+            recommendedPurchaseQty: 130,
+            estimatedPurchaseCost: 1105,
+            shortageRiskLevel: "high",
+          },
+          graph: {
+            nodes: [
+              { id: "product", label: "成品 A", type: "product" },
+              { id: "material", label: "原料 B", type: "material" },
+            ],
+            edges: [{ source: "product", target: "material", label: "USES_COMPONENT" }],
+          },
+          recommendations: [
+            {
+              materialId: "M001",
+              materialName: "原料 B",
+              recommendedQty: 130,
+              estimatedCost: 1105,
+            },
+          ],
+          report: {
+            headline: "下月需求上升，需要提前补货",
+            bullets: ["原料 B 是主要瓶颈", "当前库存不足以覆盖预测需求"],
+          },
+        },
+        null,
+        2,
+      )}`,
+      "utf8",
+    );
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-sandbox",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const listResponse = await requestJson(baseUrl, "/member/sandboxes", {
+      token: memberLogin.payload.data.token,
+    });
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.payload.data).toHaveLength(1);
+    expect(listResponse.payload.data[0]?.id).toBe(
+      `${assignment.derivedAgentId}:采购沙盒模拟_sandbox.json`,
+    );
+    expect(listResponse.payload.data[0]?.agentId).toBe(String(assignment.derivedAgentId));
+    expect(listResponse.payload.data[0]?.baseAgentId).toBe("subotech-finance");
+    expect(listResponse.payload.data[0]?.sandboxName).toBe("采购沙盒模拟");
+    expect(listResponse.payload.data[0]?.href).toMatch(/^\/sandbox-view\/\?token=/);
+
+    const resolveResponse = await requestJson(
+      baseUrl,
+      `/member/sandboxes/resolve?token=${encodeURIComponent(String(listResponse.payload.data[0]?.token || ""))}`,
+    );
+    expect(resolveResponse.status).toBe(200);
+    expect(resolveResponse.payload.data.sandboxName).toBe("采购沙盒模拟");
+    expect(resolveResponse.payload.data.agentName).toBe("苏博泰克财务分析助手");
+    expect(resolveResponse.payload.data.summary.recommendedPurchaseQty).toBe(130);
+    expect(resolveResponse.payload.data.graph.nodes).toHaveLength(2);
+    expect(resolveResponse.payload.data.recommendations).toHaveLength(1);
+  });
+
+  it("does not list sandboxes for members without a personal agent assignment", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-tenant-sandbox",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-tenant-sandbox",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+
+    const sandboxDir = path.join(
+      sandbox.config.configDir,
+      "workspace-agents",
+      "subotech-finance",
+      "Sandbox",
+    );
+    fs.mkdirSync(sandboxDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sandboxDir, "采购沙盒模拟_sandbox.json"),
+      JSON.stringify(
+        {
+          sandboxName: "采购沙盒模拟",
+          summary: {
+            forecastDemandQty: 150,
+            recommendedPurchaseQty: 130,
+            estimatedPurchaseCost: 1105,
+            shortageRiskLevel: "high",
+          },
+          graph: {
+            nodes: [
+              { id: "product", label: "成品 A", type: "product" },
+              { id: "material", label: "原料 B", type: "material" },
+            ],
+            edges: [{ source: "product", target: "material", label: "USES_COMPONENT" }],
+          },
+          recommendations: [
+            {
+              materialId: "M001",
+              materialName: "原料 B",
+              recommendedQty: 130,
+              estimatedCost: 1105,
+            },
+          ],
+          report: {
+            headline: "下月需求上升，需要提前补货",
+            bullets: ["原料 B 是主要瓶颈", "当前库存不足以覆盖预测需求"],
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-tenant-sandbox",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+
+    const listResponse = await requestJson(baseUrl, "/member/sandboxes", {
+      token: memberLogin.payload.data.token,
+    });
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.payload.data).toEqual([]);
+  });
+
   it("resolves dashboard manifest visualizations into fixed zero-intrusive runtime wrappers", async () => {
     const sandbox = createSandbox();
     const { baseUrl, db } = await startSandboxServer(sandbox);

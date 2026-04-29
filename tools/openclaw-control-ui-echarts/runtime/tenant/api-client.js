@@ -150,8 +150,23 @@ export function createTenantApiClient() {
     listPlatformTenants() {
       return requestJson("/platform/tenants");
     },
+    listDataSources() {
+      return requestJson("/platform/data-sources");
+    },
+    createDataSource(body) {
+      return requestJson("/platform/data-sources", { method: "POST", body });
+    },
+    updateDataSource(body) {
+      return requestJson("/platform/data-sources", { method: "PUT", body });
+    },
     createTenant(body) {
       return requestJson("/platform/tenants", { method: "POST", body });
+    },
+    getTenantDataSourceBinding(tenantId) {
+      return requestJson(withQuery("/platform/tenant-data-source-binding", { tenantId }));
+    },
+    setTenantDataSourceBinding(body) {
+      return requestJson("/platform/tenant-data-source-binding", { method: "POST", body });
     },
     updateTenantMemberLimit(body) {
       return requestJson("/platform/tenant-member-limit", { method: "POST", body });
@@ -188,6 +203,18 @@ export function createTenantApiClient() {
     },
     listTenantMembers() {
       return requestJson("/tenant/admin/members");
+    },
+    getCurrentTenantDataSourceBinding() {
+      return requestJson("/tenant/admin/data-source-binding");
+    },
+    listTenantOrganizations() {
+      return requestJson("/tenant/admin/orgs");
+    },
+    getTenantMemberOrgScope(userId) {
+      return requestJson(withQuery("/tenant/admin/member-org-scope", { userId }));
+    },
+    setTenantMemberOrgScope(body) {
+      return requestJson("/tenant/admin/member-org-scope", { method: "POST", body });
     },
     createTenantMember(body) {
       return requestJson("/tenant/admin/members", { method: "POST", body });
@@ -233,8 +260,16 @@ export function createTenantApiClient() {
         cache: "no-store",
       });
     },
+    listMemberSandboxes() {
+      return requestJson("/member/sandboxes", {
+        cache: "no-store",
+      });
+    },
     resolveMemberVisualization(token) {
       return requestJson(withQuery("/member/visualizations/resolve", { token }));
+    },
+    resolveMemberSandbox(token) {
+      return requestJson(withQuery("/member/sandboxes/resolve", { token }));
     },
     syncMemberUsageRecords(body) {
       return requestJson("/member/usage-records/sync", { method: "POST", body });

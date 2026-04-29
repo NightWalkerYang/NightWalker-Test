@@ -3,7 +3,10 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bootTenantEntry } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
+import {
+  bootTenantEntry,
+  resolveCanonicalTenantLoopbackHref,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
 import {
   resolveTenantApiBaseCandidates,
   writeSelectedTenantAgent,
@@ -35,6 +38,25 @@ function stubVisualizationFetch(items = []) {
       const url = readRequestUrl(input);
       if (url.pathname.endsWith("/member/visualizations")) {
         return jsonResponse(items);
+      }
+      if (url.pathname.endsWith("/changelogs")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse([]);
+    }),
+  );
+}
+
+function stubVisualizationAndSandboxFetch({ visualizations = [], sandboxes = [] } = {}) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input) => {
+      const url = readRequestUrl(input);
+      if (url.pathname.endsWith("/member/visualizations")) {
+        return jsonResponse(visualizations);
+      }
+      if (url.pathname.endsWith("/member/sandboxes")) {
+        return jsonResponse(sandboxes);
       }
       if (url.pathname.endsWith("/changelogs")) {
         return jsonResponse([]);
@@ -161,7 +183,12 @@ afterEach(() => {
   if (typeof visualizationPollTimer === "number") {
     window.clearInterval(visualizationPollTimer);
   }
+  const sandboxPollTimer = window.__openclawMemberSandboxPollTimer;
+  if (typeof sandboxPollTimer === "number") {
+    window.clearInterval(sandboxPollTimer);
+  }
   delete window.__openclawMemberVisualizationPollTimer;
+  delete window.__openclawMemberSandboxPollTimer;
   delete window.__openclawTenantEntryBooted;
   delete window.__openclawTenantRouteSyncBooted;
   delete window.__openclawUpdateLogState;
@@ -192,6 +219,24 @@ describe("zero-intrusive tenant entry", () => {
 
     expect(resolveTenantApiBaseCandidates()).toEqual(["/tenant-platform-api/v1"]);
     expect(window.localStorage.getItem("openclaw:tenant-platform:api-base:v1")).toBeNull();
+  });
+
+  it("canonicalizes localhost tenant routes onto 127.0.0.1", () => {
+    expect(
+      resolveCanonicalTenantLoopbackHref(
+        "http://localhost:18789/chat?ocTenantView=login&session=agent%3Amain%3Amain",
+      ),
+    ).toBe("http://127.0.0.1:18789/chat?ocTenantView=login&session=agent%3Amain%3Amain");
+  });
+
+  it("keeps non-tenant localhost routes unchanged", () => {
+    expect(resolveCanonicalTenantLoopbackHref("http://localhost:18789/chat")).toBe("");
+  });
+
+  it("keeps localhost tenant routes without a session unchanged", () => {
+    expect(resolveCanonicalTenantLoopbackHref("http://localhost:18789/chat?ocTenantView=login")).toBe(
+      "",
+    );
   });
 
   it("injects a native-style management section for platform admins", () => {
@@ -226,11 +271,13 @@ describe("zero-intrusive tenant entry", () => {
     );
 
     const items = managementSection?.querySelectorAll(".nav-item") ?? [];
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]?.textContent).toContain("租户管理");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=platform-tenants");
     expect(items[1]?.textContent).toContain("Agent 分配");
     expect(items[1]?.getAttribute("href")).toContain("ocTenantView=platform-agent-assignment");
+    expect(items[2]?.textContent).toContain("创建数据源");
+    expect(items[2]?.getAttribute("href")).toContain("ocTenantView=platform-data-sources");
 
     const chatGroup = document.querySelector('[data-native-group="chat"]');
     expect(managementSection?.nextElementSibling).toBe(chatGroup);
@@ -409,6 +456,72 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[0] instanceof HTMLElement ? utilityItems[0].hidden : false).toBe(true);
     expect(utilityItems[1] instanceof HTMLElement ? utilityItems[1].hidden : false).toBe(true);
     expect(utilityItems[2] instanceof HTMLElement ? utilityItems[2].hidden : true).toBe(false);
+  });
+
+  it("injects a member sandbox section below visualization", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">文档</a>
+        <a class="sidebar-utility-link oc-knowledge-graph-link">知识图谱</a>
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+    stubVisualizationAndSandboxFetch({
+      visualizations: [
+        {
+          id: "tenant-agent-1:销售数据可视化_index.html",
+          href: "/echarts-view/?token=member-visualization-token",
+          agentId: "tenant-agent-1",
+          agentName: "苏博泰克财务分析助手",
+          visualizationName: "销售数据可视化",
+          visualizationFileName: "销售数据可视化_index.html",
+          title: "销售数据可视化 · 苏博泰克财务分析助手",
+          token: "member-visualization-token",
+        },
+      ],
+      sandboxes: [
+        {
+          id: "tenant-agent-1:采购沙盒模拟_sandbox.json",
+          href: "/sandbox-view/?token=member-sandbox-token",
+          agentId: "tenant-agent-1",
+          agentName: "苏博泰克财务分析助手",
+          sandboxName: "采购沙盒模拟",
+          sandboxFileName: "采购沙盒模拟_sandbox.json",
+          title: "采购沙盒模拟 · 苏博泰克财务分析助手",
+          token: "member-sandbox-token",
+        },
+      ],
+    });
+
+    bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
+
+    const visualizationSection = document.querySelector(".oc-member-visualization-section");
+    const sandboxSection = document.querySelector(".oc-member-sandbox-section");
+    const sandboxItems = sandboxSection?.querySelectorAll(".nav-item") ?? [];
+
+    expect(visualizationSection).not.toBeNull();
+    expect(sandboxSection).not.toBeNull();
+    expect(sandboxSection?.previousElementSibling).toBe(visualizationSection);
+    expect(sandboxSection?.querySelector(".nav-section__label-text")?.textContent).toContain(
+      "沙盒模拟",
+    );
+    expect(sandboxItems).toHaveLength(1);
+    expect(sandboxItems[0]?.textContent).toContain("采购沙盒模拟");
+    expect(sandboxItems[0]?.getAttribute("href")).toContain("sandbox-view/?token=");
   });
 
   it("keeps the visualization menu in the sidebar on member chat routes", async () => {

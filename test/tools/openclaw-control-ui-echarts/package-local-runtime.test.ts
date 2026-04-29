@@ -43,6 +43,7 @@ describe("package local runtime", () => {
       `jimp@${resolveInstalledPackageVersion(nodeModulesRoot, "jimp")}`,
       `@jimp/utils@${resolveInstalledPackageVersion(nodeModulesRoot, "@jimp/utils")}`,
       `p-queue@${resolveInstalledPackageVersion(nodeModulesRoot, "p-queue")}`,
+      "pg@8.20.0",
     ]);
   });
 
@@ -88,6 +89,7 @@ describe("package local runtime", () => {
     expect(fs.existsSync(path.join(outputDir, "login", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "login.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "echarts-view", "index.html"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "sandbox-view", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts-gl.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "gsap.min.js"))).toBe(true);
@@ -96,6 +98,7 @@ describe("package local runtime", () => {
     );
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "pixi.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "babylon.js"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "g6", "g6.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "three.module.min.js"))).toBe(
       true,
     );
@@ -120,6 +123,11 @@ describe("package local runtime", () => {
       "utf8",
     );
     expect(echartsViewIndex).toContain("/assets/openclaw-echarts-renderer.js");
+    const sandboxViewIndex = fs.readFileSync(
+      path.join(outputDir, "sandbox-view", "index.html"),
+      "utf8",
+    );
+    expect(sandboxViewIndex).toContain("/assets/openclaw-echarts-renderer.js");
     const loginIndex = fs.readFileSync(path.join(outputDir, "login", "index.html"), "utf8");
     const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");
     expect(loginIndex).toContain('<base href="/" />');

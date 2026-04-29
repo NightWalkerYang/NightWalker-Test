@@ -14,6 +14,7 @@ const ROOT_ATTR = "data-oc-tenant-surface-root";
 const STYLE_ATTR = "data-oc-tenant-surface-style";
 const ACTIVE_ATTR = "data-oc-tenant-surface-active";
 const SECTION_ATTR = "data-oc-tenant-section";
+const FALLBACK_ATTR = "data-oc-tenant-surface-fallback";
 
 function isTenantManagementView(view) {
   return (
@@ -83,22 +84,64 @@ function renderShell(root, section) {
   `;
 }
 
-async function mountCurrentSurface(content) {
-  if (!isTenantManagementRoute()) {
+function isFallbackContent(content) {
+  return content instanceof HTMLElement && content.hasAttribute(FALLBACK_ATTR);
+}
+
+function ensureFallbackContent() {
+  if (!(document.querySelector("openclaw-app") instanceof HTMLElement)) {
+    return null;
+  }
+  let content = document.querySelector(`[${FALLBACK_ATTR}]`);
+  if (content instanceof HTMLElement) {
+    return content;
+  }
+  content = document.createElement("main");
+  content.className = "content oc-tenant-surface-fallback";
+  content.setAttribute(FALLBACK_ATTR, "true");
+  document.body.append(content);
+  return content;
+}
+
+function removeFallbackContent() {
+  document.querySelector(`[${FALLBACK_ATTR}]`)?.remove();
+}
+
+function clearMountedSurface(content) {
+  if (content instanceof HTMLElement && !isFallbackContent(content)) {
     content.removeAttribute(ACTIVE_ATTR);
     content.querySelector(`[${ROOT_ATTR}]`)?.remove();
-    document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+  }
+  removeFallbackContent();
+  document.body.removeAttribute(ACTIVE_ATTR);
+  document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+}
+
+async function mountCurrentSurface(content) {
+  if (!isTenantManagementRoute()) {
+    clearMountedSurface(content);
     return null;
   }
 
   const session = readTenantSession();
   if (session?.session?.role !== "tenant_admin") {
+    clearMountedSurface(content);
     return null;
   }
 
+  const host = content instanceof HTMLElement ? content : ensureFallbackContent();
+  if (!(host instanceof HTMLElement)) {
+    return null;
+  }
   ensureStyle();
-  content.setAttribute(ACTIVE_ATTR, "true");
-  const root = ensureRoot(content);
+  if (isFallbackContent(host)) {
+    document.body.setAttribute(ACTIVE_ATTR, "fallback");
+  } else {
+    removeFallbackContent();
+    document.body.removeAttribute(ACTIVE_ATTR);
+    host.setAttribute(ACTIVE_ATTR, "true");
+  }
+  const root = ensureRoot(host);
   const section = sectionForView(readTenantView());
   if (root.getAttribute(SECTION_ATTR) !== section) {
     renderShell(root, section);
@@ -117,10 +160,8 @@ export async function bootTenantSurface() {
     const content =
       scope instanceof Element && scope.matches(".content")
         ? scope
-        : document.querySelector(".content");
-    if (!(content instanceof HTMLElement)) {
-      return null;
-    }
+        : document.querySelector(".content") ||
+          document.querySelector(`[${FALLBACK_ATTR}]`);
     return mountCurrentSurface(content);
   };
 

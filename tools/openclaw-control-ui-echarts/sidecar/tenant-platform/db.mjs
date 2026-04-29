@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 import JSON5 from "json5";
 import { hashPassword } from "./auth.mjs";
 import { ensureTenantPlatformDirs } from "./config.mjs";
@@ -11,6 +12,9 @@ const MIGRATION_PATH = new URL("./migrations/001_init.sql", import.meta.url);
 const LOCAL_BOOTSTRAP_TENANT_CODE = "local";
 const LOCAL_BOOTSTRAP_TENANT_NAME = "本地租户";
 const LOCAL_BOOTSTRAP_MEMBER_LIMIT = 999;
+const LOCAL_DISCOVERED_DATA_SOURCE_CODE = "local-kingdee-analytics";
+const LOCAL_DISCOVERED_DATA_SOURCE_NAME = "本机 kingdee-analytics";
+const TENANT_PLATFORM_REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const DERIVED_AGENT_TEMPLATE_ENTRIES = [
   "AGENTS.md",
   "SOUL.md",
@@ -191,6 +195,176 @@ function normalizeUpdateLogContent(value) {
   return normalizeUpdateLogText(value, { maxLength: 8000, preserveNewlines: true });
 }
 
+function normalizeEnvScalar(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    return normalized.slice(1, -1).trim();
+  }
+  return normalized;
+}
+
+function parseEnvFileAssignments(filePath) {
+  const normalizedPath = String(filePath || "").trim();
+  if (!normalizedPath || !fs.existsSync(normalizedPath)) {
+    return null;
+  }
+  const values = {};
+  const lines = fs.readFileSync(normalizedPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+    const key = trimmed.slice(0, separatorIndex).trim();
+    if (!key) {
+      continue;
+    }
+    values[key] = normalizeEnvScalar(trimmed.slice(separatorIndex + 1));
+  }
+  return values;
+}
+
+function parsePostgresConnectionFromDsn(dsn) {
+  const normalized = String(dsn || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    return null;
+  }
+  if (!["postgres:", "postgresql:"].includes(parsed.protocol)) {
+    return null;
+  }
+  const database = parsed.pathname.replace(/^\/+/, "").trim();
+  if (!database) {
+    return null;
+  }
+  const connection = {
+    host: parsed.hostname,
+    database,
+  };
+  const port = Number.parseInt(parsed.port, 10);
+  if (Number.isFinite(port) && port > 0) {
+    connection.port = port;
+  }
+  const user = decodeURIComponent(parsed.username || "").trim();
+  if (user) {
+    connection.user = user;
+  }
+  const password = decodeURIComponent(parsed.password || "");
+  if (password) {
+    connection.password = password;
+  }
+  return connection;
+}
+
+function buildAnalyticsEnvFileCandidates(config = {}) {
+  const explicitCandidates = [
+    config.analyticsEnvFilePath,
+    process.env.OPENCLAW_TENANT_PLATFORM_ANALYTICS_ENV_FILE,
+    process.env.KINGDEE_ANALYTICS_ENV_FILE,
+  ];
+  const candidatePaths = [
+    ...explicitCandidates,
+    path.join(TENANT_PLATFORM_REPO_ROOT, ".env"),
+    path.join(TENANT_PLATFORM_REPO_ROOT, "..", "kingdee-analytics", "config", ".env"),
+    path.join(path.parse(TENANT_PLATFORM_REPO_ROOT).root, "AI", "kingdee-analytics", "config", ".env"),
+  ];
+  const seen = new Set();
+  const resolved = [];
+  for (const candidate of candidatePaths) {
+    const normalized = String(candidate || "").trim();
+    if (!normalized) {
+      continue;
+    }
+    const absolutePath = path.resolve(normalized);
+    if (seen.has(absolutePath)) {
+      continue;
+    }
+    seen.add(absolutePath);
+    resolved.push(absolutePath);
+  }
+  return resolved;
+}
+
+function resolveDiscoveredLocalAnalyticsDataSource(config = {}) {
+  const explicitEnv = {
+    ANALYTICS_PG_DSN:
+      normalizeEnvScalar(config.analyticsPgDsn) ||
+      normalizeEnvScalar(process.env.OPENCLAW_TENANT_PLATFORM_ANALYTICS_PG_DSN) ||
+      normalizeEnvScalar(process.env.ANALYTICS_PG_DSN),
+    KINGDEE_DBID:
+      normalizeEnvScalar(config.analyticsSourceDbid) ||
+      normalizeEnvScalar(process.env.OPENCLAW_TENANT_PLATFORM_ANALYTICS_DBID) ||
+      normalizeEnvScalar(process.env.KINGDEE_DBID),
+    SOURCE_TENANT_CODE:
+      normalizeEnvScalar(config.analyticsSourceTenantCode) ||
+      normalizeEnvScalar(process.env.OPENCLAW_TENANT_PLATFORM_ANALYTICS_TENANT_CODE),
+  };
+
+  let envValues = explicitEnv;
+  if (!envValues.ANALYTICS_PG_DSN) {
+    for (const candidatePath of buildAnalyticsEnvFileCandidates(config)) {
+      const parsed = parseEnvFileAssignments(candidatePath);
+      if (!parsed?.ANALYTICS_PG_DSN && !parsed?.SANDBOX_PG_DSN) {
+        continue;
+      }
+      envValues = {
+        ANALYTICS_PG_DSN:
+          normalizeEnvScalar(parsed.ANALYTICS_PG_DSN) || normalizeEnvScalar(parsed.SANDBOX_PG_DSN),
+        KINGDEE_DBID: normalizeEnvScalar(parsed.KINGDEE_DBID),
+        SOURCE_TENANT_CODE:
+          normalizeEnvScalar(parsed.KINGDEE_TENANT_CODE) ||
+          normalizeEnvScalar(parsed.SANDBOX_TENANT_CODE),
+      };
+      break;
+    }
+  }
+
+  const connection = parsePostgresConnectionFromDsn(envValues.ANALYTICS_PG_DSN);
+  if (!connection) {
+    return null;
+  }
+
+  return {
+    code: normalizeEnvScalar(config.analyticsDataSourceCode) || LOCAL_DISCOVERED_DATA_SOURCE_CODE,
+    name: normalizeEnvScalar(config.analyticsDataSourceName) || LOCAL_DISCOVERED_DATA_SOURCE_NAME,
+    sourceType: "kingdee_analytics",
+    status: "active",
+    connection,
+    sourceDbid: envValues.KINGDEE_DBID || null,
+    sourceTenantCode: envValues.SOURCE_TENANT_CODE || null,
+  };
+}
+
+function ensureDiscoveredLocalAnalyticsDataSource(db, config = {}) {
+  if (config.disableAutoDiscoveredDataSources) {
+    return;
+  }
+  const dataSourceCount = Number(getScalar(db, "SELECT COUNT(*) AS value FROM data_sources") || 0);
+  if (dataSourceCount > 0) {
+    return;
+  }
+  const discovered = resolveDiscoveredLocalAnalyticsDataSource(config);
+  if (!discovered) {
+    return;
+  }
+  upsertDataSource(db, discovered);
+}
+
 function ensurePlatformUpdateLogSchemaCompatibility(db) {
   db.exec(
     `CREATE TABLE IF NOT EXISTS platform_update_logs (
@@ -240,6 +414,24 @@ function ensureDataSourceSchemaCompatibility(db) {
        FOREIGN KEY (bound_by_user_id) REFERENCES users(id) ON DELETE SET NULL
      );`,
   );
+  const duplicateBindingCount = Number(
+    getScalar(
+      db,
+      `SELECT COUNT(*) AS value
+       FROM (
+         SELECT data_source_id
+         FROM tenant_data_source_bindings
+         GROUP BY data_source_id
+         HAVING COUNT(*) > 1
+       )`,
+    ) || 0,
+  );
+  if (duplicateBindingCount === 0) {
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_data_source_bindings_data_source_id_unique
+         ON tenant_data_source_bindings (data_source_id);`,
+    );
+  }
   db.exec(
     `CREATE TABLE IF NOT EXISTS tenant_member_source_policies (
        id TEXT PRIMARY KEY,
@@ -290,19 +482,41 @@ function parseJsonObject(value, fallback = {}) {
   }
 }
 
-function serializeDataSourceConnection(value) {
+function normalizeDataSourceConnectionObject(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    return JSON.stringify(value);
+    return { ...value };
   }
   const normalized = String(value || "").trim();
   if (!normalized) {
-    return "{}";
+    return {};
   }
   const parsed = parseJsonObject(normalized, null);
   if (!parsed) {
     throw new Error("connection_json_invalid");
   }
-  return JSON.stringify(parsed);
+  return { ...parsed };
+}
+
+function serializeDataSourceConnection(value) {
+  return JSON.stringify(normalizeDataSourceConnectionObject(value));
+}
+
+function buildStoredDataSourceConnection(existingValue, nextValue, preserveExisting = false) {
+  if (preserveExisting) {
+    return parseJsonObject(existingValue, {});
+  }
+  const connection = normalizeDataSourceConnectionObject(nextValue);
+  const existingConnection = parseJsonObject(existingValue, {});
+  if (
+    (!Object.prototype.hasOwnProperty.call(connection, "password") || connection.password === "") &&
+    typeof existingConnection.password === "string" &&
+    existingConnection.password
+  ) {
+    connection.password = existingConnection.password;
+  } else if (connection.password === "") {
+    delete connection.password;
+  }
+  return connection;
 }
 
 function normalizeDataSourceStatus(value) {
@@ -1655,6 +1869,7 @@ export function openTenantPlatformDb(config) {
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec(fs.readFileSync(MIGRATION_PATH, "utf8"));
   ensureSchemaCompatibility(db);
+  ensureDiscoveredLocalAnalyticsDataSource(db, config);
   return db;
 }
 
@@ -1799,12 +2014,21 @@ export function upsertDataSource(db, params = {}) {
 
   const existing =
     (params.id
-      ? db.prepare("SELECT id FROM data_sources WHERE id = ?").get(String(params.id).trim())
-      : null) ?? db.prepare("SELECT id FROM data_sources WHERE code = ?").get(code);
+      ? db
+          .prepare("SELECT id, connection_json AS connectionJson FROM data_sources WHERE id = ?")
+          .get(String(params.id).trim())
+      : null) ??
+    db.prepare("SELECT id, connection_json AS connectionJson FROM data_sources WHERE code = ?").get(code);
   const now = nowIso();
-  const connectionJson = serializeDataSourceConnection(
-    params.connection ?? params.connectionJson ?? {},
+  const hasExplicitConnection =
+    Object.prototype.hasOwnProperty.call(params, "connection") ||
+    Object.prototype.hasOwnProperty.call(params, "connectionJson");
+  const storedConnection = buildStoredDataSourceConnection(
+    existing?.connectionJson,
+    params.connection ?? params.connectionJson,
+    Boolean(existing?.id) && !hasExplicitConnection,
   );
+  const connectionJson = serializeDataSourceConnection(storedConnection);
   const status = normalizeDataSourceStatus(params.status);
 
   if (existing?.id) {
@@ -1916,6 +2140,16 @@ export function setTenantDataSourceBinding(db, params = {}) {
   }
 
   return runInTransaction(db, () => {
+    const occupiedBinding = db
+      .prepare(
+        `SELECT tenant_id AS tenantId
+         FROM tenant_data_source_bindings
+         WHERE data_source_id = ?`,
+      )
+      .get(dataSourceId);
+    if (occupiedBinding?.tenantId && String(occupiedBinding.tenantId || "").trim() !== tenantId) {
+      throw new Error("data_source_already_bound");
+    }
     const existing = db
       .prepare(
         `SELECT id, data_source_id AS dataSourceId
@@ -3393,6 +3627,7 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
 }
 
 const WORKSPACE_VISUALIZATION_FILE_PATTERN = /_index(?:\.dashboard\.json|\.html)$/i;
+const WORKSPACE_SANDBOX_FILE_PATTERN = /_sandbox\.json$/i;
 
 function listWorkspaceVisualizationFiles(workspaceDir) {
   const normalizedWorkspaceDir = String(workspaceDir || "").trim();
@@ -3437,6 +3672,168 @@ export function listAssignedAgentVisualizationsForUser(db, params, configAgents 
       visualizationFileName,
       visualizationName: stripVisualizationIndexSuffix(visualizationFileName),
       visualizationRelativePath: path.posix.join("Echarts", visualizationFileName),
+    })),
+  );
+}
+
+function listWorkspaceSandboxFiles(workspaceDir) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir) {
+    return [];
+  }
+  const sandboxDir = path.join(normalizedWorkspaceDir, "Sandbox");
+  try {
+    if (!fs.existsSync(sandboxDir) || !fs.statSync(sandboxDir).isDirectory()) {
+      return [];
+    }
+    return fs
+      .readdirSync(sandboxDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && WORKSPACE_SANDBOX_FILE_PATTERN.test(entry.name))
+      .map((entry) => entry.name)
+      .toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function stripSandboxFileSuffix(fileName) {
+  return String(fileName || "")
+    .trim()
+    .replace(/_sandbox\.json$/i, "");
+}
+
+function listTenantSandboxAgents(db, tenantId, configAgents = []) {
+  const configMap = new Map(configAgents.map((entry) => [entry.id, entry]));
+  return db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              agent_id AS baseAgentId,
+              description,
+              rate_multiplier AS rateMultiplier,
+              status,
+              balance_points AS balancePoints,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM tenant_agents
+       WHERE tenant_id = ? AND status = 'active'
+       ORDER BY updated_at DESC, created_at DESC`,
+    )
+    .all(tenantId)
+    .map((row) => {
+      const configEntry = configMap.get(String(row.baseAgentId || "").trim()) ?? null;
+      const displayName = resolveAssignedAgentDisplayName(
+        configEntry?.name,
+        row.description,
+        row.baseAgentId,
+        row.id,
+      );
+      return {
+        ...row,
+        tenantAgentId: String(row.id || "").trim(),
+        baseAgentId: String(row.baseAgentId || "").trim(),
+        agentName: displayName || String(row.baseAgentId || row.id || "").trim(),
+        displayName,
+        emoji: configEntry?.emoji ?? null,
+        avatar: configEntry?.avatar ?? null,
+      };
+    });
+}
+
+function listTenantSandboxWorkspaceCandidates(db, tenantAgent, params = {}) {
+  const candidates = [];
+  const seen = new Set();
+
+  const pushCandidate = (workspaceDir, derivedAgentId = "") => {
+    const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+    if (!normalizedWorkspaceDir || seen.has(normalizedWorkspaceDir)) {
+      return;
+    }
+    seen.add(normalizedWorkspaceDir);
+    candidates.push({
+      workspaceDir: normalizedWorkspaceDir,
+      derivedAgentId: String(derivedAgentId || "").trim(),
+    });
+  };
+
+  const baseWorkspaceDir = resolveBaseWorkspaceDir({
+    ...params,
+    tenantId: tenantAgent.tenantId,
+    baseAgentId: tenantAgent.baseAgentId,
+  });
+  pushCandidate(baseWorkspaceDir);
+
+  const assignmentWorkspaces = db
+    .prepare(
+      `SELECT derived_agent_id AS derivedAgentId,
+              derived_workspace_dir AS derivedWorkspaceDir
+       FROM user_agent_assignments
+       WHERE tenant_id = ? AND tenant_agent_id = ? AND status = 'active'
+       ORDER BY created_at DESC`,
+    )
+    .all(tenantAgent.tenantId, tenantAgent.tenantAgentId);
+  for (const row of assignmentWorkspaces) {
+    pushCandidate(row?.derivedWorkspaceDir, row?.derivedAgentId);
+  }
+
+  return candidates;
+}
+
+export function listTenantVisibleSandboxesForUser(db, params, configAgents = []) {
+  const tenantId = String(params?.tenantId || "").trim();
+  const userId = String(params?.userId || "").trim();
+  if (!tenantId || !userId) {
+    return [];
+  }
+
+  const membership = db
+    .prepare(
+      `SELECT 1
+       FROM tenant_memberships
+       WHERE tenant_id = ? AND user_id = ? AND role = 'member' AND status = 'active'
+       LIMIT 1`,
+    )
+    .get(tenantId, userId);
+  if (!membership) {
+    return [];
+  }
+
+  const items = [];
+  const seen = new Set();
+  for (const tenantAgent of listTenantSandboxAgents(db, tenantId, configAgents)) {
+    for (const candidate of listTenantSandboxWorkspaceCandidates(db, tenantAgent, params)) {
+      for (const sandboxFileName of listWorkspaceSandboxFiles(candidate.workspaceDir)) {
+        const dedupeKey = `${tenantAgent.tenantAgentId}:${sandboxFileName}`;
+        if (seen.has(dedupeKey)) {
+          continue;
+        }
+        seen.add(dedupeKey);
+        items.push({
+          ...tenantAgent,
+          id: dedupeKey,
+          userId,
+          derivedAgentId: candidate.derivedAgentId || "",
+          derivedWorkspaceDir: candidate.workspaceDir,
+          sandboxWorkspaceDir: candidate.workspaceDir,
+          sandboxFileName,
+          sandboxName: stripSandboxFileSuffix(sandboxFileName),
+          sandboxRelativePath: path.posix.join("Sandbox", sandboxFileName),
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
+export function listAssignedAgentSandboxesForUser(db, params, configAgents = []) {
+  return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) =>
+    listWorkspaceSandboxFiles(agent.derivedWorkspaceDir).map((sandboxFileName) => ({
+      ...agent,
+      sandboxFileName,
+      sandboxName: stripSandboxFileSuffix(sandboxFileName),
+      sandboxRelativePath: path.posix.join("Sandbox", sandboxFileName),
     })),
   );
 }

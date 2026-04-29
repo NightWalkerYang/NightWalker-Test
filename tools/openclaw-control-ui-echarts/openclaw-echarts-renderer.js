@@ -10,6 +10,8 @@ import { bootToolRunCluster } from "./runtime/framework/tool-run-cluster.js";
 import { bootVoiceInputBridge } from "./runtime/framework/voice-input.js";
 import { bootKnowledgeGraphEntry } from "./runtime/knowledge-graph/entry.js";
 import { bootLufengSurface } from "./runtime/lufeng/surface.js";
+import { isSandboxViewPublicPath } from "./runtime/sandbox-view/context.js";
+import { bootSandboxViewSurface } from "./runtime/sandbox-view/surface.js";
 import { bootTenantAuthSurface } from "./runtime/tenant/auth-surface.js";
 import { bootTenantEntry } from "./runtime/tenant/entry.js";
 import { bootMemberChatSurface } from "./runtime/tenant/member-chat-surface.js";
@@ -40,6 +42,10 @@ function boot() {
     bootEchartsViewSurface();
     return;
   }
+  if (isSandboxViewPublicPath(window.location.pathname)) {
+    bootSandboxViewSurface();
+    return;
+  }
   bootBrandReplacer();
   bootBrandPanel();
   bootChatAmbientBackground();
@@ -53,6 +59,7 @@ function boot() {
   bootMemberSurface();
   bootMemberChatSurface();
   bootEchartsViewSurface();
+  bootSandboxViewSurface();
   bootTenantEntry();
   bootLufengSurface();
   runtime.boot();

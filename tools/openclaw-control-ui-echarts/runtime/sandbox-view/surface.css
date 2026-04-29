@@ -1,0 +1,177 @@
+body.oc-sandbox-view-state-body {
+  margin: 0;
+  min-height: 100vh;
+  background: #06121f;
+  color: #e6eef7;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.oc-sandbox-view-shell {
+  min-height: 100vh;
+  padding: 28px;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at top left, rgba(52, 152, 219, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(16, 185, 129, 0.14), transparent 24%),
+    #06121f;
+}
+
+.oc-sandbox-view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.oc-sandbox-view-eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #8ab4d9;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.oc-sandbox-view-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.oc-sandbox-view-subtitle {
+  margin: 8px 0 0;
+  color: #b7c8d8;
+  font-size: 14px;
+}
+
+.oc-sandbox-view-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.1fr) minmax(320px, 1fr);
+  gap: 20px;
+}
+
+.oc-sandbox-view-panel {
+  background: rgba(8, 18, 31, 0.9);
+  border: 1px solid rgba(138, 180, 217, 0.16);
+  border-radius: 8px;
+  padding: 18px;
+  box-sizing: border-box;
+  backdrop-filter: blur(12px);
+}
+
+.oc-sandbox-view-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.oc-sandbox-view-metric {
+  background: rgba(11, 27, 44, 0.9);
+  border: 1px solid rgba(138, 180, 217, 0.12);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.oc-sandbox-view-metric-label {
+  display: block;
+  font-size: 12px;
+  color: #8ab4d9;
+  margin-bottom: 8px;
+}
+
+.oc-sandbox-view-metric-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+#oc-sandbox-view-graph {
+  width: 100%;
+  min-height: 520px;
+  border-radius: 8px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(11, 27, 44, 0.96), rgba(7, 17, 28, 0.96));
+  border: 1px solid rgba(138, 180, 217, 0.12);
+}
+
+.oc-sandbox-view-graph-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 520px;
+  color: #8ab4d9;
+  font-size: 14px;
+}
+
+.oc-sandbox-view-section-title {
+  margin: 0 0 14px;
+  font-size: 16px;
+}
+
+.oc-sandbox-view-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.oc-sandbox-view-table th,
+.oc-sandbox-view-table td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(138, 180, 217, 0.1);
+}
+
+.oc-sandbox-view-report {
+  margin: 0;
+  padding-left: 18px;
+  color: #c8d6e4;
+  font-size: 14px;
+}
+
+.oc-sandbox-view-state {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  box-sizing: border-box;
+}
+
+.oc-sandbox-view-state-card {
+  width: min(560px, 100%);
+  padding: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(138, 180, 217, 0.18);
+  background: rgba(8, 18, 31, 0.92);
+}
+
+@media (max-width: 1100px) {
+  .oc-sandbox-view-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .oc-sandbox-view-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .oc-sandbox-view-shell {
+    padding: 16px;
+  }
+
+  .oc-sandbox-view-header {
+    flex-direction: column;
+  }
+
+  .oc-sandbox-view-metrics {
+    grid-template-columns: 1fr;
+  }
+}

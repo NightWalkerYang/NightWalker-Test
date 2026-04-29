@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -33,11 +34,16 @@ import {
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 import {
   buildDashboardManifestHtml,
+  createTenantPlatformRouter,
   rewriteVisualizationHtml,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
-import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
+import {
+  issueSessionToken,
+  verifyPassword,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 
 const cleanupRoots = new Set();
+const cleanupServers = new Set();
 const TENANT_DB_MODULE_PATH =
   "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 
@@ -72,6 +78,7 @@ function createTempSandbox() {
       stateDir: path.join(configDir, "tenant-platform"),
       dbPath: path.join(configDir, "tenant-platform", "tenant-platform.sqlite"),
       configPath,
+      disableAutoDiscoveredDataSources: true,
     },
   };
 }
@@ -108,7 +115,74 @@ async function loadTenantPlatformDbModule() {
   return import(TENANT_DB_MODULE_PATH);
 }
 
-afterEach(() => {
+function createTenantPlatformServerConfig(sandbox) {
+  return {
+    edition: "cloud",
+    bindHost: "127.0.0.1",
+    port: 0,
+    apiBasePath: "/tenant-platform-api/v1",
+    sessionSecret: "tenant-platform-route-test-secret",
+    localLicensePath: path.join(sandbox.config.stateDir, "local-license.json"),
+    localLicensePublicKey: "",
+    localLicensePublicKeyPath: path.join(sandbox.config.stateDir, "license-public.pem"),
+    ...sandbox.config,
+  };
+}
+
+async function startTenantPlatformServer(sandbox, extraDeps = {}) {
+  const config = createTenantPlatformServerConfig(sandbox);
+  const db = openTenantPlatformDb(config);
+  const router = createTenantPlatformRouter({ config, db, ...extraDeps });
+  const server = http.createServer((request, response) => {
+    Promise.resolve(router(request, response)).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+      response.end(
+        JSON.stringify({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  cleanupServers.add({ server, db });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("tenant_platform_server_address_invalid");
+  }
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}${config.apiBasePath}`,
+    config,
+    db,
+  };
+}
+
+async function requestTenantPlatformJson(baseUrl, pathname, options = {}) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: options.method ?? "GET",
+    headers: {
+      "content-type": "application/json",
+      ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const payload = await response.json();
+  return {
+    status: response.status,
+    payload,
+  };
+}
+
+function issueTenantPlatformTestToken(config, session) {
+  return issueSessionToken(session, config.sessionSecret);
+}
+
+afterEach(async () => {
+  for (const item of cleanupServers) {
+    await new Promise((resolve) => item.server.close(resolve));
+    closeTenantPlatformDb(item.db);
+  }
+  cleanupServers.clear();
   for (const root of cleanupRoots) {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -237,6 +311,66 @@ describe("tenant platform database foundation", () => {
             }),
           ]),
         );
+      } finally {
+        closeTenantPlatformDb(db);
+      }
+    });
+
+    it("rejects binding one data source to multiple platform tenants", async () => {
+      const { getTenantDataSourceBinding, setTenantDataSourceBinding, upsertDataSource } =
+        await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        const platformAdmin = createBootstrapPlatformAdmin(db, {
+          username: "platform-root",
+          password: "secret",
+        });
+        const firstTenant = createTenantWithAdmin(db, {
+          code: "binding-first",
+          name: "租户 First",
+          adminUsername: "binding-first-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const secondTenant = createTenantWithAdmin(db, {
+          code: "binding-second",
+          name: "租户 Second",
+          adminUsername: "binding-second-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const source = upsertDataSource(db, {
+          code: "kd-shared",
+          name: "共享账套",
+          sourceType: "kingdee_analytics",
+          connection: { host: "db-shared.internal" },
+        });
+
+        setTenantDataSourceBinding(db, {
+          tenantId: firstTenant.id,
+          dataSourceId: source.id,
+          boundByUserId: platformAdmin?.id,
+        });
+
+        expect(() =>
+          setTenantDataSourceBinding(db, {
+            tenantId: secondTenant.id,
+            dataSourceId: source.id,
+            boundByUserId: platformAdmin?.id,
+          }),
+        ).toThrow("data_source_already_bound");
+        expect(getTenantDataSourceBinding(db, firstTenant.id)).toMatchObject({
+          tenantId: firstTenant.id,
+          dataSourceId: source.id,
+        });
+        expect(getTenantDataSourceBinding(db, secondTenant.id)).toBeNull();
       } finally {
         closeTenantPlatformDb(db);
       }
@@ -773,6 +907,1084 @@ describe("tenant platform database foundation", () => {
       } finally {
         closeTenantPlatformDb(db);
       }
+    });
+  });
+
+  describe("org scope routes", () => {
+    it("auto-registers a local analytics data source from a discovered env file", async () => {
+      const sandbox = createTempSandbox();
+      const analyticsEnvPath = path.join(sandbox.root, "analytics.env");
+      fs.writeFileSync(
+        analyticsEnvPath,
+        [
+          "ANALYTICS_PG_DSN=postgresql://kb_local:kb_local123!@127.0.0.1:65432/kingdee_analytics",
+          "KINGDEE_DBID=6220b009309f24",
+        ].join("\n"),
+        "utf8",
+      );
+      sandbox.config.analyticsEnvFilePath = analyticsEnvPath;
+      sandbox.config.disableAutoDiscoveredDataSources = false;
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox);
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-auto-discovery",
+        password: "secret",
+      });
+      const platformToken = issueTenantPlatformTestToken(config, {
+        userId: platformAdmin.id,
+        username: platformAdmin.username,
+        role: "platform_admin",
+        tenantId: null,
+      });
+
+      const listed = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        token: platformToken,
+      });
+
+      expect(listed.status).toBe(200);
+      expect(listed.payload.data).toEqual([
+        expect.objectContaining({
+          code: "local-kingdee-analytics",
+          name: "本机 kingdee-analytics",
+          sourceType: "kingdee_analytics",
+          sourceDbid: "6220b009309f24",
+          connectionPasswordStored: true,
+          connection: {
+            host: "127.0.0.1",
+            port: 65432,
+            database: "kingdee_analytics",
+            user: "kb_local",
+          },
+        }),
+      ]);
+      expect(listed.payload.data[0]?.connection?.password).toBeUndefined();
+      expect(JSON.stringify(listed.payload.data[0])).not.toContain("kb_local123!");
+      expect(
+        JSON.parse(
+          String(
+            db
+              .prepare("SELECT connection_json AS connectionJson FROM data_sources WHERE code = ?")
+              .get("local-kingdee-analytics")?.connectionJson || "{}",
+          ),
+        ),
+      ).toMatchObject({
+        host: "127.0.0.1",
+        port: 65432,
+        database: "kingdee_analytics",
+        user: "kb_local",
+        password: "kb_local123!",
+      });
+    });
+
+    it("lets platform admins manage data sources and tenant bindings", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox);
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-platform-alpha",
+        name: "租户 Route Platform Alpha",
+        adminUsername: "route-platform-alpha-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const platformToken = issueTenantPlatformTestToken(config, {
+        userId: platformAdmin.id,
+        username: platformAdmin.username,
+        role: "platform_admin",
+        tenantId: null,
+      });
+
+      const emptyList = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        token: platformToken,
+      });
+      expect(emptyList.status).toBe(200);
+      expect(emptyList.payload.data).toEqual([]);
+
+      const created = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          code: "kd-route-main",
+          name: "路由账套主库",
+          sourceType: "kingdee_analytics",
+          status: "active",
+          connection: {
+            host: "db.route.internal",
+            port: 5432,
+            database: "kingdee_main",
+            user: "route_user",
+            password: "route-secret",
+          },
+          sourceDbid: "route-db-main",
+          sourceTenantCode: "route-tenant-main",
+        },
+      });
+      expect(created.status).toBe(200);
+      expect(created.payload.data).toMatchObject({
+        code: "kd-route-main",
+        name: "路由账套主库",
+        sourceType: "kingdee_analytics",
+        sourceDbid: "route-db-main",
+        sourceTenantCode: "route-tenant-main",
+      });
+      expect(created.payload.data.connection).toMatchObject({
+        host: "db.route.internal",
+        port: 5432,
+        database: "kingdee_main",
+        user: "route_user",
+      });
+      expect(created.payload.data.connection.password).toBeUndefined();
+      expect(created.payload.data.connectionPasswordStored).toBe(true);
+      expect(JSON.stringify(created.payload.data)).not.toContain("route-secret");
+
+      const listed = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        token: platformToken,
+      });
+      expect(listed.status).toBe(200);
+      expect(listed.payload.data).toEqual([
+        expect.objectContaining({
+          id: created.payload.data.id,
+          code: "kd-route-main",
+          name: "路由账套主库",
+          connectionPasswordStored: true,
+        }),
+      ]);
+      expect(listed.payload.data[0]?.connection?.password).toBeUndefined();
+      expect(JSON.stringify(listed.payload.data[0])).not.toContain("route-secret");
+
+      const updated = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "PUT",
+        token: platformToken,
+        body: {
+          id: created.payload.data.id,
+          code: "kd-route-main",
+          name: "路由账套主库（更新）",
+          sourceType: "kingdee_analytics",
+          status: "active",
+          connection: {
+            host: "db.route.internal",
+            port: 5432,
+            database: "kingdee_main",
+            user: "route_user",
+          },
+          sourceDbid: "route-db-main",
+          sourceTenantCode: "route-tenant-main",
+        },
+      });
+      expect(updated.status).toBe(200);
+      expect(updated.payload.data).toMatchObject({
+        id: created.payload.data.id,
+        name: "路由账套主库（更新）",
+        connectionPasswordStored: true,
+      });
+      expect(updated.payload.data.connection?.password).toBeUndefined();
+      expect(JSON.stringify(updated.payload.data)).not.toContain("route-secret");
+      expect(
+        JSON.parse(
+          String(
+            db
+              .prepare("SELECT connection_json AS connectionJson FROM data_sources WHERE id = ?")
+              .get(created.payload.data.id)?.connectionJson || "{}",
+          ),
+        ),
+      ).toMatchObject({
+        host: "db.route.internal",
+        port: 5432,
+        database: "kingdee_main",
+        user: "route_user",
+        password: "route-secret",
+      });
+
+      const bindingBefore = await requestTenantPlatformJson(
+        baseUrl,
+        `/platform/tenant-data-source-binding?tenantId=${encodeURIComponent(tenant.id)}`,
+        {
+          token: platformToken,
+        },
+      );
+      expect(bindingBefore.status).toBe(200);
+      expect(bindingBefore.payload.data).toBeNull();
+
+      const rebound = await requestTenantPlatformJson(baseUrl, "/platform/tenant-data-source-binding", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          tenantId: tenant.id,
+          dataSourceId: created.payload.data.id,
+        },
+      });
+      expect(rebound.status).toBe(200);
+      expect(rebound.payload.data).toMatchObject({
+        tenantId: tenant.id,
+        dataSourceId: created.payload.data.id,
+        dataSourceName: "路由账套主库（更新）",
+        connectionPasswordStored: true,
+      });
+      expect(rebound.payload.data.connection?.password).toBeUndefined();
+
+      const bindingAfter = await requestTenantPlatformJson(
+        baseUrl,
+        `/platform/tenant-data-source-binding?tenantId=${encodeURIComponent(tenant.id)}`,
+        {
+          token: platformToken,
+        },
+      );
+      expect(bindingAfter.status).toBe(200);
+      expect(bindingAfter.payload.data).toMatchObject({
+        tenantId: tenant.id,
+        dataSourceId: created.payload.data.id,
+        connectionPasswordStored: true,
+      });
+      expect(bindingAfter.payload.data.connection?.password).toBeUndefined();
+    });
+
+    it("rejects reusing one data source across multiple platform tenants through the route", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox);
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const firstTenant = createTenantWithAdmin(db, {
+        code: "route-owner-first",
+        name: "租户 Route Owner First",
+        adminUsername: "route-owner-first-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const secondTenant = createTenantWithAdmin(db, {
+        code: "route-owner-second",
+        name: "租户 Route Owner Second",
+        adminUsername: "route-owner-second-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const platformToken = issueTenantPlatformTestToken(config, {
+        userId: platformAdmin.id,
+        username: platformAdmin.username,
+        role: "platform_admin",
+        tenantId: null,
+      });
+
+      const created = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          code: "kd-route-single-owner",
+          name: "单归属账套",
+          sourceType: "kingdee_analytics",
+          connection: {
+            host: "db.route.internal",
+            database: "kingdee_main",
+          },
+        },
+      });
+      expect(created.status).toBe(200);
+
+      const firstBinding = await requestTenantPlatformJson(baseUrl, "/platform/tenant-data-source-binding", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          tenantId: firstTenant.id,
+          dataSourceId: created.payload.data.id,
+        },
+      });
+      expect(firstBinding.status).toBe(200);
+
+      const rejectedBinding = await requestTenantPlatformJson(baseUrl, "/platform/tenant-data-source-binding", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          tenantId: secondTenant.id,
+          dataSourceId: created.payload.data.id,
+        },
+      });
+      expect(rejectedBinding.status).toBe(409);
+      expect(rejectedBinding.payload.error).toBe("data_source_already_bound");
+    });
+
+    it("rejects unsupported data source types on create and update", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox);
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const platformToken = issueTenantPlatformTestToken(config, {
+        userId: platformAdmin.id,
+        username: platformAdmin.username,
+        role: "platform_admin",
+        tenantId: null,
+      });
+
+      const rejectedCreate = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          code: "legacy-main",
+          name: "Legacy Main",
+          sourceType: "legacy_warehouse",
+          connection: {
+            host: "db.legacy.internal",
+          },
+        },
+      });
+      expect(rejectedCreate.status).toBe(400);
+      expect(rejectedCreate.payload.error).toBe("data_source_type_unsupported");
+
+      const created = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          code: "kd-route-supported",
+          name: "受支持账套",
+          sourceType: "kingdee_analytics",
+          connection: {
+            host: "db.route.internal",
+            database: "kingdee_main",
+          },
+        },
+      });
+      expect(created.status).toBe(200);
+
+      const rejectedUpdate = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "PUT",
+        token: platformToken,
+        body: {
+          id: created.payload.data.id,
+          code: "kd-route-supported",
+          name: "受支持账套",
+          sourceType: "legacy_warehouse",
+          connection: {
+            host: "db.route.internal",
+            database: "kingdee_main",
+          },
+        },
+      });
+      expect(rejectedUpdate.status).toBe(400);
+      expect(rejectedUpdate.payload.error).toBe("data_source_type_unsupported");
+    });
+
+    it("keeps missing source type distinct from unsupported source type on create and update", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox);
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const platformToken = issueTenantPlatformTestToken(config, {
+        userId: platformAdmin.id,
+        username: platformAdmin.username,
+        role: "platform_admin",
+        tenantId: null,
+      });
+
+      const rejectedCreate = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          code: "missing-type-main",
+          name: "Missing Type Main",
+          connection: {
+            host: "db.missing-type.internal",
+          },
+        },
+      });
+      expect(rejectedCreate.status).toBe(400);
+      expect(rejectedCreate.payload.error).toBe("data_source_type_required");
+
+      const created = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "POST",
+        token: platformToken,
+        body: {
+          code: "kd-route-missing-type",
+          name: "缺失类型账套",
+          sourceType: "kingdee_analytics",
+          connection: {
+            host: "db.route.internal",
+            database: "kingdee_main",
+          },
+        },
+      });
+      expect(created.status).toBe(200);
+
+      const rejectedUpdate = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        method: "PUT",
+        token: platformToken,
+        body: {
+          id: created.payload.data.id,
+          code: "kd-route-missing-type",
+          name: "缺失类型账套",
+          sourceType: "   ",
+          connection: {
+            host: "db.route.internal",
+            database: "kingdee_main",
+          },
+        },
+      });
+      expect(rejectedUpdate.status).toBe(400);
+      expect(rejectedUpdate.payload.error).toBe("data_source_type_required");
+    });
+
+    it("lets tenant admins read the current binding, load organizations, and save member org scope", async () => {
+      const sandbox = createTempSandbox();
+      const calls = {
+        listBindings: [],
+        validateBindings: [],
+      };
+      const orgRows = [
+        {
+          orgId: "1001",
+          orgNumber: "ORG-1001",
+          orgName: "华东事业部",
+          parentOrgId: null,
+          status: "active",
+        },
+        {
+          orgId: "1002",
+          orgNumber: "ORG-1002",
+          orgName: "华南事业部",
+          parentOrgId: "1001",
+          status: "active",
+        },
+      ];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource(binding) {
+            calls.listBindings.push(binding);
+            return orgRows;
+          },
+          async validateOrganizationIds(binding, orgIds) {
+            calls.validateBindings.push({
+              binding,
+              orgIds,
+            });
+            return orgRows.filter((entry) => orgIds.includes(entry.orgId));
+          },
+        },
+      });
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-org-alpha",
+        name: "租户 Route Org Alpha",
+        adminUsername: "route-org-alpha-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-org-alpha-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-org-member",
+        password: "secret",
+      });
+      const { setTenantDataSourceBinding, upsertDataSource } = await loadTenantPlatformDbModule();
+      const source = upsertDataSource(db, {
+        code: "kd-route-org",
+        name: "组织账套路由",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.org.internal",
+          database: "kingdee_org",
+          user: "org_user",
+          password: "org-secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: tenantAdmin?.id,
+      });
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+
+      const currentBinding = await requestTenantPlatformJson(
+        baseUrl,
+        "/tenant/admin/data-source-binding",
+        {
+          token: tenantAdminToken,
+        },
+      );
+      expect(currentBinding.status).toBe(200);
+      expect(currentBinding.payload.data).toMatchObject({
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        dataSourceName: "组织账套路由",
+        connectionPasswordStored: true,
+      });
+      expect(currentBinding.payload.data.connection?.password).toBeUndefined();
+      expect(JSON.stringify(currentBinding.payload.data)).not.toContain("org-secret");
+
+      const listedOrgs = await requestTenantPlatformJson(baseUrl, "/tenant/admin/orgs", {
+        token: tenantAdminToken,
+      });
+      expect(listedOrgs.status).toBe(200);
+      expect(listedOrgs.payload.data).toEqual(orgRows);
+      expect(calls.listBindings).toHaveLength(1);
+      expect(calls.listBindings[0]).toMatchObject({
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        dataSourceName: "组织账套路由",
+      });
+      expect(calls.listBindings[0]?.connection?.password).toBe("org-secret");
+
+      const initialScope = await requestTenantPlatformJson(
+        baseUrl,
+        `/tenant/admin/member-org-scope?userId=${encodeURIComponent(member.id)}`,
+        {
+          token: tenantAdminToken,
+        },
+      );
+      expect(initialScope.status).toBe(200);
+      expect(initialScope.payload.data).toMatchObject({
+        userId: member.id,
+        dataSourceId: source.id,
+        scopeMode: "none",
+        orgScopeCount: 0,
+      });
+
+      const savedScope = await requestTenantPlatformJson(baseUrl, "/tenant/admin/member-org-scope", {
+        method: "POST",
+        token: tenantAdminToken,
+        body: {
+          userId: member.id,
+          scopeMode: "custom",
+          orgIds: ["1001"],
+        },
+      });
+      expect(savedScope.status).toBe(200);
+      expect(savedScope.payload.data).toMatchObject({
+        userId: member.id,
+        dataSourceId: source.id,
+        scopeMode: "custom",
+        orgScopeCount: 1,
+      });
+      expect(savedScope.payload.data.orgScopes).toEqual([
+        expect.objectContaining({
+          orgId: "1001",
+          orgNameSnapshot: "华东事业部",
+        }),
+      ]);
+      expect(calls.validateBindings).toEqual([
+        expect.objectContaining({
+          binding: expect.objectContaining({
+            tenantId: tenant.id,
+            dataSourceId: source.id,
+          }),
+          orgIds: ["1001"],
+        }),
+      ]);
+
+      const reloadedScope = await requestTenantPlatformJson(
+        baseUrl,
+        `/tenant/admin/member-org-scope?userId=${encodeURIComponent(member.id)}`,
+        {
+          token: tenantAdminToken,
+        },
+      );
+      expect(reloadedScope.status).toBe(200);
+      expect(reloadedScope.payload.data).toMatchObject({
+        userId: member.id,
+        scopeMode: "custom",
+        orgScopeCount: 1,
+      });
+    });
+
+    it("accepts orgScopes object-array payloads when saving custom org scope", async () => {
+      const sandbox = createTempSandbox();
+      const calls = {
+        validateBindings: [],
+      };
+      const orgRows = [
+        {
+          orgId: "1001",
+          orgNumber: "ORG-1001",
+          orgName: "华东事业部",
+          parentOrgId: null,
+          status: "active",
+        },
+      ];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return orgRows;
+          },
+          async validateOrganizationIds(binding, orgIds) {
+            calls.validateBindings.push({
+              binding,
+              orgIds,
+            });
+            return orgRows.filter((entry) => orgIds.includes(entry.orgId));
+          },
+        },
+      });
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-org-object-array",
+        name: "租户 Route Org Object Array",
+        adminUsername: "route-org-object-array-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-org-object-array-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-org-object-array-member",
+        password: "secret",
+      });
+      const { setTenantDataSourceBinding, upsertDataSource } = await loadTenantPlatformDbModule();
+      const source = upsertDataSource(db, {
+        code: "kd-route-org-object-array",
+        name: "对象数组账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.object-array.internal",
+          database: "kingdee_object_array",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: tenantAdmin?.id,
+      });
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+
+      const savedScope = await requestTenantPlatformJson(baseUrl, "/tenant/admin/member-org-scope", {
+        method: "POST",
+        token: tenantAdminToken,
+        body: {
+          userId: member.id,
+          scopeMode: "custom",
+          orgScopes: [
+            {
+              orgId: "1001",
+            },
+          ],
+        },
+      });
+      expect(savedScope.status).toBe(200);
+      expect(savedScope.payload.data).toMatchObject({
+        userId: member.id,
+        scopeMode: "custom",
+        orgScopeCount: 1,
+      });
+      expect(savedScope.payload.data.orgScopes).toEqual([
+        expect.objectContaining({
+          orgId: "1001",
+          orgNameSnapshot: "华东事业部",
+        }),
+      ]);
+      expect(calls.validateBindings).toEqual([
+        expect.objectContaining({
+          binding: expect.objectContaining({
+            tenantId: tenant.id,
+            dataSourceId: source.id,
+          }),
+          orgIds: ["1001"],
+        }),
+      ]);
+    });
+
+    it("rejects mixed valid and invalid org IDs instead of saving a partial scope", async () => {
+      const sandbox = createTempSandbox();
+      const orgRows = [
+        {
+          orgId: "1001",
+          orgNumber: "ORG-1001",
+          orgName: "华东事业部",
+          parentOrgId: null,
+          status: "active",
+        },
+      ];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return orgRows;
+          },
+          async validateOrganizationIds(_binding, orgIds) {
+            return orgRows.filter((entry) => orgIds.includes(entry.orgId));
+          },
+        },
+      });
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-org-partial",
+        name: "租户 Route Org Partial",
+        adminUsername: "route-org-partial-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-org-partial-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-org-partial-member",
+        password: "secret",
+      });
+      const { getTenantMemberOrgScope, setTenantDataSourceBinding, upsertDataSource } =
+        await loadTenantPlatformDbModule();
+      const source = upsertDataSource(db, {
+        code: "kd-route-org-partial",
+        name: "部分匹配账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.partial.internal",
+          database: "kingdee_partial",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: tenantAdmin?.id,
+      });
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+
+      const rejected = await requestTenantPlatformJson(baseUrl, "/tenant/admin/member-org-scope", {
+        method: "POST",
+        token: tenantAdminToken,
+        body: {
+          userId: member.id,
+          scopeMode: "custom",
+          orgIds: ["1001", "9999"],
+        },
+      });
+      expect(rejected.status).toBe(400);
+      expect(rejected.payload.error).toBe("member_org_scope_invalid_org_ids");
+      expect(
+        getTenantMemberOrgScope(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          dataSourceId: source.id,
+        }),
+      ).toMatchObject({
+        scopeMode: "none",
+        orgScopeCount: 0,
+      });
+    });
+
+    it("returns tenant_data_source_unbound for org scope reads without a tenant binding", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            throw new Error("should_not_be_called");
+          },
+          async validateOrganizationIds() {
+            throw new Error("should_not_be_called");
+          },
+        },
+      });
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-org-unbound",
+        name: "租户 Route Org Unbound",
+        adminUsername: "route-org-unbound-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-org-unbound-admin");
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+
+      const response = await requestTenantPlatformJson(baseUrl, "/tenant/admin/orgs", {
+        token: tenantAdminToken,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.payload.error).toBe("tenant_data_source_unbound");
+    });
+
+    it("returns member_not_found for unknown tenant member org scope requests", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return [];
+          },
+          async validateOrganizationIds() {
+            return [];
+          },
+        },
+      });
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-member-missing",
+        name: "租户 Route Member Missing",
+        adminUsername: "route-member-missing-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-member-missing-admin");
+      const { setTenantDataSourceBinding, upsertDataSource } = await loadTenantPlatformDbModule();
+      const source = upsertDataSource(db, {
+        code: "kd-route-member-missing",
+        name: "成员缺失账套",
+        sourceType: "kingdee_analytics",
+        connection: { host: "db.member.missing.internal" },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: tenantAdmin?.id,
+      });
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+
+      const response = await requestTenantPlatformJson(
+        baseUrl,
+        "/tenant/admin/member-org-scope?userId=missing-member",
+        {
+          token: tenantAdminToken,
+        },
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.payload.error).toBe("member_not_found");
+    });
+
+    it("returns user_id_required for blank tenant member org scope POST requests", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return [];
+          },
+          async validateOrganizationIds() {
+            return [];
+          },
+        },
+      });
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-member-blank-user",
+        name: "租户 Route Member Blank User",
+        adminUsername: "route-member-blank-user-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-member-blank-user-admin");
+      const { setTenantDataSourceBinding, upsertDataSource } = await loadTenantPlatformDbModule();
+      const source = upsertDataSource(db, {
+        code: "kd-route-member-blank-user",
+        name: "空成员账套",
+        sourceType: "kingdee_analytics",
+        connection: { host: "db.member.blank.internal" },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: tenantAdmin?.id,
+      });
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+
+      const response = await requestTenantPlatformJson(baseUrl, "/tenant/admin/member-org-scope", {
+        method: "POST",
+        token: tenantAdminToken,
+        body: {
+          userId: "   ",
+          scopeMode: "all",
+        },
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.payload.error).toBe("user_id_required");
+    });
+
+    it("rejects empty custom org scope saves", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return [];
+          },
+          async validateOrganizationIds() {
+            return [];
+          },
+        },
+      });
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-empty-scope",
+        name: "租户 Route Empty Scope",
+        adminUsername: "route-empty-scope-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-empty-scope-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-empty-scope-member",
+        password: "secret",
+      });
+      const { setTenantDataSourceBinding, upsertDataSource } = await loadTenantPlatformDbModule();
+      const source = upsertDataSource(db, {
+        code: "kd-route-empty-scope",
+        name: "空范围账套路由",
+        sourceType: "kingdee_analytics",
+        connection: { host: "db.empty.scope.internal" },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: tenantAdmin?.id,
+      });
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+
+      const response = await requestTenantPlatformJson(baseUrl, "/tenant/admin/member-org-scope", {
+        method: "POST",
+        token: tenantAdminToken,
+        body: {
+          userId: member.id,
+          scopeMode: "custom",
+          orgIds: [],
+        },
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.payload.error).toBe("member_org_scope_empty");
+    });
+
+    it("rejects org scope routes for the wrong role", async () => {
+      const sandbox = createTempSandbox();
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return [];
+          },
+          async validateOrganizationIds() {
+            return [];
+          },
+        },
+      });
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-role-denied",
+        name: "租户 Route Role Denied",
+        adminUsername: "route-role-denied-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-role-denied-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-role-denied-member",
+        password: "secret",
+      });
+      const tenantAdminToken = issueTenantPlatformTestToken(config, {
+        userId: tenantAdmin?.id,
+        username: tenantAdmin?.username,
+        role: "tenant_admin",
+        tenantId: tenant.id,
+      });
+      const memberToken = issueTenantPlatformTestToken(config, {
+        userId: member.id,
+        username: member.username,
+        role: "member",
+        tenantId: tenant.id,
+      });
+
+      const platformDenied = await requestTenantPlatformJson(baseUrl, "/platform/data-sources", {
+        token: tenantAdminToken,
+      });
+      expect(platformDenied.status).toBe(403);
+      expect(platformDenied.payload.error).toBe("forbidden");
+
+      const tenantDenied = await requestTenantPlatformJson(baseUrl, "/tenant/admin/orgs", {
+        token: memberToken,
+      });
+      expect(tenantDenied.status).toBe(403);
+      expect(tenantDenied.payload.error).toBe("forbidden");
+
+      expect(platformAdmin.role).toBe("platform_admin");
     });
   });
 

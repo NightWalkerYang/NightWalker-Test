@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS data_sources (
 CREATE TABLE IF NOT EXISTS tenant_data_source_bindings (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL UNIQUE,
-  data_source_id TEXT NOT NULL,
+  data_source_id TEXT NOT NULL UNIQUE,
   bound_by_user_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

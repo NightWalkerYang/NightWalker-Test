@@ -31,6 +31,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/vendor/gsap.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/pixi.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/babylon.js`
+- `tools/openclaw-control-ui-echarts/vendor/g6/g6.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/tsparticles.bundle.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/three.module.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/three/`
@@ -42,6 +43,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/package-local-runtime.mjs`
 - `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs`
 - `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh`
+- `tools/openclaw-control-ui-echarts/TENANT_DATA_SOURCE_OWNERSHIP.md`
 - `tools/openclaw-control-ui-echarts/README.md`
 - `tools/openclaw-control-ui-echarts/RUNTIME_ARCHITECTURE.md`
 - `tools/openclaw-control-ui-echarts/generated/.gitignore`
@@ -118,6 +120,14 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/preboot.js`
 
+### Runtime: Sandbox View
+
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/bootstrap.js`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/context.js`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/preboot.js`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/surface.css`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/surface.js`
+
 ### Runtime: Dashboard Manifest
 
 - `tools/openclaw-control-ui-echarts/runtime/dashboard-manifest/bootstrap.js`
@@ -169,6 +179,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/branding.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
@@ -210,6 +221,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-branding.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/sandbox-view-bootstrap.test.ts`
+- `test/tools/openclaw-control-ui-echarts/sandbox-view-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-usage-stats-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-overview-page.test.ts`
@@ -218,6 +231,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-local-edition.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-platform-runtime-deps.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tool-run-cluster.test.ts`
 - `test/tools/openclaw-control-ui-echarts/voice-input.test.ts`
@@ -245,12 +259,15 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Platform admins can now replace the default `知识图谱` utility entry with a zero-intrusive `更改品牌` action, open a machine-global branding panel, and save either a text logo or an uploaded image logo without touching repository files or existing OpenClaw source files; if the current brand already uses an image logo, later name/title edits can keep that machine-local image without forcing a re-upload.
 - The tenant sidecar now serves a machine-local public branding state plus an image logo asset path, while platform-admin routes can persist or restore the brand configuration under the sidecar state directory so each deployment machine keeps its own brand outside Git.
 - The branding runtime now reads dynamic brand state instead of relying on hardcoded text only, so brand name, page title, text logos, and image logos all update fixed Control UI brand slots while still leaving normal chat content untouched; favicon updates now follow the active text or image logo, and same-browser tabs sync branding changes immediately through zero-intrusive cross-tab state propagation.
+- Member sandboxes can now be discovered from derived workspaces, listed in the sidebar, and opened through a dedicated same-origin `/sandbox-view/` runtime route with its own zero-intrusive bootstrap and renderer surface.
 - Tenant admins can now delete members directly from the member list through a zero-intrusive confirmation dialog; deletion now physically removes the member's `users` row together with cascaded membership/session rows, deletes that member's Agent-assignment rows, and clears that member's derived Agent workspace directories, while historical usage records stay queryable through snapshot fields persisted on `tenant_usage_records`. Recreating the same username inside that same tenant now creates a fresh member record instead of reviving a logically deleted account.
 - CSP-sensitive preboot behavior now uses same-origin external scripts instead of inline bootstrap blocks.
 - The public `/echarts-view/` bridge now ships with a dedicated static entry page plus same-origin runtime assets, so the browser lands on a tokenized visualization entry instead of falling back to the main Control UI shell and its `/echarts-view/__openclaw/control-ui-config.json` probe.
 - The knowledge graph page is provided as a separate static page with a Control UI entry link.
 - A tenant platform sidecar can provide zero-intrusive login, tenant bootstrap, membership, and Agent-assignment APIs.
 - The tenant platform sidecar now supports a local-edition license file, signature verification, renewal-code application, and read-only enforcement after expiry.
+- Platform admins can now manage a zero-intrusive data-source catalog, keep the tenant-to-data-source binding at one-to-one, and continue using the original tenant-table binding dialog for rebinding from the tenant view.
+- Tenant admins can now load the current bound data source, fetch organization directories from `kingdee_analytics`, and save member-level org scopes with search and visible-only select-all behavior, while the deployment layer keeps the Postgres driver and analytics env injection inside the zero-intrusive setup path instead of root `package.json` or root `docker-compose.yml`.
 - Tenant member Agent assignment now seeds each derived workspace with the base Agent's `MEMORY.md` / `memory.md` / `memory/` / `skills/` plus the existing bootstrap templates, while still excluding prior sessions and other runtime artifacts so assignment remains a one-time derivation.
 - Tenant member Agent assignment now also mirrors the base Agent's durable exec-approval bucket into the derived Agent bucket under `exec-approvals.json`, heals older derived assignments during member-Agent list reads, and removes the derived bucket again when that member is deleted.
 - The tenant platform sidecar now self-heals a dedicated paired operator device for exec approvals under the shared `OPENCLAW_CONFIG_DIR` (`devices/paired.json`) plus a sidecar-private device-token store under `tenant-platform/identity/tenant-platform-device-auth.json`, then uses that identity to open an `operator.approvals` gateway client and automatically resolve matching `exec.approval.requested` events with `allow-once` for tenant-derived Agent requests. This removes the previous dependency on front-end approval popups for long heredoc or obfuscation-triggered dashboard file writes and keeps working across sidecar restarts.
