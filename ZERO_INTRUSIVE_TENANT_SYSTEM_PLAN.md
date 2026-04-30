@@ -1743,6 +1743,7 @@ sidecar 落点固定为：
    - 租户成员创建
    - 租户管理员给成员分配已下发到本租户的 Agent
    - 租户管理员撤回成员已接收的 Agent 分配
+     - 实际运行方案要求与成员删除保持同一清理语义：撤回时除了把 `user_agent_assignments.status` 置为失效，还要同步清理该 assignment 对应的派生工作区 `workspace-agents/<derivedAgentId>`、运行时别名 `workspace-<derivedAgentId>`，并清掉 `exec-approvals.json` 里的派生授权桶；否则成员再次分配前会长期残留无主 workspace
    - 租户管理员原生壳层已补齐 `已有Agent` 视图：
      - 通过侧边栏 `Agent -> 已有Agent` 进入
      - 页面以卡片展示当前租户已拥有的 Agent

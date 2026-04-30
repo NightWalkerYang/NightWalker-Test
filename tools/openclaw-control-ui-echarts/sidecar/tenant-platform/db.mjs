@@ -1524,6 +1524,87 @@ function cleanupMemberDerivedWorkspaces(entries, params = {}) {
   };
 }
 
+function collectAssignmentWorkspaceEntriesByWhereClause(db, whereClause, bindings = []) {
+  const normalizedWhereClause = String(whereClause || "").trim();
+  if (!normalizedWhereClause) {
+    return [];
+  }
+  return db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              tenant_agent_id AS tenantAgentId,
+              derived_agent_id AS derivedAgentId,
+              derived_workspace_dir AS derivedWorkspaceDir
+       FROM user_agent_assignments
+       WHERE ${normalizedWhereClause}`,
+    )
+    .all(...bindings)
+    .map((row) => ({
+      id: String(row?.id || "").trim(),
+      userId: String(row?.userId || "").trim(),
+      tenantAgentId: String(row?.tenantAgentId || "").trim(),
+      derivedAgentId: String(row?.derivedAgentId || "").trim(),
+      derivedWorkspaceDir: String(row?.derivedWorkspaceDir || "").trim(),
+    }))
+    .filter((row) => row.id);
+}
+
+function revokeAssignmentEntriesWithCleanup(db, params = {}) {
+  const normalizedWhereClause = String(params.whereClause || "").trim();
+  const bindings = Array.isArray(params.bindings) ? params.bindings : [];
+  if (!normalizedWhereClause) {
+    return {
+      revokedAssignmentCount: 0,
+      affectedUserIds: [],
+      affectedMemberCount: 0,
+      removedWorkspaceCount: 0,
+      removedWorkspacePathCount: 0,
+      cleanedApprovalBucketCount: 0,
+    };
+  }
+
+  const selectedAssignments = collectAssignmentWorkspaceEntriesByWhereClause(
+    db,
+    normalizedWhereClause,
+    bindings,
+  );
+  if (!selectedAssignments.length) {
+    return {
+      revokedAssignmentCount: 0,
+      affectedUserIds: [],
+      affectedMemberCount: 0,
+      removedWorkspaceCount: 0,
+      removedWorkspacePathCount: 0,
+      cleanedApprovalBucketCount: 0,
+    };
+  }
+
+  db.prepare(
+    `UPDATE user_agent_assignments
+     SET status = 'inactive'
+     WHERE ${normalizedWhereClause}`,
+  ).run(...bindings);
+
+  const cleanupResult = cleanupMemberDerivedWorkspaces(selectedAssignments, params);
+  let cleanedApprovalBucketCount = 0;
+  try {
+    cleanedApprovalBucketCount = cleanupDerivedAgentExecApprovals(selectedAssignments, params);
+  } catch {
+    // Best-effort cleanup only. Assignment revocation must not be blocked by stale approval buckets.
+  }
+
+  const affectedUserIds = [...new Set(selectedAssignments.map((assignment) => assignment.userId).filter(Boolean))];
+  return {
+    revokedAssignmentCount: selectedAssignments.length,
+    affectedUserIds,
+    affectedMemberCount: affectedUserIds.length,
+    removedWorkspaceCount: Number(cleanupResult?.removedWorkspaceCount || 0),
+    removedWorkspacePathCount: Number(cleanupResult?.removedPathCount || 0),
+    cleanedApprovalBucketCount: Number(cleanedApprovalBucketCount || 0),
+  };
+}
+
 function snapshotMemberUsageHistory(db, params) {
   const tenantId = String(params?.tenantId || "").trim();
   const userId = String(params?.userId || "").trim();
@@ -3765,14 +3846,6 @@ export function revokePlatformTenantAgents(db, params) {
         balancePoints: normalizeNonNegativePoints(tenantAgent.balancePoints),
       }))
       .filter((tenantAgent) => tenantAgent.id);
-    const revokedAssignments = db
-      .prepare(
-        `SELECT id, user_id AS userId
-         FROM user_agent_assignments
-         WHERE tenant_id = ? AND status = 'active' AND tenant_agent_id IN (${resolvedPlaceholders})`,
-      )
-      .all(tenantId, ...revokedTenantAgentIds);
-
     db.prepare(
       `UPDATE tenant_agents
        SET status = 'inactive',
@@ -3838,23 +3911,22 @@ export function revokePlatformTenantAgents(db, params) {
       });
     }
 
-    if (revokedAssignments.length) {
-      db.prepare(
-        `UPDATE user_agent_assignments
-         SET status = 'inactive'
-         WHERE tenant_id = ? AND status = 'active' AND tenant_agent_id IN (${resolvedPlaceholders})`,
-      ).run(tenantId, ...revokedTenantAgentIds);
-    }
-
-    const affectedUserIds = [...new Set(revokedAssignments.map((assignment) => assignment.userId))];
+    const revokedAssignments = revokeAssignmentEntriesWithCleanup(db, {
+      ...params,
+      whereClause: `tenant_id = ? AND status = 'active' AND tenant_agent_id IN (${resolvedPlaceholders})`,
+      bindings: [tenantId, ...revokedTenantAgentIds],
+    });
     return {
       revokedTenantAgentCount: revokedTenantAgentIds.length,
-      revokedAssignmentCount: revokedAssignments.length,
+      revokedAssignmentCount: revokedAssignments.revokedAssignmentCount,
       tenantAgentIds: revokedTenantAgentIds,
-      affectedUserIds,
-      affectedMemberCount: affectedUserIds.length,
+      affectedUserIds: revokedAssignments.affectedUserIds,
+      affectedMemberCount: revokedAssignments.affectedMemberCount,
       refundedPoints,
       walletBalance: walletBalanceAfter,
+      removedWorkspaceCount: revokedAssignments.removedWorkspaceCount,
+      removedWorkspacePathCount: revokedAssignments.removedWorkspacePathCount,
+      cleanedApprovalBucketCount: revokedAssignments.cleanedApprovalBucketCount,
     };
   });
   bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
@@ -3892,67 +3964,19 @@ export function revokeTenantAgentAssignments(db, params) {
         selectClauses.push("user_id = ?");
         bindings.push(userId);
       }
-      const selectAssignments = db
-        .prepare(
-          `SELECT id, user_id AS userId
-           FROM user_agent_assignments
-           WHERE ${selectClauses.join(" AND ")}`,
-        )
-        .all(...bindings);
-
-      if (!selectAssignments.length) {
-        return {
-          revokedAssignmentCount: 0,
-          affectedUserIds: [],
-          affectedMemberCount: 0,
-        };
-      }
-
-      db.prepare(
-        `UPDATE user_agent_assignments
-         SET status = 'inactive'
-         WHERE ${selectClauses.join(" AND ")}`,
-      ).run(...bindings);
-
-      const affectedUserIds = [
-        ...new Set(selectAssignments.map((assignment) => assignment.userId)),
-      ];
-      return {
-        revokedAssignmentCount: selectAssignments.length,
-        affectedUserIds,
-        affectedMemberCount: affectedUserIds.length,
-      };
+      return revokeAssignmentEntriesWithCleanup(db, {
+        ...params,
+        whereClause: selectClauses.join(" AND "),
+        bindings,
+      });
     }
 
     const placeholders = userIds.map(() => "?").join(", ");
-    const selectAssignments = db
-      .prepare(
-        `SELECT id, user_id AS userId
-         FROM user_agent_assignments
-         WHERE tenant_id = ? AND status = 'active' AND user_id IN (${placeholders})`,
-      )
-      .all(tenantId, ...userIds);
-
-    if (!selectAssignments.length) {
-      return {
-        revokedAssignmentCount: 0,
-        affectedUserIds: [],
-        affectedMemberCount: 0,
-      };
-    }
-
-    db.prepare(
-      `UPDATE user_agent_assignments
-       SET status = 'inactive'
-       WHERE tenant_id = ? AND status = 'active' AND user_id IN (${placeholders})`,
-    ).run(tenantId, ...userIds);
-
-    const affectedUserIds = [...new Set(selectAssignments.map((assignment) => assignment.userId))];
-    return {
-      revokedAssignmentCount: selectAssignments.length,
-      affectedUserIds,
-      affectedMemberCount: affectedUserIds.length,
-    };
+    return revokeAssignmentEntriesWithCleanup(db, {
+      ...params,
+      whereClause: `tenant_id = ? AND status = 'active' AND user_id IN (${placeholders})`,
+      bindings: [tenantId, ...userIds],
+    });
   });
   bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
   return result;

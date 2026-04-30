@@ -1303,6 +1303,92 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("revokes tenant member assignments and removes the derived workspaces", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "mu",
+        name: "租户 Mu",
+        adminUsername: "mu-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-revoke",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 10,
+        status: "active",
+      });
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const canonicalWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      const runtimeWorkspace = path.join(
+        sandbox.config.configDir,
+        `workspace-${String(assignment.derivedAgentId)}`,
+      );
+      expect(fs.existsSync(canonicalWorkspace)).toBe(true);
+      expect(fs.existsSync(runtimeWorkspace)).toBe(true);
+
+      const result = revokeTenantAgentAssignments(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        assignmentIds: [String(assignment.assignmentId || "")],
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      expect(result).toMatchObject({
+        revokedAssignmentCount: 1,
+        affectedUserIds: [member.id],
+        affectedMemberCount: 1,
+        removedWorkspaceCount: 1,
+      });
+      expect(fs.existsSync(canonicalWorkspace)).toBe(false);
+      expect(fs.existsSync(runtimeWorkspace)).toBe(false);
+      expect(
+        listAssignedAgentsForUser(
+          db,
+          {
+            tenantId: tenant.id,
+            userId: member.id,
+            configPath: sandbox.config.configPath,
+            configDir: sandbox.config.configDir,
+          },
+          readOpenClawAgentCatalog(sandbox.config.configPath),
+        ),
+      ).toEqual([]);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("creates a new member record when the same username is recreated after deletion", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
