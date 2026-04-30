@@ -797,10 +797,11 @@ describe("tenant platform database foundation", () => {
         "  </body>",
         "</html>",
       ].join("\n"),
-      "/tenant-platform-api/v1/member/visualizations/assets/finance/%E9%9B%86%E5%9B%A2%E7%BB%8F%E8%90%A5%E5%88%86%E6%9E%90%E6%80%BB%E8%A7%88%E5%A4%A7%E5%B1%8F_index.html/",
+      "/tenant-platform-api/v1/member/visualizations/assets/finance/%E9%9B%86%E5%9B%A2%E7%BB%8F%E8%90%A5%E5%88%86%E6%9E%90%E6%80%BB%E8%A7%88%E5%A4%A7%E5%B1%8F_index.html/?token=public-viz-token",
       visualizationDir,
       "集团经营分析总览大屏_index.html",
       new Map([["next_index.html", "/echarts-view/?token=next-token"]]),
+      "public-viz-token",
     );
 
     expect(rewrittenHtml).not.toContain("onclick=");
@@ -810,21 +811,23 @@ describe("tenant platform database foundation", () => {
     const assetPrefix =
       /^\/tenant-platform-api\/v1\/member\/visualizations\/assets\/finance\/%E9%9B%86%E5%9B%A2%E7%BB%8F%E8%90%A5%E5%88%86%E6%9E%90%E6%80%BB%E8%A7%88%E5%A4%A7%E5%B1%8F_index\.html\//;
     const generatedInlineScriptMatch = rewrittenHtml.match(
-      /<script\b[^>]*src="([^"]*inline-script-[^"]+\.js)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*inline-script-[^"]+\.js[^"]*)"[^>]*><\/script>/i,
     );
     expect(generatedInlineScriptMatch).not.toBeNull();
     expect(generatedInlineScriptMatch?.[1]).toContain(
       "/tenant-platform-api/v1/member/visualizations/assets/finance/",
     );
+    expect(generatedInlineScriptMatch?.[1]).toContain("token=public-viz-token");
 
     const generatedHandlerScriptMatch = rewrittenHtml.match(
-      /<script\b[^>]*src="([^"]*inline-handler-[^"]+\.js)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*inline-handler-[^"]+\.js[^"]*)"[^>]*><\/script>/i,
     );
     expect(generatedHandlerScriptMatch).not.toBeNull();
+    expect(generatedHandlerScriptMatch?.[1]).toContain("token=public-viz-token");
 
     const generatedHandlerScriptPath = path.join(
       visualizationDir,
-      String(generatedHandlerScriptMatch?.[1] || "").replace(assetPrefix, ""),
+      String(generatedHandlerScriptMatch?.[1] || "").split("?")[0].replace(assetPrefix, ""),
     );
     expect(fs.existsSync(generatedHandlerScriptPath)).toBe(true);
 

@@ -643,7 +643,26 @@ function buildWorkspaceAssetHref(workspaceBaseHref, relativePath) {
   }
   const baseUrl = new URL(normalizedBaseHref, "http://127.0.0.1");
   const resolved = new URL(normalizedRelativePath, baseUrl);
+  const baseToken = baseUrl.searchParams.get("token")?.trim() || "";
+  if (baseToken && !resolved.searchParams.get("token")) {
+    resolved.searchParams.set("token", baseToken);
+  }
   return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+}
+
+function appendVisualizationTokenToHref(href, token = "") {
+  const normalizedHref = String(href || "").trim();
+  const normalizedToken = String(token || "").trim();
+  if (!normalizedHref || !normalizedToken) {
+    return normalizedHref;
+  }
+  try {
+    const parsed = new URL(normalizedHref, "http://127.0.0.1");
+    parsed.searchParams.set("token", normalizedToken);
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return normalizedHref;
+  }
 }
 
 function isPathInsideRoot(targetPath, rootPath) {
@@ -701,17 +720,20 @@ function createVisualizationRewriteContext(
   visualizationFileName,
   visualizationHrefMap = new Map(),
   resourceBaseDir = "",
+  visualizationToken = "",
 ) {
+  const normalizedVisualizationToken = String(visualizationToken || "").trim();
   const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
   return {
     generatedSubdir,
     generatedPathRoot: path.join(generatedScriptDir, generatedSubdir),
     generatedScriptDir,
-    workspaceBaseHref: String(workspaceBaseHref || "").trim(),
+    workspaceBaseHref: appendVisualizationTokenToHref(workspaceBaseHref, normalizedVisualizationToken),
     workspaceRootDir: path.dirname(generatedScriptDir),
     visualizationHrefMap,
     resourceAliasHrefMap: new Map(),
     resourceBaseDir: normalizeVisualizationResourceBaseDir(resourceBaseDir),
+    visualizationToken: normalizedVisualizationToken,
   };
 }
 
@@ -1073,6 +1095,7 @@ export function rewriteVisualizationHtml(
   generatedScriptDir,
   visualizationFileName,
   visualizationHrefMap = new Map(),
+  visualizationToken = "",
 ) {
   const document = parse5.parse(String(html || ""));
   const context = createVisualizationRewriteContext(
@@ -1080,6 +1103,8 @@ export function rewriteVisualizationHtml(
     generatedScriptDir,
     visualizationFileName,
     visualizationHrefMap,
+    "",
+    visualizationToken,
   );
   let inlineScriptIndex = 0;
   const inlineHandlerBindings = [];
@@ -1258,6 +1283,7 @@ function buildVisualizationAssetRoutePath(
   visualizationFileName,
   resourcePath = "",
   routeBasePath = "",
+  visualizationToken = "",
 ) {
   const normalizedAgentId = String(derivedAgentId || "").trim();
   const normalizedFileName = String(visualizationFileName || "").trim();
@@ -1273,16 +1299,27 @@ function buildVisualizationAssetRoutePath(
   if (normalizedResourcePath) {
     encodedSegments.push(...normalizedResourcePath.split("/"));
   }
-  return `${normalizedRouteBasePath}/${encodedSegments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+  return appendVisualizationTokenToHref(
+    `${normalizedRouteBasePath}/${encodedSegments.map((segment) => encodeURIComponent(segment)).join("/")}`,
+    visualizationToken,
+  );
 }
 
-function buildVisualizationAssetBaseHref(derivedAgentId, visualizationFileName, routeBasePath = "") {
-  return `${buildVisualizationAssetRoutePath(
-    derivedAgentId,
-    visualizationFileName,
-    "",
-    routeBasePath,
-  )}/`;
+function buildVisualizationAssetBaseHref(
+  derivedAgentId,
+  visualizationFileName,
+  routeBasePath = "",
+  visualizationToken = "",
+) {
+  return appendVisualizationTokenToHref(
+    `${buildVisualizationAssetRoutePath(
+      derivedAgentId,
+      visualizationFileName,
+      "",
+      routeBasePath,
+    )}/`,
+    visualizationToken,
+  );
 }
 
 function getVisualizationAssetMimeType(resourcePath) {
@@ -1376,6 +1413,32 @@ function readMemberVisualizationTokenPayload(token, secret) {
     userId,
     derivedAgentId,
     visualizationFileName,
+  };
+}
+
+function readMemberVisualizationAssetAccess(request, deps) {
+  const sessionToken = parseBearerToken(request);
+  if (sessionToken) {
+    const session = readSessionToken(sessionToken, deps.config.sessionSecret);
+    if (session?.userId && String(session.role || "").trim() === "member") {
+      return {
+        kind: "member_session",
+        payload: session,
+      };
+    }
+  }
+  const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
+  const visualizationToken = readVisualizationToken(url.searchParams.get("token"));
+  if (!visualizationToken) {
+    return null;
+  }
+  const payload = readMemberVisualizationTokenPayload(visualizationToken, deps.config.sessionSecret);
+  if (!payload) {
+    return null;
+  }
+  return {
+    kind: "member_visualization",
+    payload,
   };
 }
 
@@ -3232,12 +3295,14 @@ export function createTenantPlatformRouter(deps) {
           match.derivedAgentId,
           match.visualizationFileName,
           deps.config.apiBasePath,
+          token,
         );
         const visualizationHref = buildVisualizationAssetRoutePath(
           match.derivedAgentId,
           match.visualizationFileName,
           "",
           deps.config.apiBasePath,
+          token,
         );
         const rawVisualizationContent = fs.readFileSync(visualizationPath, "utf8");
         const generatedScriptHtml =
@@ -3257,6 +3322,7 @@ export function createTenantPlatformRouter(deps) {
                 path.join(workspaceRoot, "Echarts"),
                 match.visualizationFileName,
                 visualizationHrefMap,
+                token,
               );
         sendJson(request, response, 200, {
           ok: true,
@@ -3297,15 +3363,17 @@ export function createTenantPlatformRouter(deps) {
         return;
       }
 
-      const session = requireSession(request, response, deps);
-      if (!session || !requireRole(request, response, session, ["member"])) {
+      const assetAccess = readMemberVisualizationAssetAccess(request, deps);
+      if (!assetAccess?.payload) {
+        sendJson(request, response, 401, { ok: false, error: "invalid_token" });
         return;
       }
 
       const visualizations = listAssignedAgentVisualizationsForUser(
         deps.db,
         {
-          ...session,
+          tenantId: assetAccess.payload.tenantId,
+          userId: assetAccess.payload.userId,
           configPath: deps.config.configPath,
           configDir: deps.config.configDir,
         },
