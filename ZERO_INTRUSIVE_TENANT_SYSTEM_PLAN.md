@@ -21,8 +21,6 @@
    - `tools/openclaw-control-ui-echarts/generated/control-ui/index.html` 里会通过零侵入 auto-token bootstrap 嵌入 `OPENCLAW_GATEWAY_TOKEN`；因此跨机器部署时，不能直接复用另一台机器上已经构建好的 `generated/control-ui/` 成品，必须在目标机器上用该机器当前容器/配置里的 `OPENCLAW_GATEWAY_TOKEN` 重新生成，或至少定向重写嵌入 token。否则浏览器会落回原生 Control UI 连接门，并报 `unauthorized: gateway token mismatch`。
    - 这条部署路径产出的 `generated/control-ui/assets/vendor/` 必须同步零侵入层完整 vendor 目录，而不只是离线 userscript 内嵌的 `echarts.min.js/json5.min.js`；否则 AI 生成的大屏一旦引用 `ECharts-GL`、`GSAP`、`tsParticles`、`PixiJS`、`Babylon.js`、`Three.js` 就会在正式环境直接 `404`。
    - 这条部署路径生成完 `docker-compose.override.yml` 后，还必须默认执行一次定向 `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy`；否则浏览器侧即使已经能拿到最新 HTML，gateway/proxy 也可能仍然跑在旧容器配置上，导致刷新后 `workspace-agent-downloads/.../__openclaw_echarts_view__-*` 这类重写脚本资源继续 `404`。
-   - 实际运行中还发现另一类更隐蔽的失配：某些云端部署里，tenant sidecar 能直接读到 `~/.openclaw/workspace-agents/<derivedAgent>/Echarts/` 下新生成的 `__openclaw_echarts_view__-*` 资源，但 gateway 容器映射到 `/app/dist/control-ui/workspace-agent-downloads/` 的目录树并不会同步出现这些租户派生 Agent 目录，最终导致浏览器加载重写后的 `inline-script-*.js` 时命中 `404 text/plain`，再被浏览器以 `strict MIME type checking` 拒绝执行。
-   - 因此实际可运行方案已经调整为：`/member/visualizations/resolve` 返回给浏览器的可视化 HTML，其脚本和相对静态资源基地址不再依赖 gateway 的 `workspace-agent-downloads/...` 直出，而是统一改为 tenant sidecar 同源只读资源路由 `/tenant-platform-api/v1/member/visualizations/assets/<derivedAgentId>/<visualizationFileName>/...`。这样 sidecar 继续负责读磁盘和重写 HTML，gateway/proxy 只负责把同源 `/tenant-platform-api/` 转发给 sidecar，即可避开容器挂载树不一致导致的脚本 404/MIME 错误。
    - 本地 Docker 部署必须通过部署层追加同源反向代理容器，对浏览器暴露的 `18789` 端口不再直接映射原始 gateway；代理层负责把 `/tenant-platform-api/` 转发到 tenant sidecar，把其它 HTTP/WebSocket 流量转发回 gateway，从而避免修改 gateway 源码，同时避开浏览器对 `18801` 跨端口请求的 CSP 限制。
    - 浏览器侧租户 runtime 默认只允许走同源 `/tenant-platform-api/v1`；不能再因为页面端口是 `18789` 就优先猜测 `http://<host>:18801/tenant-platform-api/v1`、`127.0.0.1:18801`、`localhost:18801` 这类跨端口地址。实测在 `172.30.31.203` 这类 cloud bundle 部署下，这些候选会先被 Control UI 的 `connect-src 'self' ws: wss:` CSP 拦截，造成成员页首屏卡顿甚至“页面进不去”的假死现象。
    - 如果旧版本浏览器本地状态里已经持久化过 `openclaw:tenant-platform:api-base:v1=http://<host>:18801/tenant-platform-api/v1` 这类跨端口覆盖值，新的零侵入 runtime 也必须在读取时自动清除该脏值，避免用户必须手工清 localStorage 或强制清缓存后才能恢复。
@@ -334,19 +332,7 @@ sidecar 落点固定为：
 
 ### 4.1 可视化展示公共页
 
-租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项来自当前登录成员已分配 Agent 工作空间下的两类入口文件：
-
-- `Echarts/*_index.html`
-- `Echarts/*_index.dashboard.json`
-
-点击后统一进入公开路由 `./echarts-view/?token=...`。当前实际运行链路分成两条：
-
-- 如果目标是 `*_index.html`
-  仍由公开页加载可视化桥接脚本，通过签名 token 请求对应 workspace HTML，再挂载到全页 iframe；装载前，服务端会把 workspace HTML 里的内联 `<script>` 外提成同源的生成脚本文件（放到对应 Agent 的 `Echarts/__openclaw_echarts_view__/...` 下），并把相对资源路径重写成绝对的同源 workspace 地址；其中带中文、空格、括号等不安全文件名的相对资源，还必须同步复制成 `__openclaw_echarts_view__` 目录下的 ASCII/hash 别名资源，再把 HTML / 外提脚本里的引用改到这些别名上，避免浏览器编码后的静态文件请求命中 `404`
-- 如果目标是 `*_index.dashboard.json`
-  sidecar 不再要求 AI 产出完整 HTML，而是读取 manifest JSON 后动态生成一个固定的零侵入 wrapper HTML；wrapper 再加载同源 `dashboard-manifest` runtime，用统一 HUD/3D 场景骨架去渲染 manifest 和可选本地数据文件
-
-两条链路下，query token 丢失时都回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
+租户成员侧边栏额外增加一个 `可视化展示` 下拉菜单，菜单项只来自当前登录成员已分配 Agent 工作空间下的 `Echarts/*_index.html` 文件。点击后进入公开路由 `./echarts-view/?token=...`，该路由由独立静态入口页承载，页面本身只负责加载可视化桥接脚本并通过签名 token 请求对应 workspace HTML，再将其挂载到全页 iframe 中；在装载前，服务端会把 workspace HTML 里的内联 `<script>` 外提成同源的生成脚本文件（放到对应 Agent 的 `Echarts/__openclaw_echarts_view__/...` 下），并把相对资源路径重写成绝对的同源 workspace 地址；其中带中文、空格、括号等不安全文件名的相对资源，还必须同步复制成 `__openclaw_echarts_view__` 目录下的 ASCII/hash 别名资源，再把 HTML / 外提脚本里的引用改到这些别名上，避免浏览器编码后的静态文件请求命中 `404`。外提脚本里凡是 `fetch`、`open`、`href/src` 之类的相对 URL 也会被改写，`*_index.html` 之间的跳转则回到对应的公开 `/echarts-view/?token=...` 路由，从而绕开 `srcdoc` 与 `base-uri 'none'` 对相对资源解析的 CSP 限制，避免外层控制台壳干扰可视化脚本。同浏览器如果 query token 丢失，则回退到最近一次点击记住的 token（sessionStorage 和 localStorage 双保险），避免跳转后白屏。
 
 实际实现还需要补一条：凡是大屏内部再跳到另一个 `*_index.html` 的场景，不论是 `<a href>`、内联 `onclick`，还是 `window.location.*` 这类脚本跳转，都必须在重写时改成“顶层窗口跳转”。也就是 `<a>` 改成指向公开 `/echarts-view/?token=...` 且带 `_top`，脚本里的 `location.assign/replace/href` 改写到 `window.top.location.*`。原因是可视化正文本身运行在 `srcdoc iframe` 里，如果继续在 iframe 内部打开 `/echarts-view/`，就会触发该公开页自身的防嵌入响应头，出现“拒绝连接”。
 
@@ -356,18 +342,13 @@ sidecar 落点固定为：
 
 当前桥接层的实际稳定边界还需要明确为：
 
-- `可视化展示` 菜单当前只扫描工作区 `Echarts/` 根目录下的 `*_index.html` 与 `*_index.dashboard.json`，因此每张大屏都必须保留一个位于 `Echarts/` 根目录的静态入口页或 manifest 入口
+- `可视化展示` 菜单当前只扫描工作区 `Echarts/` 根目录下的 `*_index.html`，因此每张大屏都必须保留一个位于 `Echarts/` 根目录的静态入口页
 - 当前桥接层会重写普通 `src/href/data/poster` 资源引用，并会把内联脚本外提成同源生成脚本，但它不是 bundler，不会自动接管整个 ESM 模块图
 - 当前桥接层默认会改写内联脚本中的 `fetch`、`open`、`location.*`、`.href=`、`.src=` 等相对 URL；但 `import ... from "./x.js"`、`dynamic import("./x.js")`、`new Worker("./x.js")`、`new URL("./x", import.meta.url)` 这类模式不在默认重写名单内
-- 对于 `*_index.html` 旧链路，3D / 粒子大屏的推荐交付形态仍然不是“未打包源码工程”，而是“单 HTML 入口 + 单 bundle 或少量稳定同源脚本 + 本地静态资源”
-- 对于新链路，更稳的默认做法是让 AI 直接产出 `*_index.dashboard.json` manifest，再由零侵入 `dashboard-manifest` runtime 统一负责布局、动效、ECharts-GL 主场景与同源数据装载
-- `*_index.dashboard.json` 的主路线不是让 AI 回到“任意写 HTML/CSS/DOM”，而是提供受控 `schemaVersion: 2` JSON DSL：AI 可以声明 `components`、`layout.areas`、图表数据、指标卡、文本块、表格、排行、主场景和主题 token；平台只把允许的组件类型编译成固定 DOM 与 ECharts 配置。当前开放的结构区域为 `left`、`center`、`right`、`bottom`、`footer`，开放的组件类型包括 `metric-card`、`line-chart`、`bar-chart`、`pie-chart`、`radar-chart`、`table`、`ranking`、`stat`、`list`、`text-block`、`scene-3d`。不允许 manifest 直接提供任意 `innerHTML`、任意 CSS 或任意 JS。
+- 因此 3D / 粒子大屏的推荐交付形态不是“未打包源码工程”，而是“单 HTML 入口 + 单 bundle 或少量稳定同源脚本 + 本地静态资源”
 - 如果 AI 先产出 React / Vue / Three.js / Babylon.js 工程，最终落盘到工作区时也必须先预打包成静态可部署产物，再放进 `Echarts/` 目录，不允许把 dev server、裸模块导入、动态分包、service worker 直接带进成员公开页链路
 
-3D / 粒子 / 高级可视化大屏的完整交付规范以 `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md` 为准；其中默认优先级已经调整为：
-
-1. `Echarts/*_index.dashboard.json` manifest 入口
-2. `Echarts/*_index.html` 预打包静态入口
+3D / 粒子 / 高级可视化大屏的完整交付规范以 `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md` 为准。
 
 当前要求：
 

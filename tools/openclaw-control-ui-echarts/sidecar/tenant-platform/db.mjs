@@ -4054,8 +4054,6 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
     });
 }
 
-const WORKSPACE_VISUALIZATION_FILE_PATTERN = /_index(?:\.dashboard\.json|\.html)$/i;
-
 function listWorkspaceVisualizationFiles(workspaceDir) {
   const normalizedWorkspaceDir = String(workspaceDir || "").trim();
   if (!normalizedWorkspaceDir) {
@@ -4068,9 +4066,7 @@ function listWorkspaceVisualizationFiles(workspaceDir) {
     }
     return fs
       .readdirSync(echartsDir, { withFileTypes: true })
-      .filter(
-        (entry) => entry.isFile() && WORKSPACE_VISUALIZATION_FILE_PATTERN.test(entry.name),
-      )
+      .filter((entry) => entry.isFile() && /_index\.html$/i.test(entry.name))
       .map((entry) => entry.name)
       .toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"))
       .filter(Boolean);
@@ -4082,20 +4078,13 @@ function listWorkspaceVisualizationFiles(workspaceDir) {
 function stripVisualizationIndexSuffix(fileName) {
   return String(fileName || "")
     .trim()
-    .replace(/_index(?:\.dashboard\.json|\.html)$/i, "");
-}
-
-function readVisualizationType(fileName) {
-  return /\.dashboard\.json$/i.test(String(fileName || "").trim())
-    ? "dashboard_manifest"
-    : "html";
+    .replace(/_index\.html$/i, "");
 }
 
 export function listAssignedAgentVisualizationsForUser(db, params, configAgents = []) {
   return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) =>
     listWorkspaceVisualizationFiles(agent.derivedWorkspaceDir).map((visualizationFileName) => ({
       ...agent,
-      visualizationType: readVisualizationType(visualizationFileName),
       visualizationFileName,
       visualizationName: stripVisualizationIndexSuffix(visualizationFileName),
       visualizationRelativePath: path.posix.join("Echarts", visualizationFileName),

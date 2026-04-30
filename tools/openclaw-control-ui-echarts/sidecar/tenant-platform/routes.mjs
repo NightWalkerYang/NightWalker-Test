@@ -643,26 +643,7 @@ function buildWorkspaceAssetHref(workspaceBaseHref, relativePath) {
   }
   const baseUrl = new URL(normalizedBaseHref, "http://127.0.0.1");
   const resolved = new URL(normalizedRelativePath, baseUrl);
-  const baseToken = baseUrl.searchParams.get("token")?.trim() || "";
-  if (baseToken && !resolved.searchParams.get("token")) {
-    resolved.searchParams.set("token", baseToken);
-  }
   return `${resolved.pathname}${resolved.search}${resolved.hash}`;
-}
-
-function appendVisualizationTokenToHref(href, token = "") {
-  const normalizedHref = String(href || "").trim();
-  const normalizedToken = String(token || "").trim();
-  if (!normalizedHref || !normalizedToken) {
-    return normalizedHref;
-  }
-  try {
-    const parsed = new URL(normalizedHref, "http://127.0.0.1");
-    parsed.searchParams.set("token", normalizedToken);
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return normalizedHref;
-  }
 }
 
 function isPathInsideRoot(targetPath, rootPath) {
@@ -674,10 +655,7 @@ function isPathInsideRoot(targetPath, rootPath) {
 }
 
 function normalizeVisualizationRelativePath(resourcePath) {
-  const normalized = path.posix
-    .normalize(String(resourcePath || "").trim())
-    .replace(/^(\.\/)+/, "");
-  return normalized === "." ? "" : normalized;
+  return path.posix.normalize(String(resourcePath || "").trim()).replace(/^(\.\/)+/, "");
 }
 
 function normalizeVisualizationResourceBaseDir(resourceBaseDir) {
@@ -720,20 +698,17 @@ function createVisualizationRewriteContext(
   visualizationFileName,
   visualizationHrefMap = new Map(),
   resourceBaseDir = "",
-  visualizationToken = "",
 ) {
-  const normalizedVisualizationToken = String(visualizationToken || "").trim();
   const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
   return {
     generatedSubdir,
     generatedPathRoot: path.join(generatedScriptDir, generatedSubdir),
     generatedScriptDir,
-    workspaceBaseHref: appendVisualizationTokenToHref(workspaceBaseHref, normalizedVisualizationToken),
+    workspaceBaseHref: String(workspaceBaseHref || "").trim(),
     workspaceRootDir: path.dirname(generatedScriptDir),
     visualizationHrefMap,
     resourceAliasHrefMap: new Map(),
     resourceBaseDir: normalizeVisualizationResourceBaseDir(resourceBaseDir),
-    visualizationToken: normalizedVisualizationToken,
   };
 }
 
@@ -1095,7 +1070,6 @@ export function rewriteVisualizationHtml(
   generatedScriptDir,
   visualizationFileName,
   visualizationHrefMap = new Map(),
-  visualizationToken = "",
 ) {
   const document = parse5.parse(String(html || ""));
   const context = createVisualizationRewriteContext(
@@ -1103,8 +1077,6 @@ export function rewriteVisualizationHtml(
     generatedScriptDir,
     visualizationFileName,
     visualizationHrefMap,
-    "",
-    visualizationToken,
   );
   let inlineScriptIndex = 0;
   const inlineHandlerBindings = [];
@@ -1278,121 +1250,6 @@ function buildWorkspaceAgentDownloadBaseHref(derivedAgentId) {
   ]);
 }
 
-function buildVisualizationAssetRoutePath(
-  derivedAgentId,
-  visualizationFileName,
-  resourcePath = "",
-  routeBasePath = "",
-  visualizationToken = "",
-) {
-  const normalizedAgentId = String(derivedAgentId || "").trim();
-  const normalizedFileName = String(visualizationFileName || "").trim();
-  const normalizedResourcePath = normalizeVisualizationRelativePath(resourcePath);
-  const normalizedRouteBasePath = String(routeBasePath || "").trim().replace(/\/+$/, "");
-  const encodedSegments = [
-    "member",
-    "visualizations",
-    "assets",
-    normalizedAgentId,
-    normalizedFileName,
-  ];
-  if (normalizedResourcePath) {
-    encodedSegments.push(...normalizedResourcePath.split("/"));
-  }
-  return appendVisualizationTokenToHref(
-    `${normalizedRouteBasePath}/${encodedSegments.map((segment) => encodeURIComponent(segment)).join("/")}`,
-    visualizationToken,
-  );
-}
-
-function buildVisualizationAssetBaseHref(
-  derivedAgentId,
-  visualizationFileName,
-  routeBasePath = "",
-  visualizationToken = "",
-) {
-  return appendVisualizationTokenToHref(
-    `${buildVisualizationAssetRoutePath(
-      derivedAgentId,
-      visualizationFileName,
-      "",
-      routeBasePath,
-    )}/`,
-    visualizationToken,
-  );
-}
-
-function getVisualizationAssetMimeType(resourcePath) {
-  const extension = path.extname(String(resourcePath || "").trim()).toLowerCase();
-  switch (extension) {
-    case ".js":
-    case ".mjs":
-    case ".cjs":
-      return "application/javascript; charset=utf-8";
-    case ".css":
-      return "text/css; charset=utf-8";
-    case ".json":
-      return "application/json; charset=utf-8";
-    case ".svg":
-      return "image/svg+xml";
-    case ".png":
-      return "image/png";
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".gif":
-      return "image/gif";
-    case ".webp":
-      return "image/webp";
-    case ".bmp":
-      return "image/bmp";
-    case ".ico":
-      return "image/x-icon";
-    case ".woff":
-      return "font/woff";
-    case ".woff2":
-      return "font/woff2";
-    case ".ttf":
-      return "font/ttf";
-    case ".otf":
-      return "font/otf";
-    case ".eot":
-      return "application/vnd.ms-fontobject";
-    case ".mp4":
-      return "video/mp4";
-    case ".webm":
-      return "video/webm";
-    case ".mp3":
-      return "audio/mpeg";
-    case ".wav":
-      return "audio/wav";
-    case ".html":
-      return "text/html; charset=utf-8";
-    case ".txt":
-      return "text/plain; charset=utf-8";
-    default:
-      return "application/octet-stream";
-  }
-}
-
-function resolveVisualizationAssetDiskPath(workspaceRoot, visualizationFileName, resourceSegments = []) {
-  const normalizedWorkspaceRoot = String(workspaceRoot || "").trim();
-  const normalizedVisualizationFileName = String(visualizationFileName || "").trim();
-  if (!normalizedWorkspaceRoot || !normalizedVisualizationFileName) {
-    return "";
-  }
-  const echartsRoot = path.join(normalizedWorkspaceRoot, "Echarts");
-  const relativeResourcePath = normalizeVisualizationRelativePath(
-    Array.isArray(resourceSegments) ? resourceSegments.join("/") : String(resourceSegments || ""),
-  );
-  const relativeTargetPath = relativeResourcePath || normalizedVisualizationFileName;
-  const targetPath = path.resolve(echartsRoot, relativeTargetPath);
-  if (!isPathInsideRoot(targetPath, echartsRoot)) {
-    return "";
-  }
-  return targetPath;
-}
-
 function readMemberVisualizationTokenPayload(token, secret) {
   const payload = readSessionToken(token, secret);
   if (!payload || typeof payload !== "object") {
@@ -1414,116 +1271,6 @@ function readMemberVisualizationTokenPayload(token, secret) {
     derivedAgentId,
     visualizationFileName,
   };
-}
-
-function readMemberVisualizationAssetAccess(request, deps) {
-  const sessionToken = parseBearerToken(request);
-  if (sessionToken) {
-    const session = readSessionToken(sessionToken, deps.config.sessionSecret);
-    if (session?.userId && String(session.role || "").trim() === "member") {
-      return {
-        kind: "member_session",
-        payload: session,
-      };
-    }
-  }
-  const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
-  const visualizationToken = readVisualizationToken(url.searchParams.get("token"));
-  if (!visualizationToken) {
-    return null;
-  }
-  const payload = readMemberVisualizationTokenPayload(visualizationToken, deps.config.sessionSecret);
-  if (!payload) {
-    return null;
-  }
-  return {
-    kind: "member_visualization",
-    payload,
-  };
-}
-
-const DASHBOARD_MANIFEST_PAYLOAD_SCRIPT_ID = "oc-dashboard-manifest-payload";
-const DASHBOARD_MANIFEST_ROOT_ID = "oc-dashboard-root";
-const DASHBOARD_MANIFEST_STYLE_HREF = "/assets/runtime/dashboard-manifest/styles.css";
-const DASHBOARD_MANIFEST_BOOTSTRAP_HREF = "/assets/runtime/dashboard-manifest/bootstrap.js";
-
-function escapeHtmlAttribute(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("'", "&#39;");
-}
-
-function serializeJsonForHtml(value) {
-  return JSON.stringify(value)
-    .replaceAll("<", "\\u003C")
-    .replaceAll(">", "\\u003E")
-    .replaceAll("&", "\\u0026")
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029");
-}
-
-function readDashboardManifestPayload(text) {
-  const normalized = String(text || "").replace(/^\uFEFF/, "").trim();
-  if (!normalized) {
-    throw new Error("dashboard_manifest_empty");
-  }
-  const parsed = JSON.parse(normalized);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("dashboard_manifest_invalid");
-  }
-  return parsed;
-}
-
-function buildDashboardManifestDocument(manifest, options = {}) {
-  const visualizationName = String(options.visualizationName || "").trim();
-  const visualizationFileName = String(options.visualizationFileName || "").trim();
-  const workspaceBaseHref = String(options.workspaceBaseHref || "").trim();
-  const visualizationHref = String(options.visualizationHref || "").trim();
-  const payload = {
-    manifest,
-    context: {
-      visualizationName,
-      visualizationFileName,
-      visualizationType: "dashboard_manifest",
-      visualizationHref,
-      workspaceBaseHref,
-      agentName: String(options.agentName || "").trim(),
-      agentId: String(options.agentId || "").trim(),
-      navigationHrefs:
-        options.navigationHrefs && typeof options.navigationHrefs === "object"
-          ? options.navigationHrefs
-          : {},
-    },
-  };
-  const title =
-    String(manifest?.title || "").trim() ||
-    String(manifest?.name || "").trim() ||
-    visualizationName ||
-    "可视化展示";
-  return [
-    "<!doctype html>",
-    '<html lang="zh-CN">',
-    "  <head>",
-    '    <meta charset="utf-8" />',
-    '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `    <title>${escapeHtmlAttribute(title)}</title>`,
-    `    <link rel="stylesheet" href="${escapeHtmlAttribute(DASHBOARD_MANIFEST_STYLE_HREF)}" />`,
-    "  </head>",
-    "  <body>",
-    `    <div id="${DASHBOARD_MANIFEST_ROOT_ID}" data-workspace-base-href="${escapeHtmlAttribute(workspaceBaseHref)}" data-visualization-name="${escapeHtmlAttribute(visualizationName)}" data-agent-name="${escapeHtmlAttribute(options.agentName || "")}"></div>`,
-    `    <script type="application/json" id="${DASHBOARD_MANIFEST_PAYLOAD_SCRIPT_ID}">${serializeJsonForHtml(payload)}</script>`,
-    `    <script type="module" src="${escapeHtmlAttribute(DASHBOARD_MANIFEST_BOOTSTRAP_HREF)}"></script>`,
-    "  </body>",
-    "</html>",
-    "",
-  ].join("\n");
-}
-
-export function buildDashboardManifestHtml(manifest, options = {}) {
-  return buildDashboardManifestDocument(manifest, options);
 }
 
 export function createTenantPlatformRouter(deps) {
@@ -3222,7 +2969,6 @@ export function createTenantPlatformRouter(deps) {
           agentId: item.derivedAgentId,
           baseAgentId: item.baseAgentId,
           agentName: item.agentName,
-          visualizationType: item.visualizationType,
           visualizationFileName: item.visualizationFileName,
           visualizationName: item.visualizationName,
           title,
@@ -3291,46 +3037,26 @@ export function createTenantPlatformRouter(deps) {
       }
       const visualizationPath = path.join(workspaceRoot, "Echarts", match.visualizationFileName);
       try {
-        const workspaceBaseHref = buildVisualizationAssetBaseHref(
-          match.derivedAgentId,
+        const html = fs.readFileSync(visualizationPath, "utf8");
+        const workspaceBaseHref = buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId);
+        const generatedScriptHtml = rewriteVisualizationHtml(
+          html,
+          workspaceBaseHref,
+          path.join(workspaceRoot, "Echarts"),
           match.visualizationFileName,
-          deps.config.apiBasePath,
-          token,
+          visualizationHrefMap,
         );
-        const visualizationHref = buildVisualizationAssetRoutePath(
-          match.derivedAgentId,
-          match.visualizationFileName,
-          "",
-          deps.config.apiBasePath,
-          token,
-        );
-        const rawVisualizationContent = fs.readFileSync(visualizationPath, "utf8");
-        const generatedScriptHtml =
-          match.visualizationType === "dashboard_manifest"
-            ? buildDashboardManifestHtml(readDashboardManifestPayload(rawVisualizationContent), {
-                visualizationName: match.visualizationName,
-                visualizationFileName: match.visualizationFileName,
-                workspaceBaseHref,
-                visualizationHref,
-                agentName: match.agentName,
-                agentId: match.derivedAgentId,
-                navigationHrefs: Object.fromEntries(visualizationHrefMap),
-              })
-            : rewriteVisualizationHtml(
-                rawVisualizationContent,
-                workspaceBaseHref,
-                path.join(workspaceRoot, "Echarts"),
-                match.visualizationFileName,
-                visualizationHrefMap,
-                token,
-              );
         sendJson(request, response, 200, {
           ok: true,
           data: {
             html: generatedScriptHtml,
             baseHref: workspaceBaseHref,
-            href: visualizationHref,
-            visualizationType: match.visualizationType,
+            href: buildWorkspaceAgentDownloadHref([
+              "workspace-agent-downloads",
+              match.derivedAgentId,
+              "Echarts",
+              match.visualizationFileName,
+            ]),
             visualizationName: match.visualizationName,
             agentName: match.agentName,
             agentId: match.derivedAgentId,
@@ -3341,74 +3067,6 @@ export function createTenantPlatformRouter(deps) {
           ok: false,
           error: "visualization_not_found",
         });
-      }
-      return;
-    }
-
-    if (request.method === "GET" && relativePath.startsWith("/member/visualizations/assets/")) {
-      const parts = relativePath.split("/").filter(Boolean);
-      const decodePathSegment = (value) => {
-        try {
-          return decodeURIComponent(String(value || ""));
-        } catch {
-          return String(value || "");
-        }
-      };
-      const [, , , rawDerivedAgentId = "", rawVisualizationFileName = "", ...rawResourceSegments] = parts;
-      const derivedAgentId = decodePathSegment(rawDerivedAgentId).trim();
-      const visualizationFileName = decodePathSegment(rawVisualizationFileName).trim();
-      const resourceSegments = rawResourceSegments.map((segment) => decodePathSegment(segment));
-      if (!derivedAgentId || !visualizationFileName) {
-        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
-        return;
-      }
-
-      const assetAccess = readMemberVisualizationAssetAccess(request, deps);
-      if (!assetAccess?.payload) {
-        sendJson(request, response, 401, { ok: false, error: "invalid_token" });
-        return;
-      }
-
-      const visualizations = listAssignedAgentVisualizationsForUser(
-        deps.db,
-        {
-          tenantId: assetAccess.payload.tenantId,
-          userId: assetAccess.payload.userId,
-          configPath: deps.config.configPath,
-          configDir: deps.config.configDir,
-        },
-        configAgents,
-      );
-      const match = visualizations.find(
-        (item) =>
-          String(item?.derivedAgentId || "").trim() === derivedAgentId &&
-          String(item?.visualizationFileName || "").trim() === visualizationFileName,
-      );
-      if (!match || !String(match?.derivedWorkspaceDir || "").trim()) {
-        sendJson(request, response, 404, { ok: false, error: "visualization_not_found" });
-        return;
-      }
-
-      const assetPath = resolveVisualizationAssetDiskPath(
-        match.derivedWorkspaceDir,
-        visualizationFileName,
-        resourceSegments,
-      );
-      if (!assetPath) {
-        sendJson(request, response, 404, { ok: false, error: "visualization_asset_not_found" });
-        return;
-      }
-
-      try {
-        const stat = fs.statSync(assetPath);
-        if (!stat.isFile()) {
-          sendJson(request, response, 404, { ok: false, error: "visualization_asset_not_found" });
-          return;
-        }
-        const body = fs.readFileSync(assetPath);
-        sendBinary(request, response, 200, body, getVisualizationAssetMimeType(assetPath));
-      } catch {
-        sendJson(request, response, 404, { ok: false, error: "visualization_asset_not_found" });
       }
       return;
     }

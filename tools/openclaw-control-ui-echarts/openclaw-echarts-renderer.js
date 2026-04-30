@@ -52,7 +52,6 @@ function boot() {
   bootTenantSurface();
   bootMemberSurface();
   bootMemberChatSurface();
-  bootEchartsViewSurface();
   bootTenantEntry();
   bootLufengSurface();
   runtime.boot();

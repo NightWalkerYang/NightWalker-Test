@@ -43,7 +43,6 @@ import {
   updateTenantMemberStatus,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 import {
-  buildDashboardManifestHtml,
   rewriteVisualizationHtml,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 import {
@@ -320,14 +319,6 @@ describe("tenant platform database foundation", () => {
       fs.mkdirSync(visualizationDir, { recursive: true });
       fs.writeFileSync(path.join(visualizationDir, "销售数据可视化_index.html"), "<html></html>");
       fs.writeFileSync(path.join(visualizationDir, "折线图_index.html"), "<html></html>");
-      fs.writeFileSync(
-        path.join(visualizationDir, "财务驾驶舱_index.dashboard.json"),
-        JSON.stringify({
-          version: 1,
-          title: "财务驾驶舱",
-        }),
-        "utf8",
-      );
       fs.writeFileSync(path.join(visualizationDir, "notes.txt"), "ignored");
 
       const visualizations = listAssignedAgentVisualizationsForUser(
@@ -340,23 +331,15 @@ describe("tenant platform database foundation", () => {
         },
         catalog,
       );
-      expect(visualizations).toHaveLength(3);
+      expect(visualizations).toHaveLength(2);
       expect(visualizations.map((item) => item.visualizationName).toSorted()).toEqual([
         "折线图",
-        "财务驾驶舱",
         "销售数据可视化",
       ]);
       expect(
-        visualizations.every((item) => item.agentName === "财务分析助手"),
-      ).toBe(true);
-      expect(
-        visualizations.find((item) => item.visualizationFileName === "财务驾驶舱_index.dashboard.json")
-          ?.visualizationType,
-      ).toBe("dashboard_manifest");
-      expect(
-        visualizations
-          .filter((item) => item.visualizationType === "html")
-          .every((item) => item.visualizationFileName.endsWith("_index.html")),
+        visualizations.every(
+          (item) => item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
+        ),
       ).toBe(true);
     } finally {
       closeTenantPlatformDb(db);
@@ -797,37 +780,30 @@ describe("tenant platform database foundation", () => {
         "  </body>",
         "</html>",
       ].join("\n"),
-      "/tenant-platform-api/v1/member/visualizations/assets/finance/%E9%9B%86%E5%9B%A2%E7%BB%8F%E8%90%A5%E5%88%86%E6%9E%90%E6%80%BB%E8%A7%88%E5%A4%A7%E5%B1%8F_index.html/?token=public-viz-token",
+      "/workspace-agent-downloads/finance/Echarts/",
       visualizationDir,
       "集团经营分析总览大屏_index.html",
       new Map([["next_index.html", "/echarts-view/?token=next-token"]]),
-      "public-viz-token",
     );
 
     expect(rewrittenHtml).not.toContain("onclick=");
     expect(rewrittenHtml).toContain("data-openclaw-inline-handler-1");
     expect(rewrittenHtml).toContain("data-openclaw-inline-handler-2");
 
-    const assetPrefix =
-      /^\/tenant-platform-api\/v1\/member\/visualizations\/assets\/finance\/%E9%9B%86%E5%9B%A2%E7%BB%8F%E8%90%A5%E5%88%86%E6%9E%90%E6%80%BB%E8%A7%88%E5%A4%A7%E5%B1%8F_index\.html\//;
+    const assetPrefix = /^\/workspace-agent-downloads\/finance\/Echarts\//;
     const generatedInlineScriptMatch = rewrittenHtml.match(
-      /<script\b[^>]*src="([^"]*inline-script-[^"]+\.js[^"]*)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*inline-script-[^"]+\.js)"[^>]*><\/script>/i,
     );
     expect(generatedInlineScriptMatch).not.toBeNull();
-    expect(generatedInlineScriptMatch?.[1]).toContain(
-      "/tenant-platform-api/v1/member/visualizations/assets/finance/",
-    );
-    expect(generatedInlineScriptMatch?.[1]).toContain("token=public-viz-token");
 
     const generatedHandlerScriptMatch = rewrittenHtml.match(
-      /<script\b[^>]*src="([^"]*inline-handler-[^"]+\.js[^"]*)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*inline-handler-[^"]+\.js)"[^>]*><\/script>/i,
     );
     expect(generatedHandlerScriptMatch).not.toBeNull();
-    expect(generatedHandlerScriptMatch?.[1]).toContain("token=public-viz-token");
 
     const generatedHandlerScriptPath = path.join(
       visualizationDir,
-      String(generatedHandlerScriptMatch?.[1] || "").split("?")[0].replace(assetPrefix, ""),
+      String(generatedHandlerScriptMatch?.[1] || "").replace(assetPrefix, ""),
     );
     expect(fs.existsSync(generatedHandlerScriptPath)).toBe(true);
 
@@ -839,38 +815,6 @@ describe("tenant platform database foundation", () => {
     expect(generatedHandlerScriptContent).toContain(
       "window.top.location.href = '/echarts-view/?token=next-token'",
     );
-  });
-
-  it("builds dashboard manifest wrappers that only depend on zero-intrusive runtime assets", () => {
-    const html = buildDashboardManifestHtml(
-      {
-        version: 1,
-        template: "financial-command-center-v1",
-        title: "财务总览驾驶舱",
-        dataSource: "data/dashboard.json",
-        metrics: [{ label: "总资产", value: "128.6", unit: "亿元" }],
-      },
-      {
-        visualizationName: "财务总览驾驶舱",
-        visualizationFileName: "财务总览驾驶舱_index.dashboard.json",
-        workspaceBaseHref: "/workspace-agent-downloads/tenant-agent-1/Echarts/",
-        visualizationHref:
-          "/workspace-agent-downloads/tenant-agent-1/Echarts/%E8%B4%A2%E5%8A%A1%E6%80%BB%E8%A7%88%E9%A9%BE%E9%A9%B6%E8%88%B1_index.dashboard.json",
-        agentName: "财务分析助手",
-        agentId: "tenant-agent-1",
-        navigationHrefs: {
-          "资金驾驶舱_index.dashboard.json": "/echarts-view/?token=next-token",
-        },
-      },
-    );
-
-    expect(html).toContain('/assets/runtime/dashboard-manifest/styles.css');
-    expect(html).toContain('/assets/runtime/dashboard-manifest/bootstrap.js');
-    expect(html).toContain('type="application/json"');
-    expect(html).toContain('"visualizationType":"dashboard_manifest"');
-    expect(html).toContain('"workspaceBaseHref":"/workspace-agent-downloads/tenant-agent-1/Echarts/"');
-    expect(html).toContain('"dataSource":"data/dashboard.json"');
-    expect(html).not.toContain("<script>");
   });
 
   it("updates tenant member limits without breaking current member counts", () => {

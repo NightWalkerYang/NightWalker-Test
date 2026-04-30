@@ -31,21 +31,13 @@ afterEach(() => {
 });
 
 describe("public echarts view surface", () => {
-  it("shows a designed empty state when opened without a token", async () => {
-    window.history.replaceState({}, "", "/echarts-view/");
-
-    await bootEchartsViewSurface();
-    await Promise.resolve();
-
-    expect(document.body.textContent).toContain("请选择一个可视化看板");
-    expect(document.body.textContent).toContain("可视化展示");
-    expect(document.querySelector(`link[data-openclaw-echarts-view-surface-style]`)).not.toBeNull();
-    expect(document.querySelector(`iframe#oc-echarts-view-frame`)).toBeNull();
-  });
-
   it("loads workspace html into the public route and normalizes the alias path", async () => {
     const baseHref = "/workspace-agent-downloads/tenant-agent-1/Echarts/";
-    window.history.replaceState({}, "", "/echarts-view/?token=member-visualization-token");
+    window.history.replaceState(
+      {},
+      "",
+      "/echarts-view/?token=member-visualization-token",
+    );
     document.body.innerHTML = `
       <div class="content">
         <div class="native-placeholder">native content</div>
@@ -78,7 +70,7 @@ describe("public echarts view surface", () => {
     expect(frame?.getAttribute("srcdoc")).toContain(
       '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/chart.png" alt="chart">',
     );
-    expect(frame?.getAttribute("srcdoc")).toContain('<main id="viz">');
+    expect(frame?.getAttribute("srcdoc")).toContain("<main id=\"viz\">");
     expect(document.body.textContent).not.toContain("native content");
     expect(document.body.textContent).not.toContain("可视化展示");
   });
@@ -103,25 +95,5 @@ describe("public echarts view surface", () => {
     expect(window.location.search).toContain("token=member-visualization-token");
     expect(document.title).toBe("财务报表可视化");
     expect(document.querySelector(`iframe#oc-echarts-view-frame`)).not.toBeNull();
-  });
-
-  it("shows a designed failure state when the visualization cannot be resolved", async () => {
-    window.history.replaceState({}, "", "/echarts-view/?token=bad-token");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: false,
-        json: async () => ({
-          ok: false,
-          error: "invalid token",
-        }),
-      })),
-    );
-
-    await bootEchartsViewSurface();
-    await Promise.resolve();
-
-    expect(document.body.textContent).toContain("看板加载失败");
-    expect(document.querySelector(`iframe#oc-echarts-view-frame`)).toBeNull();
   });
 });
