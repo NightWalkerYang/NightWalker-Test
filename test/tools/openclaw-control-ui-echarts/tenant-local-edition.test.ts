@@ -489,7 +489,7 @@ describe("tenant platform local edition", () => {
     );
     expect(inlineScriptMatch).not.toBeNull();
     const inlineScriptPath = String(inlineScriptMatch?.[1] || "");
-    const response = await fetch(`${baseUrl}${inlineScriptPath}`, {
+    const response = await fetch(`${baseUrl}${inlineScriptPath.replace("/tenant-platform-api/v1", "")}`, {
       headers: {
         authorization: `Bearer ${memberToken}`,
       },
@@ -829,18 +829,19 @@ describe("tenant platform local edition", () => {
       baseUrl,
       `/member/visualizations/resolve?token=${encodeURIComponent(String(salesVisualization?.token || ""))}`,
     );
+    const apiBasePrefix = "/tenant-platform-api/v1";
     expect(resolveResponse.status).toBe(200);
     expect(resolveResponse.payload.data.visualizationName).toBe("销售数据可视化");
     expect(resolveResponse.payload.data.href).toMatch(
       new RegExp(
-        `^/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}$`,
+        `^${apiBasePrefix}/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}$`,
       ),
     );
     expect(resolveResponse.payload.data.href).not.toMatch(/^https?:\/\//);
     expect(resolveResponse.payload.data.html).toContain("销售数据");
     expect(resolveResponse.payload.data.baseHref).toMatch(
       new RegExp(
-        `^/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/$`,
+        `^${apiBasePrefix}/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/$`,
       ),
     );
     expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
@@ -850,7 +851,7 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).not.toContain("onclick=");
     expect(resolveResponse.payload.data.html).toContain("data-openclaw-inline-handler-1");
     expect(resolveResponse.payload.data.html).toContain(
-      `/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/financial_data.js`,
+      `${apiBasePrefix}/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/financial_data.js`,
     );
     expect(resolveResponse.payload.data.html).toContain("__openclaw_echarts_view__");
     expect(resolveResponse.payload.data.html).not.toContain(
@@ -859,7 +860,7 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).not.toContain('src="financial_data.js"');
 
     const generatedScriptMatch = resolveResponse.payload.data.html.match(
-      /<script\b[^>]*src="([^"]*\/member\/visualizations\/assets\/[^"]*__openclaw_echarts_view__-[^"]+)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*\/tenant-platform-api\/v1\/member\/visualizations\/assets\/[^"]*__openclaw_echarts_view__-[^"]+)"[^>]*><\/script>/i,
     );
     expect(generatedScriptMatch).not.toBeNull();
     const generatedScriptHref = generatedScriptMatch?.[1] || "";
@@ -867,7 +868,7 @@ describe("tenant platform local edition", () => {
       visualizationDir,
       generatedScriptHref.replace(
         new RegExp(
-          `^/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/`,
+          `^${apiBasePrefix}/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/`,
         ),
         "",
       ),
@@ -875,19 +876,19 @@ describe("tenant platform local edition", () => {
     expect(fs.existsSync(generatedScriptPath)).toBe(true);
     const generatedScriptContent = fs.readFileSync(generatedScriptPath, "utf8");
     expect(generatedScriptContent).toContain(
-      `/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/dashboard_data.json`,
+      `${apiBasePrefix}/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/dashboard_data.json`,
     );
     expect(generatedScriptContent).toContain("document.getElementById('viz').textContent");
 
     const generatedHandlerScriptMatch = resolveResponse.payload.data.html.match(
-      /<script\b[^>]*src="([^"]*\/member\/visualizations\/assets\/[^"]*__openclaw_echarts_view__-[^"]*inline-handler-[^"]+)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*\/tenant-platform-api\/v1\/member\/visualizations\/assets\/[^"]*__openclaw_echarts_view__-[^"]*inline-handler-[^"]+)"[^>]*><\/script>/i,
     );
     expect(generatedHandlerScriptMatch).not.toBeNull();
     const generatedHandlerScriptPath = path.join(
       visualizationDir,
       String(generatedHandlerScriptMatch?.[1] || "").replace(
         new RegExp(
-          `^/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/`,
+          `^${apiBasePrefix}/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("销售数据可视化_index.html")}/`,
         ),
         "",
       ),
@@ -1022,7 +1023,7 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.visualizationName).toBe("财务总览驾驶舱");
     expect(resolveResponse.payload.data.href).toMatch(
       new RegExp(
-        `^/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("财务总览驾驶舱_index.dashboard.json")}$`,
+        `^/tenant-platform-api/v1/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("财务总览驾驶舱_index.dashboard.json")}$`,
       ),
     );
     expect(resolveResponse.payload.data.html).toContain("/assets/runtime/dashboard-manifest/styles.css");
@@ -1030,7 +1031,7 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).toContain('"visualizationType":"dashboard_manifest"');
     expect(resolveResponse.payload.data.html).toContain('"dataSource":"datasets/财务数据.json"');
     expect(resolveResponse.payload.data.html).toContain(
-      `"workspaceBaseHref":"/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("财务总览驾驶舱_index.dashboard.json")}/"`,
+      `"workspaceBaseHref":"/tenant-platform-api/v1/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("财务总览驾驶舱_index.dashboard.json")}/"`,
     );
     expect(resolveResponse.payload.data.html).toContain("资金总览驾驶舱_index.dashboard.json");
     expect(resolveResponse.payload.data.html).toContain("/echarts-view/?token=");
@@ -1159,7 +1160,7 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).not.toContain("经营详情.json");
 
     const assetPrefix = new RegExp(
-      `^/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("资金风险监控大屏_index.html")}/`,
+      `^/tenant-platform-api/v1/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("资金风险监控大屏_index.html")}/`,
     );
     const generatedAssetMatches = [
       ...resolveResponse.payload.data.html.matchAll(
@@ -1182,7 +1183,7 @@ describe("tenant platform local edition", () => {
     expect(generatedScriptContent).not.toContain("fetch('经营详情.json')");
 
     const generatedJsonPathMatch = generatedScriptContent.match(
-      /\/member\/visualizations\/assets\/[^"'`]*__openclaw_echarts_view__-[^"'`]*asset-[a-f0-9]{12}\.json/,
+      /\/tenant-platform-api\/v1\/member\/visualizations\/assets\/[^"'`]*__openclaw_echarts_view__-[^"'`]*asset-[a-f0-9]{12}\.json/,
     );
     expect(generatedJsonPathMatch).not.toBeNull();
     const generatedJsonPath = path.join(
@@ -1371,7 +1372,7 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).not.toContain("./styles/控制舱主题.css");
 
     const assetPrefix = new RegExp(
-      `^/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("宇宙驾驶舱_index.html")}/`,
+      `^/tenant-platform-api/v1/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("宇宙驾驶舱_index.html")}/`,
     );
     const generatedInlineModuleMatch = resolveResponse.payload.data.html.match(
       /<script\b[^>]*src="([^"]*__openclaw_echarts_view__-[^"]*inline-script-[^"]+\.js)"[^>]*><\/script>/i,
@@ -1387,7 +1388,7 @@ describe("tenant platform local edition", () => {
     expect(generatedInlineModuleContent).toMatch(/asset-[a-f0-9]{12}\.js/);
 
     const generatedModuleAliasMatch = generatedInlineModuleContent.match(
-      /\/member\/visualizations\/assets\/[^"'`]*__openclaw_echarts_view__-[^"'`]*asset-[a-f0-9]{12}\.js/,
+      /\/tenant-platform-api\/v1\/member\/visualizations\/assets\/[^"'`]*__openclaw_echarts_view__-[^"'`]*asset-[a-f0-9]{12}\.js/,
     );
     expect(generatedModuleAliasMatch).not.toBeNull();
     const generatedModuleAliasPath = path.join(
@@ -1400,10 +1401,10 @@ describe("tenant platform local edition", () => {
     expect(generatedModuleAliasContent).not.toContain("new Worker('./workers/render.worker.js'");
     expect(generatedModuleAliasContent).toMatch(/asset-[a-f0-9]{12}\.js/);
     expect(generatedModuleAliasContent).toContain(
-      `/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("宇宙驾驶舱_index.html")}/models/command-center.glb`,
+      `/tenant-platform-api/v1/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("宇宙驾驶舱_index.html")}/models/command-center.glb`,
     );
     expect(generatedModuleAliasContent).toContain(
-      `/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("宇宙驾驶舱_index.html")}/scripts/images/hud-ring.png`,
+      `/tenant-platform-api/v1/member/visualizations/assets/${encodeURIComponent(String(assignment.derivedAgentId))}/${encodeURIComponent("宇宙驾驶舱_index.html")}/scripts/images/hud-ring.png`,
     );
 
     const generatedCssMatch = resolveResponse.payload.data.html.match(
@@ -1419,7 +1420,7 @@ describe("tenant platform local edition", () => {
     expect(generatedCssContent).not.toContain("../images/粒子 背景.png");
     expect(generatedCssContent).not.toContain("./base.css");
     expect(generatedCssContent).toMatch(/asset-[a-f0-9]{12}\.png/);
-    expect(generatedCssContent).toContain("/member/visualizations/assets/");
+    expect(generatedCssContent).toContain("/tenant-platform-api/v1/member/visualizations/assets/");
   });
 
   it("lists assigned agents for a member and revokes selected assignments by assignment id", async () => {

@@ -1253,10 +1253,16 @@ function buildWorkspaceAgentDownloadBaseHref(derivedAgentId) {
   ]);
 }
 
-function buildVisualizationAssetRoutePath(derivedAgentId, visualizationFileName, resourcePath = "") {
+function buildVisualizationAssetRoutePath(
+  derivedAgentId,
+  visualizationFileName,
+  resourcePath = "",
+  routeBasePath = "",
+) {
   const normalizedAgentId = String(derivedAgentId || "").trim();
   const normalizedFileName = String(visualizationFileName || "").trim();
   const normalizedResourcePath = normalizeVisualizationRelativePath(resourcePath);
+  const normalizedRouteBasePath = String(routeBasePath || "").trim().replace(/\/+$/, "");
   const encodedSegments = [
     "member",
     "visualizations",
@@ -1267,11 +1273,16 @@ function buildVisualizationAssetRoutePath(derivedAgentId, visualizationFileName,
   if (normalizedResourcePath) {
     encodedSegments.push(...normalizedResourcePath.split("/"));
   }
-  return `/${encodedSegments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+  return `${normalizedRouteBasePath}/${encodedSegments.map((segment) => encodeURIComponent(segment)).join("/")}`;
 }
 
-function buildVisualizationAssetBaseHref(derivedAgentId, visualizationFileName) {
-  return `${buildVisualizationAssetRoutePath(derivedAgentId, visualizationFileName)}/`;
+function buildVisualizationAssetBaseHref(derivedAgentId, visualizationFileName, routeBasePath = "") {
+  return `${buildVisualizationAssetRoutePath(
+    derivedAgentId,
+    visualizationFileName,
+    "",
+    routeBasePath,
+  )}/`;
 }
 
 function getVisualizationAssetMimeType(resourcePath) {
@@ -3220,10 +3231,13 @@ export function createTenantPlatformRouter(deps) {
         const workspaceBaseHref = buildVisualizationAssetBaseHref(
           match.derivedAgentId,
           match.visualizationFileName,
+          deps.config.apiBasePath,
         );
         const visualizationHref = buildVisualizationAssetRoutePath(
           match.derivedAgentId,
           match.visualizationFileName,
+          "",
+          deps.config.apiBasePath,
         );
         const rawVisualizationContent = fs.readFileSync(visualizationPath, "utf8");
         const generatedScriptHtml =
