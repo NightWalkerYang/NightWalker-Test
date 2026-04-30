@@ -254,6 +254,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The chat background uses an injected animated ambient layer.
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
+- Member chat now uses a progress-aware idle failsafe instead of a fixed 75-second absolute timeout, so long ECharts/file-generation runs keep going while text or tool output is still advancing and only fail after a real stall.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap that mirrors the gateway token into both the route scope and the root scope so public routes can reuse existing stored settings.
 - Platform admins can now replace the default `知识图谱` utility entry with a zero-intrusive `更改品牌` action, open a machine-global branding panel, and save either a text logo or an uploaded image logo without touching repository files or existing OpenClaw source files; if the current brand already uses an image logo, later name/title edits can keep that machine-local image without forcing a re-upload.
 - The tenant sidecar now serves a machine-local public branding state plus an image logo asset path, while platform-admin routes can persist or restore the brand configuration under the sidecar state directory so each deployment machine keeps its own brand outside Git.

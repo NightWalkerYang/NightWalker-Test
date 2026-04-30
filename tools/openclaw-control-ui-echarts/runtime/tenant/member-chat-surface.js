@@ -31,10 +31,11 @@ const SIDEBAR_SELECTOR = ".sidebar-nav";
 const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
 const SECTION_CLASS = "nav-section oc-member-chat-section";
 const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
-const CHAT_FAILSAFE_TIMEOUT_MS = 75_000;
+const CHAT_FAILSAFE_TIMEOUT_MS = 300_000;
 const CHAT_FAILSAFE_MESSAGE = "本次请求超时，模型连接异常，请重新发送。";
 const CHAT_FAILSAFE_TIMER_KEY = "__ocMemberChatFailsafeTimer";
 const CHAT_FAILSAFE_SESSION_KEY = "__ocMemberChatFailsafeSessionKey";
+const CHAT_FAILSAFE_PROGRESS_KEY = "__ocMemberChatFailsafeProgressKey";
 const CHAT_EMPTY_RENDER_PLACEHOLDER_KEY = "__ocMemberChatEmptyRenderPlaceholder";
 const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
 const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
@@ -134,6 +135,30 @@ function clearChatLoadingFailsafe(app) {
   }
   app[CHAT_FAILSAFE_TIMER_KEY] = 0;
   app[CHAT_FAILSAFE_SESSION_KEY] = "";
+  app[CHAT_FAILSAFE_PROGRESS_KEY] = "";
+}
+
+function buildChatLoadingProgressSignature(app) {
+  if (!(app instanceof HTMLElement)) {
+    return "";
+  }
+  const toolStreamOrder =
+    Array.isArray(app.toolStreamOrder) && app.toolStreamOrder.length > 0
+      ? app.toolStreamOrder
+      : [];
+  const lastToolStreamId =
+    toolStreamOrder.length > 0 ? String(toolStreamOrder[toolStreamOrder.length - 1] || "") : "";
+  return JSON.stringify({
+    chatMessagesLength: Array.isArray(app.chatMessages) ? app.chatMessages.length : 0,
+    chatStream: typeof app.chatStream === "string" ? app.chatStream : "",
+    chatRunId: typeof app.chatRunId === "string" ? app.chatRunId : "",
+    chatToolMessagesLength: Array.isArray(app.chatToolMessages) ? app.chatToolMessages.length : 0,
+    chatStreamSegmentsLength: Array.isArray(app.chatStreamSegments)
+      ? app.chatStreamSegments.length
+      : 0,
+    toolStreamLength: toolStreamOrder.length,
+    lastToolStreamId,
+  });
 }
 
 function scheduleChatLoadingFailsafe(app, sessionKey) {
@@ -149,6 +174,7 @@ function scheduleChatLoadingFailsafe(app, sessionKey) {
   }
   clearChatLoadingFailsafe(app);
   app[CHAT_FAILSAFE_SESSION_KEY] = normalizedSessionKey;
+  app[CHAT_FAILSAFE_PROGRESS_KEY] = buildChatLoadingProgressSignature(app);
   app[CHAT_FAILSAFE_TIMER_KEY] = window.setTimeout(() => {
     const trackedSessionKey = String(app[CHAT_FAILSAFE_SESSION_KEY] || "")
       .trim()
@@ -165,6 +191,12 @@ function scheduleChatLoadingFailsafe(app, sessionKey) {
       return;
     }
     if (!app.chatLoading) {
+      return;
+    }
+    const previousProgressKey = String(app[CHAT_FAILSAFE_PROGRESS_KEY] || "");
+    const currentProgressKey = buildChatLoadingProgressSignature(app);
+    if (currentProgressKey && currentProgressKey !== previousProgressKey) {
+      scheduleChatLoadingFailsafe(app, normalizedSessionKey);
       return;
     }
     if (typeof app.resetToolStream === "function") {

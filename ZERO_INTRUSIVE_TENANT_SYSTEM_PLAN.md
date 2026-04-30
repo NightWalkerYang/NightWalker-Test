@@ -27,6 +27,7 @@
    - 浏览器侧租户 runtime 默认只允许走同源 `/tenant-platform-api/v1`；不能再因为页面端口是 `18789` 就优先猜测 `http://<host>:18801/tenant-platform-api/v1`、`127.0.0.1:18801`、`localhost:18801` 这类跨端口地址。实测在 `172.30.31.203` 这类 cloud bundle 部署下，这些候选会先被 Control UI 的 `connect-src 'self' ws: wss:` CSP 拦截，造成成员页首屏卡顿甚至“页面进不去”的假死现象。
    - 如果旧版本浏览器本地状态里已经持久化过 `openclaw:tenant-platform:api-base:v1=http://<host>:18801/tenant-platform-api/v1` 这类跨端口覆盖值，新的零侵入 runtime 也必须在读取时自动清除该脏值，避免用户必须手工清 localStorage 或强制清缓存后才能恢复。
    - 如果旧版本浏览器本地状态里还持久化了 `openclaw.control.settings.v1:*` 下的 `sessionKey/lastActiveSessionKey`，但当前成员已经回到 `/?ocTenantView=tenant-agent-selector` 或聊天地址缺少 `tenantAgentId`，新的零侵入 runtime 也必须自动清掉这类原生 Control UI 会话恢复值，避免成员退出后切到管理员、再切回成员时，在 `/chat?...session=...` 与 `/?ocTenantView=tenant-agent-selector` 之间循环跳转。
+   - 成员聊天零侵入层原先还带有一个“发送后固定 75 秒绝对超时”的前端 failsafe。实测当成员让 AI 连续写入 Echarts HTML、落地文件并伴随多次工具调用时，这个绝对超时会在后端任务仍在继续时提前把前端流状态清空，表现为页面看起来“卡死”，用户刷新后再发“继续”才会接着做。实际可运行方案已经调整为“更长的空闲超时 + 进展续期”：只要文本流、消息列表或工具流仍在推进，就持续续期；只有长时间完全没有进展时才判定为超时失败。
    - 同一条部署路径还必须同步 `gateway.controlUi.allowedOrigins`，至少覆盖 proxy-facing 的 `http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}` 与 `http://localhost:${OPENCLAW_GATEWAY_PORT}`，并明确关闭 `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback`；原因是前置代理会让 Host-header fallback 在端口处理上变得脆弱，显式 Origin allowlist 才是稳定路径。
    - 本地 Docker 的 proxy-fronted 部署还必须在配置层同步 `gateway.controlUi.dangerouslyDisableDeviceAuth=true`；因为浏览器现在是经由前置代理进入 gateway，本地 loopback 自动配对不再稳定命中，否则用户会先卡在原生 `pairing required` 页面。这个 break-glass 开关不再只绑定 `local edition`，而是绑定“本地前置代理部署”本身。
 
