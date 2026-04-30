@@ -655,7 +655,10 @@ function isPathInsideRoot(targetPath, rootPath) {
 }
 
 function normalizeVisualizationRelativePath(resourcePath) {
-  return path.posix.normalize(String(resourcePath || "").trim()).replace(/^(\.\/)+/, "");
+  const normalized = path.posix
+    .normalize(String(resourcePath || "").trim())
+    .replace(/^(\.\/)+/, "");
+  return normalized === "." ? "" : normalized;
 }
 
 function normalizeVisualizationResourceBaseDir(resourceBaseDir) {
@@ -1248,6 +1251,98 @@ function buildWorkspaceAgentDownloadBaseHref(derivedAgentId) {
     "Echarts",
     "",
   ]);
+}
+
+function buildVisualizationAssetRoutePath(derivedAgentId, visualizationFileName, resourcePath = "") {
+  const normalizedAgentId = String(derivedAgentId || "").trim();
+  const normalizedFileName = String(visualizationFileName || "").trim();
+  const normalizedResourcePath = normalizeVisualizationRelativePath(resourcePath);
+  const encodedSegments = [
+    "member",
+    "visualizations",
+    "assets",
+    normalizedAgentId,
+    normalizedFileName,
+  ];
+  if (normalizedResourcePath) {
+    encodedSegments.push(...normalizedResourcePath.split("/"));
+  }
+  return `/${encodedSegments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}
+
+function buildVisualizationAssetBaseHref(derivedAgentId, visualizationFileName) {
+  return `${buildVisualizationAssetRoutePath(derivedAgentId, visualizationFileName)}/`;
+}
+
+function getVisualizationAssetMimeType(resourcePath) {
+  const extension = path.extname(String(resourcePath || "").trim()).toLowerCase();
+  switch (extension) {
+    case ".js":
+    case ".mjs":
+    case ".cjs":
+      return "application/javascript; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".bmp":
+      return "image/bmp";
+    case ".ico":
+      return "image/x-icon";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
+    case ".ttf":
+      return "font/ttf";
+    case ".otf":
+      return "font/otf";
+    case ".eot":
+      return "application/vnd.ms-fontobject";
+    case ".mp4":
+      return "video/mp4";
+    case ".webm":
+      return "video/webm";
+    case ".mp3":
+      return "audio/mpeg";
+    case ".wav":
+      return "audio/wav";
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".txt":
+      return "text/plain; charset=utf-8";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function resolveVisualizationAssetDiskPath(workspaceRoot, visualizationFileName, resourceSegments = []) {
+  const normalizedWorkspaceRoot = String(workspaceRoot || "").trim();
+  const normalizedVisualizationFileName = String(visualizationFileName || "").trim();
+  if (!normalizedWorkspaceRoot || !normalizedVisualizationFileName) {
+    return "";
+  }
+  const echartsRoot = path.join(normalizedWorkspaceRoot, "Echarts");
+  const relativeResourcePath = normalizeVisualizationRelativePath(
+    Array.isArray(resourceSegments) ? resourceSegments.join("/") : String(resourceSegments || ""),
+  );
+  const relativeTargetPath = relativeResourcePath || normalizedVisualizationFileName;
+  const targetPath = path.resolve(echartsRoot, relativeTargetPath);
+  if (!isPathInsideRoot(targetPath, echartsRoot)) {
+    return "";
+  }
+  return targetPath;
 }
 
 function readMemberVisualizationTokenPayload(token, secret) {
@@ -2480,6 +2575,8 @@ export function createTenantPlatformRouter(deps) {
           userIds,
           userId: String(body.userId || "").trim(),
           assignmentIds,
+          configDir: deps.config?.configDir,
+          configPath: deps.config?.configPath,
         });
         logAudit(deps.db, {
           userId: session.userId,
@@ -2493,6 +2590,8 @@ export function createTenantPlatformRouter(deps) {
             assignmentIds,
             affectedUserIds: result.affectedUserIds,
             revokedAssignmentCount: result.revokedAssignmentCount,
+            removedWorkspaceCount: Number(result?.removedWorkspaceCount || 0),
+            removedWorkspacePathCount: Number(result?.removedWorkspacePathCount || 0),
           },
         });
         sendJson(request, response, 200, { ok: true, data: result });
@@ -3118,13 +3217,14 @@ export function createTenantPlatformRouter(deps) {
       }
       const visualizationPath = path.join(workspaceRoot, "Echarts", match.visualizationFileName);
       try {
-        const workspaceBaseHref = buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId);
-        const visualizationHref = buildWorkspaceAgentDownloadHref([
-          "workspace-agent-downloads",
+        const workspaceBaseHref = buildVisualizationAssetBaseHref(
           match.derivedAgentId,
-          "Echarts",
           match.visualizationFileName,
-        ]);
+        );
+        const visualizationHref = buildVisualizationAssetRoutePath(
+          match.derivedAgentId,
+          match.visualizationFileName,
+        );
         const rawVisualizationContent = fs.readFileSync(visualizationPath, "utf8");
         const generatedScriptHtml =
           match.visualizationType === "dashboard_manifest"
@@ -3161,6 +3261,72 @@ export function createTenantPlatformRouter(deps) {
           ok: false,
           error: "visualization_not_found",
         });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath.startsWith("/member/visualizations/assets/")) {
+      const parts = relativePath.split("/").filter(Boolean);
+      const decodePathSegment = (value) => {
+        try {
+          return decodeURIComponent(String(value || ""));
+        } catch {
+          return String(value || "");
+        }
+      };
+      const [, , , rawDerivedAgentId = "", rawVisualizationFileName = "", ...rawResourceSegments] = parts;
+      const derivedAgentId = decodePathSegment(rawDerivedAgentId).trim();
+      const visualizationFileName = decodePathSegment(rawVisualizationFileName).trim();
+      const resourceSegments = rawResourceSegments.map((segment) => decodePathSegment(segment));
+      if (!derivedAgentId || !visualizationFileName) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+
+      const visualizations = listAssignedAgentVisualizationsForUser(
+        deps.db,
+        {
+          ...session,
+          configPath: deps.config.configPath,
+          configDir: deps.config.configDir,
+        },
+        configAgents,
+      );
+      const match = visualizations.find(
+        (item) =>
+          String(item?.derivedAgentId || "").trim() === derivedAgentId &&
+          String(item?.visualizationFileName || "").trim() === visualizationFileName,
+      );
+      if (!match || !String(match?.derivedWorkspaceDir || "").trim()) {
+        sendJson(request, response, 404, { ok: false, error: "visualization_not_found" });
+        return;
+      }
+
+      const assetPath = resolveVisualizationAssetDiskPath(
+        match.derivedWorkspaceDir,
+        visualizationFileName,
+        resourceSegments,
+      );
+      if (!assetPath) {
+        sendJson(request, response, 404, { ok: false, error: "visualization_asset_not_found" });
+        return;
+      }
+
+      try {
+        const stat = fs.statSync(assetPath);
+        if (!stat.isFile()) {
+          sendJson(request, response, 404, { ok: false, error: "visualization_asset_not_found" });
+          return;
+        }
+        const body = fs.readFileSync(assetPath);
+        sendBinary(request, response, 200, body, getVisualizationAssetMimeType(assetPath));
+      } catch {
+        sendJson(request, response, 404, { ok: false, error: "visualization_asset_not_found" });
       }
       return;
     }

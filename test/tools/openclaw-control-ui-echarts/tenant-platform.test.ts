@@ -27,6 +27,7 @@ import {
   repairTenantUsageCostGaps,
   upsertTenantAgent,
   assignTenantAgentToUser,
+  revokeTenantAgentAssignments,
   revokePlatformTenantAgents,
   listAssignedAgentsForUser,
   listAssignedAgentVisualizationsForUser,
@@ -796,7 +797,7 @@ describe("tenant platform database foundation", () => {
         "  </body>",
         "</html>",
       ].join("\n"),
-      "/workspace-agent-downloads/finance/Echarts/",
+      "/tenant-platform-api/v1/member/visualizations/assets/finance/%E9%9B%86%E5%9B%A2%E7%BB%8F%E8%90%A5%E5%88%86%E6%9E%90%E6%80%BB%E8%A7%88%E5%A4%A7%E5%B1%8F_index.html/",
       visualizationDir,
       "集团经营分析总览大屏_index.html",
       new Map([["next_index.html", "/echarts-view/?token=next-token"]]),
@@ -806,11 +807,15 @@ describe("tenant platform database foundation", () => {
     expect(rewrittenHtml).toContain("data-openclaw-inline-handler-1");
     expect(rewrittenHtml).toContain("data-openclaw-inline-handler-2");
 
-    const assetPrefix = /^\/workspace-agent-downloads\/finance\/Echarts\//;
+    const assetPrefix =
+      /^\/tenant-platform-api\/v1\/member\/visualizations\/assets\/finance\/%E9%9B%86%E5%9B%A2%E7%BB%8F%E8%90%A5%E5%88%86%E6%9E%90%E6%80%BB%E8%A7%88%E5%A4%A7%E5%B1%8F_index\.html\//;
     const generatedInlineScriptMatch = rewrittenHtml.match(
       /<script\b[^>]*src="([^"]*inline-script-[^"]+\.js)"[^>]*><\/script>/i,
     );
     expect(generatedInlineScriptMatch).not.toBeNull();
+    expect(generatedInlineScriptMatch?.[1]).toContain(
+      "/tenant-platform-api/v1/member/visualizations/assets/finance/",
+    );
 
     const generatedHandlerScriptMatch = rewrittenHtml.match(
       /<script\b[^>]*src="([^"]*inline-handler-[^"]+\.js)"[^>]*><\/script>/i,
@@ -948,24 +953,48 @@ describe("tenant platform database foundation", () => {
         status: "active",
       });
 
-      assignTenantAgentToUser(db, {
+      const assignmentA = assignTenantAgentToUser(db, {
         tenantId: tenant.id,
         userId: memberA.id,
         tenantAgentId,
         configPath: sandbox.config.configPath,
         configDir: sandbox.config.configDir,
       });
-      assignTenantAgentToUser(db, {
+      const assignmentB = assignTenantAgentToUser(db, {
         tenantId: tenant.id,
         userId: memberB.id,
         tenantAgentId,
         configPath: sandbox.config.configPath,
         configDir: sandbox.config.configDir,
       });
+      const memberAWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignmentA.derivedAgentId),
+      );
+      const memberARuntimeWorkspace = path.join(
+        sandbox.config.configDir,
+        `workspace-${String(assignmentA.derivedAgentId)}`,
+      );
+      const memberBWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignmentB.derivedAgentId),
+      );
+      const memberBRuntimeWorkspace = path.join(
+        sandbox.config.configDir,
+        `workspace-${String(assignmentB.derivedAgentId)}`,
+      );
+      expect(fs.existsSync(memberAWorkspace)).toBe(true);
+      expect(fs.existsSync(memberARuntimeWorkspace)).toBe(true);
+      expect(fs.existsSync(memberBWorkspace)).toBe(true);
+      expect(fs.existsSync(memberBRuntimeWorkspace)).toBe(true);
 
       const result = revokePlatformTenantAgents(db, {
         tenantId: tenant.id,
         tenantAgentIds: [tenantAgentId],
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
       });
       expect(result).toMatchObject({
         revokedTenantAgentCount: 1,
@@ -973,6 +1002,7 @@ describe("tenant platform database foundation", () => {
         affectedMemberCount: 2,
         refundedPoints: 18,
         walletBalance: 18,
+        removedWorkspaceCount: 2,
       });
       expect(result.tenantAgentIds).toEqual([tenantAgentId]);
       expect(result.affectedUserIds.toSorted()).toEqual([memberA.id, memberB.id].toSorted());
@@ -1027,6 +1057,10 @@ describe("tenant platform database foundation", () => {
           catalog,
         ),
       ).toHaveLength(0);
+      expect(fs.existsSync(memberAWorkspace)).toBe(false);
+      expect(fs.existsSync(memberARuntimeWorkspace)).toBe(false);
+      expect(fs.existsSync(memberBWorkspace)).toBe(false);
+      expect(fs.existsSync(memberBRuntimeWorkspace)).toBe(false);
 
       expect(() =>
         assignTenantAgentToUser(db, {
