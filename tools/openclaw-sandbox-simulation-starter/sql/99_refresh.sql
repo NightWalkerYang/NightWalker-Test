@@ -1,0 +1,8 @@
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_material_monthly_demand;
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_material_monthly_inflow;
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_material_in_transit;
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_material_inventory_latest;
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_supplier_lead_time;
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_supplier_price;
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_bom_explosion;
+REFRESH MATERIALIZED VIEW CONCURRENTLY sandbox_v1.feature_safety_stock;
