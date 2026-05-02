@@ -436,11 +436,58 @@ describe("member chat surface", () => {
 
     const decodedSearch = decodeURIComponent(window.location.search);
     expect(decodedSearch).toContain("tenantAgentId=tenant-agent-1");
-    expect(decodedSearch).toContain(
-      "session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:",
-    );
+    expect(decodedSearch).not.toContain("session=");
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
       "新会话",
+    );
+  });
+
+  it("shows the native welcome state for a new draft member session instead of a blank assistant shell", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:existing",
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    document
+      .querySelector("[data-member-chat-new]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(app.chatMessages).toEqual([]);
+    expect(app.chatLoading).toBe(false);
+    expect(app.sessionKey).toMatch(
+      /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
     );
   });
 
@@ -1257,7 +1304,6 @@ describe("member chat surface", () => {
     confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
     await flush();
-
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
       "本周分析",
     );
@@ -1329,7 +1375,6 @@ describe("member chat surface", () => {
     cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
     await flush();
-
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
       "历史主会话",
     );
@@ -1548,10 +1593,9 @@ describe("member chat surface", () => {
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
       "新会话",
     );
+    expect(app.chatMessages).toEqual([]);
     expect(app.chatLoading).toBe(false);
-    expect(decodeURIComponent(window.location.search)).toContain(
-      "session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:",
-    );
+    expect(decodeURIComponent(window.location.search)).not.toContain("session=");
   });
 
   it("does not block a draft member session on chat.history hydration", async () => {
@@ -1601,6 +1645,7 @@ describe("member chat surface", () => {
     await vi.runOnlyPendingTimersAsync();
 
     expect(chatHistoryCalls).toBe(0);
+    expect(app.chatMessages).toEqual([]);
     expect(app.chatLoading).toBe(false);
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
       "新会话",
