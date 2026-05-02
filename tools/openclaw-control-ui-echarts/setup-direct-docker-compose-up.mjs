@@ -591,7 +591,7 @@ function syncTenantMemberBootstrapHookConfig() {
 
   const batchJson = JSON.stringify([
     {
-      path: "hooks.internal.entries.tenant-member-bootstrap-filter.enabled",
+      path: "hooks.internal.entries[tenant-member-bootstrap-filter].enabled",
       value: true,
     },
   ]);
@@ -601,7 +601,7 @@ function syncTenantMemberBootstrapHookConfig() {
     process.stderr.write(
       [
         "WARN: failed to sync tenant member bootstrap hook config automatically; run this manually:",
-        "  docker compose run --rm --no-deps openclaw-cli config set --batch-json '[{\"path\":\"hooks.internal.entries.tenant-member-bootstrap-filter.enabled\",\"value\":true}]'",
+        "  docker compose run --rm --no-deps openclaw-cli config set --batch-json '[{\"path\":\"hooks.internal.entries[tenant-member-bootstrap-filter].enabled\",\"value\":true}]'",
         result.stderr?.trim(),
       ]
         .filter(Boolean)
@@ -609,7 +609,7 @@ function syncTenantMemberBootstrapHookConfig() {
     );
     return false;
   }
-  process.stdout.write("Synced hooks.internal.entries.tenant-member-bootstrap-filter.enabled=true\n");
+  process.stdout.write("Synced hooks.internal.entries[tenant-member-bootstrap-filter].enabled=true\n");
   return true;
 }
 
