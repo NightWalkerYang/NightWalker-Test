@@ -19,13 +19,15 @@ const DERIVED_AGENT_TEMPLATE_ENTRIES = [
   "USER.md",
   "TOOLS.md",
   "HEARTBEAT.md",
-  "BOOTSTRAP.md",
   "MEMORY.md",
   "memory.md",
   "memory",
   "skills",
 ];
 const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
+const DERIVED_WORKSPACE_STATE_DIRNAME = ".openclaw";
+const DERIVED_WORKSPACE_STATE_FILENAME = "workspace-state.json";
+const DERIVED_WORKSPACE_STATE_VERSION = 1;
 const DEFAULT_BILLING_CURRENCY = "CNY";
 const DEFAULT_CONFIG_PRICING_CURRENCY = "USD";
 const DEFAULT_ZERO_INTRUSIVE_BILLING_RATES = {
@@ -1330,6 +1332,82 @@ function copySeedEntry(source, target) {
   fs.copyFileSync(source, target);
 }
 
+function resolveDerivedWorkspaceStatePath(workspaceDir) {
+  return path.join(
+    String(workspaceDir || "").trim(),
+    DERIVED_WORKSPACE_STATE_DIRNAME,
+    DERIVED_WORKSPACE_STATE_FILENAME,
+  );
+}
+
+function readDerivedWorkspaceSetupState(statePath) {
+  try {
+    const raw = fs.readFileSync(statePath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { version: DERIVED_WORKSPACE_STATE_VERSION };
+    }
+    return {
+      version: DERIVED_WORKSPACE_STATE_VERSION,
+      bootstrapSeededAt:
+        typeof parsed.bootstrapSeededAt === "string" ? parsed.bootstrapSeededAt : undefined,
+      setupCompletedAt:
+        typeof parsed.setupCompletedAt === "string"
+          ? parsed.setupCompletedAt
+          : typeof parsed.onboardingCompletedAt === "string"
+            ? parsed.onboardingCompletedAt
+            : undefined,
+    };
+  } catch {
+    return { version: DERIVED_WORKSPACE_STATE_VERSION };
+  }
+}
+
+function writeDerivedWorkspaceSetupState(statePath, state) {
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(
+    statePath,
+    `${JSON.stringify(
+      {
+        version: DERIVED_WORKSPACE_STATE_VERSION,
+        ...(state?.bootstrapSeededAt ? { bootstrapSeededAt: state.bootstrapSeededAt } : {}),
+        ...(state?.setupCompletedAt ? { setupCompletedAt: state.setupCompletedAt } : {}),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+function markDerivedWorkspaceSetupComplete(workspaceDir) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir || !fs.existsSync(normalizedWorkspaceDir)) {
+    return;
+  }
+  const bootstrapPath = path.join(normalizedWorkspaceDir, "BOOTSTRAP.md");
+  const statePath = resolveDerivedWorkspaceStatePath(normalizedWorkspaceDir);
+  const state = readDerivedWorkspaceSetupState(statePath);
+  let dirty = false;
+
+  if (fs.existsSync(bootstrapPath)) {
+    if (!state.bootstrapSeededAt) {
+      state.bootstrapSeededAt = nowIso();
+      dirty = true;
+    }
+    fs.rmSync(bootstrapPath, { force: true });
+  }
+
+  if (!state.setupCompletedAt) {
+    state.setupCompletedAt = nowIso();
+    dirty = true;
+  }
+
+  if (dirty) {
+    writeDerivedWorkspaceSetupState(statePath, state);
+  }
+}
+
 function ensureDerivedWorkspaceAlias(aliasPath, targetPath) {
   try {
     if (fs.existsSync(aliasPath)) {
@@ -1370,6 +1448,7 @@ function ensureTenantDerivedWorkspace(params) {
       copySeedEntry(path.join(sourceWorkspace, entry), path.join(canonicalWorkspace, entry));
     }
   }
+  markDerivedWorkspaceSetupComplete(canonicalWorkspace);
 
   const metadataPath = path.join(canonicalWorkspace, DERIVED_AGENT_METADATA_FILE);
   if (!fs.existsSync(metadataPath)) {
@@ -1399,6 +1478,7 @@ function ensureTenantDerivedWorkspace(params) {
       copySeedEntry(path.join(canonicalWorkspace, entry), path.join(runtimeWorkspace, entry));
     }
   }
+  markDerivedWorkspaceSetupComplete(runtimeWorkspace);
 
   return {
     canonicalWorkspace,
@@ -3998,6 +4078,7 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
     .all(params.userId)
     .map((row) => {
       let resolvedAgentId = String(row.derivedAgentId || "").trim();
+      let workspace = null;
       if (!resolvedAgentId) {
         resolvedAgentId = deriveTenantMemberAgentId({
           tenantId: row.tenantId,
@@ -4005,15 +4086,20 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
           tenantAgentId: row.tenantAgentId,
           baseAgentId: row.baseAgentId,
         });
-        const workspace = ensureTenantDerivedWorkspace({
-          tenantId: row.tenantId,
-          userId: row.userId,
-          tenantAgentId: row.tenantAgentId,
-          baseAgentId: row.baseAgentId,
-          derivedAgentId: resolvedAgentId,
-          configPath: params.configPath,
-          configDir: params.configDir,
-        });
+      }
+      workspace = ensureTenantDerivedWorkspace({
+        tenantId: row.tenantId,
+        userId: row.userId,
+        tenantAgentId: row.tenantAgentId,
+        baseAgentId: row.baseAgentId,
+        derivedAgentId: resolvedAgentId,
+        configPath: params.configPath,
+        configDir: params.configDir,
+      });
+      if (
+        String(row.derivedAgentId || "").trim() !== resolvedAgentId ||
+        String(row.derivedWorkspaceDir || "").trim() !== workspace.canonicalWorkspace
+      ) {
         db.prepare(
           `UPDATE user_agent_assignments
            SET derived_agent_id = @derivedAgentId,
@@ -4044,6 +4130,8 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
       );
       return {
         ...row,
+        derivedAgentId: resolvedAgentId,
+        derivedWorkspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
         agentId,
         baseAgentId,
         agentName: displayName || baseAgentId || agentId,

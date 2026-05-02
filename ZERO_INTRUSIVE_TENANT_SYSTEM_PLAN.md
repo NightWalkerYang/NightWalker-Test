@@ -1908,9 +1908,11 @@ sidecar 落点固定为：
   - 目标目录：`workspace-agents/<derived-agent-id>`
   - 运行时别名：`workspace-<derived-agent-id>`
 - 工作区初始化采用“部分模板继承”：
-  - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / MEMORY.md / memory.md / memory/ / skills/`
+  - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / MEMORY.md / memory.md / memory/ / skills/`
   - 只复制这批白名单内容，不继承旧会话、日志或其他运行时产物
   - 仅在派生工作区缺失对应文件时复制，不覆盖成员后续个性化修改，因此成员派生工作区与母 Agent 是“一次性派生”而不是持续跟随更新
+  - 实际可运行约束已经收敛为：`BOOTSTRAP.md` 绝不能进入成员派生工作区。因为它会把成员正常聊天的新会话误导成“首次苏醒自我介绍”流程，表现为首轮掉进“我是谁/你是谁”的初始化文案，而不是执行成员刚发出的业务请求
+  - sidecar 现在还会在确保/读取成员派生工作区时顺手做一次自愈：如果旧历史遗留的派生工作区里还存在 `BOOTSTRAP.md`，就会直接删除，并补写 `.openclaw/workspace-state.json.setupCompletedAt`，防止这些老工作区继续被 OpenClaw 当成“未完成 onboarding 的新工作区”
 - sidecar 现在还会对派生 Agent 做一层持久授权桶同步：
   - 当成员分配 Agent，或读取旧的成员分配列表时，会把 `<OPENCLAW_CONFIG_DIR>/exec-approvals.json` 里基础 Agent 的 `agents.<baseAgentId>` 授权桶合并到 `agents.<derivedAgentId>`
   - 合并时保留派生桶自己已有的 allowlist 条目，同时用基础 Agent 的 `security / ask / askFallback / autoAllowSkills` 覆盖派生桶对应策略位
