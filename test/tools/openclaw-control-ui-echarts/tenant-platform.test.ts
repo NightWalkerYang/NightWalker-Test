@@ -237,9 +237,11 @@ describe("tenant platform database foundation", () => {
       );
       fs.writeFileSync(
         path.join(baseWorkspace, "BOOTSTRAP.md"),
-        "# BOOTSTRAP.md - should not be copied into member derived workspaces\n",
+        "# BOOTSTRAP.md - should stay inherited and be filtered only at runtime\n",
         "utf8",
       );
+      fs.mkdirSync(path.join(baseWorkspace, "hooks"), { recursive: true });
+      fs.writeFileSync(path.join(baseWorkspace, "hooks", "README.md"), "hook docs", "utf8");
 
       createBootstrapPlatformAdmin(db, {
         username: "platform-root",
@@ -301,13 +303,13 @@ describe("tenant platform database foundation", () => {
       expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
         "skills should be available",
       );
-      expect(fs.existsSync(path.join(derivedWorkspace, "sessions", "old.jsonl"))).toBe(false);
-      expect(fs.existsSync(path.join(derivedWorkspace, "BOOTSTRAP.md"))).toBe(false);
-      const derivedWorkspaceState = JSON.parse(
-        fs.readFileSync(path.join(derivedWorkspace, ".openclaw", "workspace-state.json"), "utf8"),
+      expect(fs.readFileSync(path.join(derivedWorkspace, "hooks", "README.md"), "utf8")).toContain(
+        "hook docs",
       );
-      expect(typeof derivedWorkspaceState.setupCompletedAt).toBe("string");
-      expect(derivedWorkspaceState.setupCompletedAt.length).toBeGreaterThan(0);
+      expect(fs.existsSync(path.join(derivedWorkspace, "sessions", "old.jsonl"))).toBe(false);
+      expect(fs.readFileSync(path.join(derivedWorkspace, "BOOTSTRAP.md"), "utf8")).toContain(
+        "should stay inherited",
+      );
 
       const agents = listAssignedAgentsForUser(
         db,
@@ -352,103 +354,6 @@ describe("tenant platform database foundation", () => {
           (item) => item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
         ),
       ).toBe(true);
-    } finally {
-      closeTenantPlatformDb(db);
-    }
-  });
-
-  it("heals legacy derived workspaces that still contain BOOTSTRAP.md", () => {
-    const sandbox = createTempSandbox();
-    const db = openTenantPlatformDb(sandbox.config);
-    try {
-      const baseWorkspace = path.join(
-        sandbox.config.configDir,
-        "workspace-agents",
-        "finance",
-      );
-      fs.mkdirSync(baseWorkspace, { recursive: true });
-      fs.writeFileSync(path.join(baseWorkspace, "AGENTS.md"), "# base agents", "utf8");
-      fs.writeFileSync(path.join(baseWorkspace, "IDENTITY.md"), "# base identity", "utf8");
-      fs.writeFileSync(path.join(baseWorkspace, "BOOTSTRAP.md"), "# base bootstrap", "utf8");
-
-      createBootstrapPlatformAdmin(db, {
-        username: "platform-root",
-        password: "secret",
-      });
-
-      const tenant = createTenantWithAdmin(db, {
-        code: "legacy",
-        name: "Legacy Tenant",
-        adminUsername: "legacy-admin",
-        adminPassword: "secret",
-        memberLimit: 3,
-        deploymentMode: "cloud",
-        licenseExpiresAt: null,
-        renewalCode: null,
-      });
-
-      const member = createTenantMember(db, {
-        tenantId: tenant.id,
-        username: "legacy-member",
-        password: "secret",
-      });
-
-      const tenantAgentId = upsertTenantAgent(db, {
-        tenantId: tenant.id,
-        agentId: "finance",
-        description: "legacy finance",
-        rateMultiplier: 1,
-        balancePoints: 12,
-        status: "active",
-      });
-
-      const assignment = assignTenantAgentToUser(db, {
-        tenantId: tenant.id,
-        userId: member.id,
-        tenantAgentId,
-        configPath: sandbox.config.configPath,
-        configDir: sandbox.config.configDir,
-      });
-
-      const derivedWorkspace = path.join(
-        sandbox.config.configDir,
-        "workspace-agents",
-        String(assignment.derivedAgentId),
-      );
-      fs.writeFileSync(path.join(derivedWorkspace, "BOOTSTRAP.md"), "# stale bootstrap", "utf8");
-      fs.mkdirSync(path.join(derivedWorkspace, ".openclaw"), { recursive: true });
-      fs.writeFileSync(
-        path.join(derivedWorkspace, ".openclaw", "workspace-state.json"),
-        JSON.stringify(
-          {
-            version: 1,
-            bootstrapSeededAt: "2026-04-30T05:34:13.756Z",
-          },
-          null,
-          2,
-        ),
-        "utf8",
-      );
-
-      const agents = listAssignedAgentsForUser(
-        db,
-        {
-          tenantId: tenant.id,
-          userId: member.id,
-          configPath: sandbox.config.configPath,
-          configDir: sandbox.config.configDir,
-        },
-        readOpenClawAgentCatalog(sandbox.config.configPath),
-      );
-
-      expect(agents).toHaveLength(1);
-      expect(fs.existsSync(path.join(derivedWorkspace, "BOOTSTRAP.md"))).toBe(false);
-      const healedState = JSON.parse(
-        fs.readFileSync(path.join(derivedWorkspace, ".openclaw", "workspace-state.json"), "utf8"),
-      );
-      expect(healedState.bootstrapSeededAt).toBe("2026-04-30T05:34:13.756Z");
-      expect(typeof healedState.setupCompletedAt).toBe("string");
-      expect(healedState.setupCompletedAt.length).toBeGreaterThan(0);
     } finally {
       closeTenantPlatformDb(db);
     }

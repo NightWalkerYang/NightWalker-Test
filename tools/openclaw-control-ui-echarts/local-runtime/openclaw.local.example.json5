@@ -220,6 +220,9 @@
         "self-improvement": {
           enabled: true,
         },
+        "tenant-member-bootstrap-filter": {
+          enabled: true,
+        },
       },
     },
   },

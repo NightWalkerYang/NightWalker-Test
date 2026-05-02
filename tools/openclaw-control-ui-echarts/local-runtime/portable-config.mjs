@@ -218,6 +218,9 @@ const defaultPortableConfig = {
         "self-improvement": {
           enabled: true,
         },
+        "tenant-member-bootstrap-filter": {
+          enabled: true,
+        },
       },
     },
   },
@@ -413,6 +416,9 @@ function buildPortableHooks(sourceHooks) {
   const selfImprovement = isPlainObject(entries["self-improvement"])
     ? entries["self-improvement"]
     : {};
+  const tenantMemberBootstrapFilter = isPlainObject(entries["tenant-member-bootstrap-filter"])
+    ? entries["tenant-member-bootstrap-filter"]
+    : {};
   return {
     internal: {
       enabled: getBoolean(internal, "enabled", defaultPortableConfig.hooks.internal.enabled),
@@ -422,6 +428,13 @@ function buildPortableHooks(sourceHooks) {
             selfImprovement,
             "enabled",
             defaultPortableConfig.hooks.internal.entries["self-improvement"].enabled,
+          ),
+        },
+        "tenant-member-bootstrap-filter": {
+          enabled: getBoolean(
+            tenantMemberBootstrapFilter,
+            "enabled",
+            true,
           ),
         },
       },
@@ -594,6 +607,10 @@ export function buildPortableConfigBatch(source = {}) {
     {
       path: "hooks.internal.entries.self-improvement.enabled",
       value: example.hooks.internal.entries["self-improvement"].enabled,
+    },
+    {
+      path: "hooks.internal.entries.tenant-member-bootstrap-filter.enabled",
+      value: example.hooks.internal.entries["tenant-member-bootstrap-filter"].enabled,
     },
     {
       path: "agents.defaults.model.primary",

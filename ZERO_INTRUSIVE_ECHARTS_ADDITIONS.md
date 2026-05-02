@@ -167,6 +167,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 ### Workspace Overlays: Kingdee Cloud
 
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/hooks/tenant-member-bootstrap-filter/HOOK.md`
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/hooks/tenant-member-bootstrap-filter/handler.js`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/SKILL.md`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/_bridge_client.py`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/query_analytics_db.py`
@@ -231,6 +233,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/select-parser.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-local-edition.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-member-bootstrap-filter.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tool-run-cluster.test.ts`
 - `test/tools/openclaw-control-ui-echarts/voice-input.test.ts`

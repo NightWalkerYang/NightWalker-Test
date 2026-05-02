@@ -13,6 +13,7 @@ const localRuntimeTemplateDir = path.join(here, "local-runtime");
 const buildCustomControlUiScript = path.join(here, "build-custom-control-ui.mjs");
 const controlUiSourceDir = path.join(repoRoot, "dist", "control-ui");
 const sidecarSourceDir = path.join(here, "sidecar", "tenant-platform");
+const workspaceOverlaySourceDir = path.join(here, "workspace-overlays", "kingdee-cloud");
 const defaultGatewayToken = "local-runtime-shared-token";
 const localRuntimeExtraPackages = [
   "@aws-sdk/client-bedrock",
@@ -372,6 +373,20 @@ function stageRuntimePackage(outputDir, packageRoot, controlUiOutputDir, tarball
   fs.cpSync(
     sidecarSourceDir,
     path.join(packageRoot, "tools", "openclaw-control-ui-echarts", "sidecar", "tenant-platform"),
+    {
+      recursive: true,
+      force: true,
+    },
+  );
+  fs.cpSync(
+    workspaceOverlaySourceDir,
+    path.join(
+      packageRoot,
+      "tools",
+      "openclaw-control-ui-echarts",
+      "workspace-overlays",
+      "kingdee-cloud",
+    ),
     {
       recursive: true,
       force: true,

@@ -93,6 +93,9 @@ describe("portable config", () => {
             "self-improvement": {
               enabled: true,
             },
+            "tenant-member-bootstrap-filter": {
+              enabled: true,
+            },
           },
         },
       },
@@ -184,6 +187,9 @@ describe("portable config", () => {
             "self-improvement": {
               enabled: true,
             },
+            "tenant-member-bootstrap-filter": {
+              enabled: true,
+            },
           },
         },
       },
@@ -268,6 +274,9 @@ describe("portable config", () => {
             "self-improvement": {
               enabled: true,
             },
+            "tenant-member-bootstrap-filter": {
+              enabled: true,
+            },
           },
         },
       },
@@ -320,6 +329,7 @@ describe("portable config", () => {
       "session.dmScope",
       "hooks.internal.enabled",
       "hooks.internal.entries.self-improvement.enabled",
+      "hooks.internal.entries.tenant-member-bootstrap-filter.enabled",
       "agents.defaults.model.primary",
       "agents.defaults.model.fallbacks",
       "agents.defaults.models.zai/glm-5.alias",
