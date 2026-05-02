@@ -1244,6 +1244,95 @@ describe("member chat surface", () => {
     expect(document.querySelector("[data-oc-member-chat-toast]")).toBeNull();
   });
 
+  it("reroutes the native toolbar new-session button into a fresh member draft session", async () => {
+    vi.useFakeTimers();
+    const apiState = installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "旧会话",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+      <div class="agent-chat__toolbar-right">
+        <button class="btn btn--ghost" title="New session" aria-label="New session">+</button>
+      </div>
+    `;
+    const app = createAppStub();
+    app.sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    app.settings = {
+      sessionKey: app.sessionKey,
+      lastActiveSessionKey: app.sessionKey,
+    };
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    const originalSessionKey = String(app.sessionKey || "").trim().toLowerCase();
+    const nativeNewSessionButton = document.querySelector(
+      ".agent-chat__toolbar-right .btn.btn--ghost[title='New session']",
+    );
+    expect(nativeNewSessionButton).not.toBeNull();
+
+    nativeNewSessionButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    const currentSessionKey = String(app.sessionKey || "").trim().toLowerCase();
+    expect(currentSessionKey).toMatch(
+      /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
+    );
+    expect(currentSessionKey).not.toBe(originalSessionKey);
+    expect(apiState.sessions.some((session) => session.openclawSessionKey === currentSessionKey)).toBe(
+      true,
+    );
+    expect(decodeURIComponent(window.location.search)).toContain("tenantAgentId=tenant-agent-1");
+    expect(decodeURIComponent(window.location.search)).not.toContain(`session=${originalSessionKey}`);
+    expect(decodeURIComponent(window.location.search)).not.toContain(`session=${currentSessionKey}`);
+    expect(document.querySelector("[data-oc-member-chat-toast]")).toBeNull();
+  });
+
   it("hides deleted sessions from the sidebar while keeping the current session usable", async () => {
     const apiState = installTenantApiFetchStub({
       sessions: [

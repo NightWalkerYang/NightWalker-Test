@@ -1328,6 +1328,42 @@ function closeAllDialogs() {
   }
 }
 
+function beginNewMemberDraftSession(controller) {
+  if (!controller || !controller.selectedAgent?.id || !controller.session) {
+    return false;
+  }
+  if (controller.hasDraftSession) {
+    showTransientToast(controller, "已经是新的会话了");
+    return true;
+  }
+  const nextSessionKey = createTenantMemberSessionKey(controller.session, controller.selectedAgent);
+  if (!nextSessionKey) {
+    return false;
+  }
+
+  createTenantApiClient()
+    .registerMemberSession({
+      tenantAgentId: controller.selectedAgent.id,
+      openclawSessionKey: nextSessionKey,
+      title: "新会话",
+    })
+    .catch(() => {});
+
+  controller.currentSessionKey = nextSessionKey;
+  controller.sessions = ensureVisibleCurrentSession(controller.sessions, nextSessionKey);
+  controller.hasDraftSession = true;
+  syncRouteForSession(
+    controller.selectedAgent,
+    resolveRouteSessionKey(controller.sessions, nextSessionKey),
+    { replace: false },
+  );
+  pinMemberChatSession(controller.app, nextSessionKey, {
+    skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, nextSessionKey),
+  });
+  renderSidebarSection(controller);
+  return true;
+}
+
 function isMemberChatSelfMutation(node) {
   return Boolean(
     node.closest?.(
@@ -1558,32 +1594,7 @@ function attachSectionHandlers(section, controller) {
     }
     if (target.closest("[data-member-chat-new]")) {
       event.preventDefault();
-      if (ctrl.hasDraftSession) {
-        showTransientToast(ctrl, "已经是新的会话了");
-        return;
-      }
-      const nextSessionKey = createTenantMemberSessionKey(ctrl.session, ctrl.selectedAgent);
-
-      createTenantApiClient()
-        .registerMemberSession({
-          tenantAgentId: ctrl.selectedAgent.id,
-          openclawSessionKey: nextSessionKey,
-          title: "新会话",
-        })
-        .catch(() => {});
-
-      ctrl.currentSessionKey = nextSessionKey;
-      ctrl.sessions = ensureVisibleCurrentSession(ctrl.sessions, nextSessionKey);
-      ctrl.hasDraftSession = true;
-      syncRouteForSession(
-        ctrl.selectedAgent,
-        resolveRouteSessionKey(ctrl.sessions, nextSessionKey),
-        { replace: false },
-      );
-      pinMemberChatSession(ctrl.app, nextSessionKey, {
-        skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
-      });
-      renderSidebarSection(ctrl);
+      beginNewMemberDraftSession(ctrl);
       return;
     }
     const sessionButton = target.closest("[data-member-chat-session]");
@@ -1855,6 +1866,17 @@ export function bootMemberChatSurface() {
   document.addEventListener(
     "click",
     (e) => {
+      if (isMemberChatRoute()) {
+        const ctrl = window._ocMemberChatSurfaceController;
+        const newSessionBtn = e.target.closest?.(
+          ".agent-chat__toolbar-right .btn.btn--ghost[title='New session'], .agent-chat__toolbar-right .btn.btn--ghost[aria-label='New session']",
+        );
+        if (newSessionBtn && beginNewMemberDraftSession(ctrl)) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return;
+        }
+      }
       const btn = e.target.closest?.(".chat-send-btn");
       if (btn && !btn.classList.contains("chat-send-btn--stop")) {
         if (!checkCreditBeforeAction()) {
