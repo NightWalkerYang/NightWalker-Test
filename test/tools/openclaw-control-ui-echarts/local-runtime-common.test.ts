@@ -98,6 +98,18 @@ OPENCLAW_GATEWAY_PORT=19999
       ),
       { recursive: true },
     );
+    fs.mkdirSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "workspace-overlays",
+        "kingdee-cloud",
+        "hooks",
+        "tenant-member-bootstrap-filter",
+      ),
+      { recursive: true },
+    );
     fs.writeFileSync(path.join(packageRoot, "openclaw.mjs"), "export {};\n");
     fs.writeFileSync(
       path.join(
@@ -111,6 +123,32 @@ OPENCLAW_GATEWAY_PORT=19999
       "export {};\n",
     );
     fs.writeFileSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "workspace-overlays",
+        "kingdee-cloud",
+        "hooks",
+        "tenant-member-bootstrap-filter",
+        "HOOK.md",
+      ),
+      "---\nname: tenant-member-bootstrap-filter\n---\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "workspace-overlays",
+        "kingdee-cloud",
+        "hooks",
+        "tenant-member-bootstrap-filter",
+        "handler.js",
+      ),
+      "export default function noop() {}\n",
+    );
+    fs.writeFileSync(
       path.join(packageRoot, "dist", "control-ui", "index.html"),
       "<html><head></head><body></body></html>\n",
     );
@@ -119,5 +157,26 @@ OPENCLAW_GATEWAY_PORT=19999
     const prepared = prepareLocalRuntime(rootDir, {});
     expect(fs.existsSync(prepared.env.OPENCLAW_CONFIG_PATH)).toBe(true);
     expect(fs.readFileSync(prepared.env.OPENCLAW_CONFIG_PATH, "utf8")).toContain("mode");
+    expect(
+      fs.existsSync(
+        path.join(
+          prepared.env.OPENCLAW_CONFIG_DIR,
+          "hooks",
+          "tenant-member-bootstrap-filter",
+          "HOOK.md",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fs.readFileSync(
+        path.join(
+          prepared.env.OPENCLAW_CONFIG_DIR,
+          "hooks",
+          "tenant-member-bootstrap-filter",
+          "handler.js",
+        ),
+        "utf8",
+      ),
+    ).toContain("noop");
   });
 });

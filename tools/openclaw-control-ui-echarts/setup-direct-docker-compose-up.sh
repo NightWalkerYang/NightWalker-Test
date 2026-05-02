@@ -9,6 +9,7 @@ CONTROL_UI_RUNTIME_MODULE_DIR="$TOOL_DIR/runtime"
 CONTROL_UI_STATIC_DIR="$TOOL_DIR/static"
 CONTROL_UI_VENDOR_DIR="$TOOL_DIR/vendor"
 WORKSPACE_OVERLAY_DIR="$TOOL_DIR/workspace-overlays/kingdee-cloud"
+TENANT_MEMBER_BOOTSTRAP_HOOK_DIR="$WORKSPACE_OVERLAY_DIR/hooks/tenant-member-bootstrap-filter"
 PORTABLE_CONFIG_SCRIPT="$TOOL_DIR/local-runtime/portable-config.mjs"
 PORTABLE_CONFIG_SOURCE="$TOOL_DIR/local-runtime/openclaw.local.example.json5"
 OFFLINE_BUNDLED_USERSCRIPT="$ROOT_DIR/tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js"
@@ -871,6 +872,21 @@ sync_workspace_overlays() {
   printf '%s\n' "Synced kingdee-cloud workspace overlay to ${matched} workspace(s) under $workspace_root"
 }
 
+sync_managed_tenant_member_bootstrap_hook() {
+  [[ -d "$TENANT_MEMBER_BOOTSTRAP_HOOK_DIR" ]] || return 0
+
+  local config_dir
+  local managed_hooks_dir
+  local target_dir
+
+  config_dir="$(resolve_openclaw_config_dir)"
+  managed_hooks_dir="$config_dir/hooks"
+  target_dir="$managed_hooks_dir/tenant-member-bootstrap-filter"
+
+  sync_workspace_overlay_tree "$TENANT_MEMBER_BOOTSTRAP_HOOK_DIR" "$target_dir"
+  printf '%s\n' "Synced managed hook tenant-member-bootstrap-filter to $target_dir"
+}
+
 resolve_source_dir() {
   if [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
     printf '%s\n' "$ROOT_DIR/dist/control-ui"
@@ -936,6 +952,7 @@ main() {
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_workspace_overlays
+  sync_managed_tenant_member_bootstrap_hook
   sync_portable_baseline_config
   sync_tenant_member_bootstrap_hook_config
   sync_gateway_control_ui_root

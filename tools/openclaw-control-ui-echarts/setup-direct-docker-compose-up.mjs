@@ -13,6 +13,11 @@ const workspaceOverlayPath = path.join(
   "workspace-overlays",
   "kingdee-cloud",
 );
+const tenantMemberBootstrapHookPath = path.join(
+  workspaceOverlayPath,
+  "hooks",
+  "tenant-member-bootstrap-filter",
+);
 const portableConfigScriptPath = path.join(here, "local-runtime", "portable-config.mjs");
 const portableConfigSourcePath = path.join(
   here,
@@ -667,6 +672,18 @@ function syncWorkspaceOverlays() {
   return targets.length;
 }
 
+function syncManagedTenantMemberBootstrapHook() {
+  if (!fs.existsSync(tenantMemberBootstrapHookPath)) {
+    return null;
+  }
+
+  const managedHooksDir = path.join(resolveOpenclawConfigDir(), "hooks");
+  const targetDir = path.join(managedHooksDir, "tenant-member-bootstrap-filter");
+  syncWorkspaceOverlayTree(tenantMemberBootstrapHookPath, targetDir);
+  process.stdout.write(`Synced managed hook tenant-member-bootstrap-filter to ${targetDir}\n`);
+  return targetDir;
+}
+
 function runTargetedComposeUp() {
   if (shouldSkipComposeUp()) {
     process.stdout.write("Skipped docker compose up because OPENCLAW_SKIP_COMPOSE_UP=1\n");
@@ -707,6 +724,7 @@ function main() {
   buildCustomControlUi();
   const extraMounts = writeRootOverride();
   syncWorkspaceOverlays();
+  syncManagedTenantMemberBootstrapHook();
   syncPortableBaselineConfig();
   syncTenantMemberBootstrapHookConfig();
   syncGatewayControlUiRoot();

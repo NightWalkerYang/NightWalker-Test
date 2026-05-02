@@ -251,6 +251,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Fenced `echarts` blocks render as inline chart cards with a detail modal.
 - Fenced `file` blocks render as compact download cards.
 - Fenced `single-select` and `multi-select` blocks now render as inline option cards. Users can select one or more suggested next steps, then either insert the composed prompt into the chat box or directly send it back to the chat flow.
+- The tenant member bootstrap filter is packaged in the `kingdee-cloud` workspace overlay for parent/child Agent file parity, and the deployment/runtime layer also syncs that hook into `OPENCLAW_CONFIG_DIR/hooks/tenant-member-bootstrap-filter` so gateway startup can actually register it for runtime bootstrap filtering.
 - Workspace file paths can download through same-origin `workspace-downloads` mounts.
 - Shared runtime styles load at boot instead of waiting for a fenced block to appear.
 - Fenced-block adapters now warm their local libraries at boot and rescan only changed DOM roots, reducing the post-refresh delay before `echarts` and `file` cards appear.

@@ -6,6 +6,7 @@ const DEFAULT_GATEWAY_TOKEN = "local-runtime-shared-token";
 const AUTO_TOKEN_MARKER = "data-openclaw-auto-token-bootstrap";
 const LUFENG_TOKEN_MARKER = "data-openclaw-lufeng-bootstrap";
 const ECHARTS_VIEW_TOKEN_MARKER = "data-openclaw-echarts-view-bootstrap";
+const TENANT_MEMBER_BOOTSTRAP_HOOK_NAME = "tenant-member-bootstrap-filter";
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
 const AUTO_TOKEN_SRC = "./assets/runtime/branding/auto-token-preboot.js";
@@ -245,6 +246,31 @@ function ensureDirectoryLink(linkPath, targetPath) {
   );
 }
 
+function syncManagedHook(runtime, rootDir) {
+  const sourceDir = path.join(
+    rootDir,
+    "runtime",
+    "node_modules",
+    "openclaw",
+    "tools",
+    "openclaw-control-ui-echarts",
+    "workspace-overlays",
+    "kingdee-cloud",
+    "hooks",
+    TENANT_MEMBER_BOOTSTRAP_HOOK_NAME,
+  );
+  if (!fs.existsSync(sourceDir)) {
+    return;
+  }
+  const targetDir = path.join(
+    runtime.env.OPENCLAW_CONFIG_DIR,
+    "hooks",
+    TENANT_MEMBER_BOOTSTRAP_HOOK_NAME,
+  );
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+  fs.cpSync(sourceDir, targetDir, { recursive: true, force: true });
+}
+
 export function prepareLocalRuntime(rootDir, processEnv = process.env) {
   const resolved = resolveRuntimeEnv(rootDir, processEnv);
   fs.mkdirSync(resolved.env.OPENCLAW_CONFIG_DIR, { recursive: true });
@@ -275,5 +301,6 @@ export function prepareLocalRuntime(rootDir, processEnv = process.env) {
   fs.writeFileSync(resolved.controlUiIndexPath, nextIndexHtml, "utf8");
   ensureDirectoryLink(resolved.workspaceDownloadsPath, resolved.workspaceDir);
   ensureDirectoryLink(resolved.workspaceAgentDownloadsPath, resolved.workspaceAgentsDir);
+  syncManagedHook(resolved, rootDir);
   return resolved;
 }

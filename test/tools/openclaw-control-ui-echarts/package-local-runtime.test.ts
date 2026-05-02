@@ -138,10 +138,26 @@ describe("package local runtime", () => {
     );
 
     expect(shellScript).toContain("sync_tenant_member_bootstrap_hook_config()");
+    expect(shellScript).toContain("sync_managed_tenant_member_bootstrap_hook()");
     expect(shellScript).toContain(
       'hooks.internal.entries[tenant-member-bootstrap-filter].enabled',
     );
+    expect(shellScript).toContain('managed_hooks_dir="$config_dir/hooks"');
     expect(shellScript).toContain("sync_tenant_member_bootstrap_hook_config\n");
+    expect(shellScript).toContain("sync_managed_tenant_member_bootstrap_hook\n");
+
+    const nodeScript = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "tools",
+        "openclaw-control-ui-echarts",
+        "setup-direct-docker-compose-up.mjs",
+      ),
+      "utf8",
+    );
+    expect(nodeScript).toContain("function syncManagedTenantMemberBootstrapHook()");
+    expect(nodeScript).toContain('path.join(resolveOpenclawConfigDir(), "hooks")');
+    expect(nodeScript).toContain("syncManagedTenantMemberBootstrapHook();");
   });
 
   it("patches file-type runtime compat with core.js export", () => {
