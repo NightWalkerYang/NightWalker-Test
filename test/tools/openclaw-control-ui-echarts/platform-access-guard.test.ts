@@ -346,4 +346,25 @@ describe("platform access guard", () => {
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
   });
+
+  it("normalizes an initial malformed member chat URL before the app boots", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?ocTenantView=tenant-agent-selector&session=agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+
+    await importTenantPreboot();
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
+  });
 });

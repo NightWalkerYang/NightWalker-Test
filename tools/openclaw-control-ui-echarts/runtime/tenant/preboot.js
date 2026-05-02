@@ -454,9 +454,12 @@
       }
       return url;
     }
+    if (targetTenantView === TENANT_AGENT_SELECTOR_VIEW) {
+      return buildMemberSelectorRouteUrl();
+    }
     if (
       isMemberSelectorRoute(baseHref, tenantSession) &&
-      (!targetTenantAgentId || targetTenantView === TENANT_AGENT_SELECTOR_VIEW)
+      !targetTenantAgentId
     ) {
       return buildMemberSelectorRouteUrl();
     }
@@ -528,7 +531,11 @@
 
   document.documentElement.setAttribute("data-oc-tenant-preboot", "true");
 
-  const normalizedCurrent = resolveMemberRouteUrl(window.location.href, window.location.href);
+  const currentHref = new URL(window.location.href, window.location.href);
+  const normalizedCurrent = resolveMemberRouteUrl(currentHref, currentHref.href);
+  if (normalizedCurrent.href !== currentHref.href) {
+    window.history.replaceState({}, "", normalizedCurrent.toString());
+  }
   if (isMemberSelectorRoute(normalizedCurrent, readTenantSession())) {
     clearPersistedControlUiSession(normalizedCurrent);
   }
