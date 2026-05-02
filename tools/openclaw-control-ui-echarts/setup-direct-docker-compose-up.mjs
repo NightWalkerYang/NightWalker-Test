@@ -577,6 +577,42 @@ function syncPortableBaselineConfig() {
   return true;
 }
 
+function syncTenantMemberBootstrapHookConfig() {
+  const check = spawnSync(dockerCommand, ["compose", "config"], {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+  if (check.status !== 0) {
+    process.stderr.write(
+      "WARN: docker compose is not available in repo root; skip syncing tenant member bootstrap hook config.\n",
+    );
+    return false;
+  }
+
+  const batchJson = JSON.stringify([
+    {
+      path: "hooks.internal.entries.tenant-member-bootstrap-filter.enabled",
+      value: true,
+    },
+  ]);
+
+  const result = runPrestartCli(["config", "set", "--batch-json", batchJson]);
+  if (result.status !== 0) {
+    process.stderr.write(
+      [
+        "WARN: failed to sync tenant member bootstrap hook config automatically; run this manually:",
+        "  docker compose run --rm --no-deps openclaw-cli config set --batch-json '[{\"path\":\"hooks.internal.entries.tenant-member-bootstrap-filter.enabled\",\"value\":true}]'",
+        result.stderr?.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n") + "\n",
+    );
+    return false;
+  }
+  process.stdout.write("Synced hooks.internal.entries.tenant-member-bootstrap-filter.enabled=true\n");
+  return true;
+}
+
 function walkFiles(rootDir) {
   const entries = fs.readdirSync(rootDir, { withFileTypes: true });
   const files = [];
@@ -672,6 +708,7 @@ function main() {
   const extraMounts = writeRootOverride();
   syncWorkspaceOverlays();
   syncPortableBaselineConfig();
+  syncTenantMemberBootstrapHookConfig();
   syncGatewayControlUiRoot();
   syncControlUiAllowedOrigins();
   syncControlUiHostHeaderOriginFallbackDisabled();
