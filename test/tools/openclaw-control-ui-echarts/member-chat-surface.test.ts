@@ -1743,4 +1743,103 @@ describe("member chat surface", () => {
       "新会话",
     );
   });
+
+  it("keeps abort bound to the active draft member session while the first send is still running", async () => {
+    vi.useFakeTimers();
+    const apiState = installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+
+    let draftSessionKey = "";
+    const app = createAppStub({
+      request: async (method, params) => {
+        if (method === "sessions.list") {
+          return { sessions: [] };
+        }
+        if (method === "chat.send") {
+          draftSessionKey = String(params?.sessionKey || "").trim().toLowerCase();
+          app.chatLoading = true;
+          app.chatRunId = "run-1";
+          apiState.sessions = [
+            {
+              openclawSessionKey: draftSessionKey,
+              title: "新会话",
+              updatedAt: new Date().toISOString(),
+              hiddenAt: null,
+            },
+          ];
+          return { ok: true };
+        }
+        if (method === "chat.abort") {
+          return { ok: true, sessionKey: params?.sessionKey ?? null };
+        }
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    const initialDraftSessionKey = String(app.sessionKey || "").trim().toLowerCase();
+    expect(initialDraftSessionKey).toMatch(
+      /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
+    );
+
+    await app.client.request("chat.send", {
+      sessionKey: initialDraftSessionKey,
+      message: "先生成一个图表",
+    });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1200);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(draftSessionKey).toMatch(
+      /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
+    );
+    expect(draftSessionKey).toBe(initialDraftSessionKey);
+    expect(app.sessionKey).toBe(draftSessionKey);
+
+    await app.client.request("chat.abort", { sessionKey: app.sessionKey, runId: "run-1" });
+
+    const abortCall = app.client.request.mock.calls.find(([method]) => method === "chat.abort");
+    expect(abortCall).toBeTruthy();
+    expect(abortCall?.[1]).toMatchObject({
+      sessionKey: draftSessionKey,
+      runId: "run-1",
+    });
+    expect(app.sessionKey).toBe(draftSessionKey);
+  });
 });

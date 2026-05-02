@@ -870,6 +870,41 @@ function isDraftOnlySessionRow(row) {
   return isProvisionalSessionTitle(title);
 }
 
+function isPinnedDraftSessionStillActive(app, sessionKey) {
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey || !(app instanceof HTMLElement)) {
+    return false;
+  }
+  const pinnedSessionKey = String(app.__ocPinnedSessionKey || app.sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (pinnedSessionKey !== normalizedSessionKey) {
+    return false;
+  }
+  const controller = window._ocMemberChatSurfaceController;
+  const controllerSessionKey = String(controller?.currentSessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (controllerSessionKey === normalizedSessionKey && controller?.hasDraftSession) {
+    return true;
+  }
+  if (app.chatSending || app.chatLoading || app.chatRunId) {
+    return true;
+  }
+  if (typeof app.chatStream === "string" && app.chatStream.trim()) {
+    return true;
+  }
+  if (Array.isArray(app.chatMessages) && app.chatMessages.length > 0) {
+    return true;
+  }
+  if (Array.isArray(app.chatQueue) && app.chatQueue.length > 0) {
+    return true;
+  }
+  return false;
+}
+
 function resolveRouteSessionKey(sessions, sessionKey) {
   return shouldSkipSessionHistoryHydration(sessions, sessionKey) ? "" : sessionKey;
 }
@@ -889,7 +924,10 @@ function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
           .trim()
           .toLowerCase() === normalized,
     );
-    if (isDraftOnlySessionRow(existingRow)) {
+    if (
+      isDraftOnlySessionRow(existingRow) &&
+      !isPinnedDraftSessionStillActive(app, normalized)
+    ) {
       return "";
     }
     return existingRow?.key ? String(existingRow.key).trim().toLowerCase() : normalized;
