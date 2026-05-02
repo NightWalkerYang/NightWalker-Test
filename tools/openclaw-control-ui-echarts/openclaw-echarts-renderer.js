@@ -9,6 +9,7 @@ import { createFencedBlockRuntime } from "./runtime/framework/fenced-block-runti
 import { bootToolRunCluster } from "./runtime/framework/tool-run-cluster.js";
 import { bootVoiceInputBridge } from "./runtime/framework/voice-input.js";
 import { bootKnowledgeGraphEntry } from "./runtime/knowledge-graph/entry.js";
+import { createSelectAdapter } from "./runtime/select/adapter.js";
 import { bootLufengSurface } from "./runtime/lufeng/surface.js";
 import { bootTenantAuthSurface } from "./runtime/tenant/auth-surface.js";
 import { bootTenantEntry } from "./runtime/tenant/entry.js";
@@ -32,6 +33,9 @@ const runtime = createFencedBlockRuntime([
   createFileAdapter({
     vendorBaseUrl,
     controlUiRootUrl,
+  }),
+  createSelectAdapter({
+    vendorBaseUrl,
   }),
 ]);
 

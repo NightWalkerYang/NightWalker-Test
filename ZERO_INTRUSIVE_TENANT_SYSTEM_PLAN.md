@@ -1961,6 +1961,42 @@ sidecar 落点固定为：
   - 它不是对所有任意数据库默认放开无限制写权限
   - DDL/DML 仍要求用户有明确写入意图，且建议写后立即回查验证
 
+15. AI 结尾动作建议选择块协议已确定为零侵入 fenced block
+
+- 当前真实可运行方案不走“通用表单 DSL”，而是新增两类窄协议：
+  - `single-select { ... }`
+  - `multi-select { ... }`
+- 这两类块都通过零侵入 fenced-block runtime 渲染，不修改 OpenClaw 原生聊天源码
+- 当前协议固定为对象 payload，至少包含：
+  - `options: []`
+- 每个 `options[]` 项当前至少支持：
+  - `value`
+  - `label`
+  - 可选 `description`
+  - 可选 `prompt`
+  - 可选 `disabled`
+- `single-select` 当前额外支持：
+  - `title`
+  - `description`
+  - `submitLabel`
+  - `defaultValue`
+- `multi-select` 当前额外支持：
+  - `title`
+  - `description`
+  - `submitLabel`
+  - `defaultValues`
+  - `minSelected`
+  - `maxSelected`
+- 当前零侵入交互约束明确为：
+  - 选项序号不写入 JSON，由前端按顺序决定展示
+  - `label` / `description` 按纯文本处理，不支持 HTML
+  - 当用户点击“发送至聊天框”时：
+    - 单选优先插入该项 `prompt`，没有则回退 `label`
+    - 多选会把多个已选项拼成编号列表后插入聊天框
+  - 当用户点击“按所选继续”时：
+    - 直接把上述拼装结果发送回聊天流
+- 这条方案的目标不是构建完整表单引擎，而是稳定承接 AI 在回复结尾输出的“下一步建议动作”选择交互
+
 ## 十二、当前还需要继续确认的事项
 
 1. 通联聚合接入材料

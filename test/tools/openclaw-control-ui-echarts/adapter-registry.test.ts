@@ -12,6 +12,10 @@ describe("fenced-block adapter registry", () => {
         id: "echarts",
         languageAliases: new Set(["echarts"]),
       },
+      {
+        id: "select",
+        languageAliases: new Set(["single-select", "multi-select"]),
+      },
     ]);
 
     expect(registry.getAdapterBySourcePrefix("file /home/node/.openclaw/workspace/report.xlsx")).toMatchObject({
@@ -20,6 +24,12 @@ describe("fenced-block adapter registry", () => {
     expect(registry.getAdapterBySourcePrefix("download https://example.com/report.xlsx")).toMatchObject(
       { id: "file" },
     );
+    expect(
+      registry.getAdapterBySourcePrefix("single-select { options: [{ value: 'red', label: '红色' }] }"),
+    ).toMatchObject({ id: "select" });
+    expect(
+      registry.getAdapterBySourcePrefix("multi-select { options: [{ value: 'blue', label: '蓝色' }] }"),
+    ).toMatchObject({ id: "select" });
     expect(registry.getAdapterBySourcePrefix("{\"title\":\"plain json\"}")).toBeNull();
   });
 });

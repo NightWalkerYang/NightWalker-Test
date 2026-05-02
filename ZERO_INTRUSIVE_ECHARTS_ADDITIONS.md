@@ -104,6 +104,13 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/framework/tool-run-cluster.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/voice-input.js`
 
+### Runtime: Select
+
+- `tools/openclaw-control-ui-echarts/runtime/select/adapter.js`
+- `tools/openclaw-control-ui-echarts/runtime/select/parser.js`
+- `tools/openclaw-control-ui-echarts/runtime/select/styles.js`
+- `tools/openclaw-control-ui-echarts/runtime/select/ui-text.js`
+
 ### Runtime: Knowledge Graph
 
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/entry.js`
@@ -220,6 +227,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-platform-auto-approve.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-access-guard.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/select-adapter.test.ts`
+- `test/tools/openclaw-control-ui-echarts/select-parser.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-local-edition.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform.test.ts`
@@ -238,6 +247,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 
 - Fenced `echarts` blocks render as inline chart cards with a detail modal.
 - Fenced `file` blocks render as compact download cards.
+- Fenced `single-select` and `multi-select` blocks now render as inline option cards. Users can select one or more suggested next steps, then either insert the composed prompt into the chat box or directly send it back to the chat flow.
 - Workspace file paths can download through same-origin `workspace-downloads` mounts.
 - Shared runtime styles load at boot instead of waiting for a fenced block to appear.
 - Fenced-block adapters now warm their local libraries at boot and rescan only changed DOM roots, reducing the post-refresh delay before `echarts` and `file` cards appear.
