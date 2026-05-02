@@ -147,17 +147,85 @@ function buildChatLoadingProgressSignature(app) {
       : [];
   const lastToolStreamId =
     toolStreamOrder.length > 0 ? String(toolStreamOrder[toolStreamOrder.length - 1] || "") : "";
+  const toolMessages =
+    Array.isArray(app.chatToolMessages) && app.chatToolMessages.length > 0 ? app.chatToolMessages : [];
+  const lastToolMessage =
+    toolMessages.length > 0 ? toolMessages[toolMessages.length - 1] || null : null;
+  const lastToolOutput = readToolMessageProgressValue(lastToolMessage);
+  const lastToolTitle =
+    lastToolMessage && typeof lastToolMessage.title === "string" ? lastToolMessage.title : "";
   return JSON.stringify({
     chatMessagesLength: Array.isArray(app.chatMessages) ? app.chatMessages.length : 0,
     chatStream: typeof app.chatStream === "string" ? app.chatStream : "",
     chatRunId: typeof app.chatRunId === "string" ? app.chatRunId : "",
-    chatToolMessagesLength: Array.isArray(app.chatToolMessages) ? app.chatToolMessages.length : 0,
+    chatToolMessagesLength: toolMessages.length,
     chatStreamSegmentsLength: Array.isArray(app.chatStreamSegments)
       ? app.chatStreamSegments.length
       : 0,
     toolStreamLength: toolStreamOrder.length,
     lastToolStreamId,
+    lastToolTitle,
+    lastToolOutput,
   });
+}
+
+function readToolMessageProgressValue(message) {
+  if (!message || typeof message !== "object") {
+    return "";
+  }
+  const output = readToolMessageField(message, ["output", "result", "partialResult", "text"]);
+  if (output) {
+    return output;
+  }
+  const content = readToolMessageField(message, ["content"]);
+  if (content) {
+    return content;
+  }
+  return stableStringifyProgressValue(message);
+}
+
+function readToolMessageField(message, fieldNames) {
+  if (!message || typeof message !== "object" || !Array.isArray(fieldNames)) {
+    return "";
+  }
+  for (const fieldName of fieldNames) {
+    const value = stableStringifyProgressValue(message[fieldName]);
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function stableStringifyProgressValue(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  try {
+    return JSON.stringify(sortProgressValue(value));
+  } catch {
+    return "";
+  }
+}
+
+function sortProgressValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sortProgressValue(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const sorted = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortProgressValue(value[key]);
+  }
+  return sorted;
 }
 
 function scheduleChatLoadingFailsafe(app, sessionKey) {

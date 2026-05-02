@@ -1543,6 +1543,98 @@ describe("member chat surface", () => {
     expect(app.lastError).toBeNull();
   });
 
+  it("does not time out a long member chat run while the same tool card keeps streaming new output", async () => {
+    vi.useFakeTimers();
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub({
+      request: async (method) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+                label: "本周分析",
+                updatedAt: Date.now(),
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          return { messages: [] };
+        }
+        if (method === "chat.send") {
+          return { ok: true };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    app.chatToolMessages = [];
+    app.chatStreamSegments = [];
+    app.toolStreamOrder = [];
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await vi.runOnlyPendingTimersAsync();
+
+    app.chatLoading = true;
+    app.chatRunId = "run-1";
+    app.chatStreamStartedAt = Date.now();
+    app.lastError = null;
+    app.chatToolMessages.push({
+      id: "tool-1",
+      title: "write_file",
+      output: "已创建 HTML 文件",
+    });
+    app.toolStreamOrder.push("tool-1");
+
+    await app.client.request("chat.send", { message: "继续生成大屏" });
+    await vi.advanceTimersByTimeAsync(299_000);
+
+    app.chatToolMessages[0].output = "已写入图表配置";
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(app.chatLoading).toBe(true);
+    expect(app.chatRunId).toBe("run-1");
+    expect(app.lastError).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(299_000);
+    app.chatToolMessages[0].output = "已完成资源复制";
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(app.chatLoading).toBe(true);
+    expect(app.chatRunId).toBe("run-1");
+    expect(app.lastError).toBeNull();
+
+    app.chatLoading = false;
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(app.lastError).toBeNull();
+  });
+
   it("keeps a draft session interactive when gateway sessions.list hangs", async () => {
     vi.useFakeTimers();
     installTenantApiFetchStub();
