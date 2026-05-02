@@ -1877,6 +1877,9 @@ sidecar 落点固定为：
   - `runtime.env`
   - `data/.openclaw/openclaw.json`
 - direct-docker setup 现在会把这份可移植基线同步进现有 `openclaw.json`，再单独补 `gateway.controlUi.root`
+- direct-docker setup 现在也会在正式部署入口里同步 `hooks.internal.entries[tenant-member-bootstrap-filter].enabled=true`
+  - 覆盖 `setup-direct-docker-compose-up.mjs` 与实际运维使用的 `setup-direct-docker-compose-up.sh`
+  - 目标是确保成员新会话首轮的 bootstrap 过滤 hook 在服务器按既定 bash 部署路径执行后真实生效，而不是只停留在仓库代码或便携基线里
 - 当前默认 `OPENCLAW_GATEWAY_BIND=loopback`，本机开箱即可启动，不需要额外配置 Control UI origin
 - 即使客户误删 `data/.openclaw/openclaw.json`，启动准备层也会按包内模板自动补回
 - 当前已补齐非 Docker 运行包兼容层：

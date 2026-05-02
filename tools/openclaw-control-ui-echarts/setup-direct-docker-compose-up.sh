@@ -581,6 +581,26 @@ sync_portable_baseline_config() {
   fi
 }
 
+sync_tenant_member_bootstrap_hook_config() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf '%s\n' "WARN: docker not found; skip syncing tenant member bootstrap hook config." >&2
+    return 0
+  fi
+  if ! (cd "$ROOT_DIR" && docker compose config >/dev/null 2>&1); then
+    printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing tenant member bootstrap hook config." >&2
+    return 0
+  fi
+
+  local batch_json='[{"path":"hooks.internal.entries[tenant-member-bootstrap-filter].enabled","value":true}]'
+
+  if cd "$ROOT_DIR" && docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json "$batch_json" >/dev/null 2>&1; then
+    printf '%s\n' "Synced hooks.internal.entries[tenant-member-bootstrap-filter].enabled=true"
+  else
+    printf '%s\n' "WARN: failed to sync tenant member bootstrap hook config automatically; run this manually:" >&2
+    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{\"path\":\"hooks.internal.entries[tenant-member-bootstrap-filter].enabled\",\"value\":true}]'" >&2
+  fi
+}
+
 run_targeted_compose_up() {
   if should_skip_compose_up; then
     printf '%s\n' "Skipped docker compose up because OPENCLAW_SKIP_COMPOSE_UP=1"
@@ -917,6 +937,7 @@ main() {
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_workspace_overlays
   sync_portable_baseline_config
+  sync_tenant_member_bootstrap_hook_config
   sync_gateway_control_ui_root
   sync_control_ui_allowed_origins
   sync_control_ui_host_header_origin_fallback_disabled

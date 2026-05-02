@@ -126,6 +126,24 @@ describe("package local runtime", () => {
     expect(loginHtml).toContain('<base href="/" />');
   });
 
+  it("keeps bash direct-docker setup hook sync aligned with the node helper", () => {
+    const shellScript = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "tools",
+        "openclaw-control-ui-echarts",
+        "setup-direct-docker-compose-up.sh",
+      ),
+      "utf8",
+    );
+
+    expect(shellScript).toContain("sync_tenant_member_bootstrap_hook_config()");
+    expect(shellScript).toContain(
+      'hooks.internal.entries[tenant-member-bootstrap-filter].enabled',
+    );
+    expect(shellScript).toContain("sync_tenant_member_bootstrap_hook_config\n");
+  });
+
   it("patches file-type runtime compat with core.js export", () => {
     const runtimeDir = path.join(createTempDir(), "runtime");
     const fileTypeDir = path.join(runtimeDir, "node_modules", "file-type");
