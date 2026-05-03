@@ -309,6 +309,31 @@ resolve_python() {
   fail "python3 or python is required to extract the bundled vendor libraries."
 }
 
+run_custom_control_ui_builder() {
+  local source_dir="$1"
+
+  if command -v node >/dev/null 2>&1; then
+    node "$TOOL_DIR/build-custom-control-ui.mjs" --source "$source_dir" --output "$OUTPUT_DIR"
+    return 0
+  fi
+
+  command -v docker >/dev/null 2>&1 || fail "node or docker is required to build the custom Control UI."
+
+  local image_ref
+  image_ref="$(resolve_gateway_image_ref)"
+  ensure_gateway_image_available "$image_ref"
+
+  docker run --rm \
+    -v "$ROOT_DIR:/app" \
+    -w /app \
+    -e OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}" \
+    -e OPENCLAW_CONFIG_DIR="${OPENCLAW_CONFIG_DIR:-}" \
+    "$image_ref" \
+    node tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \
+      --source "$source_dir" \
+      --output "$OUTPUT_DIR"
+}
+
 resolve_gateway_image_ref() {
   if [[ -n "${OPENCLAW_IMAGE:-}" ]]; then
     printf '%s\n' "$OPENCLAW_IMAGE"
@@ -925,8 +950,7 @@ main() {
   local compose_up_applied="0"
   source_dir="$(resolve_source_dir)"
 
-  command -v node >/dev/null 2>&1 || fail "node is required to build the custom Control UI."
-  node "$TOOL_DIR/build-custom-control-ui.mjs" --source "$source_dir" --output "$OUTPUT_DIR"
+  run_custom_control_ui_builder "$source_dir"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_workspace_overlays
