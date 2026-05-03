@@ -42,6 +42,10 @@ const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
 let memberChatSurfaceSyncing = false;
 let memberChatSurfaceSyncQueued = false;
 let memberChatSurfaceSuppressNextRouteSync = false;
+let memberChatRouteCleanup = null;
+let memberChatMutationObserver = null;
+let memberChatClickHandler = null;
+let memberChatKeydownHandler = null;
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
   const normalizedPath = String(pathname || "/").trim() || "/";
@@ -1011,7 +1015,9 @@ async function loadMemberSessions(app, selectedAgent, session) {
     const dbRow = registeredMap.get(key);
     const dbTitle = normalizeSessionTitleValue(dbRow?.title);
     const gatewayTitle = normalizeSessionTitleValue(gatewayRow.title || gatewayRow.label);
-    if (!dbRow || isProvisionalSessionTitle(dbTitle) || isProvisionalSessionTitle(gatewayTitle)) {
+    const shouldHydrateTitleFromHistory =
+      (!dbRow || isProvisionalSessionTitle(dbTitle)) && isProvisionalSessionTitle(gatewayTitle);
+    if (shouldHydrateTitleFromHistory) {
       keysToHydrateFromHistory.push(key);
     }
   }
@@ -1416,6 +1422,65 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
     app.setTab("chat");
   }
 
+  if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
+    const originalRequest = app.client.request;
+    const boundOriginalRequest = originalRequest.bind(app.client);
+    const wrappedRequest = async (method, params) => {
+      const activeSessionKey =
+        method === "chat.send"
+          ? String(
+              window._ocMemberChatSurfaceController?.currentSessionKey ||
+                app.__ocPinnedSessionKey ||
+                app.sessionKey ||
+                "",
+            )
+              .trim()
+              .toLowerCase()
+          : "";
+      if (method === "chat.send") {
+        const session = readTenantSession();
+        const agent = readSelectedTenantAgent();
+        const isLocal = session?.session?.edition === "local";
+        const balance = Number(agent?.balancePoints ?? 0);
+        if (
+          session?.session?.role !== "platform_admin" &&
+          !isLocal &&
+          hasResolvedSelectedTenantAgent(agent) &&
+          balance <= 0
+        ) {
+          // Note: In most cases, the early interceptor in bootMemberChatSurface
+          // will catch this before it reaches here.
+          showTransientToast(window._ocMemberChatSurfaceController, "积分不足请联系管理员。", "danger");
+          return { ok: false, error: "insufficient_balance" };
+        }
+      }
+      const result = await boundOriginalRequest(method, params);
+      if (method === "chat.send") {
+        scheduleChatLoadingFailsafe(app, activeSessionKey);
+        if (window._ocMemberChatSurfaceController?.currentSessionKey) {
+          void ensureMemberSessionTitle(
+            window._ocMemberChatSurfaceController,
+            window._ocMemberChatSurfaceController.currentSessionKey,
+            params?.message,
+          );
+          scheduleMemberUsageSync(
+            window._ocMemberChatSurfaceController,
+            window._ocMemberChatSurfaceController.currentSessionKey,
+          );
+        }
+        setTimeout(() => {
+          void syncMemberChatSurface();
+        }, 1200);
+      }
+      return result;
+    };
+    if (originalRequest && typeof originalRequest === "function" && "mock" in originalRequest) {
+      wrappedRequest.mock = originalRequest.mock;
+    }
+    app.client.request = wrappedRequest;
+    app.__openclawClientPatched = true;
+  }
+
   const shouldHydrateHistory =
     app.sessionKey !== sessionKey ||
     (app.__ocPinnedSessionHydratedKey !== sessionKey &&
@@ -1513,60 +1578,6 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           app.requestUpdate?.();
         }
       });
-  }
-
-  if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
-    const originalRequest = app.client.request.bind(app.client);
-    app.client.request = async (method, params) => {
-      const activeSessionKey =
-        method === "chat.send"
-          ? String(
-              window._ocMemberChatSurfaceController?.currentSessionKey ||
-                app.__ocPinnedSessionKey ||
-                app.sessionKey ||
-                "",
-            )
-              .trim()
-              .toLowerCase()
-          : "";
-      if (method === "chat.send") {
-        const session = readTenantSession();
-        const agent = readSelectedTenantAgent();
-        const isLocal = session?.session?.edition === "local";
-        const balance = Number(agent?.balancePoints ?? 0);
-        if (
-          session?.session?.role !== "platform_admin" &&
-          !isLocal &&
-          hasResolvedSelectedTenantAgent(agent) &&
-          balance <= 0
-        ) {
-          // Note: In most cases, the early interceptor in bootMemberChatSurface
-          // will catch this before it reaches here.
-          showTransientToast(window._ocMemberChatSurfaceController, "积分不足请联系管理员。", "danger");
-          return { ok: false, error: "insufficient_balance" };
-        }
-      }
-      const result = await originalRequest(method, params);
-      if (method === "chat.send") {
-        scheduleChatLoadingFailsafe(app, activeSessionKey);
-        if (window._ocMemberChatSurfaceController?.currentSessionKey) {
-          void ensureMemberSessionTitle(
-            window._ocMemberChatSurfaceController,
-            window._ocMemberChatSurfaceController.currentSessionKey,
-            params?.message,
-          );
-          scheduleMemberUsageSync(
-            window._ocMemberChatSurfaceController,
-            window._ocMemberChatSurfaceController.currentSessionKey,
-          );
-        }
-        setTimeout(() => {
-          void syncMemberChatSurface();
-        }, 1200);
-      }
-      return result;
-    };
-    app.__openclawClientPatched = true;
   }
 }
 
@@ -1863,48 +1874,44 @@ export function bootMemberChatSurface() {
     return true;
   };
 
-  document.addEventListener(
-    "click",
-    (e) => {
-      if (isMemberChatRoute()) {
-        const ctrl = window._ocMemberChatSurfaceController;
-        const newSessionBtn = e.target.closest?.(
-          ".agent-chat__toolbar-right .btn.btn--ghost[title='New session'], .agent-chat__toolbar-right .btn.btn--ghost[aria-label='New session']",
-        );
-        if (newSessionBtn && beginNewMemberDraftSession(ctrl)) {
-          e.stopImmediatePropagation();
-          e.preventDefault();
-          return;
-        }
+  memberChatClickHandler ||= (e) => {
+    const event = e;
+    if (isMemberChatRoute()) {
+      const ctrl = window._ocMemberChatSurfaceController;
+      const newSessionBtn = event.target.closest?.(
+        ".agent-chat__toolbar-right .btn.btn--ghost[title='New session'], .agent-chat__toolbar-right .btn.btn--ghost[aria-label='New session']",
+      );
+      if (newSessionBtn && beginNewMemberDraftSession(ctrl)) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        return;
       }
-      const btn = e.target.closest?.(".chat-send-btn");
-      if (btn && !btn.classList.contains("chat-send-btn--stop")) {
+    }
+    const btn = event.target.closest?.(".chat-send-btn");
+    if (btn && !btn.classList.contains("chat-send-btn--stop")) {
+      if (!checkCreditBeforeAction()) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+      }
+    }
+  };
+  document.addEventListener("click", memberChatClickHandler, true);
+
+  memberChatKeydownHandler ||= (e) => {
+    const event = e;
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      const textarea = event.target.closest?.(".agent-chat__input > textarea");
+      if (textarea) {
         if (!checkCreditBeforeAction()) {
-          e.stopImmediatePropagation();
-          e.preventDefault();
+          event.stopImmediatePropagation();
+          event.preventDefault();
         }
       }
-    },
-    true,
-  );
+    }
+  };
+  document.addEventListener("keydown", memberChatKeydownHandler, true);
 
-  document.addEventListener(
-    "keydown",
-    (e) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-        const textarea = e.target.closest?.(".agent-chat__input > textarea");
-        if (textarea) {
-          if (!checkCreditBeforeAction()) {
-            e.stopImmediatePropagation();
-            e.preventDefault();
-          }
-        }
-      }
-    },
-    true,
-  );
-
-  onTenantRouteChange(() => {
+  memberChatRouteCleanup = onTenantRouteChange(() => {
     if (memberChatSurfaceSuppressNextRouteSync) {
       memberChatSurfaceSuppressNextRouteSync = false;
       return;
@@ -1912,7 +1919,7 @@ export function bootMemberChatSurface() {
     void syncMemberChatSurface();
   });
 
-  const observer = new MutationObserver((mutations) => {
+  memberChatMutationObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (!(node instanceof Element)) {
@@ -1941,8 +1948,34 @@ export function bootMemberChatSurface() {
     }
   });
 
-  observer.observe(document.documentElement, {
+  memberChatMutationObserver.observe(document.documentElement, {
     subtree: true,
     childList: true,
   });
+}
+
+export function resetMemberChatSurfaceForTests() {
+  memberChatSurfaceSyncing = false;
+  memberChatSurfaceSyncQueued = false;
+  memberChatSurfaceSuppressNextRouteSync = false;
+  if (typeof memberChatRouteCleanup === "function") {
+    memberChatRouteCleanup();
+  }
+  memberChatRouteCleanup = null;
+  memberChatMutationObserver?.disconnect();
+  memberChatMutationObserver = null;
+  if (memberChatClickHandler) {
+    document.removeEventListener("click", memberChatClickHandler, true);
+  }
+  if (memberChatKeydownHandler) {
+    document.removeEventListener("keydown", memberChatKeydownHandler, true);
+  }
+  document.documentElement.removeAttribute(DOC_ATTR);
+  document.body?.removeAttribute(DOC_ATTR);
+  document.querySelector(`[${SECTION_ATTR}]`)?.remove();
+  document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
+  document.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`)?.remove();
+  document.querySelector(`[${TOAST_ROOT_ATTR}]`)?.remove();
+  delete window._ocMemberChatSurfaceController;
+  delete window.__openclawMemberChatSurfaceBooted;
 }

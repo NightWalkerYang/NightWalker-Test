@@ -1170,7 +1170,7 @@ function ensureTopbarLogoutHandler() {
     resetTenantWalletBalanceCache();
     closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
-    window.location.replace(LOGIN_ROUTE);
+    navigateTenantRoute(LOGIN_ROUTE, { replace: true });
   });
 }
 

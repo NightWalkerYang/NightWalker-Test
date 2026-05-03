@@ -3,7 +3,10 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bootMemberChatSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js";
+import {
+  bootMemberChatSurface,
+  resetMemberChatSurfaceForTests,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js";
 import {
   writeSelectedTenantAgent,
   writeTenantSession,
@@ -151,8 +154,7 @@ afterEach(() => {
   document.head.innerHTML = "";
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
-  delete window.__openclawMemberChatSurfaceBooted;
-  delete window.__openclawTenantRouteSyncBooted;
+  resetMemberChatSurfaceForTests();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -318,7 +320,7 @@ describe("member chat surface", () => {
 
     const requestedMethods = app.client.request.mock.calls.map(([method]) => method);
     expect(requestedMethods.filter((method) => method === "sessions.list")).toHaveLength(1);
-    expect(requestedMethods.filter((method) => method === "chat.history")).toHaveLength(2);
+    expect(requestedMethods.filter((method) => method === "chat.history")).toHaveLength(1);
   });
 
   it("reuses the native sessions cache before asking the gateway again", async () => {

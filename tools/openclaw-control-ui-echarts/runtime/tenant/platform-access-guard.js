@@ -1,6 +1,7 @@
 import { isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
+import { navigateTenantRoute } from "./route-sync.js";
 import {
   buildTenantMemberChatRoute,
   TENANT_AGENT_ASSIGNMENT_VIEW,
@@ -179,9 +180,9 @@ export async function bootPlatformAccessGuard() {
     tenantSession,
   });
   if (decision === "redirect") {
-    window.location.href = LOGIN_ROUTE;
+    navigateTenantRoute(LOGIN_ROUTE, { replace: true });
   } else if (decision === "redirect-tenant-login") {
-    window.location.href = LOGIN_ROUTE;
+    navigateTenantRoute(LOGIN_ROUTE, { replace: true });
   } else if (decision === "redirect-tenant") {
     replaceNativeControlUiRoute(routeForRole(tenantSession?.session?.role));
   } else if (decision === "redirect-member") {

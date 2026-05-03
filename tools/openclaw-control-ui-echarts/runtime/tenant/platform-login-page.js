@@ -1,5 +1,6 @@
 import { createTenantApiClient } from "./api-client.js";
 import { renderTenantAuthLayout } from "./auth-layout.js";
+import { navigateTenantRoute } from "./route-sync.js";
 import {
   TENANT_LOGIN_ROUTE,
   clearPlatformSession,
@@ -63,7 +64,7 @@ export async function mountPlatformLoginPage(root) {
     bootstrap = await apiClient.bootstrap();
     if (bootstrap.edition === "local") {
       clearPlatformSession();
-      window.location.href = TENANT_LOGIN_ROUTE;
+      navigateTenantRoute(TENANT_LOGIN_ROUTE, { replace: true });
       return null;
     }
     const session = readPlatformSession();
@@ -162,7 +163,7 @@ export async function mountPlatformLoginPage(root) {
 
   root.querySelector("[data-tenant-login-link]")?.addEventListener("click", (event) => {
     event.preventDefault();
-    window.location.href = TENANT_LOGIN_ROUTE;
+    navigateTenantRoute(TENANT_LOGIN_ROUTE);
   });
 
   return { root };

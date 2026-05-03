@@ -1,5 +1,5 @@
 import { mountTenantLoginPage } from "./login-page.js";
-import { navigateTenantRoute } from "./route-sync.js";
+import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
 import {
   buildTenantMemberChatRoute,
   isTenantLoginView,
@@ -88,19 +88,67 @@ function recoverAuthenticatedChatRoute(view = readTenantView()) {
   return false;
 }
 
-export async function bootTenantAuthSurface() {
-  const view = readTenantView();
-  if (!isTenantLoginView(view)) {
-    clearAuthSurface();
-    return null;
-  }
-  if (recoverAuthenticatedChatRoute(view)) {
-    clearAuthSurface();
-    return null;
-  }
+let authSurfaceSyncing = false;
+let authSurfaceSyncQueued = false;
+let authSurfaceRouteCleanup = null;
 
-  document.body.setAttribute(ACTIVE_ATTR, "true");
-  ensureStyle();
-  const root = ensureRoot();
-  return mountTenantLoginPage(root);
+async function syncTenantAuthSurface() {
+  if (authSurfaceSyncing) {
+    authSurfaceSyncQueued = true;
+    return null;
+  }
+  authSurfaceSyncing = true;
+  try {
+    const view = readTenantView();
+    if (!isTenantLoginView(view)) {
+      clearAuthSurface();
+      return null;
+    }
+    if (recoverAuthenticatedChatRoute(view)) {
+      clearAuthSurface();
+      return null;
+    }
+
+    document.body.setAttribute(ACTIVE_ATTR, "true");
+    ensureStyle();
+    const root = ensureRoot();
+    const result = await mountTenantLoginPage(root);
+    if (!isTenantLoginView(readTenantView())) {
+      clearAuthSurface();
+      return null;
+    }
+    return result;
+  } finally {
+    authSurfaceSyncing = false;
+    if (authSurfaceSyncQueued) {
+      authSurfaceSyncQueued = false;
+      window.setTimeout(() => {
+        void syncTenantAuthSurface();
+      }, 0);
+    }
+  }
+}
+
+export async function bootTenantAuthSurface() {
+  bootTenantRouteSync();
+  const initial = await syncTenantAuthSurface();
+  if (window.__openclawTenantAuthSurfaceBooted) {
+    return initial;
+  }
+  window.__openclawTenantAuthSurfaceBooted = true;
+  authSurfaceRouteCleanup = onTenantRouteChange(() => {
+    void syncTenantAuthSurface();
+  });
+  return initial;
+}
+
+export function resetTenantAuthSurfaceForTests() {
+  authSurfaceSyncing = false;
+  authSurfaceSyncQueued = false;
+  if (typeof authSurfaceRouteCleanup === "function") {
+    authSurfaceRouteCleanup();
+  }
+  authSurfaceRouteCleanup = null;
+  clearAuthSurface();
+  delete window.__openclawTenantAuthSurfaceBooted;
 }

@@ -1,3 +1,5 @@
+import { navigateTenantRoute } from "./route-sync.js";
+
 const PLATFORM_SESSION_STORAGE_KEY = "openclaw:tenant-platform:platform-session:v1";
 const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
 const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
@@ -387,7 +389,7 @@ export function isTenantLoginView(view = readTenantView()) {
 }
 
 export function redirectToRoleHome(session) {
-  window.location.href = routeForRole(session?.role);
+  navigateTenantRoute(routeForRole(session?.role), { replace: true });
 }
 
 export function requireTenantSession(allowedRoles, options = {}) {
@@ -399,11 +401,11 @@ export function requireTenantSession(allowedRoles, options = {}) {
   const loginHref =
     options.loginHref || (expectPlatformOnly ? PLATFORM_LOGIN_ROUTE : TENANT_LOGIN_ROUTE);
   if (!session?.token || !session?.session?.role) {
-    window.location.href = loginHref;
+    navigateTenantRoute(loginHref, { replace: true });
     return null;
   }
   if (Array.isArray(allowedRoles) && !allowedRoles.includes(session.session.role)) {
-    window.location.href = routeForRole(session.session.role);
+    navigateTenantRoute(routeForRole(session.session.role), { replace: true });
     return null;
   }
   return session;

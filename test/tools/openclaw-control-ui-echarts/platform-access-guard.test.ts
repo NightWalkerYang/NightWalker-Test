@@ -10,6 +10,7 @@ import {
   resolveMemberChatBootstrapHref,
   resolvePlatformAccessDecision,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js";
+import { bootTenantAuthSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
 import {
   isTenantMemberSessionKey,
   writeTenantSession,
@@ -402,5 +403,34 @@ describe("platform access guard", () => {
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
     expect(replaceStateSpy).toHaveBeenCalled();
+  });
+
+  it("redirects unauthenticated native control routes into the login view without a full reload", async () => {
+    window.history.replaceState({}, "", "/chat");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ok: true,
+            data: {
+              edition: "cloud",
+              initialized: true,
+            },
+          };
+        },
+      })),
+    );
+
+    await bootPlatformAccessGuard();
+    await bootTenantAuthSurface();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("?ocTenantView=login");
+    expect(document.querySelector("[data-oc-tenant-auth-root]")).not.toBeNull();
   });
 });

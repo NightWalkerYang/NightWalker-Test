@@ -3,7 +3,11 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bootTenantAuthSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
+import {
+  bootTenantAuthSurface,
+  resetTenantAuthSurfaceForTests,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
+import { navigateTenantRoute } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js";
 import {
   writeSelectedTenantAgent,
   writeTenantSession,
@@ -15,6 +19,7 @@ afterEach(() => {
   document.body.removeAttribute("data-oc-tenant-auth-active");
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
+  resetTenantAuthSurfaceForTests();
   vi.unstubAllGlobals();
 });
 
@@ -152,5 +157,32 @@ describe("tenant auth surface", () => {
 
     expect(document.querySelector("[data-tenant-setup-form]")).toBeNull();
     expect(document.querySelector("[data-tenant-login-form]")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("unmounts the login shell after same-page navigation leaves the tenant login view", async () => {
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    window.history.replaceState({}, "", "/?ocTenantView=login");
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          data: { initialized: true, edition: "cloud" },
+        };
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await bootTenantAuthSurface();
+
+    expect(document.querySelector("[data-oc-tenant-auth-root]")).not.toBeNull();
+
+    navigateTenantRoute("/chat?tenantAgentId=tenant-agent-1");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBeNull();
+    expect(document.querySelector("[data-oc-tenant-auth-root]")).toBeNull();
   });
 });
