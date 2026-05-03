@@ -145,6 +145,12 @@ describe("package local runtime", () => {
     expect(shellScript).toContain('managed_hooks_dir="$config_dir/hooks"');
     expect(shellScript).toContain("sync_tenant_member_bootstrap_hook_config\n");
     expect(shellScript).toContain("sync_managed_tenant_member_bootstrap_hook\n");
+    expect(shellScript).toContain('node "$TOOL_DIR/build-custom-control-ui.mjs"');
+    expect(shellScript).toContain('--source "$source_dir"');
+    expect(shellScript).toContain('--output "$OUTPUT_DIR"');
+    expect(shellScript).not.toContain('inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html"');
+    expect(shellScript).not.toContain('inject_lufeng_public_bootstrap "$OUTPUT_DIR/index.html"');
+    expect(shellScript).not.toContain('inject_echarts_view_public_bootstrap "$OUTPUT_DIR/index.html"');
 
     const nodeScript = fs.readFileSync(
       path.join(

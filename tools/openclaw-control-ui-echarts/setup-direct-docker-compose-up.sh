@@ -919,36 +919,14 @@ main() {
   require_dir "$CONTROL_UI_STATIC_DIR" "Control UI static overlay assets"
   require_dir "$CONTROL_UI_VENDOR_DIR" "Control UI vendor assets"
   require_file "$OFFLINE_BUNDLED_USERSCRIPT" "Offline bundled ECharts userscript"
+  require_file "$TOOL_DIR/build-custom-control-ui.mjs" "Custom Control UI builder"
 
   local source_dir
   local compose_up_applied="0"
   source_dir="$(resolve_source_dir)"
 
-  reset_output_dir_preserve_mount "$OUTPUT_DIR"
-  mkdir -p "$OUTPUT_DIR/assets/vendor"
-  cp -R "$source_dir"/. "$OUTPUT_DIR"/
-  cp -R "$CONTROL_UI_STATIC_DIR"/. "$OUTPUT_DIR"/
-  mkdir -p "$OUTPUT_DIR/workspace-downloads"
-  mkdir -p "$OUTPUT_DIR/workspace-agent-downloads"
-
-  cp "$CONTROL_UI_RUNTIME_SCRIPT" "$OUTPUT_DIR/assets/openclaw-echarts-renderer.js"
-  cp -R "$CONTROL_UI_RUNTIME_MODULE_DIR" "$OUTPUT_DIR/assets/runtime"
-  cp -R "$CONTROL_UI_VENDOR_DIR"/. "$OUTPUT_DIR/assets/vendor"/
-  extract_offline_vendors "$OFFLINE_BUNDLED_USERSCRIPT" "$OUTPUT_DIR/assets/vendor"
-  mkdir -p "$OUTPUT_DIR/assets/runtime/echarts"
-  cp "$OUTPUT_DIR/assets/vendor/echarts.min.js" "$OUTPUT_DIR/assets/runtime/echarts/echarts.min.js"
-  cp "$OUTPUT_DIR/assets/vendor/json5.min.js" "$OUTPUT_DIR/assets/runtime/echarts/json5.min.js"
-
-  [[ -f "$OUTPUT_DIR/index.html" ]] || fail "Generated Control UI root is missing index.html"
-  local auto_gateway_token
-  auto_gateway_token="$(resolve_auto_gateway_token)"
-  inject_echarts_view_public_bootstrap "$OUTPUT_DIR/index.html"
-  inject_lufeng_public_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
-  inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html" "$auto_gateway_token"
-  inject_runtime_script "$OUTPUT_DIR/index.html"
-  replace_brand_favicons "$OUTPUT_DIR/index.html"
-  create_login_route_entry "$OUTPUT_DIR/index.html"
-  create_echarts_view_route_entry "$OUTPUT_DIR"
+  command -v node >/dev/null 2>&1 || fail "node is required to build the custom Control UI."
+  node "$TOOL_DIR/build-custom-control-ui.mjs" --source "$source_dir" --output "$OUTPUT_DIR"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_workspace_overlays
