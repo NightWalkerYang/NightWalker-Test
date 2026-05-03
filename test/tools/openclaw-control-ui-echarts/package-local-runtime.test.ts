@@ -106,6 +106,7 @@ describe("package local runtime", () => {
 
     const indexHtml = fs.readFileSync(path.join(outputDir, "index.html"), "utf8");
     expect(indexHtml).toContain("data-openclaw-echarts-view-bootstrap");
+    expect(indexHtml).toContain("data-openclaw-tenant-preboot");
     expect(indexHtml.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
       indexHtml.indexOf("data-openclaw-lufeng-bootstrap"),
     );
