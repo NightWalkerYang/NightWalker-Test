@@ -311,6 +311,7 @@ resolve_python() {
 
 run_custom_control_ui_builder() {
   local source_dir="$1"
+  local auto_gateway_token=""
 
   if command -v node >/dev/null 2>&1; then
     node "$TOOL_DIR/build-custom-control-ui.mjs" --source "$source_dir" --output "$OUTPUT_DIR"
@@ -320,18 +321,34 @@ run_custom_control_ui_builder() {
   command -v docker >/dev/null 2>&1 || fail "node or docker is required to build the custom Control UI."
 
   local image_ref
+  local container_output_dir="/workspace/tools/openclaw-control-ui-echarts/generated/control-ui"
+  local container_source_dir=""
   image_ref="$(resolve_gateway_image_ref)"
   ensure_gateway_image_available "$image_ref"
+  auto_gateway_token="$(resolve_auto_gateway_token)"
+
+  if [[ "$source_dir" == "$ROOT_DIR"* ]]; then
+    container_source_dir="/workspace${source_dir#$ROOT_DIR}"
+    docker run --rm \
+      -v "$ROOT_DIR:/workspace" \
+      -w /workspace \
+      -e OPENCLAW_GATEWAY_TOKEN="$auto_gateway_token" \
+      "$image_ref" \
+      node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \
+        --source "$container_source_dir" \
+        --output "$container_output_dir"
+    return 0
+  fi
 
   docker run --rm \
-    -v "$ROOT_DIR:/app" \
-    -w /app \
-    -e OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}" \
-    -e OPENCLAW_CONFIG_DIR="${OPENCLAW_CONFIG_DIR:-}" \
+    -v "$ROOT_DIR:/workspace" \
+    -v "$source_dir:/tmp/openclaw-source-ui:ro" \
+    -w /workspace \
+    -e OPENCLAW_GATEWAY_TOKEN="$auto_gateway_token" \
     "$image_ref" \
-    node tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \
-      --source "$source_dir" \
-      --output "$OUTPUT_DIR"
+    node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \
+      --source /tmp/openclaw-source-ui \
+      --output "$container_output_dir"
 }
 
 resolve_gateway_image_ref() {

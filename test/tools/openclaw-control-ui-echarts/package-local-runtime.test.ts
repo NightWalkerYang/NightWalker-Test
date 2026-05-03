@@ -151,7 +151,9 @@ describe("package local runtime", () => {
     expect(shellScript).toContain('--output "$OUTPUT_DIR"');
     expect(shellScript).toContain("run_custom_control_ui_builder()");
     expect(shellScript).toContain('docker run --rm \\');
-    expect(shellScript).toContain('node tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \\');
+    expect(shellScript).toContain('-v "$ROOT_DIR:/workspace" \\');
+    expect(shellScript).toContain('-v "$source_dir:/tmp/openclaw-source-ui:ro" \\');
+    expect(shellScript).toContain('node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \\');
     expect(shellScript).not.toContain('inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html"');
     expect(shellScript).not.toContain('inject_lufeng_public_bootstrap "$OUTPUT_DIR/index.html"');
     expect(shellScript).not.toContain('inject_echarts_view_public_bootstrap "$OUTPUT_DIR/index.html"');
