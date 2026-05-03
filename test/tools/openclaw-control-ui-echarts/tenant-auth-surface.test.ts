@@ -75,6 +75,35 @@ describe("tenant auth surface", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("drops an invalid member session key when recovering a malformed login chat route", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        tenantId: "tenant-1",
+        userId: "user-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "finance-agent",
+      agentName: "财务助手",
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=login&session=agent:main:main");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await bootTenantAuthSurface();
+
+    expect(document.querySelector("[data-oc-tenant-auth-root]")).toBeNull();
+    expect(window.location.pathname).toBe("/chat");
+    expect(decodeURIComponent(window.location.search)).toContain("tenantAgentId=tenant-agent-1");
+    expect(window.location.search).not.toContain("ocTenantView=login");
+    expect(decodeURIComponent(window.location.search)).not.toContain("session=agent:main:main");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("shows only the setup form when the platform is not initialized", async () => {
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     window.history.replaceState({}, "", "/login");

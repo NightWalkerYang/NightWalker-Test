@@ -3,6 +3,7 @@ import { navigateTenantRoute } from "./route-sync.js";
 import {
   buildTenantMemberChatRoute,
   isTenantLoginView,
+  isTenantMemberSessionKey,
   readPlatformSession,
   readSelectedTenantAgent,
   readTenantSession,
@@ -63,7 +64,10 @@ function recoverAuthenticatedChatRoute(view = readTenantView()) {
     const selectedAgent = readSelectedTenantAgent(window.location.href);
     if (selectedAgent?.id) {
       const url = new URL(window.location.href);
-      const sessionKey = String(url.searchParams.get("session") || "").trim();
+      const rawSessionKey = String(url.searchParams.get("session") || "").trim();
+      const sessionKey = isTenantMemberSessionKey(rawSessionKey, tenantSession, selectedAgent)
+        ? rawSessionKey
+        : "";
       navigateTenantRoute(buildTenantMemberChatRoute(selectedAgent.id, sessionKey), {
         replace: true,
       });

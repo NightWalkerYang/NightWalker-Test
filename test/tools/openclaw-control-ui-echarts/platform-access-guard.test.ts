@@ -4,7 +4,9 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  bootPlatformAccessGuard,
   isNativeControlUiPath,
+  resetPlatformAccessGuardBootstrapForTests,
   resolveMemberChatBootstrapHref,
   resolvePlatformAccessDecision,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js";
@@ -52,8 +54,10 @@ afterEach(() => {
   window.history.replaceState = ORIGINAL_REPLACE_STATE;
   delete window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__;
   delete window.__OPENCLAW_CONTROL_UI_BASE_PATH__;
+  delete window.__openclawPlatformAccessGuardBooted;
   document.documentElement.removeAttribute("data-oc-tenant-preboot");
   window.history.replaceState({}, "", "/");
+  resetPlatformAccessGuardBootstrapForTests();
   vi.restoreAllMocks();
 });
 
@@ -246,7 +250,7 @@ describe("platform access guard", () => {
     ).toBe("redirect-member");
   });
 
-  it("seeds a member chat session before the native chat bootstraps main", () => {
+  it("keeps a direct member chat route stable before runtime picks the active session", () => {
     const tenantSession = {
       token: "member-token",
       session: {
@@ -270,9 +274,7 @@ describe("platform access guard", () => {
     const url = new URL(targetHref);
     expect(url.pathname).toBe("/chat");
     expect(url.searchParams.get("tenantAgentId")).toBe("tenant-agent-1");
-    expect(
-      isTenantMemberSessionKey(url.searchParams.get("session"), tenantSession, selectedAgent),
-    ).toBe(true);
+    expect(url.searchParams.has("session")).toBe(false);
   });
 
   it("keeps an existing member chat session bootstrap href unchanged", () => {
@@ -366,5 +368,39 @@ describe("platform access guard", () => {
 
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
+  });
+
+  it("heals malformed authenticated member routes with replaceState instead of a full reload", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-agent-selector");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ok: true,
+            data: {
+              edition: "cloud",
+            },
+          };
+        },
+      })),
+    );
+    const replaceStateSpy = vi.spyOn(window.history, "replaceState");
+
+    await bootPlatformAccessGuard();
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
+    expect(replaceStateSpy).toHaveBeenCalled();
   });
 });

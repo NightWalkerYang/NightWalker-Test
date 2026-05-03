@@ -117,6 +117,15 @@ export function resolvePlatformAccessDecision({
 
 let bootstrapPromise = null;
 
+function replaceNativeControlUiRoute(targetHref) {
+  const current = new URL(window.location.href, document.baseURI);
+  const target = new URL(targetHref, document.baseURI);
+  if (current.href === target.href) {
+    return;
+  }
+  window.history.replaceState({}, "", target.href);
+}
+
 async function readTenantPlatformEdition() {
   if (!bootstrapPromise) {
     bootstrapPromise = createTenantApiClient()
@@ -174,8 +183,8 @@ export async function bootPlatformAccessGuard() {
   } else if (decision === "redirect-tenant-login") {
     window.location.href = LOGIN_ROUTE;
   } else if (decision === "redirect-tenant") {
-    window.location.href = routeForRole(tenantSession?.session?.role);
+    replaceNativeControlUiRoute(routeForRole(tenantSession?.session?.role));
   } else if (decision === "redirect-member") {
-    window.location.href = routeForRole("member");
+    replaceNativeControlUiRoute(routeForRole("member"));
   }
 }
