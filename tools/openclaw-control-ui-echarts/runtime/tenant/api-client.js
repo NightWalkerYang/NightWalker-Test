@@ -189,6 +189,26 @@ export function createTenantApiClient() {
     listPlatformTenantAgents(tenantId) {
       return requestJson(withQuery("/platform/tenant-agents", { tenantId }));
     },
+    listPlatformDataSources() {
+      return requestJson("/platform/data-sources");
+    },
+    savePlatformDataSource(body) {
+      return requestJson("/platform/data-sources", { method: "POST", body });
+    },
+    listPlatformTenantDataSourceBindings() {
+      return requestJson("/platform/tenant-data-source-bindings");
+    },
+    bindPlatformTenantDataSource(body) {
+      return requestJson("/platform/tenant-data-source-binding", { method: "POST", body });
+    },
+    clearPlatformTenantDataSourceBinding(tenantId) {
+      return requestJson(withQuery("/platform/tenant-data-source-binding", { tenantId }), {
+        method: "DELETE",
+      });
+    },
+    listPlatformSyncSchedules() {
+      return requestJson("/platform/sync-schedules");
+    },
     upsertPlatformTenantAgent(body) {
       return requestJson("/platform/tenant-agents", { method: "POST", body });
     },
@@ -224,6 +244,15 @@ export function createTenantApiClient() {
     },
     revokeTenantAgentAssignments(body) {
       return requestJson("/tenant/admin/revoke-agent-assignments", { method: "POST", body });
+    },
+    listTenantSyncSchedules() {
+      return requestJson("/tenant/sync-schedules");
+    },
+    saveTenantSyncSchedule(body) {
+      return requestJson("/tenant/sync-schedules", { method: "POST", body });
+    },
+    deleteTenantSyncSchedule(id) {
+      return requestJson(withQuery("/tenant/sync-schedules", { id }), { method: "DELETE" });
     },
     getTenantUsageStats(startDate, endDate) {
       return requestJson(withQuery("/tenant/admin/usage-stats", { startDate, endDate }));

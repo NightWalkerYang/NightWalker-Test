@@ -58,6 +58,31 @@ const DEFAULT_ZERO_INTRUSIVE_BILLING_RATES = {
     },
   },
 };
+const DEFAULT_TENANT_SYNC_INTERVAL_MINUTES = 5;
+const DEFAULT_TENANT_SYNC_DEFAULT_START = "2023-01-01";
+const DEFAULT_KINGDEE_BRIDGE_HOST =
+  String(process.env.OPENCLAW_KINGDEE_BRIDGE_HOST || "").trim() || "10.20.30.31";
+const DEFAULT_KINGDEE_BRIDGE_USER =
+  String(process.env.OPENCLAW_KINGDEE_BRIDGE_USER || "").trim() || "root-ai";
+const DEFAULT_KINGDEE_SSH_KEY_PATH =
+  String(process.env.OPENCLAW_KINGDEE_SSH_KEY_PATH || "").trim() ||
+  "/home/node/.openclaw/ssh/kingdee-db-query-ed25519";
+const DEFAULT_KINGDEE_BRIDGE_TIMEOUT_SECONDS = Math.max(
+  30,
+  Number.parseInt(String(process.env.OPENCLAW_KINGDEE_BRIDGE_TIMEOUT_SECONDS || "120"), 10) || 120,
+);
+const DEFAULT_KINGDEE_ANALYTICS_PROJECT_ROOT =
+  String(process.env.OPENCLAW_KINGDEE_ANALYTICS_PROJECT_ROOT || "").trim() ||
+  "/home/root-ai/apps/kingdee-analytics";
+const DEFAULT_KINGDEE_ANALYTICS_PYTHON =
+  String(process.env.OPENCLAW_KINGDEE_ANALYTICS_PYTHON || "").trim() ||
+  "/home/root-ai/apps/kingdee-analytics/.venv/bin/python";
+const DEFAULT_KINGDEE_OPENAPI_CATALOG_ROOT =
+  String(process.env.OPENCLAW_KINGDEE_OPENAPI_CATALOG_ROOT || "").trim() ||
+  "/home/root-ai/apps/kingdee-openapi/references/apis/供应链/销售管理";
+const DEFAULT_TENANT_PLATFORM_DB_PATH =
+  String(process.env.OPENCLAW_TENANT_PLATFORM_DB_PATH || "").trim() ||
+  "/home/root-ai/.openclaw/tenant-platform/tenant-platform.sqlite";
 let cachedBillingRatesConfig = null;
 
 function nowIso() {
@@ -66,6 +91,35 @@ function nowIso() {
 
 function createId(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+function parseJsonObject(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringifyJsonObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
 }
 
 function toFiniteNumber(value, fallback = 0) {
@@ -407,6 +461,91 @@ function ensurePlatformUpdateLogSchemaCompatibility(db) {
   );
 }
 
+function ensureDataSourceSchemaCompatibility(db) {
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS data_sources (
+       id TEXT PRIMARY KEY,
+       name TEXT NOT NULL UNIQUE,
+       status TEXT NOT NULL DEFAULT 'active',
+       connection_json TEXT,
+       k3cloud_profile_json TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_data_source_bindings (
+       tenant_id TEXT PRIMARY KEY,
+       data_source_id TEXT NOT NULL,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_sync_schedules (
+       id TEXT PRIMARY KEY,
+       tenant_id TEXT NOT NULL,
+       data_source_id TEXT NOT NULL,
+       object_code TEXT NOT NULL,
+       module_name TEXT NOT NULL DEFAULT '',
+       derived_workspace_dir TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'active',
+       interval_minutes INTEGER NOT NULL DEFAULT 5,
+       default_start TEXT NOT NULL DEFAULT '2023-01-01',
+       activated_by_user_id TEXT,
+       last_run_at TEXT,
+       last_run_status TEXT,
+       last_run_error TEXT,
+       last_run_duration_ms INTEGER,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       UNIQUE(tenant_id, data_source_id, object_code),
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE,
+       FOREIGN KEY (activated_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+     );`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_data_sources_status
+       ON data_sources (status, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tenant_sync_schedules_status
+       ON tenant_sync_schedules (status, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tenant_sync_schedules_tenant_status
+       ON tenant_sync_schedules (tenant_id, status, updated_at DESC);`,
+  );
+
+  const dataSourceColumns = db.prepare("PRAGMA table_info(data_sources)").all();
+  const knownDataSourceColumns = new Set(
+    dataSourceColumns.map((row) => String(row?.name || "").trim()),
+  );
+  if (!knownDataSourceColumns.has("k3cloud_profile_json")) {
+    db.exec("ALTER TABLE data_sources ADD COLUMN k3cloud_profile_json TEXT;");
+  }
+  if (!knownDataSourceColumns.has("status")) {
+    db.exec("ALTER TABLE data_sources ADD COLUMN status TEXT NOT NULL DEFAULT 'active';");
+  }
+
+  const syncScheduleColumns = db.prepare("PRAGMA table_info(tenant_sync_schedules)").all();
+  const knownSyncScheduleColumns = new Set(
+    syncScheduleColumns.map((row) => String(row?.name || "").trim()),
+  );
+  if (!knownSyncScheduleColumns.has("default_start")) {
+    db.exec(
+      `ALTER TABLE tenant_sync_schedules
+       ADD COLUMN default_start TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_SYNC_DEFAULT_START}';`,
+    );
+  }
+  if (!knownSyncScheduleColumns.has("last_run_duration_ms")) {
+    db.exec("ALTER TABLE tenant_sync_schedules ADD COLUMN last_run_duration_ms INTEGER;");
+  }
+}
+
 function getScalar(db, sql, params) {
   const stmt = db.prepare(sql);
   let row;
@@ -586,6 +725,7 @@ function ensureSchemaCompatibility(db) {
   );
   ensureTenantUsageRecordSchemaCompatibility(db);
   ensurePlatformUpdateLogSchemaCompatibility(db);
+  ensureDataSourceSchemaCompatibility(db);
 }
 
 function normalizeSegment(value, fallback = "x", maxLength = 24) {
@@ -671,6 +811,187 @@ function parseOpenClawConfig(configPath) {
   } catch {
     return {};
   }
+}
+
+function mapDataSourceRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id || "").trim(),
+    name: String(row.name || "").trim(),
+    status: normalizeDataSourceStatus(row.status),
+    connectionJson: parseJsonObject(row.connectionJson ?? row.connection_json),
+    k3cloudProfileJson: parseJsonObject(row.k3cloudProfileJson ?? row.k3cloud_profile_json),
+    createdAt: String((row.createdAt ?? row.created_at) || "").trim(),
+    updatedAt: String((row.updatedAt ?? row.updated_at) || "").trim(),
+  };
+}
+
+function mapTenantDataSourceBindingRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    tenantId: String((row.tenantId ?? row.tenant_id) || "").trim(),
+    dataSourceId: String((row.dataSourceId ?? row.data_source_id) || "").trim(),
+    dataSourceName: String((row.dataSourceName ?? row.data_source_name) || "").trim(),
+    createdAt: String((row.createdAt ?? row.created_at) || "").trim(),
+    updatedAt: String((row.updatedAt ?? row.updated_at) || "").trim(),
+  };
+}
+
+function mapTenantSyncScheduleRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id || "").trim(),
+    tenantId: String((row.tenantId ?? row.tenant_id) || "").trim(),
+    dataSourceId: String((row.dataSourceId ?? row.data_source_id) || "").trim(),
+    objectCode: String((row.objectCode ?? row.object_code) || "").trim(),
+    moduleName: String((row.moduleName ?? row.module_name) || "").trim(),
+    derivedWorkspaceDir: String((row.derivedWorkspaceDir ?? row.derived_workspace_dir) || "").trim(),
+    status: normalizeTenantSyncScheduleStatus(row.status),
+    intervalMinutes: normalizeTenantSyncIntervalMinutes(
+      row.intervalMinutes ?? row.interval_minutes,
+    ),
+    defaultStart: normalizeDefaultStart(row.defaultStart ?? row.default_start),
+    activatedByUserId: String((row.activatedByUserId ?? row.activated_by_user_id) || "").trim() || null,
+    lastRunAt: String((row.lastRunAt ?? row.last_run_at) || "").trim() || null,
+    lastRunStatus: String((row.lastRunStatus ?? row.last_run_status) || "").trim() || null,
+    lastRunError: String((row.lastRunError ?? row.last_run_error) || "").trim() || null,
+    lastRunDurationMs: row.lastRunDurationMs ?? row.last_run_duration_ms ?? null,
+    createdAt: String((row.createdAt ?? row.created_at) || "").trim(),
+    updatedAt: String((row.updatedAt ?? row.updated_at) || "").trim(),
+  };
+}
+
+function buildTenantAnalyticsConnectionProfile(db, tenantId) {
+  const binding = getTenantDataSourceBinding(db, tenantId);
+  if (!binding?.dataSourceId) {
+    return null;
+  }
+  const dataSource = getDataSourceById(db, binding.dataSourceId);
+  const connection = dataSource?.connectionJson;
+  if (!connection || typeof connection !== "object") {
+    return null;
+  }
+  return {
+    ...connection,
+    dataSourceId: dataSource.id,
+    dataSourceName: dataSource.name,
+    tenantId: String(tenantId || "").trim(),
+    bridgeHost: DEFAULT_KINGDEE_BRIDGE_HOST,
+    bridgeUser: DEFAULT_KINGDEE_BRIDGE_USER,
+    sshKeyPath: DEFAULT_KINGDEE_SSH_KEY_PATH,
+    timeoutSeconds: DEFAULT_KINGDEE_BRIDGE_TIMEOUT_SECONDS,
+    analyticsProjectRoot:
+      String(connection.analyticsProjectRoot || "").trim() || DEFAULT_KINGDEE_ANALYTICS_PROJECT_ROOT,
+    analyticsPython:
+      String(connection.analyticsPython || "").trim() || DEFAULT_KINGDEE_ANALYTICS_PYTHON,
+    analyticsPgDsn:
+      String(connection.analyticsPgDsn || connection.pgDsn || connection.dsn || "").trim() || null,
+    catalogRoot:
+      String(connection.catalogRoot || "").trim() || DEFAULT_KINGDEE_OPENAPI_CATALOG_ROOT,
+    tenantPlatformDbPath:
+      String(connection.tenantPlatformDbPath || "").trim() || DEFAULT_TENANT_PLATFORM_DB_PATH,
+  };
+}
+
+function getDerivedAgentK3CloudProfile(db, tenantId) {
+  if (!tenantId) {
+    return null;
+  }
+  const binding = getTenantDataSourceBinding(db, tenantId);
+  if (!binding?.dataSourceId) {
+    return null;
+  }
+  const dataSource = getDataSourceById(db, binding.dataSourceId);
+  return dataSource?.k3cloudProfileJson ?? null;
+}
+
+function hasKingdeeAnalyticsSkillWorkspace(workspaceDir) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir) {
+    return false;
+  }
+  const skillDir = path.join(normalizedWorkspaceDir, "skills", "kingdee-analytics-ops");
+  try {
+    return fs.existsSync(skillDir) && fs.statSync(skillDir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function syncDerivedAgentTenantAnalyticsProfile(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const workspaceDir = String(params.workspaceDir || params.derivedWorkspaceDir || "").trim();
+  if (!tenantId || !workspaceDir || !hasKingdeeAnalyticsSkillWorkspace(workspaceDir)) {
+    return false;
+  }
+  const profile = buildTenantAnalyticsConnectionProfile(db, tenantId);
+  if (!profile) {
+    return false;
+  }
+  const referencesDir = path.join(workspaceDir, "skills", "kingdee-analytics-ops", "references");
+  const targetPath = path.join(referencesDir, "tenant-analytics-connection.json");
+  return writeJsonFileIfChanged(targetPath, profile);
+}
+
+function syncDerivedAgentK3CloudProfile(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const workspaceDir = String(params.workspaceDir || params.derivedWorkspaceDir || "").trim();
+  if (!tenantId || !workspaceDir || !hasKingdeeAnalyticsSkillWorkspace(workspaceDir)) {
+    return false;
+  }
+  const profile = getDerivedAgentK3CloudProfile(db, tenantId);
+  if (!profile) {
+    return false;
+  }
+  const referencesDir = path.join(workspaceDir, "skills", "kingdee-analytics-ops", "references");
+  const targetPath = path.join(referencesDir, "k3cloud-connection-profile.json");
+  return writeJsonFileIfChanged(targetPath, profile);
+}
+
+function syncTenantDerivedAgentProfiles(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return 0;
+  }
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT derived_workspace_dir AS derivedWorkspaceDir
+       FROM user_agent_assignments
+       WHERE tenant_id = ? AND status = 'active'`,
+    )
+    .all(normalizedTenantId);
+  let changedCount = 0;
+  for (const row of rows) {
+    const workspaceDir = String(row?.derivedWorkspaceDir || "").trim();
+    if (!workspaceDir) {
+      continue;
+    }
+    if (
+      syncDerivedAgentTenantAnalyticsProfile(db, {
+        tenantId: normalizedTenantId,
+        derivedWorkspaceDir: workspaceDir,
+        workspaceDir,
+      })
+    ) {
+      changedCount += 1;
+    }
+    if (
+      syncDerivedAgentK3CloudProfile(db, {
+        tenantId: normalizedTenantId,
+        derivedWorkspaceDir: workspaceDir,
+        workspaceDir,
+      })
+    ) {
+      changedCount += 1;
+    }
+  }
+  return changedCount;
 }
 
 function resolveConfiguredModelTokenPricing(params = {}) {
@@ -1041,6 +1362,57 @@ function writeExecApprovalsFile(filePath, payload) {
   return true;
 }
 
+function writeJsonFileIfChanged(filePath, payload) {
+  if (!filePath || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const nextText = `${JSON.stringify(payload, null, 2)}\n`;
+  try {
+    if (fs.existsSync(filePath)) {
+      const currentText = fs.readFileSync(filePath, "utf8");
+      if (currentText === nextText) {
+        return false;
+      }
+    }
+  } catch {}
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, nextText, "utf8");
+  return true;
+}
+
+function normalizeDataSourceStatus(value) {
+  return String(value || "").trim().toLowerCase() === "inactive" ? "inactive" : "active";
+}
+
+function normalizeTenantSyncScheduleStatus(value) {
+  return String(value || "").trim().toLowerCase() === "paused" ? "paused" : "active";
+}
+
+function normalizeTenantSyncIntervalMinutes(value) {
+  return Math.max(
+    1,
+    Number.parseInt(String(value || DEFAULT_TENANT_SYNC_INTERVAL_MINUTES), 10) ||
+      DEFAULT_TENANT_SYNC_INTERVAL_MINUTES,
+  );
+}
+
+function normalizeDefaultStart(value) {
+  const normalized = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized)
+    ? normalized
+    : DEFAULT_TENANT_SYNC_DEFAULT_START;
+}
+
+function normalizeConnectionJson(value) {
+  const parsed = parseJsonObject(value);
+  return parsed ? stringifyJsonObject(parsed) : null;
+}
+
+function normalizeK3CloudProfileJson(value) {
+  const parsed = parseJsonObject(value);
+  return parsed ? stringifyJsonObject(parsed) : null;
+}
+
 function normalizeExecApprovalPattern(value) {
   const trimmed = String(value || "").trim();
   return trimmed ? trimmed.toLowerCase() : "";
@@ -1319,15 +1691,18 @@ function resolveBaseWorkspaceDir(params) {
 }
 
 function copySeedEntry(source, target) {
-  if (!fs.existsSync(source) || fs.existsSync(target)) {
+  if (!fs.existsSync(source)) {
+    return;
+  }
+  const sourceStats = fs.statSync(source);
+  if (sourceStats.isDirectory()) {
+    fs.mkdirSync(target, { recursive: true });
+    for (const entry of fs.readdirSync(source)) {
+      copySeedEntry(path.join(source, entry), path.join(target, entry));
+    }
     return;
   }
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  const sourceStats = fs.statSync(source);
-  if (sourceStats.isDirectory()) {
-    fs.cpSync(source, target, { recursive: true });
-    return;
-  }
   fs.copyFileSync(source, target);
 }
 
@@ -1394,7 +1769,7 @@ function ensureTenantDerivedWorkspace(params) {
   }
 
   const linked = ensureDerivedWorkspaceAlias(runtimeWorkspace, canonicalWorkspace);
-  if (!linked && !fs.existsSync(runtimeWorkspace)) {
+  if (!linked) {
     fs.mkdirSync(runtimeWorkspace, { recursive: true });
     for (const entry of DERIVED_AGENT_TEMPLATE_ENTRIES) {
       copySeedEntry(path.join(canonicalWorkspace, entry), path.join(runtimeWorkspace, entry));
@@ -2637,6 +3012,34 @@ export function buildManagedNodeDesiredState(db, params = {}) {
        ORDER BY created_at ASC`,
     )
     .all(...tenantIds);
+  const dataSources = db
+    .prepare(
+      `SELECT DISTINCT d.id,
+                       d.name,
+                       d.status,
+                       d.connection_json AS connectionJson,
+                       d.k3cloud_profile_json AS k3cloudProfileJson,
+                       d.created_at AS createdAt,
+                       d.updated_at AS updatedAt
+       FROM data_sources d
+       JOIN tenant_data_source_bindings b ON b.data_source_id = d.id
+       WHERE b.tenant_id IN (${placeholders})
+       ORDER BY d.updated_at DESC, d.created_at DESC`,
+    )
+    .all(...tenantIds);
+  const tenantDataSourceBindings = db
+    .prepare(
+      `SELECT b.tenant_id AS tenantId,
+              b.data_source_id AS dataSourceId,
+              d.name AS dataSourceName,
+              b.created_at AS createdAt,
+              b.updated_at AS updatedAt
+       FROM tenant_data_source_bindings b
+       LEFT JOIN data_sources d ON d.id = b.data_source_id
+       WHERE b.tenant_id IN (${placeholders})
+       ORDER BY b.updated_at DESC, b.created_at DESC`,
+    )
+    .all(...tenantIds);
   const userAssignments = db
     .prepare(
       `SELECT ua.tenant_id AS tenantId,
@@ -2656,11 +3059,13 @@ export function buildManagedNodeDesiredState(db, params = {}) {
     desiredRevision: checkpoint.desiredRevision,
     tenants,
     users,
-    memberships,
-    tenantAgents,
-    userAssignments,
-    generatedAt: nowIso(),
-  };
+      memberships,
+      tenantAgents,
+      dataSources,
+      tenantDataSourceBindings,
+      userAssignments,
+      generatedAt: nowIso(),
+    };
 }
 
 export function applyManagedNodeDesiredState(db, params = {}) {
@@ -2672,6 +3077,10 @@ export function applyManagedNodeDesiredState(db, params = {}) {
   const users = Array.isArray(params?.users) ? params.users : [];
   const memberships = Array.isArray(params?.memberships) ? params.memberships : [];
   const tenantAgents = Array.isArray(params?.tenantAgents) ? params.tenantAgents : [];
+  const dataSources = Array.isArray(params?.dataSources) ? params.dataSources : [];
+  const tenantDataSourceBindings = Array.isArray(params?.tenantDataSourceBindings)
+    ? params.tenantDataSourceBindings
+    : [];
   const userAssignments = Array.isArray(params?.userAssignments) ? params.userAssignments : [];
   const configPath = String(params?.configPath || "").trim();
   const configDir = String(params?.configDir || "").trim();
@@ -2682,6 +3091,10 @@ export function applyManagedNodeDesiredState(db, params = {}) {
   );
   const tenantAgentIds = new Set(
     tenantAgents.map((entry) => String(entry?.id || "").trim()).filter(Boolean),
+  );
+  const dataSourceIds = new Set(dataSources.map((entry) => String(entry?.id || "").trim()).filter(Boolean));
+  const tenantBindingTenantIds = new Set(
+    tenantDataSourceBindings.map((entry) => String(entry?.tenantId || "").trim()).filter(Boolean),
   );
   const activeAssignmentKeys = new Set(
     userAssignments.map((entry) =>
@@ -2966,6 +3379,79 @@ export function applyManagedNodeDesiredState(db, params = {}) {
       });
     }
 
+    for (const dataSource of dataSources) {
+      const dataSourceId = String(dataSource?.id || "").trim();
+      if (!dataSourceId) {
+        continue;
+      }
+      db.prepare(
+        `INSERT INTO data_sources (
+           id,
+           name,
+           status,
+           connection_json,
+           k3cloud_profile_json,
+           created_at,
+           updated_at
+         ) VALUES (
+           @id,
+           @name,
+           @status,
+           @connectionJson,
+           @k3cloudProfileJson,
+           @createdAt,
+           @updatedAt
+         )
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           status = excluded.status,
+           connection_json = excluded.connection_json,
+           k3cloud_profile_json = excluded.k3cloud_profile_json,
+           updated_at = excluded.updated_at`,
+      ).run({
+        id: dataSourceId,
+        name: String(dataSource?.name || dataSourceId).trim() || dataSourceId,
+        status: normalizeDataSourceStatus(dataSource?.status),
+        connectionJson: normalizeConnectionJson(
+          dataSource?.connectionJson ?? dataSource?.connection_json,
+        ),
+        k3cloudProfileJson: normalizeK3CloudProfileJson(
+          dataSource?.k3cloudProfileJson ?? dataSource?.k3cloud_profile_json,
+        ),
+        createdAt: normalizeIsoTimestamp(dataSource?.createdAt, now),
+        updatedAt: normalizeIsoTimestamp(dataSource?.updatedAt, now),
+      });
+    }
+
+    for (const binding of tenantDataSourceBindings) {
+      const tenantId = String(binding?.tenantId || "").trim();
+      const dataSourceId = String(binding?.dataSourceId || "").trim();
+      if (!tenantId || !dataSourceId) {
+        continue;
+      }
+      db.prepare(
+        `INSERT INTO tenant_data_source_bindings (
+           tenant_id,
+           data_source_id,
+           created_at,
+           updated_at
+         ) VALUES (
+           @tenantId,
+           @dataSourceId,
+           @createdAt,
+           @updatedAt
+         )
+         ON CONFLICT(tenant_id) DO UPDATE SET
+           data_source_id = excluded.data_source_id,
+           updated_at = excluded.updated_at`,
+      ).run({
+        tenantId,
+        dataSourceId,
+        createdAt: normalizeIsoTimestamp(binding?.createdAt, now),
+        updatedAt: normalizeIsoTimestamp(binding?.updatedAt, now),
+      });
+    }
+
     if (tenantIds.length) {
       const tenantPlaceholders = tenantIds.map(() => "?").join(", ");
       const localTenantAgents = db
@@ -3033,6 +3519,21 @@ export function applyManagedNodeDesiredState(db, params = {}) {
           tenantAgentId: String(row?.tenantAgentId || "").trim(),
         });
       }
+
+      const localBindings = db
+        .prepare(
+          `SELECT tenant_id AS tenantId, data_source_id AS dataSourceId
+           FROM tenant_data_source_bindings
+           WHERE tenant_id IN (${tenantPlaceholders})`,
+        )
+        .all(...tenantIds);
+      for (const row of localBindings) {
+        const tenantId = String(row?.tenantId || "").trim();
+        if (tenantBindingTenantIds.has(tenantId)) {
+          continue;
+        }
+        db.prepare("DELETE FROM tenant_data_source_bindings WHERE tenant_id = ?").run(tenantId);
+      }
     }
 
     db.prepare(
@@ -3086,6 +3587,436 @@ export function getTenantSummary(db, tenantId) {
       )
       .get(tenantId) ?? null
   );
+}
+
+export function listDataSources(db, params = {}) {
+  const search = normalizeLikeSearch(params.search);
+  const whereSql = search
+    ? `WHERE name LIKE @search ESCAPE '\\' OR id LIKE @search ESCAPE '\\'`
+    : "";
+  return db
+    .prepare(
+      `SELECT id,
+              name,
+              status,
+              connection_json AS connectionJson,
+              k3cloud_profile_json AS k3cloudProfileJson,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM data_sources
+       ${whereSql}
+       ORDER BY updated_at DESC, created_at DESC`,
+    )
+    .all(search ? { search } : {})
+    .map(mapDataSourceRow);
+}
+
+export function getDataSourceById(db, dataSourceId) {
+  const normalized = String(dataSourceId || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  return mapDataSourceRow(
+    db
+      .prepare(
+        `SELECT id,
+                name,
+                status,
+                connection_json AS connectionJson,
+                k3cloud_profile_json AS k3cloudProfileJson,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM data_sources
+         WHERE id = ?`,
+      )
+      .get(normalized),
+  );
+}
+
+export function upsertDataSource(db, params = {}) {
+  const id = String(params.id || "").trim();
+  const name = String(params.name || "").trim();
+  if (!name) {
+    throw new Error("data_source_name_required");
+  }
+  const now = nowIso();
+  const status = normalizeDataSourceStatus(params.status);
+  const connectionJson = normalizeConnectionJson(
+    params.connectionJson ?? params.connection_json,
+  );
+  const k3cloudProfileJson = normalizeK3CloudProfileJson(
+    params.k3cloudProfileJson ?? params.k3cloud_profile_json,
+  );
+  if (id) {
+    const existing = getDataSourceById(db, id);
+    if (!existing) {
+      throw new Error("data_source_not_found");
+    }
+    db.prepare(
+      `UPDATE data_sources
+       SET name = @name,
+           status = @status,
+           connection_json = @connectionJson,
+           k3cloud_profile_json = @k3cloudProfileJson,
+           updated_at = @updatedAt
+       WHERE id = @id`,
+    ).run({
+      id,
+      name,
+      status,
+      connectionJson,
+      k3cloudProfileJson,
+      updatedAt: now,
+    });
+    return getDataSourceById(db, id);
+  }
+
+  const nextId = createId("data_source");
+  db.prepare(
+    `INSERT INTO data_sources (
+       id,
+       name,
+       status,
+       connection_json,
+       k3cloud_profile_json,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @name,
+       @status,
+       @connectionJson,
+       @k3cloudProfileJson,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id: nextId,
+    name,
+    status,
+    connectionJson,
+    k3cloudProfileJson,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return getDataSourceById(db, nextId);
+}
+
+export function getTenantDataSourceBinding(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return null;
+  }
+  return mapTenantDataSourceBindingRow(
+    db
+      .prepare(
+        `SELECT b.tenant_id AS tenantId,
+                b.data_source_id AS dataSourceId,
+                d.name AS dataSourceName,
+                b.created_at AS createdAt,
+                b.updated_at AS updatedAt
+         FROM tenant_data_source_bindings b
+         LEFT JOIN data_sources d ON d.id = b.data_source_id
+         WHERE b.tenant_id = ?`,
+      )
+      .get(normalizedTenantId),
+  );
+}
+
+export function listTenantDataSourceBindings(db) {
+  return db
+    .prepare(
+      `SELECT b.tenant_id AS tenantId,
+              b.data_source_id AS dataSourceId,
+              d.name AS dataSourceName,
+              b.created_at AS createdAt,
+              b.updated_at AS updatedAt
+       FROM tenant_data_source_bindings b
+       LEFT JOIN data_sources d ON d.id = b.data_source_id
+       ORDER BY b.updated_at DESC, b.created_at DESC`,
+    )
+    .all()
+    .map(mapTenantDataSourceBindingRow);
+}
+
+export function bindTenantDataSource(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const dataSourceId = String(params.dataSourceId || "").trim();
+  if (!tenantId) {
+    throw new Error("tenant_id_required");
+  }
+  if (!dataSourceId) {
+    throw new Error("data_source_id_required");
+  }
+  const tenant = getTenantSummary(db, tenantId);
+  if (!tenant) {
+    throw new Error("tenant_not_found");
+  }
+  const dataSource = getDataSourceById(db, dataSourceId);
+  if (!dataSource) {
+    throw new Error("data_source_not_found");
+  }
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO tenant_data_source_bindings (
+       tenant_id,
+       data_source_id,
+       created_at,
+       updated_at
+     ) VALUES (
+       @tenantId,
+       @dataSourceId,
+       @createdAt,
+       @updatedAt
+     )
+     ON CONFLICT(tenant_id) DO UPDATE SET
+       data_source_id = excluded.data_source_id,
+       updated_at = excluded.updated_at`,
+  ).run({
+    tenantId,
+    dataSourceId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  syncTenantDerivedAgentProfiles(db, tenantId);
+  bumpManagedNodeDesiredRevisionForTenant(db, tenantId);
+  return getTenantDataSourceBinding(db, tenantId);
+}
+
+export function clearTenantDataSourceBinding(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    throw new Error("tenant_id_required");
+  }
+  db.prepare("DELETE FROM tenant_data_source_bindings WHERE tenant_id = ?").run(normalizedTenantId);
+  bumpManagedNodeDesiredRevisionForTenant(db, normalizedTenantId);
+  return true;
+}
+
+export function upsertSyncSchedule(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const dataSourceId = String(params.dataSourceId || "").trim();
+  const objectCode = String(params.objectCode || "").trim();
+  const moduleName = String(params.moduleName || "").trim();
+  const derivedWorkspaceDir = String(
+    params.derivedWorkspaceDir || params.workspaceDir || "",
+  ).trim();
+  if (!tenantId || !dataSourceId || !objectCode || !derivedWorkspaceDir) {
+    throw new Error("sync_schedule_params_required");
+  }
+  const intervalMinutes = normalizeTenantSyncIntervalMinutes(params.intervalMinutes);
+  const defaultStart = normalizeDefaultStart(params.defaultStart);
+  const status = normalizeTenantSyncScheduleStatus(params.status);
+  const activatedByUserId = String(params.activatedByUserId || "").trim() || null;
+  const now = nowIso();
+  const existing = db
+    .prepare(
+      `SELECT id
+       FROM tenant_sync_schedules
+       WHERE tenant_id = ? AND data_source_id = ? AND object_code = ?`,
+    )
+    .get(tenantId, dataSourceId, objectCode);
+  if (existing?.id) {
+    db.prepare(
+      `UPDATE tenant_sync_schedules
+       SET module_name = @moduleName,
+           derived_workspace_dir = @derivedWorkspaceDir,
+           status = @status,
+           interval_minutes = @intervalMinutes,
+           default_start = @defaultStart,
+           activated_by_user_id = @activatedByUserId,
+           updated_at = @updatedAt
+       WHERE id = @id`,
+    ).run({
+      id: existing.id,
+      moduleName,
+      derivedWorkspaceDir,
+      status,
+      intervalMinutes,
+      defaultStart,
+      activatedByUserId,
+      updatedAt: now,
+    });
+    return getSyncScheduleById(db, existing.id);
+  }
+
+  const id = createId("sync_sched");
+  db.prepare(
+    `INSERT INTO tenant_sync_schedules (
+       id,
+       tenant_id,
+       data_source_id,
+       object_code,
+       module_name,
+       derived_workspace_dir,
+       status,
+       interval_minutes,
+       default_start,
+       activated_by_user_id,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @tenantId,
+       @dataSourceId,
+       @objectCode,
+       @moduleName,
+       @derivedWorkspaceDir,
+       @status,
+       @intervalMinutes,
+       @defaultStart,
+       @activatedByUserId,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id,
+    tenantId,
+    dataSourceId,
+    objectCode,
+    moduleName,
+    derivedWorkspaceDir,
+    status,
+    intervalMinutes,
+    defaultStart,
+    activatedByUserId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return getSyncScheduleById(db, id);
+}
+
+export function getSyncScheduleById(db, scheduleId) {
+  const normalized = String(scheduleId || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  return mapTenantSyncScheduleRow(
+    db
+      .prepare(
+        `SELECT id,
+                tenant_id AS tenantId,
+                data_source_id AS dataSourceId,
+                object_code AS objectCode,
+                module_name AS moduleName,
+                derived_workspace_dir AS derivedWorkspaceDir,
+                status,
+                interval_minutes AS intervalMinutes,
+                default_start AS defaultStart,
+                activated_by_user_id AS activatedByUserId,
+                last_run_at AS lastRunAt,
+                last_run_status AS lastRunStatus,
+                last_run_error AS lastRunError,
+                last_run_duration_ms AS lastRunDurationMs,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+         FROM tenant_sync_schedules
+         WHERE id = ?`,
+      )
+      .get(normalized),
+  );
+}
+
+export function listActiveSyncSchedules(db) {
+  return db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              data_source_id AS dataSourceId,
+              object_code AS objectCode,
+              module_name AS moduleName,
+              derived_workspace_dir AS derivedWorkspaceDir,
+              status,
+              interval_minutes AS intervalMinutes,
+              default_start AS defaultStart,
+              activated_by_user_id AS activatedByUserId,
+              last_run_at AS lastRunAt,
+              last_run_status AS lastRunStatus,
+              last_run_error AS lastRunError,
+              last_run_duration_ms AS lastRunDurationMs,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM tenant_sync_schedules
+       WHERE status = 'active'
+       ORDER BY COALESCE(last_run_at, '') ASC, created_at ASC`,
+    )
+    .all()
+    .map(mapTenantSyncScheduleRow);
+}
+
+export function listTenantSyncSchedules(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return [];
+  }
+  return db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              data_source_id AS dataSourceId,
+              object_code AS objectCode,
+              module_name AS moduleName,
+              derived_workspace_dir AS derivedWorkspaceDir,
+              status,
+              interval_minutes AS intervalMinutes,
+              default_start AS defaultStart,
+              activated_by_user_id AS activatedByUserId,
+              last_run_at AS lastRunAt,
+              last_run_status AS lastRunStatus,
+              last_run_error AS lastRunError,
+              last_run_duration_ms AS lastRunDurationMs,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM tenant_sync_schedules
+       WHERE tenant_id = ?
+       ORDER BY updated_at DESC, created_at DESC`,
+    )
+    .all(normalizedTenantId)
+    .map(mapTenantSyncScheduleRow);
+}
+
+export function deactivateSyncSchedule(db, scheduleId) {
+  const normalized = String(scheduleId || "").trim();
+  if (!normalized) {
+    throw new Error("sync_schedule_id_required");
+  }
+  db.prepare(
+    `UPDATE tenant_sync_schedules
+     SET status = 'paused',
+         updated_at = @updatedAt
+     WHERE id = @id`,
+  ).run({
+    id: normalized,
+    updatedAt: nowIso(),
+  });
+  return getSyncScheduleById(db, normalized);
+}
+
+export function updateSyncScheduleRunResult(db, scheduleId, params = {}) {
+  const normalized = String(scheduleId || "").trim();
+  if (!normalized) {
+    throw new Error("sync_schedule_id_required");
+  }
+  db.prepare(
+    `UPDATE tenant_sync_schedules
+     SET last_run_at = @lastRunAt,
+         last_run_status = @lastRunStatus,
+         last_run_error = @lastRunError,
+         last_run_duration_ms = @lastRunDurationMs,
+         updated_at = @updatedAt
+     WHERE id = @id`,
+  ).run({
+    id: normalized,
+    lastRunAt: nowIso(),
+    lastRunStatus: String(params.status || "").trim() || null,
+    lastRunError: String(params.error || "").trim() || null,
+    lastRunDurationMs:
+      params.durationMs === undefined || params.durationMs === null
+        ? null
+        : Math.max(0, Number.parseInt(String(params.durationMs), 10) || 0),
+    updatedAt: nowIso(),
+  });
+  return getSyncScheduleById(db, normalized);
 }
 
 export function listTenants(db) {
@@ -3698,6 +4629,16 @@ function assignTenantAgentToUserCore(db, params) {
     configPath: params.configPath,
     configDir: params.configDir,
   });
+  syncDerivedAgentTenantAnalyticsProfile(db, {
+    tenantId: params.tenantId,
+    derivedWorkspaceDir: workspace.canonicalWorkspace,
+    workspaceDir: workspace.canonicalWorkspace,
+  });
+  syncDerivedAgentK3CloudProfile(db, {
+    tenantId: params.tenantId,
+    derivedWorkspaceDir: workspace.canonicalWorkspace,
+    workspaceDir: workspace.canonicalWorkspace,
+  });
 
   if (existing) {
     db.prepare(
@@ -4037,6 +4978,16 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
         derivedAgentId: resolvedAgentId,
         configPath: params.configPath,
         configDir: params.configDir,
+      });
+      syncDerivedAgentTenantAnalyticsProfile(db, {
+        tenantId: row.tenantId,
+        derivedWorkspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        workspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+      });
+      syncDerivedAgentK3CloudProfile(db, {
+        tenantId: row.tenantId,
+        derivedWorkspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        workspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
       });
 
       const baseAgentId = String(row.baseAgentId || "").trim();

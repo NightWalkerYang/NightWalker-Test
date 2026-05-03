@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -150,6 +151,28 @@ def run_write_sql(sql_b64: str, dsn: str, *, allow_destructive: bool) -> dict[st
     }
 
 
+def run_sqlite_write_sql(sql_b64: str, db_path: str, *, allow_destructive: bool) -> dict[str, object]:
+    sql = normalize_write_sql(decode_sql(sql_b64), allow_destructive=allow_destructive)
+    path = Path(db_path)
+    if not path.exists():
+        raise ValueError(f"sqlite db does not exist: {db_path}")
+    conn = sqlite3.connect(path)
+    try:
+        cur = conn.cursor()
+        cur.execute(sql)
+        conn.commit()
+        status_message = "SQLITE_OK"
+        row_count = cur.rowcount
+    finally:
+        conn.close()
+    return {
+        "mode": "sqlite_write_sql",
+        "status": "ok",
+        "status_message": status_message,
+        "row_count": row_count,
+    }
+
+
 def build_cli_command(payload: dict[str, object]) -> tuple[list[str], Path]:
     cli_args = payload.get("cli_args")
     if not isinstance(cli_args, list) or not cli_args:
@@ -224,6 +247,12 @@ def main() -> int:
             response = run_write_sql(
                 str(payload["sql_b64"]),
                 str(payload["dsn"]),
+                allow_destructive=bool(payload.get("allow_destructive")),
+            )
+        elif mode == "tenant_platform_sqlite_write":
+            response = run_sqlite_write_sql(
+                str(payload["sql_b64"]),
+                str(payload["db_path"]),
                 allow_destructive=bool(payload.get("allow_destructive")),
             )
         elif mode == "cli":

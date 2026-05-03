@@ -23,26 +23,34 @@ import {
   deleteTenantMember,
   deletePlatformUpdateLog,
   createTenantMember,
-  createTenantPaymentOrder,
-  createTenantWithAdmin,
-  confirmTenantPaymentOrderPaid,
-  getBootstrapStatus,
-  getManagedNodeLeaseState,
-  getManagedNodeSyncCheckpoint,
-  getTenantPaymentOrderById,
-  getTenantContextForUser,
-  getUserByUsername,
-  assignTenantAgentsToUser,
-  listAssignedAgentsForUser,
-  listAssignedAgentVisualizationsForUser,
-  listManagedNodes,
-  listPlatformUpdateLogs,
-  listTenants,
-  listTenantAgents,
-  listTenantMembers,
-  listTenantUsageStats,
-  listTenantUsageRecords,
-  listTenantPaymentOrdersPage,
+    createTenantPaymentOrder,
+    createTenantWithAdmin,
+    clearTenantDataSourceBinding,
+    confirmTenantPaymentOrderPaid,
+    deactivateSyncSchedule,
+    getBootstrapStatus,
+    getDataSourceById,
+    getManagedNodeLeaseState,
+    getManagedNodeSyncCheckpoint,
+    getTenantPaymentOrderById,
+    getTenantContextForUser,
+    getTenantDataSourceBinding,
+    getUserByUsername,
+    assignTenantAgentsToUser,
+    listAssignedAgentsForUser,
+    listAssignedAgentVisualizationsForUser,
+    listActiveSyncSchedules,
+    listDataSources,
+    listManagedNodes,
+    listPlatformUpdateLogs,
+    listTenants,
+    listTenantAgents,
+    listTenantDataSourceBindings,
+    listTenantMembers,
+    listTenantSyncSchedules,
+    listTenantUsageStats,
+    listTenantUsageRecords,
+    listTenantPaymentOrdersPage,
   listTenantModelUsageEntriesPage,
   listTenantWalletFlowEntriesPage,
   getTenantOverview,
@@ -50,13 +58,17 @@ import {
   logAudit,
   readOpenClawAgentCatalog,
   registerTenantAgentSession,
-  revokePlatformTenantAgents,
-  revokeTenantAgentAssignments,
-  syncTenantUsageRecords,
-  updatePlatformUpdateLog,
-  upsertManagedNode,
-  registerManagedNodeHeartbeat,
-  updateTenantPaymentOrderStatus,
+    revokePlatformTenantAgents,
+    revokeTenantAgentAssignments,
+    syncTenantUsageRecords,
+    bindTenantDataSource,
+    updatePlatformUpdateLog,
+    updateSyncScheduleRunResult,
+    upsertManagedNode,
+    upsertDataSource,
+    upsertSyncSchedule,
+    registerManagedNodeHeartbeat,
+    updateTenantPaymentOrderStatus,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
@@ -2082,6 +2094,152 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/platform/data-sources") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, { ok: true, data: listDataSources(deps.db) });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/data-sources") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const result = upsertDataSource(deps.db, {
+          id: body.id,
+          name: body.name,
+          status: body.status,
+          connectionJson: body.connectionJson ?? body.connection_json ?? null,
+          k3cloudProfileJson: body.k3cloudProfileJson ?? body.k3cloud_profile_json ?? null,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.data_source.upsert",
+          resourceType: "data_source",
+          resourceId: result?.id || null,
+          payloadJson: {
+            id: result?.id || null,
+            name: result?.name || null,
+            status: result?.status || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/platform/tenant-data-source-bindings") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantDataSourceBindings(deps.db),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/tenant-data-source-binding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenantId = readTenantId(body.tenantId);
+        if (!tenantId) {
+          sendJson(request, response, 400, { ok: false, error: "tenant_id_required" });
+          return;
+        }
+        const dataSourceId = String(body.dataSourceId || "").trim();
+        if (!dataSourceId) {
+          sendJson(request, response, 400, { ok: false, error: "data_source_id_required" });
+          return;
+        }
+        const result = bindTenantDataSource(deps.db, { tenantId, dataSourceId });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId,
+          action: "platform.tenant_data_source.bind",
+          resourceType: "tenant",
+          resourceId: tenantId,
+          payloadJson: {
+            tenantId,
+            dataSourceId,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && relativePath === "/platform/tenant-data-source-binding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      const tenantId = readTenantId(url.searchParams.get("tenantId"));
+      if (!tenantId) {
+        sendJson(request, response, 400, { ok: false, error: "tenant_id_required" });
+        return;
+      }
+      try {
+        clearTenantDataSourceBinding(deps.db, tenantId);
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId,
+          action: "platform.tenant_data_source.clear",
+          resourceType: "tenant",
+          resourceId: tenantId,
+          payloadJson: { tenantId },
+        });
+        sendJson(request, response, 200, { ok: true, data: null });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/platform/sync-schedules") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listActiveSyncSchedules(deps.db),
+      });
+      return;
+    }
+
     if (request.method === "POST" && relativePath === "/platform/revoke-tenant-agents") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["platform_admin"])) {
@@ -2333,6 +2491,108 @@ export function createTenantPlatformRouter(deps) {
             affectedMemberCount: assignment.affectedMemberCount,
           },
         });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/sync-schedules") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin", "member"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantSyncSchedules(deps.db, session.tenantId),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/sync-schedules") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin", "member"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        if (!binding?.dataSourceId) {
+          sendJson(request, response, 400, { ok: false, error: "no_data_source_bound" });
+          return;
+        }
+        const derivedWorkspaceDir = String(body.derivedWorkspaceDir || "").trim();
+        if (!derivedWorkspaceDir) {
+          sendJson(request, response, 400, { ok: false, error: "derived_workspace_dir_required" });
+          return;
+        }
+        const result = upsertSyncSchedule(deps.db, {
+          tenantId: session.tenantId,
+          dataSourceId: binding.dataSourceId,
+          objectCode: String(body.objectCode || "").trim(),
+          moduleName: String(body.moduleName || "").trim(),
+          derivedWorkspaceDir,
+          intervalMinutes: body.intervalMinutes,
+          defaultStart: body.defaultStart,
+          status: body.status,
+          activatedByUserId: session.userId,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.sync_schedule.upsert",
+          resourceType: "tenant",
+          resourceId: session.tenantId,
+          payloadJson: {
+            objectCode: result?.objectCode || null,
+            moduleName: result?.moduleName || null,
+            scheduleId: result?.id || null,
+            dataSourceId: binding.dataSourceId,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && relativePath === "/tenant/sync-schedules") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin", "member"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      const scheduleId = String(url.searchParams.get("id") || "").trim();
+      if (!scheduleId) {
+        sendJson(request, response, 400, { ok: false, error: "sync_schedule_id_required" });
+        return;
+      }
+      try {
+        const result = deactivateSyncSchedule(deps.db, scheduleId);
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.sync_schedule.pause",
+          resourceType: "sync_schedule",
+          resourceId: scheduleId,
+          payloadJson: {
+            scheduleId,
+            objectCode: result?.objectCode || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,

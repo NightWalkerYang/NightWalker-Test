@@ -171,6 +171,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/hooks/tenant-member-bootstrap-filter/handler.js`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/SKILL.md`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/_bridge_client.py`
+- `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/activate_sync_schedule.py`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/query_analytics_db.py`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/manage_analytics_db.py`
 - `tools/openclaw-control-ui-echarts/workspace-overlays/kingdee-cloud/skills/kingdee-analytics-ops/scripts/query_host_db.py`

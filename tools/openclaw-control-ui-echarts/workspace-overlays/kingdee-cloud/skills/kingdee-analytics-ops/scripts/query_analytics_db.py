@@ -23,17 +23,57 @@ from _bridge_client import (
 
 DEFAULT_MAX_ROWS = 2000
 SAFE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_TENANT_CONNECTION_PROFILE = SCRIPT_DIR.parent / "references" / "tenant-analytics-connection.json"
+
+
+def load_tenant_connection_profile() -> dict[str, object]:
+    if not DEFAULT_TENANT_CONNECTION_PROFILE.exists():
+        return {}
+    try:
+        payload = json.loads(DEFAULT_TENANT_CONNECTION_PROFILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def build_parser() -> argparse.ArgumentParser:
+    tenant_profile = load_tenant_connection_profile()
+    default_host = str(
+        tenant_profile.get("bridgeHost")
+        or os.environ.get("KINGDEE_DB_SSH_HOST")
+        or DEFAULT_HOST
+    ).strip() or DEFAULT_HOST
+    default_user = str(
+        tenant_profile.get("bridgeUser")
+        or os.environ.get("KINGDEE_DB_SSH_USER")
+        or DEFAULT_USER
+    ).strip() or DEFAULT_USER
+    default_db_dsn = str(
+        tenant_profile.get("analyticsPgDsn")
+        or tenant_profile.get("pgDsn")
+        or os.environ.get("KINGDEE_DB_PG_DSN")
+        or DEFAULT_DB_DSN
+    ).strip() or DEFAULT_DB_DSN
+    default_ssh_key = str(
+        tenant_profile.get("sshKeyPath")
+        or os.environ.get("KINGDEE_DB_SSH_KEY")
+        or DEFAULT_SSH_KEY
+    ).strip() or DEFAULT_SSH_KEY
+    default_timeout = int(
+        tenant_profile.get("timeoutSeconds")
+        or os.environ.get("KINGDEE_DB_TIMEOUT")
+        or DEFAULT_TIMEOUT
+    )
+
     parser = argparse.ArgumentParser(
         description="Query the deployed Kingdee analytics PostgreSQL database from the kingdee-cloud OpenClaw runtime.",
     )
-    parser.add_argument("--host", default=os.environ.get("KINGDEE_DB_SSH_HOST", DEFAULT_HOST))
-    parser.add_argument("--user", default=os.environ.get("KINGDEE_DB_SSH_USER", DEFAULT_USER))
-    parser.add_argument("--db-dsn", default=os.environ.get("KINGDEE_DB_PG_DSN", DEFAULT_DB_DSN))
-    parser.add_argument("--ssh-key", default=os.environ.get("KINGDEE_DB_SSH_KEY", DEFAULT_SSH_KEY))
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    parser.add_argument("--host", default=default_host)
+    parser.add_argument("--user", default=default_user)
+    parser.add_argument("--db-dsn", default=default_db_dsn)
+    parser.add_argument("--ssh-key", default=default_ssh_key)
+    parser.add_argument("--timeout", type=int, default=default_timeout)
     parser.add_argument("--max-rows", type=int, default=DEFAULT_MAX_ROWS)
     parser.add_argument(
         "--format",

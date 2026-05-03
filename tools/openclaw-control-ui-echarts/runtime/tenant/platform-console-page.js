@@ -202,6 +202,18 @@ function createBindNodeDialogState() {
   };
 }
 
+function createDataSourceDialogState() {
+  return {
+    id: "",
+    name: "",
+    status: "active",
+    connectionJson: "",
+    k3cloudProfileJson: "",
+    editing: false,
+    error: "",
+  };
+}
+
 function isTenantRevokeSelectionTarget(tenant) {
   return Number(tenant?.agentCount || 0) > 0;
 }
@@ -372,12 +384,17 @@ function ensureController(root, session, apiClient) {
       assignOpen: false,
       rateOpen: false,
       localLicenseOpen: false,
+      dataSourceOpen: false,
       nodeOpen: false,
       bindNodeOpen: false,
     },
     activeTenant: null,
     activeNode: null,
+    dataSources: [],
+    tenantDataSourceBindings: [],
+    syncSchedules: [],
     assignTenantAgentDialog: createAssignTenantAgentDialogState(),
+    dataSourceDialog: createDataSourceDialogState(),
     nodeDialog: createNodeDialogState(),
     bindNodeDialog: createBindNodeDialogState(),
     loadingRateAgents: false,
@@ -539,6 +556,7 @@ function renderTenantManagementTable(controller, rows) {
             <th>状态</th>
             <th>成员数</th>
             <th>人数上限</th>
+            <th>数据源</th>
             ${localEdition ? "" : "<th>部署模式</th><th>受管节点</th><th>钱包积分</th><th>到期日期</th>"}
             <th>操作</th>
           </tr>
@@ -549,12 +567,16 @@ function renderTenantManagementTable(controller, rows) {
               ? rows
                   .map(
                     (tenant) => `
+                      ${(() => {
+                        const binding = bindingByTenantId(controller, tenant.id);
+                        return `
                       <tr>
                         <td>${escapeHtml(tenant.name)}</td>
                         <td>${escapeHtml(tenant.code)}</td>
                         <td><span class="data-table-badge data-table-badge--${tenant.status === "active" ? "direct" : "unknown"}">${escapeHtml(tenant.status)}</span></td>
                         <td>${formatNumber(tenant.memberCount)}</td>
                         <td>${formatNumber(tenant.memberLimit)}</td>
+                        <td>${escapeHtml(String(binding?.dataSourceName || "未绑定").trim() || "未绑定")}</td>
                         ${
                           localEdition
                             ? ""
@@ -568,6 +590,7 @@ function renderTenantManagementTable(controller, rows) {
                         <td>
                           <div class="oc-platform-table-actions">
                             <button class="btn" type="button" data-platform-open-member-limit="${escapeHtml(tenant.id)}">人数调整</button>
+                            <button class="btn" type="button" data-platform-bind-data-source="${escapeHtml(tenant.id)}">数据源绑定</button>
                             ${
                               localEdition
                                 ? ""
@@ -576,10 +599,11 @@ function renderTenantManagementTable(controller, rows) {
                           </div>
                         </td>
                       </tr>
+                    `})()}
                     `,
                   )
                   .join("")
-              : `<tr><td colspan="${localEdition ? 6 : 10}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
+              : `<tr><td colspan="${localEdition ? 7 : 11}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
           }
         </tbody>
       </table>
@@ -747,6 +771,111 @@ function renderCreateDialog(controller) {
             }
             <div class="oc-platform-modal__actions">
               <button class="btn primary" type="submit">创建租户</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function bindingByTenantId(controller, tenantId) {
+  return (
+    (Array.isArray(controller.tenantDataSourceBindings)
+      ? controller.tenantDataSourceBindings
+      : []
+    ).find((item) => item.tenantId === tenantId) ?? null
+  );
+}
+
+function renderDataSourceOverview(controller) {
+  const dataSources = Array.isArray(controller.dataSources) ? controller.dataSources : [];
+  const syncSchedules = Array.isArray(controller.syncSchedules) ? controller.syncSchedules : [];
+  return `
+    <section class="oc-platform-summary-cards" style="margin-bottom:16px;display:grid;gap:16px;">
+      <div class="data-table-container" style="padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0 0 6px 0;">数据源管理</h3>
+            <p style="margin:0;color:var(--oc-text-subtle, #666);">维护租户级 PostgreSQL 连接与 K3Cloud 登录档案。</p>
+          </div>
+          <button class="btn primary" type="button" data-platform-open-data-source>新增数据源</button>
+        </div>
+        <div style="margin-top:16px;overflow:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>名称</th>
+                <th>状态</th>
+                <th>已绑定租户</th>
+                <th>K3Cloud</th>
+                <th>增量计划</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                dataSources.length
+                  ? dataSources
+                      .map((item) => {
+                        const boundCount = controller.tenantDataSourceBindings.filter(
+                          (binding) => binding.dataSourceId === item.id,
+                        ).length;
+                        const scheduleCount = syncSchedules.filter(
+                          (schedule) => schedule.dataSourceId === item.id,
+                        ).length;
+                        return `
+                          <tr>
+                            <td>${escapeHtml(item.name)}</td>
+                            <td>${escapeHtml(item.status || "active")}</td>
+                            <td>${formatNumber(boundCount)}</td>
+                            <td>${item.k3cloudProfileJson ? "已配置" : "未配置"}</td>
+                            <td>${formatNumber(scheduleCount)}</td>
+                            <td><button class="btn" type="button" data-platform-edit-data-source="${escapeHtml(item.id)}">编辑</button></td>
+                          </tr>
+                        `;
+                      })
+                      .join("")
+                  : `<tr><td colspan="6" class="oc-platform-table-empty">暂无数据源</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderDataSourceDialog(controller) {
+  const dialog = controller.dataSourceDialog || createDataSourceDialogState();
+  return `
+    <dialog class="oc-platform-modal" data-platform-data-source-dialog>
+      <div class="oc-platform-modal__panel">
+        <header class="oc-platform-modal__header">
+          <h3 class="oc-platform-modal__title">${dialog.editing ? "编辑数据源" : "新增数据源"}</h3>
+          <button class="btn" type="button" data-platform-close-dialog="data-source">关闭</button>
+        </header>
+        <div class="oc-platform-modal__body">
+          <form class="oc-platform-modal__form" data-platform-data-source-form>
+            <input type="hidden" name="id" value="${escapeHtml(dialog.id)}" />
+            <label class="field"><span>名称</span><input name="name" type="text" value="${escapeHtml(dialog.name)}" required /></label>
+            <label class="field">
+              <span>状态</span>
+              <select name="status">
+                <option value="active" ${dialog.status === "active" ? "selected" : ""}>active</option>
+                <option value="inactive" ${dialog.status === "inactive" ? "selected" : ""}>inactive</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>PostgreSQL 连接 JSON</span>
+              <textarea name="connectionJson" rows="8" placeholder='{"analyticsPgDsn":"postgresql:///db?host=/var/run/postgresql"}'>${escapeHtml(dialog.connectionJson)}</textarea>
+            </label>
+            <label class="field">
+              <span>K3Cloud 档案 JSON</span>
+              <textarea name="k3cloudProfileJson" rows="12" placeholder='{"base_url":"http://.../k3cloud/","login_path":"Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginByAppSecret.common.kdsvc"}'>${escapeHtml(dialog.k3cloudProfileJson)}</textarea>
+            </label>
+            <div class="oc-platform-modal__actions">
+              <button class="btn primary" type="submit">${dialog.editing ? "保存" : "创建"}</button>
             </div>
           </form>
         </div>
@@ -1401,6 +1530,7 @@ function render(root, controller) {
     <section class="oc-platform-list-view">
       ${renderToolbar(controller)}
       <div class="data-table-wrapper">
+        ${controller.section === "tenants" ? renderDataSourceOverview(controller) : ""}
         ${contentMarkup}
         ${renderPagination(controller, pagination)}
       </div>
@@ -1412,6 +1542,7 @@ function render(root, controller) {
     ${renderRevokeTenantAgentDialog(controller)}
     ${renderRevokeTenantAgentConfirmDialog(controller)}
     ${renderLocalLicenseDialog(controller)}
+    ${renderDataSourceDialog(controller)}
     ${renderNodeDialog(controller)}
     ${renderBindNodeDialog(controller)}
   `;
@@ -1437,6 +1568,9 @@ function render(root, controller) {
   if (controller.dialogs.localLicenseOpen) {
     openDialog(root.querySelector("[data-platform-local-license-dialog]"));
   }
+  if (controller.dialogs.dataSourceOpen) {
+    openDialog(root.querySelector("[data-platform-data-source-dialog]"));
+  }
   if (controller.dialogs.nodeOpen) {
     openDialog(root.querySelector("[data-platform-node-dialog]"));
   }
@@ -1452,16 +1586,24 @@ function render(root, controller) {
 
 async function refresh(root, controller) {
   const includeNodes = !isLocalEdition(controller);
-  const [tenants, catalogAgents, nodes, localLicense] = await Promise.all([
+  const [tenants, catalogAgents, nodes, localLicense, dataSources, tenantDataSourceBindings, syncSchedules] = await Promise.all([
     controller.apiClient.listPlatformTenants(),
     controller.apiClient.listPlatformCatalogAgents(),
     includeNodes ? controller.apiClient.listPlatformNodes() : Promise.resolve([]),
     isLocalEdition(controller) ? controller.apiClient.getLocalLicense() : Promise.resolve(null),
+    controller.apiClient.listPlatformDataSources(),
+    controller.apiClient.listPlatformTenantDataSourceBindings(),
+    controller.apiClient.listPlatformSyncSchedules(),
   ]);
   controller.tenants = tenants;
   controller.catalogAgents = catalogAgents;
   controller.nodes = Array.isArray(nodes) ? nodes : [];
   controller.localLicense = localLicense;
+  controller.dataSources = Array.isArray(dataSources) ? dataSources : [];
+  controller.tenantDataSourceBindings = Array.isArray(tenantDataSourceBindings)
+    ? tenantDataSourceBindings
+    : [];
+  controller.syncSchedules = Array.isArray(syncSchedules) ? syncSchedules : [];
   if (controller.assignTenantAgentDialog?.open) {
     controller.assignTenantAgentDialog.agents = Array.isArray(catalogAgents)
       ? catalogAgents.slice()
@@ -1819,6 +1961,39 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  if (target.closest("[data-platform-open-data-source]")) {
+    controller.dialogs.dataSourceOpen = true;
+    controller.dataSourceDialog = createDataSourceDialogState();
+    render(root, controller);
+    return;
+  }
+
+  const editDataSourceTrigger = target.closest("[data-platform-edit-data-source]");
+  if (editDataSourceTrigger instanceof HTMLElement) {
+    const dataSourceId = editDataSourceTrigger.dataset.platformEditDataSource || "";
+    const current = (Array.isArray(controller.dataSources) ? controller.dataSources : []).find(
+      (item) => item.id === dataSourceId,
+    );
+    if (!current) {
+      setFeedback(root, "未找到数据源。", true);
+      return;
+    }
+    controller.dialogs.dataSourceOpen = true;
+    controller.dataSourceDialog = {
+      id: current.id,
+      name: current.name || "",
+      status: current.status || "active",
+      connectionJson: current.connectionJson ? JSON.stringify(current.connectionJson, null, 2) : "",
+      k3cloudProfileJson: current.k3cloudProfileJson
+        ? JSON.stringify(current.k3cloudProfileJson, null, 2)
+        : "",
+      editing: true,
+      error: "",
+    };
+    render(root, controller);
+    return;
+  }
+
   const closeDialogTrigger = target.closest("[data-platform-close-dialog]");
   if (closeDialogTrigger instanceof HTMLElement) {
     const dialogKind = closeDialogTrigger.dataset.platformCloseDialog || "";
@@ -1853,6 +2028,11 @@ async function handleClick(root, controller, event) {
     if (dialogKind === "local-license") {
       controller.dialogs.localLicenseOpen = false;
       closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
+    }
+    if (dialogKind === "data-source") {
+      controller.dialogs.dataSourceOpen = false;
+      controller.dataSourceDialog = createDataSourceDialogState();
+      closeDialog(root.querySelector("[data-platform-data-source-dialog]"));
     }
     if (dialogKind === "node") {
       controller.dialogs.nodeOpen = false;
@@ -1900,6 +2080,43 @@ async function handleClick(root, controller, event) {
     );
     controller.dialogs.memberLimitOpen = true;
     render(root, controller);
+    return;
+  }
+
+  const bindDataSourceTrigger = target.closest("[data-platform-bind-data-source]");
+  if (bindDataSourceTrigger instanceof HTMLElement) {
+    const tenantId = bindDataSourceTrigger.dataset.platformBindDataSource || "";
+    const tenant = tenantById(controller, tenantId);
+    if (!tenant) {
+      setFeedback(root, "未找到租户信息。", true);
+      return;
+    }
+    const dataSources = Array.isArray(controller.dataSources) ? controller.dataSources : [];
+    if (!dataSources.length) {
+      setFeedback(root, "请先创建数据源。", true);
+      return;
+    }
+    const binding = bindingByTenantId(controller, tenantId);
+    const options = dataSources.map((item) => `${item.id}:${item.name}`).join("\n");
+    const nextValue = window.prompt(
+      `为租户“${tenant.name}”绑定数据源。\n输入数据源ID，留空不变。\n可选项：\n${options}`,
+      binding?.dataSourceId || "",
+    );
+    if (nextValue === null) {
+      return;
+    }
+    const dataSourceId = String(nextValue || "").trim();
+    if (!dataSourceId) {
+      setFeedback(root, "已取消。", true);
+      return;
+    }
+    try {
+      await controller.apiClient.bindPlatformTenantDataSource({ tenantId, dataSourceId });
+      await refresh(root, controller);
+      setFeedback(root, `租户“${tenant.name}”的数据源绑定已更新。`);
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
     return;
   }
 
@@ -2010,6 +2227,33 @@ async function handleSubmit(root, controller, event) {
       await refresh(root, controller);
       closeDialog(root.querySelector("[data-platform-create-dialog]"));
       setFeedback(root, "租户已创建。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  if (target.matches("[data-platform-data-source-form]")) {
+    event.preventDefault();
+    try {
+      const formData = new FormData(target);
+      const payload = {
+        id: String(formData.get("id") || "").trim() || undefined,
+        name: String(formData.get("name") || "").trim(),
+        status: String(formData.get("status") || "active").trim(),
+        connectionJson: String(formData.get("connectionJson") || "").trim()
+          ? JSON.parse(String(formData.get("connectionJson") || "").trim())
+          : null,
+        k3cloudProfileJson: String(formData.get("k3cloudProfileJson") || "").trim()
+          ? JSON.parse(String(formData.get("k3cloudProfileJson") || "").trim())
+          : null,
+      };
+      await controller.apiClient.savePlatformDataSource(payload);
+      controller.dialogs.dataSourceOpen = false;
+      controller.dataSourceDialog = createDataSourceDialogState();
+      await refresh(root, controller);
+      closeDialog(root.querySelector("[data-platform-data-source-dialog]"));
+      setFeedback(root, payload.id ? "数据源已更新。" : "数据源已创建。");
     } catch (error) {
       setFeedback(root, error instanceof Error ? error.message : String(error), true);
     }
