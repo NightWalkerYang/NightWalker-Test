@@ -39,6 +39,8 @@ const CHAT_FAILSAFE_PROGRESS_KEY = "__ocMemberChatFailsafeProgressKey";
 const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
 const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
 const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
+const MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY =
+  "openclaw:tenant-platform:member-chat:draft-route-lock:v1";
 let memberChatSurfaceSyncing = false;
 let memberChatSurfaceSyncQueued = false;
 let memberChatSurfaceSuppressNextRouteSync = false;
@@ -46,6 +48,100 @@ let memberChatRouteCleanup = null;
 let memberChatMutationObserver = null;
 let memberChatClickHandler = null;
 let memberChatKeydownHandler = null;
+
+function safeSessionStorage() {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readSessionJson(key) {
+  try {
+    const raw = safeSessionStorage()?.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionJson(key, value) {
+  try {
+    safeSessionStorage()?.setItem(key, JSON.stringify(value));
+  } catch {
+    // Best-effort only.
+  }
+}
+
+function removeSessionStorageKey(key) {
+  try {
+    safeSessionStorage()?.removeItem(key);
+  } catch {
+    // Best-effort only.
+  }
+}
+
+function buildMemberDraftRouteLockId(session, selectedAgent) {
+  const tenantId = String(session?.session?.tenantId || "")
+    .trim()
+    .toLowerCase();
+  const userId = String(session?.session?.userId || "")
+    .trim()
+    .toLowerCase();
+  const tenantAgentId = String(selectedAgent?.id || "")
+    .trim()
+    .toLowerCase();
+  if (!tenantId || !userId || !tenantAgentId) {
+    return "";
+  }
+  return `${tenantId}:${userId}:${tenantAgentId}`;
+}
+
+function readMemberDraftRouteLock(session, selectedAgent) {
+  const lockId = buildMemberDraftRouteLockId(session, selectedAgent);
+  if (!lockId) {
+    return "";
+  }
+  const locks = readSessionJson(MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY);
+  const candidate = locks && typeof locks === "object" ? locks[lockId] : "";
+  if (!isTenantMemberSessionKey(candidate, session, selectedAgent)) {
+    return "";
+  }
+  return String(candidate).trim().toLowerCase();
+}
+
+function writeMemberDraftRouteLock(session, selectedAgent, sessionKey) {
+  if (!isTenantMemberSessionKey(sessionKey, session, selectedAgent)) {
+    return;
+  }
+  const lockId = buildMemberDraftRouteLockId(session, selectedAgent);
+  if (!lockId) {
+    return;
+  }
+  const locks = readSessionJson(MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY);
+  const next = locks && typeof locks === "object" ? { ...locks } : {};
+  next[lockId] = String(sessionKey).trim().toLowerCase();
+  writeSessionJson(MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY, next);
+}
+
+function clearMemberDraftRouteLock(session, selectedAgent) {
+  const lockId = buildMemberDraftRouteLockId(session, selectedAgent);
+  if (!lockId) {
+    return;
+  }
+  const locks = readSessionJson(MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY);
+  if (!locks || typeof locks !== "object" || !(lockId in locks)) {
+    return;
+  }
+  const next = { ...locks };
+  delete next[lockId];
+  if (Object.keys(next).length === 0) {
+    removeSessionStorageKey(MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY);
+    return;
+  }
+  writeSessionJson(MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY, next);
+}
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
   const normalizedPath = String(pathname || "/").trim() || "/";
@@ -874,6 +970,16 @@ function isDraftOnlySessionRow(row) {
   return isProvisionalSessionTitle(title);
 }
 
+function isMemberDraftRouteLocked(session, selectedAgent, sessionKey) {
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey) {
+    return false;
+  }
+  return readMemberDraftRouteLock(session, selectedAgent) === normalizedSessionKey;
+}
+
 function isPinnedDraftSessionStillActive(app, sessionKey) {
   const normalizedSessionKey = String(sessionKey || "")
     .trim()
@@ -930,7 +1036,8 @@ function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
     );
     if (
       isDraftOnlySessionRow(existingRow) &&
-      !isPinnedDraftSessionStillActive(app, normalized)
+      !isPinnedDraftSessionStillActive(app, normalized) &&
+      !isMemberDraftRouteLocked(session, selectedAgent, normalized)
     ) {
       return "";
     }
@@ -939,6 +1046,14 @@ function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
   const fromQuery = resolveCandidate(url.searchParams.get("session"));
   if (fromQuery) {
     return fromQuery;
+  }
+  const draftRouteLock = readMemberDraftRouteLock(session, selectedAgent);
+  if (draftRouteLock) {
+    const locked = resolveCandidate(draftRouteLock);
+    if (locked) {
+      return locked;
+    }
+    clearMemberDraftRouteLock(session, selectedAgent);
   }
   for (const candidate of [
     app?.sessionKey,
@@ -1102,6 +1217,19 @@ async function loadMemberSessions(app, selectedAgent, session) {
     }
   }
 
+  const lockedDraftSessionKey = readMemberDraftRouteLock(session, selectedAgent);
+  if (lockedDraftSessionKey) {
+    const lockedDraftRow = result.find(
+      (row) =>
+        String(row?.key || "")
+          .trim()
+          .toLowerCase() === lockedDraftSessionKey,
+    );
+    if (lockedDraftRow?.hasGatewaySession === true) {
+      clearMemberDraftRouteLock(session, selectedAgent);
+    }
+  }
+
   return result.toSorted(
     (left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0),
   );
@@ -1159,6 +1287,7 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
       row.label = nextTitle;
     }
   }
+  clearMemberDraftRouteLock(controller.session, controller.selectedAgent);
   renderSidebarSection(controller);
   if (window._ocMemberChatSurfaceController?.currentSessionKey === normalizedSessionKey) {
     syncRouteForSession(
@@ -1237,16 +1366,16 @@ async function applyHiddenDelete(controller, nextHiddenKey) {
         .toLowerCase() !== nextHiddenKey,
   );
   if (controller.currentSessionKey === nextHiddenKey) {
+    clearMemberDraftRouteLockForController(controller, nextHiddenKey);
     const fallbackSessionKey =
       controller.sessions[0]?.key?.trim().toLowerCase() ||
       createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
     controller.currentSessionKey = fallbackSessionKey;
     controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
-    controller.hasDraftSession = !controller.sessionsFromGateway.some(
-      (row) =>
-        String(row?.key || "")
-          .trim()
-          .toLowerCase() === fallbackSessionKey,
+    controller.hasDraftSession = isMemberDraftRouteLocked(
+      controller.session,
+      controller.selectedAgent,
+      fallbackSessionKey,
     );
     syncRouteForSession(
       controller.selectedAgent,
@@ -1334,6 +1463,19 @@ function closeAllDialogs() {
   }
 }
 
+function clearMemberDraftRouteLockForController(controller, sessionKey = "") {
+  if (!controller?.session || !controller?.selectedAgent) {
+    return;
+  }
+  const activeDraftLock = readMemberDraftRouteLock(controller.session, controller.selectedAgent);
+  const normalizedSessionKey = String(sessionKey || controller.currentSessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey || activeDraftLock === normalizedSessionKey) {
+    clearMemberDraftRouteLock(controller.session, controller.selectedAgent);
+  }
+}
+
 function beginNewMemberDraftSession(controller) {
   if (!controller || !controller.selectedAgent?.id || !controller.session) {
     return false;
@@ -1358,6 +1500,7 @@ function beginNewMemberDraftSession(controller) {
   controller.currentSessionKey = nextSessionKey;
   controller.sessions = ensureVisibleCurrentSession(controller.sessions, nextSessionKey);
   controller.hasDraftSession = true;
+  writeMemberDraftRouteLock(controller.session, controller.selectedAgent, nextSessionKey);
   syncRouteForSession(
     controller.selectedAgent,
     resolveRouteSessionKey(controller.sessions, nextSessionKey),
@@ -1629,14 +1772,14 @@ function attachSectionHandlers(section, controller) {
               .toLowerCase() !== ctrl.currentSessionKey,
         );
         ctrl.hasDraftSession = false;
+        clearMemberDraftRouteLockForController(ctrl, ctrl.currentSessionKey);
       }
 
       ctrl.currentSessionKey = nextSessionKey;
-      ctrl.hasDraftSession = !ctrl.sessionsFromGateway.some(
-        (row) =>
-          String(row?.key || "")
-            .trim()
-            .toLowerCase() === nextSessionKey,
+      ctrl.hasDraftSession = isMemberDraftRouteLocked(
+        ctrl.session,
+        ctrl.selectedAgent,
+        nextSessionKey,
       );
       syncRouteForSession(
         ctrl.selectedAgent,
@@ -1690,6 +1833,7 @@ function attachTopActionHandlers(root) {
           openclawSessionKey: window._ocMemberChatSurfaceController.currentSessionKey,
         })
         .catch(() => {});
+      clearMemberDraftRouteLockForController(window._ocMemberChatSurfaceController);
     }
     navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE);
   });
@@ -1807,12 +1951,7 @@ async function syncMemberChatSurface() {
       sessionsFromGateway,
       sessions: ensureVisibleCurrentSession(sessionsFromGateway, currentSessionKey),
       currentSessionKey,
-      hasDraftSession: !sessionsFromGateway.some(
-        (row) =>
-          String(row?.key || "")
-            .trim()
-            .toLowerCase() === currentSessionKey,
-      ),
+      hasDraftSession: isMemberDraftRouteLocked(session, selectedAgent, currentSessionKey),
       pendingDeleteSessionKey: "",
       toastTimer: 0,
     };

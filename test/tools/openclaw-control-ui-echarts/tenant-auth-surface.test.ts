@@ -7,7 +7,10 @@ import {
   bootTenantAuthSurface,
   resetTenantAuthSurfaceForTests,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
-import { navigateTenantRoute } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js";
+import {
+  navigateTenantRoute,
+  resetTenantRouteSyncForTests,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js";
 import {
   writeSelectedTenantAgent,
   writeTenantSession,
@@ -20,6 +23,7 @@ afterEach(() => {
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
   resetTenantAuthSurfaceForTests();
+  resetTenantRouteSyncForTests();
   vi.unstubAllGlobals();
 });
 

@@ -6,6 +6,8 @@
   const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
   const TENANT_SELECTED_AGENT_STORAGE_KEY = "openclaw:tenant-platform:selected-agent:v1";
   const MEMBER_LAST_SESSION_STORAGE_KEY = "openclaw:tenant-platform:member-chat:last-session:v1";
+  const MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY =
+    "openclaw:tenant-platform:member-chat:draft-route-lock:v1";
   const TENANT_VIEW_QUERY_KEY = "ocTenantView";
   const LOGIN_VIEW = "login";
   const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
@@ -217,6 +219,37 @@
       return "";
     }
     return `${tenantId}:${userId}:${tenantAgentId}`;
+  };
+
+  const readMemberDraftRouteLock = (session, selectedAgent) => {
+    const cacheId = buildMemberSessionCacheId(session, selectedAgent);
+    if (!cacheId) {
+      return "";
+    }
+    const locks = readJson(safeStorage(window.sessionStorage), MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY);
+    const candidate = locks && typeof locks === "object" ? locks[cacheId] : "";
+    return isTenantMemberSessionKey(candidate, session, selectedAgent)
+      ? normalizeTenantValue(candidate)
+      : "";
+  };
+
+  const clearMemberDraftRouteLock = (session, selectedAgent) => {
+    const cacheId = buildMemberSessionCacheId(session, selectedAgent);
+    if (!cacheId) {
+      return;
+    }
+    const storage = safeStorage(window.sessionStorage);
+    const locks = readJson(storage, MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY);
+    if (!locks || typeof locks !== "object" || !(cacheId in locks)) {
+      return;
+    }
+    const next = { ...locks };
+    delete next[cacheId];
+    if (Object.keys(next).length > 0) {
+      writeJson(storage, MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY, next);
+    } else {
+      storage?.removeItem(MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY);
+    }
   };
 
   const readCachedMemberSessionKey = (session, selectedAgent) => {
@@ -491,6 +524,16 @@
     if (!hasResolvedSelectedAgent(selectedAgent)) {
       url.searchParams.delete("session");
       return url;
+    }
+    const draftRouteLock = readMemberDraftRouteLock(tenantSession, selectedAgent);
+    if (draftRouteLock) {
+      const effectiveQuerySessionKey = String(url.searchParams.get("session") || "").trim();
+      const normalizedQuerySessionKey = normalizeTenantValue(effectiveQuerySessionKey);
+      if (!effectiveQuerySessionKey || normalizedQuerySessionKey === draftRouteLock) {
+        url.searchParams.delete("session");
+        return url;
+      }
+      clearMemberDraftRouteLock(tenantSession, selectedAgent);
     }
     const effectiveQuerySessionKey = String(url.searchParams.get("session") || "").trim();
     const shouldRespectBlankRuntimeSession =

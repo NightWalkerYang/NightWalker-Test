@@ -327,6 +327,7 @@ sidecar 落点固定为：
   - 当前 Agent 下的会话列表
 - 成员点击 `新建会话` 后，草稿态路由不强行写入 `session`；要等首条消息把会话真正落到 gateway / sidecar 后，再把稳定 `session` 补回地址栏
 - 当前实际可运行方案已调整：对草稿态或空历史会话，零侵入 runtime 直接保持原生聊天消息数组为空，并显式结束 loading，让原生 `/chat` 自己渲染欢迎页；不再注入“空 assistant 占位消息”。这次调整是为了解决成员点击 `新建会话` 后页面落成“空的聊天 Agent”而不是欢迎页的问题。现阶段本机验证下，这条路径比旧的占位消息兜底更稳定，也更符合用户预期。
+- 这里真实要额外兜住两层：一层是成员聊天 surface 自己在 `sessionStorage` 里记录“当前这个 tenant/user/tenant-agent 仍处于未发送首条消息的 draft route lock”；另一层是 `runtime/tenant/preboot.js` 与其 history patch 必须识别这把 lock。否则原生 Control UI 只要因为 `applySettings/sessionKey` 或首轮状态恢复再次执行 `pushState/replaceState`，就会把随机 draft `session` 重新补回地址栏，页面又从欢迎页退化成带空会话上下文的聊天壳。
 - 只看到当前 Agent 剩余积分提示
 
 当前限制：
@@ -1631,6 +1632,7 @@ sidecar 落点固定为：
    - 退出登录已统一清理平台与租户两套本地会话，避免登录页与控制台之间循环跳转
    - 成员已登录时如果命中 `/chat?ocTenantView=login...` 这类脏路由，运行时会先改写回干净的成员聊天路由或成员 Agent 选择页，再继续后续 surface 装配，避免页面卡在只剩抬头的半登录壳
    - 成员聊天路由修正已前移到原生 Control UI 主 bundle 之前：零侵入构建现在会在 `index-*.js` 前注入 `runtime/tenant/preboot.js`，优先复用本地缓存的安全成员 session；如果本地还没有缓存，则允许在同源 `/tenant-platform-api/v1/member/sessions` 上同步读取最近一次非草稿成员会话来预种 Control UI 本地 settings；只有这两条都拿不到时才保持无 `session` 路由，等成员聊天 surface 在页面起来后再以内存草稿态接管，避免 `172.30.31.203` 这类环境把全新的随机 session 直接拿去做原生首轮 `chat.history` 后卡死
+   - 实际实现还补了一层“draft route lock”：只要成员当前会话仍是未发送首条消息的新草稿，`preboot` 在首屏归一化和后续 `history.pushState/replaceState` patch 中都必须继续尊重“保留无 `session` 路由”这个状态，不能再退回到本地缓存或 `/member/sessions` 里最近一次稳定会话。这样才能真正挡住原生聊天页在欢迎态期间把随机 draft key 重新写回 URL。
    - 零侵入构建链路已修正 `/login` 入口产物生成：现在会稳定生成 `login/index.html` 与 `login.html`，避免重建或部署后因登录静态入口损坏而出现 `Not Found`
    - 零侵入部署脚本已改为“保留生成目录、仅替换目录内容”，避免 Docker 仍绑定到被删除的旧空目录，从而在重建后出现控制台根入口与 `/login` 的 `Not Found`
 
@@ -1771,6 +1773,7 @@ sidecar 落点固定为：
      - 删除确认已统一收敛为复用顶栏标准弹窗样式，弹窗文案为“删除后不可恢复，确认删除?”
    - 当前成员会话列表仍复用原生 `sessions.list` 与前端路由 key，但零侵入层已经通过 `/member/sessions` 把 `tenant_agent_sessions` 表真正接入了会话创建、标题回填、隐藏删除链路
    - 未发送首条消息的草稿新会话不再把随机 session key 持久化进浏览器路由；页面内部仍可立即切到该草稿会话，但只有等会话真正变成可用成员会话后才回写 `?session=`，避免用户点击“新建会话”后刷新又反复重进坏 session
+   - 当前实际方案里，这个“暂不回写 `?session=`”不能只靠 `member-chat-surface` 自己一次性 `navigateTenantRoute(..., session='')`。还需要额外在 `sessionStorage` 里为当前成员记录 draft route lock，并让 `preboot`/history patch 在原生壳层后续再次 `replaceState/pushState` 时继续吃掉同一把 draft key，直到首条消息真正发出、标题回填完成或草稿被切走/删除为止
    - 新草稿会话在首轮消息已经发出、但 `sessions.list` 里暂时还看不到该会话时，成员聊天零侵入层仍必须继续钉住当前草稿 `sessionKey`，不能因为后台重同步把当前会话回退成旧会话；否则输入框右侧的停止/中止按钮会把 `chat.abort` 打到错误会话上，页面表现就是“点击暂停没有任何反应”
    - 如果当前已经处于一个未发送的新会话，再次点击“新建会话”只提示“已经是新的会话了”，不会继续生成新的空会话 key
    - 如果浏览器本地残留了旧的已选 Agent 元信息，或只剩 `tenantAgentId` 但没有完整 `agentId/baseAgentId`，聊天页需要先按 `tenantAgentId` 重新向 sidecar 解析当前成员可用 Agent，再继续接管原生 `/chat`；解析失败时直接回退 `Agent选择`，不能继续卡在原生聊天页

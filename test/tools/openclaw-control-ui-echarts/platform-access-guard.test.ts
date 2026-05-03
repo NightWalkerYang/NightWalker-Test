@@ -11,6 +11,7 @@ import {
   resolvePlatformAccessDecision,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js";
 import { bootTenantAuthSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
+import { resetTenantRouteSyncForTests } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js";
 import {
   isTenantMemberSessionKey,
   writeTenantSession,
@@ -59,6 +60,7 @@ afterEach(() => {
   document.documentElement.removeAttribute("data-oc-tenant-preboot");
   window.history.replaceState({}, "", "/");
   resetPlatformAccessGuardBootstrapForTests();
+  resetTenantRouteSyncForTests();
   vi.restoreAllMocks();
 });
 
@@ -348,6 +350,44 @@ describe("platform access guard", () => {
 
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
+  });
+
+  it("keeps a draft member chat route blank when a runtime draft lock exists", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    });
+    window.localStorage.setItem(
+      "openclaw:tenant-platform:selected-agent:v1",
+      JSON.stringify({
+        id: "tenant-agent-1",
+        agentId: "finance-agent",
+        agentName: "财务助手",
+      }),
+    );
+    window.sessionStorage.setItem(
+      "openclaw:tenant-platform:member-chat:draft-route-lock:v1",
+      JSON.stringify({
+        "tenant-1:user-1:tenant-agent-1":
+          "agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:draft",
+      }),
+    );
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+
+    await importTenantPreboot();
+
+    window.history.pushState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:draft",
+    );
+
+    expect(window.location.pathname).toBe("/chat");
+    expect(window.location.search).toBe("?tenantAgentId=tenant-agent-1");
   });
 
   it("normalizes an initial malformed member chat URL before the app boots", async () => {

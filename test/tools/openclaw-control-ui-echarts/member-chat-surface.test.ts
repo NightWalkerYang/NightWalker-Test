@@ -153,6 +153,7 @@ afterEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   window.localStorage.clear();
+  window.sessionStorage.clear();
   window.history.replaceState({}, "", "/");
   resetMemberChatSurfaceForTests();
   vi.useRealTimers();
@@ -491,6 +492,59 @@ describe("member chat surface", () => {
     expect(app.sessionKey).toMatch(
       /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
     );
+  });
+
+  it("keeps the URL on the welcome route even if the native app re-applies the draft session key", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:existing",
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    document
+      .querySelector("[data-member-chat-new]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const draftSessionKey = String(app.sessionKey || "");
+    app.applySettings({
+      ...app.settings,
+      sessionKey: draftSessionKey,
+      lastActiveSessionKey: draftSessionKey,
+    });
+    await flush();
+
+    expect(decodeURIComponent(window.location.search)).toBe("?tenantAgentId=tenant-agent-1");
   });
 
   it("ignores a stale draft-only query session and falls back to a usable member session", async () => {
@@ -1211,6 +1265,13 @@ describe("member chat surface", () => {
       {},
       "",
       "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:draft",
+    );
+    window.sessionStorage.setItem(
+      "openclaw:tenant-platform:member-chat:draft-route-lock:v1",
+      JSON.stringify({
+        "t-1:user-1:tenant-agent-1":
+          "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:draft",
+      }),
     );
     document.body.innerHTML = `
       <div class="dashboard-header__breadcrumb">
