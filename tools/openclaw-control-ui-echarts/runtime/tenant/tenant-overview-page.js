@@ -1,6 +1,5 @@
 import { createLibraryLoader } from "../echarts/libraries.js";
 import { getEchartsStyles } from "../echarts/styles.js";
-import { TENANT_WALLET_ROUTE } from "./tenant-context.js";
 
 function formatNumber(value) {
   const numeric = Number(value || 0);
@@ -91,8 +90,6 @@ export function renderTenantOverview(controller) {
   if (!summary) {
     return `<div class="oc-tenant-overview-loading">统计数据格式异常。</div>`;
   }
-  const showWalletCard = controller?.session?.session?.edition !== "local";
-
   return `
     <div class="oc-tenant-overview oc-block-renderer--echarts">
       <div class="oc-tenant-overview-grid">
@@ -116,22 +113,6 @@ export function renderTenantOverview(controller) {
           <div class="oc-tenant-metric-value">${summary.activeAgents}</div>
           <div class="oc-tenant-metric-sub">产生耗量的 Agent 总数</div>
         </div>
-        ${
-          showWalletCard
-            ? `
-              <div class="oc-tenant-card oc-tenant-metric-card oc-tenant-metric-card--wallet">
-                <div class="oc-tenant-metric-label">钱包余额</div>
-                <div class="oc-tenant-metric-value">${formatCredits(summary.walletBalance)}</div>
-                <div class="oc-tenant-metric-sub">
-                  待处理订单: ${formatNumber(summary.pendingPaymentOrderCount || 0)}
-                </div>
-                <div class="oc-tenant-metric-actions">
-                  <a class="btn" href="${TENANT_WALLET_ROUTE}">立即充值</a>
-                </div>
-              </div>
-            `
-            : ""
-        }
       </div>
 
       <div class="oc-tenant-overview-main">

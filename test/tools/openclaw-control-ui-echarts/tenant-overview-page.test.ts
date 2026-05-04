@@ -111,11 +111,9 @@ describe("tenant overview page", () => {
     document.body.append(root);
 
     expect(root.querySelectorAll(".oc-tenant-metric-value")[1]?.textContent).toBe("8.00");
-    expect(root.textContent).toContain("钱包余额");
-    expect(root.textContent).toContain("待处理订单: 2");
-    expect(root.querySelector('a[href="./?ocTenantView=tenant-wallet"]')?.textContent).toContain(
-      "立即充值",
-    );
+    expect(root.textContent).not.toContain("钱包余额");
+    expect(root.textContent).not.toContain("待处理订单: 2");
+    expect(root.querySelector('a[href="./?ocTenantView=tenant-wallet"]')).toBeNull();
 
     await initTenantOverviewCharts(root, controller);
     await flush();
