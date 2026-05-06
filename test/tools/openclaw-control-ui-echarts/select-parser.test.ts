@@ -131,6 +131,23 @@ describe("zero-intrusive select parser", () => {
     expect(payload.options).toHaveLength(2);
   });
 
+  it("normalizes invisible whitespace that can leak from rendered code blocks", () => {
+    const payload = parse(
+      "{\n\u200b\u200b\"title\": \"请选择\",\n\u00a0\u00a0\"defaultValue\": \"blue\",\n\u202f\u202f\"options\": [\n\u00a0\u00a0\u00a0\u00a0{ \"value\": \"red\", \"label\": \"红色\" },\n\u00a0\u00a0\u00a0\u00a0{ \"value\": \"blue\", \"label\": \"蓝色\" }\n\u00a0\u00a0]\n}",
+      "single",
+    );
+
+    expect(payload).toMatchObject({
+      kind: "single",
+      title: "请选择",
+      defaultValue: "blue",
+      options: [
+        expect.objectContaining({ value: "red", label: "红色" }),
+        expect.objectContaining({ value: "blue", label: "蓝色" }),
+      ],
+    });
+  });
+
   it("rejects duplicate option values", () => {
     expect(() =>
       parse(

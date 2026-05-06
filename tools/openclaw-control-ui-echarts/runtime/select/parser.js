@@ -74,8 +74,15 @@ function normalizeStringArray(value) {
   return single ? [single] : [];
 }
 
+function normalizeParserWhitespace(text) {
+  return String(text || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\u202f/g, " ")
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "");
+}
+
 function normalizeSelectSource(raw, mode) {
-  let text = normalizeText(raw);
+  let text = normalizeParserWhitespace(normalizeText(raw));
   if (!text) {
     return text;
   }
