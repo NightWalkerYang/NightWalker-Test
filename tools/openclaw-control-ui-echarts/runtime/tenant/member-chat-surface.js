@@ -903,6 +903,21 @@ function buildSidebarMarkup(sessions, currentSessionKey) {
   `;
 }
 
+function syncSectionCollapsedState(section) {
+  if (!(section instanceof HTMLElement)) {
+    return;
+  }
+  const collapsed = section.classList.contains("nav-section--collapsed");
+  const label = section.querySelector("[data-member-chat-collapse]");
+  if (label instanceof HTMLElement) {
+    label.setAttribute("aria-expanded", String(!collapsed));
+  }
+  const items = section.querySelector(":scope > .nav-section__items");
+  if (items instanceof HTMLElement) {
+    items.hidden = collapsed;
+  }
+}
+
 function buildTopActionMarkup(selectedAgent) {
   const agentName = escapeHtml(selectedAgent?.agentName || "当前 Agent");
   return `
@@ -1809,6 +1824,7 @@ function attachSectionHandlers(section, controller) {
     if (target.closest("[data-member-chat-collapse]")) {
       event.preventDefault();
       section.classList.toggle("nav-section--collapsed");
+      syncSectionCollapsedState(section);
     }
   });
 }
@@ -1844,6 +1860,7 @@ function renderSidebarSection(controller) {
   section.innerHTML = buildSidebarMarkup(controller.sessions, controller.currentSessionKey);
   section.setAttribute(ACTIVE_SESSION_ATTR, controller.currentSessionKey);
   section.setAttribute(LABEL_ATTR, controller.selectedAgent?.agentName || "");
+  syncSectionCollapsedState(section);
   attachSectionHandlers(section, controller);
 }
 

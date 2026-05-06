@@ -222,6 +222,59 @@ describe("member chat surface", () => {
     expect(app.tab).toBe("chat");
   });
 
+  it("collapses the member session section when clicking the session chevron", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const section = document.querySelector("[data-oc-member-chat-section]");
+    const collapseButton = section?.querySelector("[data-member-chat-collapse]");
+    const items = section?.querySelector(":scope > .nav-section__items");
+    expect(section).not.toBeNull();
+    expect(collapseButton).not.toBeNull();
+    expect(items).not.toBeNull();
+    expect(section?.classList.contains("nav-section--collapsed")).toBe(false);
+    expect(collapseButton?.getAttribute("aria-expanded")).toBe("true");
+    expect(items?.hasAttribute("hidden")).toBe(false);
+
+    collapseButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(section?.classList.contains("nav-section--collapsed")).toBe(true);
+    expect(collapseButton?.getAttribute("aria-expanded")).toBe("false");
+    expect(items?.hasAttribute("hidden")).toBe(true);
+    expect(items?.textContent).toContain("新建会话");
+    expect(items?.textContent).toContain("本周分析");
+  });
+
   it("heals a direct member chat route when the stored selected Agent is stale", async () => {
     installTenantApiFetchStub({
       agents: [
