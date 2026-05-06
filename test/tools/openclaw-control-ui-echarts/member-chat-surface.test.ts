@@ -264,6 +264,9 @@ describe("member chat surface", () => {
     expect(section?.classList.contains("nav-section--collapsed")).toBe(false);
     expect(collapseButton?.getAttribute("aria-expanded")).toBe("true");
     expect(items?.hasAttribute("hidden")).toBe(false);
+    expect(items instanceof HTMLElement ? window.getComputedStyle(items).display : "").not.toBe(
+      "none",
+    );
 
     collapseButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
@@ -271,6 +274,7 @@ describe("member chat surface", () => {
     expect(section?.classList.contains("nav-section--collapsed")).toBe(true);
     expect(collapseButton?.getAttribute("aria-expanded")).toBe("false");
     expect(items?.hasAttribute("hidden")).toBe(true);
+    expect(items instanceof HTMLElement ? window.getComputedStyle(items).display : "").toBe("none");
     expect(items?.textContent).toContain("新建会话");
     expect(items?.textContent).toContain("本周分析");
   });

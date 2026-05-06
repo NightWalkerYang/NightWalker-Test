@@ -17,6 +17,10 @@
   gap: 10px;
 }
 
+.oc-member-chat-section.nav-section--collapsed > .nav-section__items {
+  display: none;
+}
+
 /* Keep the member chat rail compact when the app sidebar is collapsed. */
 :root[data-oc-member-chat-route="true"] .sidebar--collapsed .oc-member-chat-section {
   gap: 8px;
