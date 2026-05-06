@@ -12,6 +12,18 @@ afterEach(() => {
 });
 
 describe("feedback toast", () => {
+  it("injects shared toast styles only once before rendering", () => {
+    showTransientFeedbackToast(document.body, "第一次提示。");
+    showTransientFeedbackToast(document.body, "第二次提示。", true);
+
+    const styles = document.head.querySelectorAll("[data-oc-tenant-feedback-toast-style]");
+    expect(styles).toHaveLength(1);
+    expect(styles[0]?.textContent).toContain(".oc-tenant-feedback-toast-root");
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "第二次提示。",
+    );
+  });
+
   it("auto-dismisses the floating toast", () => {
     vi.useFakeTimers();
 
@@ -27,4 +39,3 @@ describe("feedback toast", () => {
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast-root]")).toBeNull();
   });
 });
-
