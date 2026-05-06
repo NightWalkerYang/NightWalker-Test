@@ -13,6 +13,7 @@ const TOAST_STYLE_TEXT = `
     width: min(420px, calc(100vw - 32px));
     display: grid;
     justify-items: end;
+    align-items: end;
   }
 
   :where(.oc-tenant-feedback-toast) {
@@ -20,6 +21,7 @@ const TOAST_STYLE_TEXT = `
     margin: 0;
     min-width: 220px;
     max-width: 100%;
+    align-self: end;
     overflow-wrap: anywhere;
     box-shadow: 0 16px 40px rgb(15 23 42 / 12%);
   }
