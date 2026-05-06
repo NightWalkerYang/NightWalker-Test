@@ -1,6 +1,6 @@
 .oc-update-log-dialog {
-  width: min(1120px, calc(100vw - 32px));
-  max-width: 1120px;
+  width: min(960px, calc(100vw - 32px));
+  max-width: 960px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -14,6 +14,7 @@
 
 .oc-update-log-dialog__panel {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 18px;
   padding: 24px;
   border-radius: 26px;
@@ -24,7 +25,8 @@
 }
 
 .oc-update-log-dialog__panel--wide {
-  min-height: min(78vh, 760px);
+  min-height: min(54vh, 560px);
+  max-height: min(78vh, 760px);
 }
 
 .oc-update-log-dialog__panel--compact {
@@ -79,10 +81,11 @@
 .oc-update-log-dialog__body {
   display: grid;
   gap: 18px;
+  min-height: 0;
 }
 
 .oc-update-log-dialog__body--split {
-  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   align-items: stretch;
 }
 
