@@ -654,7 +654,7 @@ describe("tenant platform local edition", () => {
         "  </head>",
         "  <body>",
         '    <a href="资金大屏可视化_index.html">切换到资金大屏</a>',
-        '    <button onclick="window.location.href=\'资金大屏可视化_index.html\'">按钮跳转</button>',
+        "    <button onclick=\"window.location.href='资金大屏可视化_index.html'\">按钮跳转</button>",
         '    <main id="viz"></main>',
         "    <script>",
         "      async function loadData() {",
@@ -724,7 +724,7 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.html).toContain("销售数据");
     expect(resolveResponse.payload.data.baseHref).toMatch(/^\/workspace-agent-downloads\//);
     expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
-    expect(resolveResponse.payload.data.html).toContain('/echarts-view/?token=');
+    expect(resolveResponse.payload.data.html).toContain("/echarts-view/?token=");
     expect(resolveResponse.payload.data.html).not.toContain('href="资金大屏可视化_index.html"');
     expect(resolveResponse.payload.data.html).toContain('target="_top"');
     expect(resolveResponse.payload.data.html).not.toContain("onclick=");
@@ -733,9 +733,7 @@ describe("tenant platform local edition", () => {
       `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/financial_data.js`,
     );
     expect(resolveResponse.payload.data.html).toContain("__openclaw_echarts_view__");
-    expect(resolveResponse.payload.data.html).not.toContain(
-      "fetch('dashboard_data.json')",
-    );
+    expect(resolveResponse.payload.data.html).not.toContain("fetch('dashboard_data.json')");
     expect(resolveResponse.payload.data.html).not.toContain('src="financial_data.js"');
 
     const generatedScriptMatch = resolveResponse.payload.data.html.match(
@@ -1011,7 +1009,7 @@ describe("tenant platform local edition", () => {
         "  </head>",
         "  <body>",
         '    <main id="stage" style="background-image:url(\'./images/背景 星空.png\')">3D 舞台</main>',
-        "    <script type=\"module\">",
+        '    <script type="module">',
         "      import { mountStage } from './scripts/scene.module.js';",
         "      mountStage();",
         "    </script>",
@@ -1658,7 +1656,8 @@ describe("tenant platform managed node sync", () => {
       nodeName: "上海受管节点",
       nodeSecret: "node-secret",
     });
-    const { baseUrl: managedNodeBaseUrl, db: managedNodeDb } = await startSandboxServer(managedNode);
+    const { baseUrl: managedNodeBaseUrl, db: managedNodeDb } =
+      await startSandboxServer(managedNode);
 
     const syncResult = await runManagedNodeSyncOnce({
       config: managedNode.config,
@@ -1688,9 +1687,9 @@ describe("tenant platform managed node sync", () => {
     expect(managedBootstrap.payload.data.initialized).toBe(true);
     expect(managedBootstrap.payload.data.nodeLease.status).toBe("active");
     expect(managedBootstrap.payload.data.managedNode.id).toBe("node-shanghai");
-    expect(Number(managedBootstrap.payload.data.managedNodeSync.lastAppliedRevision || 0)).toBeGreaterThan(
-      0,
-    );
+    expect(
+      Number(managedBootstrap.payload.data.managedNodeSync.lastAppliedRevision || 0),
+    ).toBeGreaterThan(0);
 
     const managedTenantAdminLogin = await requestJson(managedNodeBaseUrl, "/login", {
       method: "POST",
@@ -1734,5 +1733,10 @@ describe("tenant platform managed node sync", () => {
         balancePoints: 18,
       }),
     ]);
+    const managedConfig = JSON.parse(fs.readFileSync(managedNode.config.configPath, "utf8"));
+    const managedAgentIds = Array.isArray(managedConfig?.agents?.list)
+      ? managedConfig.agents.list.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
+      : [];
+    expect(managedAgentIds.some((id) => id.startsWith("tenant-"))).toBe(true);
   });
 });

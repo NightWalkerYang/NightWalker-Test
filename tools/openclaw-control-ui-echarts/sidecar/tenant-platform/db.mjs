@@ -176,7 +176,9 @@ function extractAgentIdFromSessionKey(openclawSessionKey) {
 }
 
 function normalizeModelCostLookupKey(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!normalized) {
     return "";
   }
@@ -201,7 +203,10 @@ function readBillingRatesConfig() {
 }
 
 function resolveSettlementCurrency() {
-  return normalizeCurrencyCode(readBillingRatesConfig()?.settlementCurrency, DEFAULT_BILLING_CURRENCY);
+  return normalizeCurrencyCode(
+    readBillingRatesConfig()?.settlementCurrency,
+    DEFAULT_BILLING_CURRENCY,
+  );
 }
 
 function resolveCurrencyToSettlementRate(currency) {
@@ -270,7 +275,11 @@ function resolveBillingProviderEntry(providerId) {
     return null;
   }
   for (const [rawProviderId, entry] of Object.entries(providers)) {
-    if (String(rawProviderId || "").trim().toLowerCase() === normalizedProviderId) {
+    if (
+      String(rawProviderId || "")
+        .trim()
+        .toLowerCase() === normalizedProviderId
+    ) {
       return entry && typeof entry === "object" && !Array.isArray(entry) ? entry : null;
     }
   }
@@ -280,7 +289,11 @@ function resolveBillingProviderEntry(providerId) {
 function collectSessionStoreAgentCandidates(params = {}) {
   const seen = new Set();
   const result = [];
-  for (const value of [params.agentId, params.derivedAgentId, extractAgentIdFromSessionKey(params.openclawSessionKey)]) {
+  for (const value of [
+    params.agentId,
+    params.derivedAgentId,
+    extractAgentIdFromSessionKey(params.openclawSessionKey),
+  ]) {
     const normalized = String(value || "").trim();
     if (!normalized || seen.has(normalized)) {
       continue;
@@ -329,7 +342,9 @@ function normalizeManagedNodeId(value) {
 }
 
 function normalizeManagedNodeName(value) {
-  const normalized = String(value || "").trim().slice(0, 120);
+  const normalized = String(value || "")
+    .trim()
+    .slice(0, 120);
   if (!normalized) {
     throw new Error("managed_node_name_required");
   }
@@ -337,11 +352,19 @@ function normalizeManagedNodeName(value) {
 }
 
 function normalizeManagedNodeStatus(value) {
-  return String(value || "").trim().toLowerCase() === "disabled" ? "disabled" : "active";
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "disabled"
+    ? "disabled"
+    : "active";
 }
 
 function normalizeManagedNodeLeaseStatus(value) {
-  return String(value || "").trim().toLowerCase() === "disabled" ? "disabled" : "active";
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "disabled"
+    ? "disabled"
+    : "active";
 }
 
 function summarizeManagedNodeLeaseRow(row) {
@@ -591,9 +614,7 @@ function ensureTenantUsageRecordSchemaCompatibility(db) {
   const userIdColumn = columns.find((row) => String(row?.name || "").trim() === "user_id");
   const userIdNullable = Number(userIdColumn?.notnull || 0) === 0;
   const foreignKeys = db.prepare("PRAGMA foreign_key_list(tenant_usage_records)").all();
-  const userIdForeignKey = foreignKeys.find(
-    (row) => String(row?.from || "").trim() === "user_id",
-  );
+  const userIdForeignKey = foreignKeys.find((row) => String(row?.from || "").trim() === "user_id");
   const userIdOnDelete = String(userIdForeignKey?.on_delete || "")
     .trim()
     .toUpperCase();
@@ -813,6 +834,24 @@ function parseOpenClawConfig(configPath) {
   }
 }
 
+function writeOpenClawConfig(configPath, payload) {
+  const nextPayload =
+    payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(nextPayload, null, 2)}\n`, "utf8");
+}
+
+function cloneJsonValue(value) {
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
 function mapDataSourceRow(row) {
   if (!row) {
     return null;
@@ -851,13 +890,16 @@ function mapTenantSyncScheduleRow(row) {
     dataSourceId: String((row.dataSourceId ?? row.data_source_id) || "").trim(),
     objectCode: String((row.objectCode ?? row.object_code) || "").trim(),
     moduleName: String((row.moduleName ?? row.module_name) || "").trim(),
-    derivedWorkspaceDir: String((row.derivedWorkspaceDir ?? row.derived_workspace_dir) || "").trim(),
+    derivedWorkspaceDir: String(
+      (row.derivedWorkspaceDir ?? row.derived_workspace_dir) || "",
+    ).trim(),
     status: normalizeTenantSyncScheduleStatus(row.status),
     intervalMinutes: normalizeTenantSyncIntervalMinutes(
       row.intervalMinutes ?? row.interval_minutes,
     ),
     defaultStart: normalizeDefaultStart(row.defaultStart ?? row.default_start),
-    activatedByUserId: String((row.activatedByUserId ?? row.activated_by_user_id) || "").trim() || null,
+    activatedByUserId:
+      String((row.activatedByUserId ?? row.activated_by_user_id) || "").trim() || null,
     lastRunAt: String((row.lastRunAt ?? row.last_run_at) || "").trim() || null,
     lastRunStatus: String((row.lastRunStatus ?? row.last_run_status) || "").trim() || null,
     lastRunError: String((row.lastRunError ?? row.last_run_error) || "").trim() || null,
@@ -887,7 +929,8 @@ function buildTenantAnalyticsConnectionProfile(db, tenantId) {
     sshKeyPath: DEFAULT_KINGDEE_SSH_KEY_PATH,
     timeoutSeconds: DEFAULT_KINGDEE_BRIDGE_TIMEOUT_SECONDS,
     analyticsProjectRoot:
-      String(connection.analyticsProjectRoot || "").trim() || DEFAULT_KINGDEE_ANALYTICS_PROJECT_ROOT,
+      String(connection.analyticsProjectRoot || "").trim() ||
+      DEFAULT_KINGDEE_ANALYTICS_PROJECT_ROOT,
     analyticsPython:
       String(connection.analyticsPython || "").trim() || DEFAULT_KINGDEE_ANALYTICS_PYTHON,
     analyticsPgDsn:
@@ -1174,8 +1217,7 @@ function resolveSessionEstimatedSettlementCost(params = {}, cache = null, sessio
       inputTokens: resolvedSessionEntry?.inputTokens,
       outputTokens: resolvedSessionEntry?.outputTokens,
       cacheReadTokens: resolvedSessionEntry?.cacheRead ?? resolvedSessionEntry?.cacheReadTokens,
-      cacheWriteTokens:
-        resolvedSessionEntry?.cacheWrite ?? resolvedSessionEntry?.cacheWriteTokens,
+      cacheWriteTokens: resolvedSessionEntry?.cacheWrite ?? resolvedSessionEntry?.cacheWriteTokens,
     },
     resolveModelTokenPricing({
       provider: resolvedSessionEntry?.modelProvider || resolvedSessionEntry?.provider,
@@ -1235,7 +1277,10 @@ function resolveUsageRecordSettlementCost(record, sessionParams = {}) {
     model: record?.model,
   });
   if (staticTokenPricing) {
-    const staticEstimatedCost = estimateUsageSettlementCostFromTokenPricing(record, staticTokenPricing);
+    const staticEstimatedCost = estimateUsageSettlementCostFromTokenPricing(
+      record,
+      staticTokenPricing,
+    );
     if (staticEstimatedCost) {
       return staticEstimatedCost;
     }
@@ -1381,11 +1426,19 @@ function writeJsonFileIfChanged(filePath, payload) {
 }
 
 function normalizeDataSourceStatus(value) {
-  return String(value || "").trim().toLowerCase() === "inactive" ? "inactive" : "active";
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "inactive"
+    ? "inactive"
+    : "active";
 }
 
 function normalizeTenantSyncScheduleStatus(value) {
-  return String(value || "").trim().toLowerCase() === "paused" ? "paused" : "active";
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "paused"
+    ? "paused"
+    : "active";
 }
 
 function normalizeTenantSyncIntervalMinutes(value) {
@@ -1398,9 +1451,7 @@ function normalizeTenantSyncIntervalMinutes(value) {
 
 function normalizeDefaultStart(value) {
   const normalized = String(value || "").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(normalized)
-    ? normalized
-    : DEFAULT_TENANT_SYNC_DEFAULT_START;
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : DEFAULT_TENANT_SYNC_DEFAULT_START;
 }
 
 function normalizeConnectionJson(value) {
@@ -1601,6 +1652,17 @@ function cleanupDerivedAgentExecApprovals(entries, params = {}) {
   return removedCount;
 }
 
+function cleanupDerivedAgentRuntimeConfig(entries, params = {}) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return 0;
+  }
+  try {
+    return removeDerivedAgentRuntimeConfigEntries(entries, params);
+  } catch {
+    return 0;
+  }
+}
+
 function listConfigAgents(configPayload) {
   const agents = configPayload?.agents;
   if (!agents || typeof agents !== "object") {
@@ -1690,6 +1752,112 @@ function resolveBaseWorkspaceDir(params) {
   return candidates[0] ? path.resolve(candidates[0]) : "";
 }
 
+function buildDerivedAgentWorkspacePath(params = {}) {
+  const configDir = resolveConfigDir(params);
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!derivedAgentId) {
+    return "";
+  }
+  return path.join(configDir, "workspace-agents", derivedAgentId);
+}
+
+function buildDerivedAgentRuntimeWorkspacePath(params = {}) {
+  const configDir = resolveConfigDir(params);
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!derivedAgentId) {
+    return "";
+  }
+  return path.join(configDir, `workspace-${derivedAgentId}`);
+}
+
+function syncDerivedAgentRuntimeConfigEntry(params = {}) {
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  const configPath = resolveConfigPath(params);
+  if (!baseAgentId || !derivedAgentId || baseAgentId === derivedAgentId) {
+    return null;
+  }
+  const configPayload = parseOpenClawConfig(configPath);
+  const agents =
+    configPayload?.agents && typeof configPayload.agents === "object" ? configPayload.agents : {};
+  const nextList = Array.isArray(agents.list) ? agents.list.slice() : [];
+  const baseIndex = nextList.findIndex(
+    (entry) =>
+      String(entry?.id || "")
+        .trim()
+        .toLowerCase() === baseAgentId.toLowerCase(),
+  );
+  if (baseIndex < 0) {
+    return null;
+  }
+  const derivedWorkspace = buildDerivedAgentWorkspacePath({ ...params, derivedAgentId });
+  const derivedAgentDir = path.join(resolveConfigDir(params), "agents", derivedAgentId, "agent");
+  const nextEntry = {
+    ...cloneJsonValue(nextList[baseIndex]),
+    id: derivedAgentId,
+    workspace: derivedWorkspace,
+    agentDir: derivedAgentDir,
+  };
+  const existingIndex = nextList.findIndex(
+    (entry) =>
+      String(entry?.id || "")
+        .trim()
+        .toLowerCase() === derivedAgentId.toLowerCase(),
+  );
+  if (existingIndex >= 0) {
+    nextList[existingIndex] = {
+      ...cloneJsonValue(nextList[existingIndex]),
+      ...nextEntry,
+    };
+  } else {
+    nextList.push(nextEntry);
+  }
+  const nextConfig = {
+    ...configPayload,
+    agents: {
+      ...agents,
+      list: nextList,
+    },
+  };
+  writeOpenClawConfig(configPath, nextConfig);
+  return nextEntry;
+}
+
+function removeDerivedAgentRuntimeConfigEntries(entries = [], params = {}) {
+  const derivedIds = [
+    ...new Set(entries.map((entry) => String(entry?.derivedAgentId || "").trim()).filter(Boolean)),
+  ];
+  if (!derivedIds.length) {
+    return 0;
+  }
+  const configPath = resolveConfigPath(params);
+  const configPayload = parseOpenClawConfig(configPath);
+  const agents =
+    configPayload?.agents && typeof configPayload.agents === "object" ? configPayload.agents : {};
+  const currentList = Array.isArray(agents.list) ? agents.list : [];
+  const derivedIdSet = new Set(derivedIds.map((id) => id.toLowerCase()));
+  const nextList = currentList.filter(
+    (entry) =>
+      !derivedIdSet.has(
+        String(entry?.id || "")
+          .trim()
+          .toLowerCase(),
+      ),
+  );
+  if (nextList.length === currentList.length) {
+    return 0;
+  }
+  const nextConfig = {
+    ...configPayload,
+    agents: {
+      ...agents,
+      list: nextList,
+    },
+  };
+  writeOpenClawConfig(configPath, nextConfig);
+  return currentList.length - nextList.length;
+}
+
 function copySeedEntry(source, target) {
   if (!fs.existsSync(source)) {
     return;
@@ -1736,8 +1904,8 @@ function ensureTenantDerivedWorkspace(params) {
     throw new Error("derived_agent_id_required");
   }
 
-  const canonicalWorkspace = path.join(configDir, "workspace-agents", derivedAgentId);
-  const runtimeWorkspace = path.join(configDir, `workspace-${derivedAgentId}`);
+  const canonicalWorkspace = buildDerivedAgentWorkspacePath({ ...params, derivedAgentId });
+  const runtimeWorkspace = buildDerivedAgentRuntimeWorkspacePath({ ...params, derivedAgentId });
   fs.mkdirSync(canonicalWorkspace, { recursive: true });
 
   const sourceWorkspace = resolveBaseWorkspaceDir(params);
@@ -1964,13 +2132,21 @@ function revokeAssignmentEntriesWithCleanup(db, params = {}) {
 
   const cleanupResult = cleanupMemberDerivedWorkspaces(selectedAssignments, params);
   let cleanedApprovalBucketCount = 0;
+  let cleanedRuntimeConfigEntryCount = 0;
   try {
     cleanedApprovalBucketCount = cleanupDerivedAgentExecApprovals(selectedAssignments, params);
   } catch {
     // Best-effort cleanup only. Assignment revocation must not be blocked by stale approval buckets.
   }
+  try {
+    cleanedRuntimeConfigEntryCount = cleanupDerivedAgentRuntimeConfig(selectedAssignments, params);
+  } catch {
+    // Best-effort cleanup only. Assignment revocation must not be blocked by stale derived config entries.
+  }
 
-  const affectedUserIds = [...new Set(selectedAssignments.map((assignment) => assignment.userId).filter(Boolean))];
+  const affectedUserIds = [
+    ...new Set(selectedAssignments.map((assignment) => assignment.userId).filter(Boolean)),
+  ];
   return {
     revokedAssignmentCount: selectedAssignments.length,
     affectedUserIds,
@@ -1978,6 +2154,7 @@ function revokeAssignmentEntriesWithCleanup(db, params = {}) {
     removedWorkspaceCount: Number(cleanupResult?.removedWorkspaceCount || 0),
     removedWorkspacePathCount: Number(cleanupResult?.removedPathCount || 0),
     cleanedApprovalBucketCount: Number(cleanedApprovalBucketCount || 0),
+    cleanedRuntimeConfigEntryCount: Number(cleanedRuntimeConfigEntryCount || 0),
   };
 }
 
@@ -2029,19 +2206,23 @@ function purgeTenantMemberUserData(db, params = {}) {
     userId,
     memberUsername,
   });
-  const deletedAssignments = db.prepare(
-    `DELETE FROM user_agent_assignments
+  const deletedAssignments = db
+    .prepare(
+      `DELETE FROM user_agent_assignments
      WHERE tenant_id = @tenantId AND user_id = @userId`,
-  ).run({
-    tenantId,
-    userId,
-  });
-  const deletedUser = db.prepare(
-    `DELETE FROM users
+    )
+    .run({
+      tenantId,
+      userId,
+    });
+  const deletedUser = db
+    .prepare(
+      `DELETE FROM users
      WHERE id = @userId AND role = 'member'`,
-  ).run({
-    userId,
-  });
+    )
+    .run({
+      userId,
+    });
   if (!Number(deletedUser?.changes || 0)) {
     throw new Error("成员不存在");
   }
@@ -2050,6 +2231,11 @@ function purgeTenantMemberUserData(db, params = {}) {
     cleanupDerivedAgentExecApprovals(cleanupEntries, params);
   } catch {
     // Best-effort cleanup only. Member deletion must not be blocked by stale approval buckets.
+  }
+  try {
+    cleanupDerivedAgentRuntimeConfig(cleanupEntries, params);
+  } catch {
+    // Best-effort cleanup only. Member deletion must not be blocked by stale derived config entries.
   }
 
   return {
@@ -2321,8 +2507,10 @@ export function createPlatformUpdateLog(db, params) {
     content,
     createdByUserId: String(params?.createdByUserId || "").trim() || null,
     createdByUsername:
-      normalizeUpdateLogText(params?.createdByUsername, { maxLength: 64, preserveNewlines: false }) ||
-      "平台管理员",
+      normalizeUpdateLogText(params?.createdByUsername, {
+        maxLength: 64,
+        preserveNewlines: false,
+      }) || "平台管理员",
     publishedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -2596,7 +2784,9 @@ export function getManagedNodeLeaseState(db, nodeId) {
 
 export function getManagedNodeSyncCheckpoint(db, nodeId) {
   const normalizedNodeId = normalizeManagedNodeId(nodeId);
-  const existingNode = db.prepare("SELECT id FROM managed_nodes WHERE id = ?").get(normalizedNodeId);
+  const existingNode = db
+    .prepare("SELECT id FROM managed_nodes WHERE id = ?")
+    .get(normalizedNodeId);
   if (existingNode) {
     ensureManagedNodeSyncStateRow(db, normalizedNodeId);
   }
@@ -2930,9 +3120,7 @@ export function buildManagedNodeDesiredState(db, params = {}) {
        ORDER BY updated_at ASC, created_at ASC`,
     )
     .all(nodeId);
-  const tenantIds = bindingRows
-    .map((row) => String(row?.tenantId || "").trim())
-    .filter(Boolean);
+  const tenantIds = bindingRows.map((row) => String(row?.tenantId || "").trim()).filter(Boolean);
   const checkpoint = getManagedNodeSyncCheckpoint(db, nodeId);
   if (!tenantIds.length) {
     return {
@@ -3044,7 +3232,9 @@ export function buildManagedNodeDesiredState(db, params = {}) {
     .prepare(
       `SELECT ua.tenant_id AS tenantId,
               ua.user_id AS userId,
-              ua.tenant_agent_id AS tenantAgentId
+              ua.tenant_agent_id AS tenantAgentId,
+              ua.derived_agent_id AS derivedAgentId,
+              ua.derived_workspace_dir AS derivedWorkspaceDir
        FROM user_agent_assignments ua
        JOIN tenant_agents ta ON ta.id = ua.tenant_agent_id
        WHERE ua.status = 'active'
@@ -3059,18 +3249,21 @@ export function buildManagedNodeDesiredState(db, params = {}) {
     desiredRevision: checkpoint.desiredRevision,
     tenants,
     users,
-      memberships,
-      tenantAgents,
-      dataSources,
-      tenantDataSourceBindings,
-      userAssignments,
-      generatedAt: nowIso(),
-    };
+    memberships,
+    tenantAgents,
+    dataSources,
+    tenantDataSourceBindings,
+    userAssignments,
+    generatedAt: nowIso(),
+  };
 }
 
 export function applyManagedNodeDesiredState(db, params = {}) {
   const nodeId = normalizeManagedNodeId(params?.nodeId || params?.node?.id);
-  const desiredRevision = Math.max(0, Number.parseInt(String(params?.desiredRevision || "0"), 10) || 0);
+  const desiredRevision = Math.max(
+    0,
+    Number.parseInt(String(params?.desiredRevision || "0"), 10) || 0,
+  );
   const node = params?.node && typeof params.node === "object" ? params.node : { id: nodeId };
   const lease = params?.lease && typeof params.lease === "object" ? params.lease : {};
   const tenants = Array.isArray(params?.tenants) ? params.tenants : [];
@@ -3087,12 +3280,16 @@ export function applyManagedNodeDesiredState(db, params = {}) {
   const tenantIds = tenants.map((entry) => String(entry?.id || "").trim()).filter(Boolean);
   const userIds = users.map((entry) => String(entry?.id || "").trim()).filter(Boolean);
   const membershipKeys = new Set(
-    memberships.map((entry) => `${String(entry?.tenantId || "").trim()}::${String(entry?.userId || "").trim()}`),
+    memberships.map(
+      (entry) => `${String(entry?.tenantId || "").trim()}::${String(entry?.userId || "").trim()}`,
+    ),
   );
   const tenantAgentIds = new Set(
     tenantAgents.map((entry) => String(entry?.id || "").trim()).filter(Boolean),
   );
-  const dataSourceIds = new Set(dataSources.map((entry) => String(entry?.id || "").trim()).filter(Boolean));
+  const dataSourceIds = new Set(
+    dataSources.map((entry) => String(entry?.id || "").trim()).filter(Boolean),
+  );
   const tenantBindingTenantIds = new Set(
     tenantDataSourceBindings.map((entry) => String(entry?.tenantId || "").trim()).filter(Boolean),
   );
@@ -3164,7 +3361,9 @@ export function applyManagedNodeDesiredState(db, params = {}) {
     ).run({
       nodeId,
       leaseStatus: lease?.status === "disabled" ? "disabled" : "active",
-      expiresAt: String(lease?.expiresAt || "").trim() ? normalizeIsoTimestamp(lease.expiresAt) : null,
+      expiresAt: String(lease?.expiresAt || "").trim()
+        ? normalizeIsoTimestamp(lease.expiresAt)
+        : null,
       readonlyAfterExpiry: lease?.readonly === false ? 0 : 1,
       issuedAt: now,
       updatedAt: now,
@@ -3213,7 +3412,8 @@ export function applyManagedNodeDesiredState(db, params = {}) {
           code: String(tenant?.code || tenantId).trim() || tenantId,
           name: String(tenant?.name || tenantId).trim() || tenantId,
           status: String(tenant?.status || "active").trim() || "active",
-          deploymentMode: String(tenant?.deploymentMode || "cloud").trim() === "local" ? "local" : "cloud",
+          deploymentMode:
+            String(tenant?.deploymentMode || "cloud").trim() === "local" ? "local" : "cloud",
           createdAt: normalizeIsoTimestamp(tenant?.createdAt, now),
           updatedAt: normalizeIsoTimestamp(tenant?.updatedAt, now),
         });
@@ -3482,8 +3682,11 @@ export function applyManagedNodeDesiredState(db, params = {}) {
       const tenantPlaceholders = tenantIds.map(() => "?").join(", ");
       const localAssignments = db
         .prepare(
-          `SELECT ua.user_id AS userId,
-                  ua.tenant_agent_id AS tenantAgentId
+          `SELECT ua.id AS id,
+                  ua.user_id AS userId,
+                  ua.tenant_agent_id AS tenantAgentId,
+                  ua.derived_agent_id AS derivedAgentId,
+                  ua.derived_workspace_dir AS derivedWorkspaceDir
            FROM user_agent_assignments ua
            WHERE ua.tenant_id IN (${tenantPlaceholders}) AND ua.status = 'active'`,
         )
@@ -3492,8 +3695,23 @@ export function applyManagedNodeDesiredState(db, params = {}) {
         const tenantId = String(assignment?.tenantId || "").trim();
         const userId = String(assignment?.userId || "").trim();
         const tenantAgentId = String(assignment?.tenantAgentId || "").trim();
+        const derivedAgentId = String(assignment?.derivedAgentId || "").trim();
         if (!tenantId || !userId || !tenantAgentId) {
           continue;
+        }
+        if (derivedAgentId) {
+          const tenantAgent = tenantAgents.find(
+            (entry) => String(entry?.id || "").trim() === tenantAgentId,
+          );
+          const baseAgentId = String(tenantAgent?.agentId || "").trim();
+          if (baseAgentId) {
+            syncDerivedAgentRuntimeConfigEntry({
+              baseAgentId,
+              derivedAgentId,
+              configPath,
+              configDir,
+            });
+          }
         }
         // Managed-node reconciliation already owns the transaction and must not
         // mutate the control-plane desired revision locally.
@@ -3510,13 +3728,11 @@ export function applyManagedNodeDesiredState(db, params = {}) {
         if (activeAssignmentKeys.has(assignmentKey)) {
           continue;
         }
-        db.prepare(
-          `UPDATE user_agent_assignments
-           SET status = 'inactive'
-           WHERE user_id = @userId AND tenant_agent_id = @tenantAgentId`,
-        ).run({
-          userId: String(row?.userId || "").trim(),
-          tenantAgentId: String(row?.tenantAgentId || "").trim(),
+        revokeAssignmentEntriesWithCleanup(db, {
+          whereClause: "id = ? AND status = 'active'",
+          bindings: [String(row?.id || "").trim()],
+          configPath,
+          configDir,
         });
       }
 
@@ -3641,9 +3857,7 @@ export function upsertDataSource(db, params = {}) {
   }
   const now = nowIso();
   const status = normalizeDataSourceStatus(params.status);
-  const connectionJson = normalizeConnectionJson(
-    params.connectionJson ?? params.connection_json,
-  );
+  const connectionJson = normalizeConnectionJson(params.connectionJson ?? params.connection_json);
   const k3cloudProfileJson = normalizeK3CloudProfileJson(
     params.k3cloudProfileJson ?? params.k3cloud_profile_json,
   );
@@ -4623,6 +4837,12 @@ function assignTenantAgentToUserCore(db, params) {
     configPath: params.configPath,
     configDir: params.configDir,
   });
+  syncDerivedAgentRuntimeConfigEntry({
+    baseAgentId: tenantAgent.baseAgentId,
+    derivedAgentId,
+    configPath: params.configPath,
+    configDir: params.configDir,
+  });
   syncDerivedAgentExecApprovals({
     baseAgentId: tenantAgent.baseAgentId,
     derivedAgentId,
@@ -4689,7 +4909,13 @@ export function assignTenantAgentsToUser(db, params) {
   const tenantId = String(params.tenantId || "").trim();
   const userId = String(params.userId || "").trim();
   const tenantAgentIds = Array.isArray(params.tenantAgentIds)
-    ? [...new Set(params.tenantAgentIds.map((tenantAgentId) => String(tenantAgentId || "").trim()).filter(Boolean))]
+    ? [
+        ...new Set(
+          params.tenantAgentIds
+            .map((tenantAgentId) => String(tenantAgentId || "").trim())
+            .filter(Boolean),
+        ),
+      ]
     : String(params.tenantAgentId || "").trim()
       ? [String(params.tenantAgentId || "").trim()]
       : [];
@@ -4803,7 +5029,9 @@ export function revokePlatformTenantAgents(db, params) {
         continue;
       }
       refundedPoints = normalizeNonNegativePoints(refundedPoints + tenantAgent.balancePoints);
-      walletBalanceAfter = normalizeNonNegativePoints(walletBalanceAfter + tenantAgent.balancePoints);
+      walletBalanceAfter = normalizeNonNegativePoints(
+        walletBalanceAfter + tenantAgent.balancePoints,
+      );
       db.prepare(
         `INSERT INTO tenant_wallet_ledger (
            id,
@@ -4958,6 +5186,12 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
         configPath: params.configPath,
         configDir: params.configDir,
       });
+      syncDerivedAgentRuntimeConfigEntry({
+        baseAgentId: row.baseAgentId,
+        derivedAgentId: resolvedAgentId,
+        configPath: params.configPath,
+        configDir: params.configDir,
+      });
       if (
         String(row.derivedAgentId || "").trim() !== resolvedAgentId ||
         String(row.derivedWorkspaceDir || "").trim() !== workspace.canonicalWorkspace
@@ -4981,12 +5215,14 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
       });
       syncDerivedAgentTenantAnalyticsProfile(db, {
         tenantId: row.tenantId,
-        derivedWorkspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        derivedWorkspaceDir:
+          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
         workspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
       });
       syncDerivedAgentK3CloudProfile(db, {
         tenantId: row.tenantId,
-        derivedWorkspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        derivedWorkspaceDir:
+          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
         workspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
       });
 
@@ -5003,7 +5239,8 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
       return {
         ...row,
         derivedAgentId: resolvedAgentId,
-        derivedWorkspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        derivedWorkspaceDir:
+          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
         agentId,
         baseAgentId,
         agentName: displayName || baseAgentId || agentId,
@@ -5065,7 +5302,7 @@ export function syncTenantUsageRecords(db, params) {
 
   const tenantAgent = db
     .prepare(
-        `SELECT ta.id,
+      `SELECT ta.id,
                 ta.balance_points AS balancePoints,
                 ta.rate_multiplier AS rateMultiplier,
                 t.deployment_mode AS deploymentMode,
@@ -5093,9 +5330,9 @@ export function syncTenantUsageRecords(db, params) {
       tenantId,
       userId,
     });
-    if (!tenantAgent) {
-      throw new Error("tenant_agent_not_found");
-    }
+  if (!tenantAgent) {
+    throw new Error("tenant_agent_not_found");
+  }
 
   const now = nowIso();
   const normalizedRecords = applyUsageSettlementFallbackToUsageRecords(
@@ -5542,7 +5779,8 @@ export function repairTenantUsageCostGaps(db, params = {}) {
       sessionStoreCache,
     );
     const nextFilledRows = previewRecords.filter(
-      (record, index) => !normalizeOptionalPositiveCost(records[index]?.totalCost) && record.totalCost,
+      (record, index) =>
+        !normalizeOptionalPositiveCost(records[index]?.totalCost) && record.totalCost,
     ).length;
     if (nextFilledRows <= 0) {
       skippedSessions += 1;
@@ -6059,10 +6297,7 @@ export function listTenantPaymentOrdersPage(db, params) {
 }
 
 export function listTenantPaymentOrders(db, params) {
-  const limit = Math.min(
-    100,
-    Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20),
-  );
+  const limit = Math.min(100, Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20));
   return listTenantPaymentOrdersPage(db, {
     tenantId: params.tenantId,
     page: 1,
@@ -6081,12 +6316,18 @@ export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [],
   }
   const configMap = new Map((configAgents || []).map((entry) => [entry.id, entry]));
   const categories = Array.isArray(options.categories)
-    ? [...new Set(options.categories.map((category) => String(category || "").trim()).filter(Boolean))]
+    ? [
+        ...new Set(
+          options.categories.map((category) => String(category || "").trim()).filter(Boolean),
+        ),
+      ]
     : [];
   const excludeCategories = Array.isArray(options.excludeCategories)
     ? [
         ...new Set(
-          options.excludeCategories.map((category) => String(category || "").trim()).filter(Boolean),
+          options.excludeCategories
+            .map((category) => String(category || "").trim())
+            .filter(Boolean),
         ),
       ]
     : [];
@@ -6101,7 +6342,9 @@ export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [],
       countCategoryBindings[`category_${index}`] = category;
     });
   } else if (excludeCategories.length) {
-    const placeholders = excludeCategories.map((_, index) => `@exclude_category_${index}`).join(", ");
+    const placeholders = excludeCategories
+      .map((_, index) => `@exclude_category_${index}`)
+      .join(", ");
     categoryClause = ` AND l.category NOT IN (${placeholders})`;
     excludeCategories.forEach((category, index) => {
       categoryBindings[`exclude_category_${index}`] = category;
@@ -6192,28 +6435,19 @@ export function listTenantWalletLedgerEntriesPage(db, params, configAgents = [],
 }
 
 export function listTenantModelUsageEntriesPage(db, params, configAgents = []) {
-  return listTenantWalletLedgerEntriesPage(
-    db,
-    params,
-    configAgents,
-    { categories: ["usage_charge"] },
-  );
+  return listTenantWalletLedgerEntriesPage(db, params, configAgents, {
+    categories: ["usage_charge"],
+  });
 }
 
 export function listTenantWalletFlowEntriesPage(db, params, configAgents = []) {
-  return listTenantWalletLedgerEntriesPage(
-    db,
-    params,
-    configAgents,
-    { excludeCategories: ["usage_charge"] },
-  );
+  return listTenantWalletLedgerEntriesPage(db, params, configAgents, {
+    excludeCategories: ["usage_charge"],
+  });
 }
 
 export function listTenantWalletLedgerEntries(db, params, configAgents = []) {
-  const limit = Math.min(
-    100,
-    Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20),
-  );
+  const limit = Math.min(100, Math.max(1, Number.parseInt(String(params.limit || "20"), 10) || 20));
   return listTenantWalletLedgerEntriesPage(
     db,
     {
@@ -6311,9 +6545,13 @@ export function updateTenantPaymentOrderStatus(db, params) {
       tenantId,
       orderId,
       status,
-      providerOrderId: String(
-        params.providerOrderId || existing.providerOrderId || providerPayload.providerOrderId || "",
-      ).trim() || null,
+      providerOrderId:
+        String(
+          params.providerOrderId ||
+            existing.providerOrderId ||
+            providerPayload.providerOrderId ||
+            "",
+        ).trim() || null,
       providerPayload: stringifyPaymentProviderPayload(providerPayload),
       updatedAt,
     });
@@ -6439,9 +6677,8 @@ export function confirmTenantPaymentOrderPaid(db, params) {
       amountPoints: order.amountPoints,
       balanceAfter: walletBalanceAfter,
       paymentOrderId: order.id,
-      actorUserId: String(
-        params.actorUserId || order.providerPayload.createdByUserId || "",
-      ).trim() || null,
+      actorUserId:
+        String(params.actorUserId || order.providerPayload.createdByUserId || "").trim() || null,
       note: String(params.note || `recharge:${order.id}`).trim(),
       createdAt: updatedAt,
     });

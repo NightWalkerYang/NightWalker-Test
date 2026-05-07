@@ -1,8 +1,14 @@
+import { generateKeyPairSync } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  buildAllinpayLaunchDescriptor,
+  buildQrSvgDataUrl,
+  resolveAllinpaySidecarConfig,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs";
+import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 import {
   openTenantPlatformDb,
   closeTenantPlatformDb,
@@ -42,15 +48,7 @@ import {
   updateTenantMemberPassword,
   updateTenantMemberStatus,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
-import {
-  rewriteVisualizationHtml,
-} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
-import {
-  buildAllinpayLaunchDescriptor,
-  buildQrSvgDataUrl,
-  resolveAllinpaySidecarConfig,
-} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs";
-import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
+import { rewriteVisualizationHtml } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 
 const cleanupRoots = new Set();
 
@@ -62,11 +60,11 @@ function createTempSandbox() {
   const configPath = path.join(configDir, "openclaw.json");
   fs.writeFileSync(
     configPath,
-      JSON.stringify({
-        agents: {
-          list: [
-            {
-              id: "finance",
+    JSON.stringify({
+      agents: {
+        list: [
+          {
+            id: "finance",
             name: "财务分析助手",
             identity: {
               emoji: "💼",
@@ -115,6 +113,13 @@ function writeSessionStoreEntry(sandbox, agentId, sessionKey, entry) {
     ...entry,
   };
   fs.writeFileSync(storePath, JSON.stringify(current, null, 2), "utf8");
+}
+
+function readConfigAgentIds(sandbox) {
+  const parsed = JSON.parse(fs.readFileSync(sandbox.config.configPath, "utf8"));
+  return Array.isArray(parsed?.agents?.list)
+    ? parsed.agents.list.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
+    : [];
 }
 
 afterEach(() => {
@@ -211,11 +216,7 @@ describe("tenant platform database foundation", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
     try {
-      const baseWorkspace = path.join(
-        sandbox.config.configDir,
-        "workspace-agents",
-        "finance",
-      );
+      const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
       fs.mkdirSync(path.join(baseWorkspace, "memory"), { recursive: true });
       fs.mkdirSync(path.join(baseWorkspace, "skills"), { recursive: true });
       fs.mkdirSync(path.join(baseWorkspace, "sessions"), { recursive: true });
@@ -232,7 +233,7 @@ describe("tenant platform database foundation", () => {
       );
       fs.writeFileSync(
         path.join(baseWorkspace, "sessions", "old.jsonl"),
-        "{\"type\":\"assistant\"}\n",
+        '{"type":"assistant"}\n',
         "utf8",
       );
       fs.writeFileSync(
@@ -286,7 +287,11 @@ describe("tenant platform database foundation", () => {
       expect(String(assignment.derivedAgentId || "")).toMatch(/^tenant-/);
       expect(
         fs.existsSync(
-          path.join(sandbox.config.configDir, "workspace-agents", String(assignment.derivedAgentId)),
+          path.join(
+            sandbox.config.configDir,
+            "workspace-agents",
+            String(assignment.derivedAgentId),
+          ),
         ),
       ).toBe(true);
       const derivedWorkspace = path.join(
@@ -310,6 +315,7 @@ describe("tenant platform database foundation", () => {
       expect(fs.readFileSync(path.join(derivedWorkspace, "BOOTSTRAP.md"), "utf8")).toContain(
         "should stay inherited",
       );
+      expect(readConfigAgentIds(sandbox)).toContain(String(assignment.derivedAgentId));
 
       const agents = listAssignedAgentsForUser(
         db,
@@ -351,7 +357,8 @@ describe("tenant platform database foundation", () => {
       ]);
       expect(
         visualizations.every(
-          (item) => item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
+          (item) =>
+            item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
         ),
       ).toBe(true);
     } finally {
@@ -678,9 +685,9 @@ describe("tenant platform database foundation", () => {
         ask: "off",
         askFallback: "full",
       });
-      expect(
-        derivedBucket.allowlist.map((entry) => entry.pattern).toSorted(),
-      ).toEqual(["/usr/bin/cat", "/usr/bin/head", "=command:shared"].toSorted());
+      expect(derivedBucket.allowlist.map((entry) => entry.pattern).toSorted()).toEqual(
+        ["/usr/bin/cat", "/usr/bin/head", "=command:shared"].toSorted(),
+      );
     } finally {
       closeTenantPlatformDb(db);
     }
@@ -949,6 +956,12 @@ describe("tenant platform database foundation", () => {
       expect(fs.existsSync(memberARuntimeWorkspace)).toBe(true);
       expect(fs.existsSync(memberBWorkspace)).toBe(true);
       expect(fs.existsSync(memberBRuntimeWorkspace)).toBe(true);
+      expect(readConfigAgentIds(sandbox)).toEqual(
+        expect.arrayContaining([
+          String(assignmentA.derivedAgentId),
+          String(assignmentB.derivedAgentId),
+        ]),
+      );
 
       const result = revokePlatformTenantAgents(db, {
         tenantId: tenant.id,
@@ -966,6 +979,8 @@ describe("tenant platform database foundation", () => {
       });
       expect(result.tenantAgentIds).toEqual([tenantAgentId]);
       expect(result.affectedUserIds.toSorted()).toEqual([memberA.id, memberB.id].toSorted());
+      expect(readConfigAgentIds(sandbox)).not.toContain(String(assignmentA.derivedAgentId));
+      expect(readConfigAgentIds(sandbox)).not.toContain(String(assignmentB.derivedAgentId));
 
       const wallet = db
         .prepare(
@@ -1102,7 +1117,10 @@ describe("tenant platform database foundation", () => {
         verifyPassword("secret", String(getUserByUsername(db, "member-a")?.password_hash || "")),
       ).toBe(false);
       expect(
-        verifyPassword("new-secret", String(getUserByUsername(db, "member-a")?.password_hash || "")),
+        verifyPassword(
+          "new-secret",
+          String(getUserByUsername(db, "member-a")?.password_hash || ""),
+        ),
       ).toBe(true);
 
       const enabled = updateTenantMemberStatus(db, {
@@ -1190,12 +1208,10 @@ describe("tenant platform database foundation", () => {
         "workspace-agents",
         derivedAgentId,
       );
-      const runtimeWorkspace = path.join(
-        sandbox.config.configDir,
-        `workspace-${derivedAgentId}`,
-      );
+      const runtimeWorkspace = path.join(sandbox.config.configDir, `workspace-${derivedAgentId}`);
       expect(fs.existsSync(canonicalWorkspace)).toBe(true);
       expect(fs.existsSync(runtimeWorkspace)).toBe(true);
+      expect(readConfigAgentIds(sandbox)).toContain(derivedAgentId);
 
       const deleted = deleteTenantMember(db, {
         tenantId: tenant.id,
@@ -1211,6 +1227,7 @@ describe("tenant platform database foundation", () => {
         preservedUsageCount: 1,
         removedWorkspaceCount: 1,
       });
+      expect(readConfigAgentIds(sandbox)).not.toContain(derivedAgentId);
       expect(listTenantMembers(db, tenant.id)).toEqual([]);
       expect(getUserByUsername(db, "member-delete")).toBeNull();
       expect(
@@ -2400,7 +2417,9 @@ describe("tenant platform database foundation", () => {
         status: "pending_payment",
         channel: "allinpay_h5_auto",
       });
-      expect(getTenantOverview(db, { tenantId: tenant.id }).summary.pendingPaymentOrderCount).toBe(1);
+      expect(getTenantOverview(db, { tenantId: tenant.id }).summary.pendingPaymentOrderCount).toBe(
+        1,
+      );
 
       const processing = updateTenantPaymentOrderStatus(db, {
         tenantId: tenant.id,
@@ -2424,9 +2443,9 @@ describe("tenant platform database foundation", () => {
       expect(confirmed.credited).toBe(true);
       expect(confirmed.alreadyPaid).toBe(false);
       expect(confirmed.walletBalance).toBeCloseTo(88.5, 8);
-      expect(getTenantPaymentOrderById(db, { tenantId: tenant.id, orderId: created.id })?.status).toBe(
-        "paid",
-      );
+      expect(
+        getTenantPaymentOrderById(db, { tenantId: tenant.id, orderId: created.id })?.status,
+      ).toBe("paid");
 
       const secondConfirm = confirmTenantPaymentOrderPaid(db, {
         tenantId: tenant.id,
@@ -2562,8 +2581,12 @@ describe("tenant platform database foundation", () => {
 
     expect(config.orderUrl).toBe("https://syb.allinpay.com/apiweb/h5unionpay/unionorder");
     expect(config.queryUrl).toBe("https://vsp.allinpay.com/apiweb/tranx/query");
-    expect(config.returnUrl).toBe("https://example.com/tenant-platform-api/v1/public/payment/allinpay/return");
-    expect(config.notifyUrl).toBe("https://example.com/tenant-platform-api/v1/public/payment/allinpay/notify");
+    expect(config.returnUrl).toBe(
+      "https://example.com/tenant-platform-api/v1/public/payment/allinpay/return",
+    );
+    expect(config.notifyUrl).toBe(
+      "https://example.com/tenant-platform-api/v1/public/payment/allinpay/notify",
+    );
 
     const descriptor = buildAllinpayLaunchDescriptor(
       {
@@ -2573,7 +2596,7 @@ describe("tenant platform database foundation", () => {
       config,
     );
     expect(descriptor.fields.signtype).toBe("RSA");
-      expect("sign_type" in descriptor.fields).toBe(false);
+    expect("sign_type" in descriptor.fields).toBe(false);
   });
 
   it("transfers wallet points to tenant agents and records budget ledger", () => {
@@ -2634,7 +2657,11 @@ describe("tenant platform database foundation", () => {
         amountPoints: 35.25,
       });
 
-      const tenantAgents = listTenantAgents(db, tenant.id, readOpenClawAgentCatalog(sandbox.config.configPath));
+      const tenantAgents = listTenantAgents(
+        db,
+        tenant.id,
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
       expect(tenantAgents[0]?.balancePoints).toBeCloseTo(35.25, 8);
 
       const dashboard = getTenantWalletDashboard(

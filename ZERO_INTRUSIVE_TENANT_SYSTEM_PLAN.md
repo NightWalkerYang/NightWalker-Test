@@ -28,15 +28,16 @@
    - 浏览器侧租户 runtime 默认只允许走同源 `/tenant-platform-api/v1`；不能再因为页面端口是 `18789` 就优先猜测 `http://<host>:18801/tenant-platform-api/v1`、`127.0.0.1:18801`、`localhost:18801` 这类跨端口地址。实测在 `172.30.31.203` 这类 cloud bundle 部署下，这些候选会先被 Control UI 的 `connect-src 'self' ws: wss:` CSP 拦截，造成成员页首屏卡顿甚至“页面进不去”的假死现象。
    - 如果旧版本浏览器本地状态里已经持久化过 `openclaw:tenant-platform:api-base:v1=http://<host>:18801/tenant-platform-api/v1` 这类跨端口覆盖值，新的零侵入 runtime 也必须在读取时自动清除该脏值，避免用户必须手工清 localStorage 或强制清缓存后才能恢复。
    - 如果旧版本浏览器本地状态里还持久化了 `openclaw.control.settings.v1:*` 下的 `sessionKey/lastActiveSessionKey`，但当前成员已经回到 `/?ocTenantView=tenant-agent-selector` 或聊天地址缺少 `tenantAgentId`，新的零侵入 runtime 也必须自动清掉这类原生 Control UI 会话恢复值，避免成员退出后切到管理员、再切回成员时，在 `/chat?...session=...` 与 `/?ocTenantView=tenant-agent-selector` 之间循环跳转。
-  - 成员路由预处理不能只依赖后续 `pushState/replaceState` 的修正；如果浏览器首屏就直接落到 `/chat?ocTenantView=tenant-agent-selector` 或 `/chat?ocTenantView=tenant-agent-selector&session=...` 这类坏地址，preboot 阶段也必须立即把地址归一化回 `/?ocTenantView=tenant-agent-selector`，否则原生聊天壳会先按 `/chat` 启动，最终表现为“白屏聊天页”。
-  - 统一登录视图的零侵入认证壳不能再依赖内部同源跳转触发整页刷新来完成挂载/卸载。当前实际可运行方案已经改成：平台守卫、角色回首页、退出登录等内部控制台跳转统一走同页 `navigateTenantRoute(...)`，同时 `auth-surface` 自己订阅租户路由变化，在离开 `?ocTenantView=login` 时立即卸载登录壳、进入登录视图时立即挂载。这样才能同时避免登录后 selector/login 的整页重复请求，并保证成员聊天“新建会话 -> 欢迎页”这类依赖本页状态的链路不被整页 reload 打断。
-  - 成员聊天页里所有“新建会话”入口都必须统一走零侵入成员会话创建逻辑，直接生成新的 `createTenantMemberSessionKey(...)`；不能放任原生聊天工具栏右上角的 `New session (+)` 继续走原生 `/new`。实际代码和测试表明，Web Chat 这条原生 `/new` 路径并不等价于“切到新的租户成员会话”，它仍可能复用当前 `sessionKey` 或当前上下文链，用户表面上看像是开了新会话，实际却会把旧会话上下文带过去，最终表现为跨会话串台。
-  - 成员派生工作区仍必须完整继承母 Agent 的 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / hooks / skills` 等文件树，不能靠删文件来规避串台；真正的修复点是运行时只对“租户成员普通聊天会话”的 `agent:bootstrap` 注入过滤掉 `BOOTSTRAP.md`。
-  - 这里的运行时过滤不能只把 hook 放进成员派生工作区。实际源码调用链表明，gateway 进程只会在启动时按默认工作区和受管 hooks 目录做一次全局 hook 装载；因此真实可运行方案必须由零侵入部署层额外把 `tenant-member-bootstrap-filter` 同步到 `OPENCLAW_CONFIG_DIR/hooks/tenant-member-bootstrap-filter`，确保 gateway 常驻进程能发现并注册该 hook，而派生工作区里的 `hooks/` 继承继续只承担“母子 Agent 文件一致性”的职责。
-  - 成员聊天零侵入层原先还带有一个“发送后固定 75 秒绝对超时”的前端 failsafe。实测当成员让 AI 连续写入 Echarts HTML、落地文件并伴随多次工具调用时，这个绝对超时会在后端任务仍在继续时提前把前端流状态清空，表现为页面看起来“卡死”，用户刷新后再发“继续”才会接着做。实际可运行方案已经调整为“更长的空闲超时 + 进展续期”：只要文本流、消息列表或工具流仍在推进，就持续续期；只有长时间完全没有进展时才判定为超时失败。
-  - 当前真实实现里，进展判定不能只看“新增了一条 tool 卡片”这类计数变化；因为原生 Control UI 的 tool stream 会按同一个 `toolCallId` 复用并持续覆写已有卡片内容。现在零侵入成员聊天层已经把“最后一个 tool 卡片的输出/状态变化”也纳入进展签名，避免 AI 长时间在同一条 `write_file` / `exec` / `fetch` 工具卡片里持续刷进度时，被前端误判成“生成途中卡死”。
-   - 同一条部署路径还必须同步 `gateway.controlUi.allowedOrigins`，至少覆盖 proxy-facing 的 `http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}` 与 `http://localhost:${OPENCLAW_GATEWAY_PORT}`，并明确关闭 `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback`；原因是前置代理会让 Host-header fallback 在端口处理上变得脆弱，显式 Origin allowlist 才是稳定路径。
-   - 本地 Docker 的 proxy-fronted 部署还必须在配置层同步 `gateway.controlUi.dangerouslyDisableDeviceAuth=true`；因为浏览器现在是经由前置代理进入 gateway，本地 loopback 自动配对不再稳定命中，否则用户会先卡在原生 `pairing required` 页面。这个 break-glass 开关不再只绑定 `local edition`，而是绑定“本地前置代理部署”本身。
+
+- 成员路由预处理不能只依赖后续 `pushState/replaceState` 的修正；如果浏览器首屏就直接落到 `/chat?ocTenantView=tenant-agent-selector` 或 `/chat?ocTenantView=tenant-agent-selector&session=...` 这类坏地址，preboot 阶段也必须立即把地址归一化回 `/?ocTenantView=tenant-agent-selector`，否则原生聊天壳会先按 `/chat` 启动，最终表现为“白屏聊天页”。
+- 统一登录视图的零侵入认证壳不能再依赖内部同源跳转触发整页刷新来完成挂载/卸载。当前实际可运行方案已经改成：平台守卫、角色回首页、退出登录等内部控制台跳转统一走同页 `navigateTenantRoute(...)`，同时 `auth-surface` 自己订阅租户路由变化，在离开 `?ocTenantView=login` 时立即卸载登录壳、进入登录视图时立即挂载。这样才能同时避免登录后 selector/login 的整页重复请求，并保证成员聊天“新建会话 -> 欢迎页”这类依赖本页状态的链路不被整页 reload 打断。
+- 成员聊天页里所有“新建会话”入口都必须统一走零侵入成员会话创建逻辑，直接生成新的 `createTenantMemberSessionKey(...)`；不能放任原生聊天工具栏右上角的 `New session (+)` 继续走原生 `/new`。实际代码和测试表明，Web Chat 这条原生 `/new` 路径并不等价于“切到新的租户成员会话”，它仍可能复用当前 `sessionKey` 或当前上下文链，用户表面上看像是开了新会话，实际却会把旧会话上下文带过去，最终表现为跨会话串台。
+- 成员派生工作区仍必须完整继承母 Agent 的 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / hooks / skills` 等文件树，不能靠删文件来规避串台；真正的修复点是运行时只对“租户成员普通聊天会话”的 `agent:bootstrap` 注入过滤掉 `BOOTSTRAP.md`。
+- 这里的运行时过滤不能只把 hook 放进成员派生工作区。实际源码调用链表明，gateway 进程只会在启动时按默认工作区和受管 hooks 目录做一次全局 hook 装载；因此真实可运行方案必须由零侵入部署层额外把 `tenant-member-bootstrap-filter` 同步到 `OPENCLAW_CONFIG_DIR/hooks/tenant-member-bootstrap-filter`，确保 gateway 常驻进程能发现并注册该 hook，而派生工作区里的 `hooks/` 继承继续只承担“母子 Agent 文件一致性”的职责。
+- 成员聊天零侵入层原先还带有一个“发送后固定 75 秒绝对超时”的前端 failsafe。实测当成员让 AI 连续写入 Echarts HTML、落地文件并伴随多次工具调用时，这个绝对超时会在后端任务仍在继续时提前把前端流状态清空，表现为页面看起来“卡死”，用户刷新后再发“继续”才会接着做。实际可运行方案已经调整为“更长的空闲超时 + 进展续期”：只要文本流、消息列表或工具流仍在推进，就持续续期；只有长时间完全没有进展时才判定为超时失败。
+- 当前真实实现里，进展判定不能只看“新增了一条 tool 卡片”这类计数变化；因为原生 Control UI 的 tool stream 会按同一个 `toolCallId` 复用并持续覆写已有卡片内容。现在零侵入成员聊天层已经把“最后一个 tool 卡片的输出/状态变化”也纳入进展签名，避免 AI 长时间在同一条 `write_file` / `exec` / `fetch` 工具卡片里持续刷进度时，被前端误判成“生成途中卡死”。
+- 同一条部署路径还必须同步 `gateway.controlUi.allowedOrigins`，至少覆盖 proxy-facing 的 `http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}` 与 `http://localhost:${OPENCLAW_GATEWAY_PORT}`，并明确关闭 `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback`；原因是前置代理会让 Host-header fallback 在端口处理上变得脆弱，显式 Origin allowlist 才是稳定路径。
+- 本地 Docker 的 proxy-fronted 部署还必须在配置层同步 `gateway.controlUi.dangerouslyDisableDeviceAuth=true`；因为浏览器现在是经由前置代理进入 gateway，本地 loopback 自动配对不再稳定命中，否则用户会先卡在原生 `pairing required` 页面。这个 break-glass 开关不再只绑定 `local edition`，而是绑定“本地前置代理部署”本身。
 
 5. 服务器连接信息和密码不写入仓库文档。
    - 真实连接信息由运营侧单独保管。
@@ -1510,23 +1511,23 @@ sidecar 落点固定为：
 
 8. 公有云模式支付与扣费已落地
    - 账号密码登录
-    - 最终统一按 `CNY` 结算并按 `1 积分 = 1 人民币` 扣积分；命中本地静态单价的模型优先按 token 本地计费，未命中时再复用源系统 `cost.total`
-    - 租户管理员原生侧边栏已新增 `钱包 -> 钱包充值 / 充值订单 / 模型耗用 / 钱包流水`
-    - `模型耗用` 页面当前只展示 `usage_charge` 模型扣费记录，`钱包流水` 页面当前只展示充值入账、Agent 划转扣减和 Agent 撤回回退，并统一补上搜索框与分页
-    - `划转到 Agent` 当前已从钱包页移到 `Agent -> 已有Agent` 卡片按钮，并统一更名为 `划转积分`
-    - `划转积分` 当前改为点击卡片按钮后弹出弹窗办理，不再在卡片内直接展开输入表单
-    - `已有Agent` 卡片当前不再直接展示 `计费倍率`
-    - 顶栏当前已按 `积分余额 / 当前角色 / 当前登录 / 退出登录` 的顺序展示租户管理员状态
-    - `统计总览` 当前只保留消耗与活跃度概览卡片，不再展示 `钱包余额` 卡片或 `立即充值` 入口；钱包相关操作统一留在 `钱包` 分组内处理
-    - 当前在线支付实际接法为通联 `4.1 H5收银台`
-    - 当前闭环为：
-      - 创建充值订单
-      - 钱包页直接展示可扫码二维码
-     - 手机扫码后打开同源跳转页并自动提交到通联收银台
-     - 通联异步回调自动确认
-     - 钱包页手动查询订单状态补确认
-     - 支付成功后钱包入账
-     - 租户管理员把钱包积分划转到 Agent
+   - 最终统一按 `CNY` 结算并按 `1 积分 = 1 人民币` 扣积分；命中本地静态单价的模型优先按 token 本地计费，未命中时再复用源系统 `cost.total`
+   - 租户管理员原生侧边栏已新增 `钱包 -> 钱包充值 / 充值订单 / 模型耗用 / 钱包流水`
+   - `模型耗用` 页面当前只展示 `usage_charge` 模型扣费记录，`钱包流水` 页面当前只展示充值入账、Agent 划转扣减和 Agent 撤回回退，并统一补上搜索框与分页
+   - `划转到 Agent` 当前已从钱包页移到 `Agent -> 已有Agent` 卡片按钮，并统一更名为 `划转积分`
+   - `划转积分` 当前改为点击卡片按钮后弹出弹窗办理，不再在卡片内直接展开输入表单
+   - `已有Agent` 卡片当前不再直接展示 `计费倍率`
+   - 顶栏当前已按 `积分余额 / 当前角色 / 当前登录 / 退出登录` 的顺序展示租户管理员状态
+   - `统计总览` 当前只保留消耗与活跃度概览卡片，不再展示 `钱包余额` 卡片或 `立即充值` 入口；钱包相关操作统一留在 `钱包` 分组内处理
+   - 当前在线支付实际接法为通联 `4.1 H5收银台`
+   - 当前闭环为：
+     - 创建充值订单
+     - 钱包页直接展示可扫码二维码
+   - 手机扫码后打开同源跳转页并自动提交到通联收银台
+   - 通联异步回调自动确认
+   - 钱包页手动查询订单状态补确认
+   - 支付成功后钱包入账
+   - 租户管理员把钱包积分划转到 Agent
    - 部署侧必须把 `OPENCLAW_TENANT_PLATFORM_PUBLIC_BASE_URL` 与通联相关 `OPENCLAW_TENANT_PAYMENT_ALLINPAY_*` 变量显式透传到 `openclaw-tenant-platform` 容器；公网支付场景要求这里使用真实可访问的 `https://...` 地址，不能只停留在宿主机 `.env`
    - 通联协议细节按官方文档落地：H5 下单默认生产地址为 `https://syb.allinpay.com/apiweb/h5unionpay/unionorder`，交易查询默认地址为 `https://vsp.allinpay.com/apiweb/tranx/query`，签名字段名使用 `signtype`
    - 通联同步回跳页不能带查询参数，所以当前零侵入实现改为 sidecar 公共返回页 `/tenant-platform-api/v1/public/payment/allinpay/return`，再由该页跳回 `/?ocTenantView=tenant-wallet`
@@ -1725,33 +1726,34 @@ sidecar 落点固定为：
      - `耗量统计`
      - 版本信息
    - 耗量统计页当前以零侵入 usage 同步记录为主数据源：租户成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage，必要时回退 `chat.history`，并幂等写入 `tenant_usage_records`
-  - 当前真实计费链路已改为本地静态单价优先并统一按 `CNY` 结算：命中本地静态单价的 provider/model 会直接按 usage token 计算 `tenant_usage_records.total_cost`；若 usage 明细缺少 per-record `cost.total`，sidecar 会再读取同一会话 `sessions.json` 中的 `estimatedCostUsd`，先按本地汇率折算到 `CNY`，再按各条记录 `total_tokens` 占比分摊；如果 session 级估算也不可用，则继续按 token 与本地静态单价或 runtime 模型价格估算后写回 `tenant_usage_records.total_cost` 与 `tenant_wallet_ledger`
-   - 当前已接通服务端分页记录视图，可查看成员、Agent、总 token、输入、输出、耗用积分与时间；更细的聚合报表保留给 sidecar 数据层
-   - 租户管理员底部入口已进一步收紧为仅保留版本块，不再显示文档、知识图谱、租户登录等平台入口
-   - 租户管理员原生壳层当前会额外挂一个角色上下文标记，并用全局注入样式强制隐藏所有非 `管理` / `Agent` / `统计` 的原生侧边导航分组（依赖 `data-oc-role-nav` 白名单），避免原生控制台延迟重渲染后又把平台菜单露出来
-   - 原生顶栏搜索位已被租户管理员状态条接管，全局显示：
-   - 当前角色
-   - 当前登录
-   - 退出登录
-   - 租户成员创建
-   - 租户管理员给成员分配已下发到本租户的 Agent
-   - 租户管理员撤回成员已接收的 Agent 分配
-     - 实际运行方案要求与成员删除保持同一清理语义：撤回时除了把 `user_agent_assignments.status` 置为失效，还要同步清理该 assignment 对应的派生工作区 `workspace-agents/<derivedAgentId>`、运行时别名 `workspace-<derivedAgentId>`，并清掉 `exec-approvals.json` 里的派生授权桶；否则成员再次分配前会长期残留无主 workspace
-   - 租户管理员原生壳层已补齐 `已有Agent` 视图：
-     - 通过侧边栏 `Agent -> 已有Agent` 进入
-     - 页面以卡片展示当前租户已拥有的 Agent
-     - 每张卡片提供 `详情` 按钮
-     - 点击后弹出页面内详情弹窗，展示 Agent 关键信息
-   - 租户管理员原生壳层已补齐 `耗量统计` 视图：
-     - 默认按搜索空串展示分页明细列表
-     - 支持搜索成员、Agent 或模型
-     - 支持服务端分页查看成员、Agent、总 token、输入、输出、耗用积分与时间
-   - 列表页底部提示已统一改成自动消失的浮窗，租户管理员、平台管理员和成员 Agent 选择页的成功/错误反馈都走同一套 toast
-   - 租户 sidecar 已新增成员聊天耗量明细落库：
-     - 成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage；旧环境或异常情况下回退 `chat.history`，并兼容 `input_tokens` / `output_tokens` / `prompt_tokens` / `completion_tokens` 等常见命名
-     - sidecar 会按 `session + message fingerprint` 幂等写入，避免重复统计
-   - 当平台管理员会话与租户管理员会话同时存在时，租户管理员视图优先使用租户会话，不再被平台管理员侧边栏覆盖
-   - 原生壳层即使延迟重渲染，租户入口仍会重新接管顶栏与侧边栏角色裁剪
+
+- 当前真实计费链路已改为本地静态单价优先并统一按 `CNY` 结算：命中本地静态单价的 provider/model 会直接按 usage token 计算 `tenant_usage_records.total_cost`；若 usage 明细缺少 per-record `cost.total`，sidecar 会再读取同一会话 `sessions.json` 中的 `estimatedCostUsd`，先按本地汇率折算到 `CNY`，再按各条记录 `total_tokens` 占比分摊；如果 session 级估算也不可用，则继续按 token 与本地静态单价或 runtime 模型价格估算后写回 `tenant_usage_records.total_cost` 与 `tenant_wallet_ledger`
+- 当前已接通服务端分页记录视图，可查看成员、Agent、总 token、输入、输出、耗用积分与时间；更细的聚合报表保留给 sidecar 数据层
+- 租户管理员底部入口已进一步收紧为仅保留版本块，不再显示文档、知识图谱、租户登录等平台入口
+- 租户管理员原生壳层当前会额外挂一个角色上下文标记，并用全局注入样式强制隐藏所有非 `管理` / `Agent` / `统计` 的原生侧边导航分组（依赖 `data-oc-role-nav` 白名单），避免原生控制台延迟重渲染后又把平台菜单露出来
+- 原生顶栏搜索位已被租户管理员状态条接管，全局显示：
+- 当前角色
+- 当前登录
+- 退出登录
+- 租户成员创建
+- 租户管理员给成员分配已下发到本租户的 Agent
+- 租户管理员撤回成员已接收的 Agent 分配
+  - 实际运行方案要求与成员删除保持同一清理语义：撤回时除了把 `user_agent_assignments.status` 置为失效，还要同步清理该 assignment 对应的派生工作区 `workspace-agents/<derivedAgentId>`、运行时别名 `workspace-<derivedAgentId>`，并清掉 `exec-approvals.json` 里的派生授权桶；否则成员再次分配前会长期残留无主 workspace
+- 租户管理员原生壳层已补齐 `已有Agent` 视图：
+  - 通过侧边栏 `Agent -> 已有Agent` 进入
+  - 页面以卡片展示当前租户已拥有的 Agent
+  - 每张卡片提供 `详情` 按钮
+  - 点击后弹出页面内详情弹窗，展示 Agent 关键信息
+- 租户管理员原生壳层已补齐 `耗量统计` 视图：
+  - 默认按搜索空串展示分页明细列表
+  - 支持搜索成员、Agent 或模型
+  - 支持服务端分页查看成员、Agent、总 token、输入、输出、耗用积分与时间
+- 列表页底部提示已统一改成自动消失的浮窗，租户管理员、平台管理员和成员 Agent 选择页的成功/错误反馈都走同一套 toast
+- 租户 sidecar 已新增成员聊天耗量明细落库：
+  - 成员聊天页会优先从 `sessions.usage.timeseries` 提取 assistant usage；旧环境或异常情况下回退 `chat.history`，并兼容 `input_tokens` / `output_tokens` / `prompt_tokens` / `completion_tokens` 等常见命名
+  - sidecar 会按 `session + message fingerprint` 幂等写入，避免重复统计
+- 当平台管理员会话与租户管理员会话同时存在时，租户管理员视图优先使用租户会话，不再被平台管理员侧边栏覆盖
+- 原生壳层即使延迟重渲染，租户入口仍会重新接管顶栏与侧边栏角色裁剪
 
 8. 租户成员基础能力已落地
    - 租户成员已切换为原生控制台内容区视图，不再依赖独立 `tenant-agent-selector.html / tenant-chat.html`
@@ -1823,7 +1825,7 @@ sidecar 落点固定为：
     - 授权失效/到期时的登录与只读写拦截
     - 本地版页面移除积分/倍率主语义
 
-11.1 当前真实边界
+  11.1 当前真实边界
 
 - `control-plane -> managed-node` 现在同步的是“租户控制面快照”，不是整机镜像复制
   - 控制面下发：
@@ -1919,6 +1921,13 @@ sidecar 落点固定为：
 - sidecar 会为派生 `agentId` 初始化独立工作区：
   - 目标目录：`workspace-agents/<derived-agent-id>`
   - 运行时别名：`workspace-<derived-agent-id>`
+- 当前实际可运行方案还会把这个派生 `agentId` 同步注册成 runtime config 里的真实 agent entry：
+  - 入口仍来自被分配的基础 Agent
+  - 但 entry 的 `id` 会替换成派生 `agentId`
+  - `workspace` 会指向 `workspace-agents/<derived-agent-id>`
+  - `agentDir` 会落到 `agents/<derived-agent-id>/agent`
+  - 这样 gateway/core 在解析成员聊天 `sessionKey` 时，才能把 `agent:<derived-agent-id>:...` 正确绑定回派生工作区，而不会报 `no longer exists in configuration`
+  - 成员撤销、成员删除、以及 managed-node 同步撤销时，也会同步把对应派生 entry 从 runtime config 清走，避免 runtime config 残留无主派生 Agent
 - 工作区初始化采用“部分模板继承”：
   - 从被分配的基础 Agent 工作区复制 `AGENTS.md / SOUL.md / IDENTITY.md / USER.md / TOOLS.md / HEARTBEAT.md / BOOTSTRAP.md / MEMORY.md / memory.md / memory/ / skills/ / hooks/`
   - 只复制这批白名单内容，不继承旧会话、日志或其他运行时产物
