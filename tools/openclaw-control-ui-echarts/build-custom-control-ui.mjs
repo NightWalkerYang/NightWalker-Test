@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
 import { injectAutoGatewayTokenBootstrap } from "./runtime/branding/auto-token.js";
+import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
 import { injectEchartsViewPublicBootstrap } from "./runtime/echarts-view/bootstrap.js";
 import { injectLufengPublicBootstrap } from "./runtime/lufeng/bootstrap.js";
 
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
 const TENANT_PREBOOT_PATTERN = /^\s*<script[^>]*data-openclaw-tenant-preboot[^>]*><\/script>\s*$/gm;
+const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -19,10 +21,7 @@ const repoRoot = path.resolve(here, "../..");
 const DEFAULT_SOURCE_DIR = path.join(repoRoot, "dist", "control-ui");
 const DEFAULT_OUTPUT_DIR = path.join(here, "generated", "control-ui");
 const ENV_FILE_PATH = path.join(repoRoot, ".env");
-const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(
-  here,
-  "openclaw-echarts-renderer.js",
-);
+const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(here, "openclaw-echarts-renderer.js");
 const CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE = path.join(here, "runtime");
 const CONTROL_UI_STATIC_DIR_SOURCE = path.join(here, "static");
 const CONTROL_UI_VENDOR_DIR_SOURCE = path.join(here, "vendor");
@@ -99,9 +98,7 @@ function resolveConfigDir() {
   if (!configured) {
     return path.join(os.homedir(), ".openclaw");
   }
-  return path.isAbsolute(configured)
-    ? configured
-    : path.resolve(repoRoot, configured);
+  return path.isAbsolute(configured) ? configured : path.resolve(repoRoot, configured);
 }
 
 function readGatewayTokenFromConfig() {
@@ -150,18 +147,6 @@ function resetDirectoryContents(outputDir) {
   }
 }
 
-function injectRuntimeScript(indexHtml) {
-  const scriptTag =
-    '    <script type="module" src="./assets/openclaw-echarts-renderer.js"></script>\n';
-  if (indexHtml.includes("openclaw-echarts-renderer.js")) {
-    return indexHtml;
-  }
-  if (!indexHtml.includes("</body>")) {
-    throw new Error("index.html is missing </body>; cannot inject the ECharts runtime.");
-  }
-  return indexHtml.replace("  </body>", `${scriptTag}  </body>`);
-}
-
 function injectBeforeMainBundle(indexHtml, nextTag, cleanupPattern, label) {
   const cleaned = cleanupPattern ? indexHtml.replace(cleanupPattern, "") : indexHtml;
   if (!nextTag) {
@@ -176,9 +161,20 @@ function injectBeforeMainBundle(indexHtml, nextTag, cleanupPattern, label) {
   return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
 }
 
-function injectTenantPreboot(indexHtml) {
-  const scriptTag =
-    '    <script src="./assets/runtime/tenant/preboot.js" data-openclaw-tenant-preboot></script>';
+function resolveRuntimeScriptSrc(runtimeAssetBasePath, relativePath) {
+  const basePath = String(runtimeAssetBasePath ?? "").trim();
+  const normalizedBasePath = basePath || DEFAULT_RUNTIME_ASSET_BASE_PATH;
+  const baseWithSlash = normalizedBasePath.endsWith("/")
+    ? normalizedBasePath
+    : `${normalizedBasePath}/`;
+  return `${baseWithSlash}${relativePath}`;
+}
+
+function injectTenantPreboot(indexHtml, options = {}) {
+  const scriptTag = `    <script src="${resolveRuntimeScriptSrc(
+    options.runtimeAssetBasePath,
+    "tenant/preboot.js",
+  )}" data-openclaw-tenant-preboot></script>`;
   return injectBeforeMainBundle(indexHtml, scriptTag, TENANT_PREBOOT_PATTERN, "tenant preboot");
 }
 
@@ -238,21 +234,69 @@ function buildLoginEntryHtml(indexHtml) {
   return indexHtml.replace("</head>", '    <base href="/" />\n  </head>');
 }
 
-function buildEchartsViewEntryHtml() {
-  return [
-    "<!doctype html>",
-    '<html lang="zh-CN">',
-    "  <head>",
-    '    <meta charset="utf-8" />',
-    '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
-    "    <title>可视化展示</title>",
-    "  </head>",
-    "  <body>",
-    '    <script type="module" src="/assets/openclaw-echarts-renderer.js"></script>',
-    "  </body>",
-    "</html>",
-    "",
-  ].join("\n");
+function normalizePosixPath(value) {
+  return value.replace(/\\/g, "/");
+}
+
+function collectFilesRecursively(rootDir) {
+  const files = [];
+  const walk = (currentDir) => {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      const relativePath = normalizePosixPath(path.relative(rootDir, fullPath));
+      files.push({ fullPath, relativePath });
+    }
+  };
+  walk(rootDir);
+  return files;
+}
+
+function computeRuntimeAssetFingerprint() {
+  const hash = crypto.createHash("sha256");
+  hash.update(fs.readFileSync(CONTROL_UI_RUNTIME_SCRIPT_SOURCE));
+
+  const directories = [CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE, CONTROL_UI_VENDOR_DIR_SOURCE];
+  for (const directory of directories) {
+    const files = collectFilesRecursively(directory);
+    for (const file of files) {
+      hash.update(`\nfile:${file.relativePath}\n`);
+      hash.update(fs.readFileSync(file.fullPath));
+    }
+  }
+  return hash.digest("hex").slice(0, 16);
+}
+
+function buildFingerprintAssetPaths(runtimeFingerprint) {
+  const runtimeAssetBaseRelativePath = `./assets/openclaw-echarts/${runtimeFingerprint}/runtime`;
+  const rendererAssetRelativePath = `./assets/openclaw-echarts/${runtimeFingerprint}/openclaw-echarts-renderer.js`;
+  const rendererAssetAbsolutePath = `/assets/openclaw-echarts/${runtimeFingerprint}/openclaw-echarts-renderer.js`;
+  return {
+    runtimeFingerprint,
+    runtimeAssetBaseRelativePath,
+    rendererAssetRelativePath,
+    rendererAssetAbsolutePath,
+    fingerprintAssetDirectoryPath: path.join("assets", "openclaw-echarts", runtimeFingerprint),
+  };
+}
+
+function injectRuntimeScriptWithSrc(indexHtml, runtimeScriptSrc) {
+  const scriptTag = `    <script type="module" src="${runtimeScriptSrc}"></script>\n`;
+  const scriptPattern =
+    /^\s*<script\s+type="module"\s+src="[^"]*openclaw-echarts-renderer\.js[^"]*"><\/script>\s*$/m;
+  const cleaned = scriptPattern.test(indexHtml) ? indexHtml.replace(scriptPattern, "") : indexHtml;
+  if (!cleaned.includes("</body>")) {
+    throw new Error("index.html is missing </body>; cannot inject the ECharts runtime.");
+  }
+  return cleaned.replace("  </body>", `${scriptTag}  </body>`);
 }
 
 function writeLoginRouteAliases(outputDir, indexContent) {
@@ -262,9 +306,29 @@ function writeLoginRouteAliases(outputDir, indexContent) {
   writeTextIntoOutput(indexContent, loginHtmlPath);
 }
 
-function writeEchartsViewRouteEntry(outputDir) {
+function buildEchartsViewEntryHtmlWithRendererSrc(rendererScriptSrc) {
+  return [
+    "<!doctype html>",
+    '<html lang="zh-CN">',
+    "  <head>",
+    '    <meta charset="utf-8" />',
+    '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
+    "    <title>可视化展示</title>",
+    "  </head>",
+    "  <body>",
+    `    <script type="module" src="${rendererScriptSrc}"></script>`,
+    "  </body>",
+    "</html>",
+    "",
+  ].join("\n");
+}
+
+function writeEchartsViewRouteEntry(outputDir, rendererScriptSrc) {
   const echartsViewIndexPath = path.join(outputDir, "echarts-view", "index.html");
-  writeTextIntoOutput(buildEchartsViewEntryHtml(), echartsViewIndexPath);
+  writeTextIntoOutput(
+    buildEchartsViewEntryHtmlWithRendererSrc(rendererScriptSrc),
+    echartsViewIndexPath,
+  );
 }
 
 function extractEmbeddedLibraries(bundleSource) {
@@ -311,36 +375,48 @@ function main() {
   const outputIndexPath = path.join(outputDir, "index.html");
   const outputIndex = fs.readFileSync(outputIndexPath, "utf8");
   const autoGatewayToken = resolveAutoGatewayToken();
-  const finalizedIndexHtml = injectRuntimeScript(
-    replaceBrandFavicons(
-      injectAutoGatewayTokenBootstrap(
-        injectLufengPublicBootstrap(
-          injectTenantPreboot(injectEchartsViewPublicBootstrap(outputIndex)),
-          autoGatewayToken,
+  const runtimeFingerprint = computeRuntimeAssetFingerprint();
+  const fingerprintPaths = buildFingerprintAssetPaths(runtimeFingerprint);
+  const finalizedIndexHtml = replaceBrandFavicons(
+    injectAutoGatewayTokenBootstrap(
+      injectLufengPublicBootstrap(
+        injectTenantPreboot(
+          injectEchartsViewPublicBootstrap(outputIndex, {
+            runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath,
+          }),
+          { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
         ),
         autoGatewayToken,
+        { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
       ),
+      autoGatewayToken,
+      { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
     ),
   );
-  fs.writeFileSync(outputIndexPath, finalizedIndexHtml, "utf8");
-  writeLoginRouteAliases(outputDir, buildLoginEntryHtml(finalizedIndexHtml));
-  writeEchartsViewRouteEntry(outputDir);
+  const indexWithFingerprintedRuntime = injectRuntimeScriptWithSrc(
+    finalizedIndexHtml,
+    fingerprintPaths.rendererAssetRelativePath,
+  );
+  fs.writeFileSync(outputIndexPath, indexWithFingerprintedRuntime, "utf8");
+  writeLoginRouteAliases(outputDir, buildLoginEntryHtml(indexWithFingerprintedRuntime));
+  writeEchartsViewRouteEntry(outputDir, fingerprintPaths.rendererAssetAbsolutePath);
 
   const embeddedLibraries = extractEmbeddedLibraries(
     fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),
   );
 
+  const fingerprintAssetRoot = path.join(outputDir, fingerprintPaths.fingerprintAssetDirectoryPath);
   copyFileIntoOutput(
     CONTROL_UI_RUNTIME_SCRIPT_SOURCE,
-    path.join(outputDir, "assets", "openclaw-echarts-renderer.js"),
+    path.join(fingerprintAssetRoot, "openclaw-echarts-renderer.js"),
   );
-  fs.cpSync(
-    CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE,
-    path.join(outputDir, "assets", "runtime"),
-    {
-      recursive: true,
-      force: true,
-    },
+  fs.cpSync(CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE, path.join(fingerprintAssetRoot, "runtime"), {
+    recursive: true,
+    force: true,
+  });
+  copyVendorDirectoryIntoOutput(
+    CONTROL_UI_VENDOR_DIR_SOURCE,
+    path.join(fingerprintAssetRoot, "vendor"),
   );
   copyVendorDirectoryIntoOutput(
     CONTROL_UI_VENDOR_DIR_SOURCE,

@@ -28,8 +28,9 @@ No browser plugin is required.
 - `tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs`
   - copies `dist/control-ui` into a separate custom UI root
   - injects the ECharts runtime script
-  - copies the modular runtime directory under `assets/runtime`
-  - writes `assets/vendor/echarts.min.js` and `assets/vendor/json5.min.js`
+  - writes the zero-intrusive runtime under a fingerprinted asset root `assets/openclaw-echarts/<fingerprint>/`
+  - injects `/echarts-view` / `tenant preboot` / `auto-token` / `lufeng` bootstraps to that same fingerprinted runtime root
+  - keeps `assets/vendor/echarts.min.js` / `assets/vendor/json5.min.js` and `assets/runtime/echarts/*.js` as compatibility fallbacks for older cached bundles
 - `tools/openclaw-control-ui-echarts/openclaw-echarts-renderer.js`
   - module entrypoint that boots the fenced-block runtime
 - `tools/openclaw-control-ui-echarts/runtime/framework/*`
@@ -116,6 +117,14 @@ node tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs --source dist
 Relative paths are resolved from the repo root.
 
 The builder extracts `echarts` and `json5` from the tracked offline bundle at `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`, then writes them into the generated Control UI as same-origin static assets.
+
+The zero-intrusive runtime asset paths are content-fingerprinted (derived from renderer + runtime + vendor contents), for example:
+
+- `assets/openclaw-echarts/<fingerprint>/openclaw-echarts-renderer.js`
+- `assets/openclaw-echarts/<fingerprint>/runtime/**`
+- `assets/openclaw-echarts/<fingerprint>/vendor/**`
+
+This avoids stale Service Worker cache-first hits on fixed `/assets/` paths after redeploys, while keeping legacy compatibility assets for older clients.
 
 This matters because the gateway serves the Control UI with a CSP that allows `script-src 'self'` but blocks inline scripts. The generated overlay therefore avoids inline vendor injection and stays compatible with the gateway CSP.
 

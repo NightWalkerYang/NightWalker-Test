@@ -11,7 +11,9 @@ import {
 
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
-const LUFENG_BOOTSTRAP_PATTERN = /^\s*<script[^>]*data-openclaw-lufeng-bootstrap[^>]*><\/script>\s*$/gm;
+const LUFENG_BOOTSTRAP_PATTERN =
+  /^\s*<script[^>]*data-openclaw-lufeng-bootstrap[^>]*><\/script>\s*$/gm;
+const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
 
 export function applyLufengPublicBootstrap(rawToken) {
   if (
@@ -36,10 +38,7 @@ export function applyLufengPublicBootstrap(rawToken) {
     if (storage) {
       const key = buildSettingsStorageKey(lufengScopeUrl);
       const existingRaw = storage.getItem(key);
-      const existing =
-        existingRaw && existingRaw.trim()
-          ? JSON.parse(existingRaw)
-          : {};
+      const existing = existingRaw && existingRaw.trim() ? JSON.parse(existingRaw) : {};
       const next = {
         ...existing,
         gatewayUrl: gatewayOrigin,
@@ -74,15 +73,13 @@ export function applyLufengPublicBootstrap(rawToken) {
     const originalReplaceState = window.history.replaceState.bind(window.history);
     const originalPushState = window.history.pushState.bind(window.history);
 
-    const wrap =
-      (original) =>
-      (state, unused, url) => {
-        if (url == null) {
-          return original(state, unused, url);
-        }
-        const normalized = normalizeLufengRouteUrl(url, window.location.href);
-        return original(state, unused, normalized.toString());
-      };
+    const wrap = (original) => (state, unused, url) => {
+      if (url == null) {
+        return original(state, unused, url);
+      }
+      const normalized = normalizeLufengRouteUrl(url, window.location.href);
+      return original(state, unused, normalized.toString());
+    };
 
     window.history.replaceState = wrap(originalReplaceState);
     window.history.pushState = wrap(originalPushState);
@@ -103,7 +100,7 @@ function escapeHtmlAttribute(value) {
     switch (char) {
       case "&":
         return "&amp;";
-      case "\"":
+      case '"':
         return "&quot;";
       case "<":
         return "&lt;";
@@ -133,10 +130,20 @@ function injectBeforeMainBundle(indexHtml, nextTag) {
   return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
 }
 
-export function buildLufengPublicBootstrapTag(rawToken) {
-  return `    <script src="./assets/runtime/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="${escapeHtmlAttribute(rawToken)}"></script>`;
+function resolveRuntimeScriptSrc(runtimeAssetBasePath, relativePath) {
+  const basePath = String(runtimeAssetBasePath ?? "").trim();
+  const normalizedBasePath = basePath || DEFAULT_RUNTIME_ASSET_BASE_PATH;
+  const baseWithSlash = normalizedBasePath.endsWith("/")
+    ? normalizedBasePath
+    : `${normalizedBasePath}/`;
+  return `${baseWithSlash}${relativePath}`;
 }
 
-export function injectLufengPublicBootstrap(indexHtml, rawToken) {
-  return injectBeforeMainBundle(indexHtml, buildLufengPublicBootstrapTag(rawToken));
+export function buildLufengPublicBootstrapTag(rawToken, options = {}) {
+  const scriptSrc = resolveRuntimeScriptSrc(options.runtimeAssetBasePath, "lufeng/preboot.js");
+  return `    <script src="${scriptSrc}" data-openclaw-lufeng-bootstrap data-gateway-token="${escapeHtmlAttribute(rawToken)}"></script>`;
+}
+
+export function injectLufengPublicBootstrap(indexHtml, rawToken, options = {}) {
+  return injectBeforeMainBundle(indexHtml, buildLufengPublicBootstrapTag(rawToken, options));
 }

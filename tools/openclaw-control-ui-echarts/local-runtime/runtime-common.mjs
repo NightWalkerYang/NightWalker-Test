@@ -9,19 +9,19 @@ const ECHARTS_VIEW_TOKEN_MARKER = "data-openclaw-echarts-view-bootstrap";
 const TENANT_MEMBER_BOOTSTRAP_HOOK_NAME = "tenant-member-bootstrap-filter";
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
-const AUTO_TOKEN_SRC = "./assets/runtime/branding/auto-token-preboot.js";
-const LUFENG_TOKEN_SRC = "./assets/runtime/lufeng/preboot.js";
-const ECHARTS_VIEW_SRC = "./assets/runtime/echarts-view/preboot.js";
+const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
 
 function normalizeLine(line) {
-  return String(line ?? "").replace(/^\uFEFF/, "").trim();
+  return String(line ?? "")
+    .replace(/^\uFEFF/, "")
+    .trim();
 }
 
 function unquoteEnvValue(value) {
   const normalized = String(value ?? "").trim();
   if (
     normalized.length >= 2 &&
-    ((normalized.startsWith("\"") && normalized.endsWith("\"")) ||
+    ((normalized.startsWith('"') && normalized.endsWith('"')) ||
       (normalized.startsWith("'") && normalized.endsWith("'")))
   ) {
     return normalized.slice(1, -1);
@@ -39,7 +39,7 @@ function escapeHtmlAttribute(value) {
     switch (char) {
       case "&":
         return "&amp;";
-      case "\"":
+      case '"':
         return "&quot;";
       case "<":
         return "&lt;";
@@ -67,11 +67,41 @@ function buildStaticBootstrapTag(marker, scriptSrc) {
   return `    <script type="module" src="${scriptSrc}" ${marker}></script>`;
 }
 
+function resolveRuntimeAssetBasePath(indexHtml) {
+  const html = String(indexHtml ?? "");
+  const patterns = [
+    /<script[^>]*\ssrc="([^"]+)"[^>]*\sdata-openclaw-echarts-view-bootstrap[^>]*><\/script>/i,
+    /<script[^>]*\ssrc="([^"]+)"[^>]*\sdata-openclaw-auto-token-bootstrap[^>]*><\/script>/i,
+    /<script[^>]*\ssrc="([^"]+)"[^>]*\sdata-openclaw-lufeng-bootstrap[^>]*><\/script>/i,
+    /<script[^>]*\sdata-openclaw-echarts-view-bootstrap[^>]*\ssrc="([^"]+)"[^>]*><\/script>/i,
+    /<script[^>]*\sdata-openclaw-auto-token-bootstrap[^>]*\ssrc="([^"]+)"[^>]*><\/script>/i,
+    /<script[^>]*\sdata-openclaw-lufeng-bootstrap[^>]*\ssrc="([^"]+)"[^>]*><\/script>/i,
+  ];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    const scriptSrc = String(match?.[1] || "").trim();
+    if (!scriptSrc) {
+      continue;
+    }
+    const runtimeSuffixes = [
+      "/echarts-view/preboot.js",
+      "/branding/auto-token-preboot.js",
+      "/lufeng/preboot.js",
+    ];
+    for (const suffix of runtimeSuffixes) {
+      if (scriptSrc.endsWith(suffix)) {
+        const basePath = scriptSrc.slice(0, -suffix.length);
+        if (basePath) {
+          return basePath;
+        }
+      }
+    }
+  }
+  return DEFAULT_RUNTIME_ASSET_BASE_PATH;
+}
+
 function replaceTaggedScript(indexHtml, marker, nextTag) {
-  const pattern = new RegExp(
-    `^\\s*<script[^>]*${marker}[^>]*><\\/script>\\s*$`,
-    "gm",
-  );
+  const pattern = new RegExp(`^\\s*<script[^>]*${marker}[^>]*><\\/script>\\s*$`, "gm");
   const cleaned = indexHtml.replace(pattern, "");
   if (!nextTag) {
     return cleaned;
@@ -140,17 +170,11 @@ export function resolveRuntimeEnv(rootDir, processEnv = process.env) {
     OPENCLAW_WORKSPACE_DIR: workspaceDir,
     OPENCLAW_GATEWAY_BIND: String(merged.OPENCLAW_GATEWAY_BIND || "loopback").trim(),
     OPENCLAW_GATEWAY_PORT: String(merged.OPENCLAW_GATEWAY_PORT || "18789").trim(),
-    OPENCLAW_GATEWAY_TOKEN: String(
-      merged.OPENCLAW_GATEWAY_TOKEN || DEFAULT_GATEWAY_TOKEN,
-    ).trim(),
+    OPENCLAW_GATEWAY_TOKEN: String(merged.OPENCLAW_GATEWAY_TOKEN || DEFAULT_GATEWAY_TOKEN).trim(),
     OPENCLAW_TENANT_PLATFORM_EDITION: "local",
     OPENCLAW_TENANT_PLATFORM_NODE_ROLE: "standalone-local",
-    OPENCLAW_TENANT_PLATFORM_BIND: String(
-      merged.OPENCLAW_TENANT_PLATFORM_BIND || "0.0.0.0",
-    ).trim(),
-    OPENCLAW_TENANT_PLATFORM_PORT: String(
-      merged.OPENCLAW_TENANT_PLATFORM_PORT || "18801",
-    ).trim(),
+    OPENCLAW_TENANT_PLATFORM_BIND: String(merged.OPENCLAW_TENANT_PLATFORM_BIND || "0.0.0.0").trim(),
+    OPENCLAW_TENANT_PLATFORM_PORT: String(merged.OPENCLAW_TENANT_PLATFORM_PORT || "18801").trim(),
     OPENCLAW_TENANT_PLATFORM_API_BASE: String(
       merged.OPENCLAW_TENANT_PLATFORM_API_BASE || "/tenant-platform-api/v1",
     ).trim(),
@@ -198,12 +222,26 @@ export function resolveRuntimeEnv(rootDir, processEnv = process.env) {
 }
 
 export function syncControlUiBootstrapScripts(indexHtml, gatewayToken) {
+  const runtimeAssetBasePath = resolveRuntimeAssetBasePath(indexHtml);
+  const normalizeBasePath = (basePath) => {
+    const normalized = String(basePath || "").trim() || DEFAULT_RUNTIME_ASSET_BASE_PATH;
+    return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+  };
+  const runtimeBasePath = normalizeBasePath(runtimeAssetBasePath);
   const nextEchartsTag = buildStaticBootstrapTag(
     ECHARTS_VIEW_TOKEN_MARKER,
-    ECHARTS_VIEW_SRC,
+    `${runtimeBasePath}/echarts-view/preboot.js`,
   );
-  const nextAutoTokenTag = buildBootstrapTag(AUTO_TOKEN_MARKER, AUTO_TOKEN_SRC, gatewayToken);
-  const nextLufengTag = buildBootstrapTag(LUFENG_TOKEN_MARKER, LUFENG_TOKEN_SRC, gatewayToken);
+  const nextAutoTokenTag = buildBootstrapTag(
+    AUTO_TOKEN_MARKER,
+    `${runtimeBasePath}/branding/auto-token-preboot.js`,
+    gatewayToken,
+  );
+  const nextLufengTag = buildBootstrapTag(
+    LUFENG_TOKEN_MARKER,
+    `${runtimeBasePath}/lufeng/preboot.js`,
+    gatewayToken,
+  );
   return replaceTaggedScript(
     replaceTaggedScript(
       replaceTaggedScript(indexHtml, ECHARTS_VIEW_TOKEN_MARKER, nextEchartsTag),
@@ -239,11 +277,7 @@ function ensureDirectoryLink(linkPath, targetPath) {
     // create fresh below
   }
   fs.mkdirSync(path.dirname(linkPath), { recursive: true });
-  fs.symlinkSync(
-    targetPath,
-    linkPath,
-    process.platform === "win32" ? "junction" : "dir",
-  );
+  fs.symlinkSync(targetPath, linkPath, process.platform === "win32" ? "junction" : "dir");
 }
 
 function syncManagedHook(runtime, rootDir) {

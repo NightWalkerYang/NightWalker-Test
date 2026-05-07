@@ -54,11 +54,16 @@ describe("lufeng public bootstrap", () => {
       "</html>",
     ].join("\n");
 
-    const firstPass = injectLufengPublicBootstrap(source, "token-123");
+    const runtimeAssetBasePath = "./assets/openclaw-echarts/fingerprint123/runtime";
+    const firstPass = injectLufengPublicBootstrap(source, "token-123", {
+      runtimeAssetBasePath,
+    });
     const secondPass = injectLufengPublicBootstrap(firstPass, "token-123");
 
     expect(firstPass).toContain("data-openclaw-lufeng-bootstrap");
-    expect(firstPass).toContain("./assets/runtime/lufeng/preboot.js");
+    expect(firstPass).toContain(
+      "./assets/openclaw-echarts/fingerprint123/runtime/lufeng/preboot.js",
+    );
     expect(firstPass).toContain('data-gateway-token="token-123"');
     expect(firstPass.indexOf("data-openclaw-lufeng-bootstrap")).toBeLessThan(
       firstPass.indexOf("./assets/index-realhash.js"),

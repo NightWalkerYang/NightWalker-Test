@@ -48,11 +48,16 @@ describe("echarts view public bootstrap", () => {
       "</html>",
     ].join("\n");
 
-    const firstPass = injectEchartsViewPublicBootstrap(source);
+    const runtimeAssetBasePath = "./assets/openclaw-echarts/fingerprint123/runtime";
+    const firstPass = injectEchartsViewPublicBootstrap(source, {
+      runtimeAssetBasePath,
+    });
     const secondPass = injectEchartsViewPublicBootstrap(firstPass);
 
     expect(firstPass).toContain("data-openclaw-echarts-view-bootstrap");
-    expect(firstPass).toContain("./assets/runtime/echarts-view/preboot.js");
+    expect(firstPass).toContain(
+      "./assets/openclaw-echarts/fingerprint123/runtime/echarts-view/preboot.js",
+    );
     expect(firstPass).toContain('type="module"');
     expect(firstPass.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
       firstPass.indexOf("./assets/index-realhash.js"),

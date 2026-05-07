@@ -2,7 +2,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-
 import {
   parseRuntimeEnvFile,
   prepareLocalRuntime,
@@ -59,14 +58,21 @@ OPENCLAW_GATEWAY_PORT=19999
       "<html>",
       "  <head>",
       '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
-      '    <script type="module" src="./assets/runtime/echarts-view/preboot.js" data-openclaw-echarts-view-bootstrap></script>',
-      '    <script src="./assets/runtime/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="old"></script>',
-      '    <script src="./assets/runtime/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="old"></script>',
+      '    <script type="module" src="./assets/openclaw-echarts/fingerprint123/runtime/echarts-view/preboot.js" data-openclaw-echarts-view-bootstrap></script>',
+      '    <script src="./assets/openclaw-echarts/fingerprint123/runtime/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="old"></script>',
+      '    <script src="./assets/openclaw-echarts/fingerprint123/runtime/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="old"></script>',
       "  </head>",
       "</html>",
     ].join("\n");
     const updated = syncControlUiBootstrapScripts(initial, "next-token");
-    expect(updated).toContain('data-openclaw-echarts-view-bootstrap');
+    expect(updated).toContain("data-openclaw-echarts-view-bootstrap");
+    expect(updated).toContain(
+      "./assets/openclaw-echarts/fingerprint123/runtime/echarts-view/preboot.js",
+    );
+    expect(updated).toContain(
+      "./assets/openclaw-echarts/fingerprint123/runtime/branding/auto-token-preboot.js",
+    );
+    expect(updated).toContain("./assets/openclaw-echarts/fingerprint123/runtime/lufeng/preboot.js");
     expect(updated).toContain('data-openclaw-auto-token-bootstrap data-gateway-token="next-token"');
     expect(updated).toContain('data-openclaw-lufeng-bootstrap data-gateway-token="next-token"');
     expect(updated).not.toContain('data-gateway-token="old"');
@@ -89,13 +95,7 @@ OPENCLAW_GATEWAY_PORT=19999
     const packageRoot = path.join(rootDir, "runtime", "node_modules", "openclaw");
     fs.mkdirSync(path.join(packageRoot, "dist", "control-ui"), { recursive: true });
     fs.mkdirSync(
-      path.join(
-        packageRoot,
-        "tools",
-        "openclaw-control-ui-echarts",
-        "sidecar",
-        "tenant-platform",
-      ),
+      path.join(packageRoot, "tools", "openclaw-control-ui-echarts", "sidecar", "tenant-platform"),
       { recursive: true },
     );
     fs.mkdirSync(
@@ -152,7 +152,10 @@ OPENCLAW_GATEWAY_PORT=19999
       path.join(packageRoot, "dist", "control-ui", "index.html"),
       "<html><head></head><body></body></html>\n",
     );
-    fs.writeFileSync(path.join(rootDir, "openclaw.local.example.json5"), "{ gateway: { mode: 'local' } }\n");
+    fs.writeFileSync(
+      path.join(rootDir, "openclaw.local.example.json5"),
+      "{ gateway: { mode: 'local' } }\n",
+    );
 
     const prepared = prepareLocalRuntime(rootDir, {});
     expect(fs.existsSync(prepared.env.OPENCLAW_CONFIG_PATH)).toBe(true);

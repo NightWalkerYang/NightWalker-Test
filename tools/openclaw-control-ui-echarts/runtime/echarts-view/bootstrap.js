@@ -1,11 +1,9 @@
-import {
-  isEchartsViewPublicPath,
-  normalizeEchartsViewRouteUrl,
-} from "./context.js";
+import { isEchartsViewPublicPath, normalizeEchartsViewRouteUrl } from "./context.js";
 
 const ECHARTS_VIEW_BOOTSTRAP_MARKER = "data-openclaw-echarts-view-bootstrap";
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
+const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
 const ECHARTS_VIEW_BOOTSTRAP_PATTERN = new RegExp(
   `^\\s*<script[^>]*${ECHARTS_VIEW_BOOTSTRAP_MARKER}[^>]*><\\/script>\\s*$`,
   "gm",
@@ -19,15 +17,13 @@ function patchPublicRouteHistory() {
   const originalReplaceState = window.history.replaceState.bind(window.history);
   const originalPushState = window.history.pushState.bind(window.history);
 
-  const wrap =
-    (original) =>
-    (state, unused, url) => {
-      if (url == null) {
-        return original(state, unused, url);
-      }
-      const normalized = normalizeEchartsViewRouteUrl(url, window.location.href);
-      return original(state, unused, normalized.toString());
-    };
+  const wrap = (original) => (state, unused, url) => {
+    if (url == null) {
+      return original(state, unused, url);
+    }
+    const normalized = normalizeEchartsViewRouteUrl(url, window.location.href);
+    return original(state, unused, normalized.toString());
+  };
 
   window.history.replaceState = wrap(originalReplaceState);
   window.history.pushState = wrap(originalPushState);
@@ -66,7 +62,10 @@ export function applyEchartsViewPublicBootstrap() {
 
   patchPublicRouteHistory();
 
-  const normalizedCurrent = normalizeEchartsViewRouteUrl(window.location.href, window.location.href);
+  const normalizedCurrent = normalizeEchartsViewRouteUrl(
+    window.location.href,
+    window.location.href,
+  );
   if (
     normalizedCurrent.pathname !== window.location.pathname ||
     normalizedCurrent.search !== window.location.search
@@ -75,10 +74,23 @@ export function applyEchartsViewPublicBootstrap() {
   }
 }
 
-export function buildEchartsViewPublicBootstrapTag() {
-  return `    <script type="module" src="./assets/runtime/echarts-view/preboot.js" ${ECHARTS_VIEW_BOOTSTRAP_MARKER}></script>`;
+function resolveRuntimeScriptSrc(runtimeAssetBasePath, relativePath) {
+  const basePath = String(runtimeAssetBasePath ?? "").trim();
+  const normalizedBasePath = basePath || DEFAULT_RUNTIME_ASSET_BASE_PATH;
+  const baseWithSlash = normalizedBasePath.endsWith("/")
+    ? normalizedBasePath
+    : `${normalizedBasePath}/`;
+  return `${baseWithSlash}${relativePath}`;
 }
 
-export function injectEchartsViewPublicBootstrap(indexHtml) {
-  return injectBeforeMainBundle(indexHtml, buildEchartsViewPublicBootstrapTag());
+export function buildEchartsViewPublicBootstrapTag(options = {}) {
+  const scriptSrc = resolveRuntimeScriptSrc(
+    options.runtimeAssetBasePath,
+    "echarts-view/preboot.js",
+  );
+  return `    <script type="module" src="${scriptSrc}" ${ECHARTS_VIEW_BOOTSTRAP_MARKER}></script>`;
+}
+
+export function injectEchartsViewPublicBootstrap(indexHtml, options = {}) {
+  return injectBeforeMainBundle(indexHtml, buildEchartsViewPublicBootstrapTag(options));
 }

@@ -1,6 +1,8 @@
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
-const AUTO_TOKEN_PATTERN = /^\s*<script[^>]*data-openclaw-auto-token-bootstrap[^>]*><\/script>\s*$/gm;
+const AUTO_TOKEN_PATTERN =
+  /^\s*<script[^>]*data-openclaw-auto-token-bootstrap[^>]*><\/script>\s*$/gm;
+const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
 
 export function applyAutoGatewayTokenBootstrap(rawToken) {
   const token = String(rawToken ?? "").trim();
@@ -127,7 +129,7 @@ function escapeHtmlAttribute(value) {
     switch (char) {
       case "&":
         return "&amp;";
-      case "\"":
+      case '"':
         return "&quot;";
       case "<":
         return "&lt;";
@@ -157,15 +159,28 @@ function injectBeforeMainBundle(indexHtml, nextTag) {
   return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
 }
 
-export function buildAutoGatewayTokenBootstrapTag(rawToken) {
+function resolveRuntimeScriptSrc(runtimeAssetBasePath, relativePath) {
+  const basePath = String(runtimeAssetBasePath ?? "").trim();
+  const normalizedBasePath = basePath || DEFAULT_RUNTIME_ASSET_BASE_PATH;
+  const baseWithSlash = normalizedBasePath.endsWith("/")
+    ? normalizedBasePath
+    : `${normalizedBasePath}/`;
+  return `${baseWithSlash}${relativePath}`;
+}
+
+export function buildAutoGatewayTokenBootstrapTag(rawToken, options = {}) {
   const token = String(rawToken ?? "").trim();
   if (!token) {
     return "";
   }
-  return `    <script src="./assets/runtime/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="${escapeHtmlAttribute(token)}"></script>`;
+  const scriptSrc = resolveRuntimeScriptSrc(
+    options.runtimeAssetBasePath,
+    "branding/auto-token-preboot.js",
+  );
+  return `    <script src="${scriptSrc}" data-openclaw-auto-token-bootstrap data-gateway-token="${escapeHtmlAttribute(token)}"></script>`;
 }
 
-export function injectAutoGatewayTokenBootstrap(indexHtml, rawToken) {
-  const scriptTag = buildAutoGatewayTokenBootstrapTag(rawToken);
+export function injectAutoGatewayTokenBootstrap(indexHtml, rawToken, options = {}) {
+  const scriptTag = buildAutoGatewayTokenBootstrapTag(rawToken, options);
   return injectBeforeMainBundle(indexHtml, scriptTag);
 }

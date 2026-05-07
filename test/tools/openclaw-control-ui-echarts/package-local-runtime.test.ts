@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-
 import { afterEach, describe, expect, it } from "vitest";
-
 import {
   buildRuntimeExtraDependencySpecs,
   patchFileTypeRuntimeCompat,
@@ -17,6 +16,55 @@ function createTempDir() {
   const dirPath = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-local-runtime-test-"));
   tempDirs.push(dirPath);
   return dirPath;
+}
+
+function normalizePosixPath(value: string) {
+  return value.replace(/\\/g, "/");
+}
+
+function collectFilesRecursively(rootDir: string) {
+  const files: Array<{ fullPath: string; relativePath: string }> = [];
+  const walk = (currentDir: string) => {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      files.push({
+        fullPath,
+        relativePath: normalizePosixPath(path.relative(rootDir, fullPath)),
+      });
+    }
+  };
+  walk(rootDir);
+  return files;
+}
+
+function computeExpectedRuntimeFingerprint() {
+  const repoRoot = process.cwd();
+  const runtimeScriptPath = path.join(
+    repoRoot,
+    "tools",
+    "openclaw-control-ui-echarts",
+    "openclaw-echarts-renderer.js",
+  );
+  const runtimeDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "runtime");
+  const vendorDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "vendor");
+  const hash = crypto.createHash("sha256");
+  hash.update(fs.readFileSync(runtimeScriptPath));
+  for (const directory of [runtimeDir, vendorDir]) {
+    for (const file of collectFilesRecursively(directory)) {
+      hash.update(`\nfile:${file.relativePath}\n`);
+      hash.update(fs.readFileSync(file.fullPath));
+    }
+  }
+  return hash.digest("hex").slice(0, 16);
 }
 
 describe("package local runtime", () => {
@@ -73,15 +121,18 @@ describe("package local runtime", () => {
       "build-custom-control-ui.mjs",
     );
     const buildArgs = [scriptPath, "--source", sourceDir, "--output", outputDir];
+    const buildEnv = { ...process.env, OPENCLAW_GATEWAY_TOKEN: "test-runtime-token" };
     const firstBuild = spawnSync(process.execPath, buildArgs, {
       cwd: process.cwd(),
       encoding: "utf8",
+      env: buildEnv,
     });
     expect(firstBuild.status, firstBuild.stderr || firstBuild.stdout).toBe(0);
 
     const secondBuild = spawnSync(process.execPath, buildArgs, {
       cwd: process.cwd(),
       encoding: "utf8",
+      env: buildEnv,
     });
     expect(secondBuild.status, secondBuild.stderr || secondBuild.stdout).toBe(0);
     expect(fs.existsSync(path.join(outputDir, "index.html"))).toBe(true);
@@ -91,9 +142,9 @@ describe("package local runtime", () => {
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "echarts-gl.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "gsap.min.js"))).toBe(true);
-    expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "tsparticles.bundle.min.js"))).toBe(
-      true,
-    );
+    expect(
+      fs.existsSync(path.join(outputDir, "assets", "vendor", "tsparticles.bundle.min.js")),
+    ).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "pixi.min.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "babylon.js"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "three.module.min.js"))).toBe(
@@ -101,11 +152,25 @@ describe("package local runtime", () => {
     );
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "three"))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, "assets", "vendor", "json5.min.js"))).toBe(true);
-    expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "echarts.min.js"))).toBe(true);
-    expect(fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "json5.min.js"))).toBe(true);
+    expect(
+      fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "echarts.min.js")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(outputDir, "assets", "runtime", "echarts", "json5.min.js")),
+    ).toBe(true);
 
     const indexHtml = fs.readFileSync(path.join(outputDir, "index.html"), "utf8");
+    const expectedFingerprint = computeExpectedRuntimeFingerprint();
+    const expectedRuntimeBasePath = `./assets/openclaw-echarts/${expectedFingerprint}/runtime`;
+    const expectedRendererRelativePath = `./assets/openclaw-echarts/${expectedFingerprint}/openclaw-echarts-renderer.js`;
+    const expectedRendererAbsolutePath = `/assets/openclaw-echarts/${expectedFingerprint}/openclaw-echarts-renderer.js`;
     expect(indexHtml).toContain("data-openclaw-echarts-view-bootstrap");
+    expect(indexHtml).toContain(expectedRuntimeBasePath);
+    expect(indexHtml).toContain(`${expectedRuntimeBasePath}/tenant/preboot.js`);
+    expect(indexHtml).toContain(`${expectedRuntimeBasePath}/branding/auto-token-preboot.js`);
+    expect(indexHtml).toContain(`${expectedRuntimeBasePath}/lufeng/preboot.js`);
+    expect(indexHtml).toContain(`${expectedRuntimeBasePath}/echarts-view/preboot.js`);
+    expect(indexHtml).toContain(expectedRendererRelativePath);
     expect(indexHtml).toContain("data-openclaw-tenant-preboot");
     expect(indexHtml.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
       indexHtml.indexOf("data-openclaw-lufeng-bootstrap"),
@@ -120,7 +185,43 @@ describe("package local runtime", () => {
       path.join(outputDir, "echarts-view", "index.html"),
       "utf8",
     );
-    expect(echartsViewIndex).toContain("/assets/openclaw-echarts-renderer.js");
+    expect(echartsViewIndex).toContain(expectedRendererAbsolutePath);
+    expect(
+      fs.existsSync(
+        path.join(
+          outputDir,
+          "assets",
+          "openclaw-echarts",
+          expectedFingerprint,
+          "openclaw-echarts-renderer.js",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          outputDir,
+          "assets",
+          "openclaw-echarts",
+          expectedFingerprint,
+          "runtime",
+          "tenant",
+          "preboot.js",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          outputDir,
+          "assets",
+          "openclaw-echarts",
+          expectedFingerprint,
+          "vendor",
+          "echarts.min.js",
+        ),
+      ),
+    ).toBe(true);
     const loginIndex = fs.readFileSync(path.join(outputDir, "login", "index.html"), "utf8");
     const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");
     expect(loginIndex).toContain('<base href="/" />');
@@ -140,9 +241,7 @@ describe("package local runtime", () => {
 
     expect(shellScript).toContain("sync_tenant_member_bootstrap_hook_config()");
     expect(shellScript).toContain("sync_managed_tenant_member_bootstrap_hook()");
-    expect(shellScript).toContain(
-      'hooks.internal.entries[tenant-member-bootstrap-filter].enabled',
-    );
+    expect(shellScript).toContain("hooks.internal.entries[tenant-member-bootstrap-filter].enabled");
     expect(shellScript).toContain('managed_hooks_dir="$config_dir/hooks"');
     expect(shellScript).toContain("sync_tenant_member_bootstrap_hook_config\n");
     expect(shellScript).toContain("sync_managed_tenant_member_bootstrap_hook\n");
@@ -153,13 +252,19 @@ describe("package local runtime", () => {
     expect(shellScript).toContain("docker compose build openclaw-gateway");
     expect(shellScript).toContain("OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD");
     expect(shellScript).toContain("run_custom_control_ui_builder()");
-    expect(shellScript).toContain('docker run --rm \\');
+    expect(shellScript).toContain("docker run --rm \\");
     expect(shellScript).toContain('-v "$ROOT_DIR:/workspace" \\');
     expect(shellScript).toContain('-v "$source_dir:/tmp/openclaw-source-ui:ro" \\');
-    expect(shellScript).toContain('node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \\');
-    expect(shellScript).not.toContain('inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html"');
+    expect(shellScript).toContain(
+      "node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \\",
+    );
+    expect(shellScript).not.toContain(
+      'inject_auto_gateway_token_bootstrap "$OUTPUT_DIR/index.html"',
+    );
     expect(shellScript).not.toContain('inject_lufeng_public_bootstrap "$OUTPUT_DIR/index.html"');
-    expect(shellScript).not.toContain('inject_echarts_view_public_bootstrap "$OUTPUT_DIR/index.html"');
+    expect(shellScript).not.toContain(
+      'inject_echarts_view_public_bootstrap "$OUTPUT_DIR/index.html"',
+    );
 
     const nodeScript = fs.readFileSync(
       path.join(
