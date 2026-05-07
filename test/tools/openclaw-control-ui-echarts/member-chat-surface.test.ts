@@ -1464,6 +1464,60 @@ describe("member chat surface", () => {
     expect(document.querySelector("[data-oc-member-chat-toast]")).toBeNull();
   });
 
+  it("blocks Enter send from the nested native composer textarea when member credit is exhausted", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 0,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+      <div class="agent-chat__input">
+        <div class="agent-chat__composer-combobox">
+          <textarea>余额不足测试</textarea>
+        </div>
+      </div>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const textarea = document.querySelector(".agent-chat__input textarea");
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Enter",
+    });
+    textarea?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.querySelector("[data-oc-member-chat-toast]")?.textContent).toContain(
+      "积分不足请联系管理员。",
+    );
+  });
+
   it("hides deleted sessions from the sidebar while keeping the current session usable", async () => {
     const apiState = installTenantApiFetchStub({
       sessions: [

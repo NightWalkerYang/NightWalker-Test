@@ -577,6 +577,25 @@ export function getFrameworkStyles() {
       display: none;
     }
 
+    .agent-chat__input {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid
+        color-mix(in srgb, var(--border-strong, var(--border)) 38%, transparent);
+      border-radius: 24px;
+      background:
+        linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--card) 96%, rgba(255, 255, 255, 0.03)),
+          color-mix(in srgb, var(--panel, var(--card)) 94%, transparent)
+        );
+      box-shadow:
+        0 18px 42px color-mix(in srgb, var(--bg, #020617) 12%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+    }
+
     .agent-chat__input[data-oc-voice-recording="true"] {
       --ring: rgba(126, 170, 212, 0.52);
     }
@@ -587,6 +606,35 @@ export function getFrameworkStyles() {
 
     .agent-chat__input[data-oc-voice-state="recording"] {
       --ring: rgba(99, 152, 211, 0.62);
+    }
+
+    :root[data-theme-mode="light"] .agent-chat__input {
+      background:
+        linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.98),
+          color-mix(in srgb, var(--card) 96%, var(--panel, white) 4%)
+        );
+      box-shadow:
+        0 16px 34px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .agent-chat__input:focus-within {
+      border-color: color-mix(in srgb, var(--accent) 28%, var(--border) 72%);
+      box-shadow:
+        0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
+        0 18px 36px color-mix(in srgb, var(--accent) 12%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
+    }
+
+    .agent-chat__composer-combobox > textarea {
+      background: transparent;
+      color: var(--text-strong, var(--text));
+    }
+
+    .agent-chat__composer-combobox > textarea::placeholder {
+      color: color-mix(in srgb, var(--text) 52%, transparent);
     }
 
     .chat-attachments-preview {
@@ -601,6 +649,11 @@ export function getFrameworkStyles() {
       font-size: 13px;
       line-height: 1.35;
       overflow-wrap: anywhere;
+    }
+
+    .agent-chat__toolbar {
+      border-top-color: color-mix(in srgb, var(--border) 62%, transparent);
+      background: color-mix(in srgb, var(--panel, var(--card)) 18%, transparent);
     }
 
     .oc-voice-status {

@@ -2067,7 +2067,7 @@ export function bootMemberChatSurface() {
   memberChatKeydownHandler ||= (e) => {
     const event = e;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-      const textarea = event.target.closest?.(".agent-chat__input > textarea");
+      const textarea = event.target.closest?.(".agent-chat__input textarea");
       if (textarea) {
         if (!checkCreditBeforeAction()) {
           event.stopImmediatePropagation();

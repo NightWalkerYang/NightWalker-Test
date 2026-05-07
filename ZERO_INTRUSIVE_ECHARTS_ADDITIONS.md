@@ -203,6 +203,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/brand-replacer.test.ts`
 - `test/tools/openclaw-control-ui-echarts/brand-state.test.ts`
 - `test/tools/openclaw-control-ui-echarts/chat-ambient.test.ts`
+- `test/tools/openclaw-control-ui-echarts/chat-composer.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-parser.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-styles.test.ts`
 - `test/tools/openclaw-control-ui-echarts/fenced-block-runtime.test.ts`
@@ -256,10 +257,11 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Workspace file paths can download through same-origin `workspace-downloads` mounts.
 - Shared runtime styles load at boot instead of waiting for a fenced block to appear.
 - Fenced-block adapters now warm their local libraries at boot and rescan only changed DOM roots, reducing the post-refresh delay before `echarts` and `file` cards appear.
-- Chat page visuals are customized through the injected framework styles layer, but the native `/chat` composer shell now stays on the upstream Control UI layout; the zero-intrusive layer only keeps surrounding visuals plus voice-status enhancements.
+- Chat page visuals are customized through the injected framework styles layer. The zero-intrusive layer now restores a minimal visible shell for the native `/chat` composer when deployments render `.agent-chat__input` as visually empty, while still avoiding the earlier pseudo-element redraw and toolbar-flattening path.
 - The chat background uses an injected animated ambient layer.
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
+- Prompt-insertion helpers now target the native nested composer textarea through the resilient `.agent-chat__input textarea` selector, so option cards and ECharts follow-up actions keep working after upstream wrapped the textarea in `.agent-chat__composer-combobox`.
 - Member chat now uses a progress-aware idle failsafe instead of a fixed 75-second absolute timeout, so long ECharts/file-generation runs keep going while text or tool output is still advancing and only fail after a real stall.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap that mirrors the gateway token into both the route scope and the root scope so public routes can reuse existing stored settings.
 - Platform admins can now replace the default `知识图谱` utility entry with a zero-intrusive `更改品牌` action, open a machine-global branding panel, and save either a text logo or an uploaded image logo without touching repository files or existing OpenClaw source files; if the current brand already uses an image logo, later name/title edits can keep that machine-local image without forcing a re-upload.

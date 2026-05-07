@@ -39,6 +39,11 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain('.chat-group[data-oc-tool-run="mid"] .chat-bubble');
     expect(styles).toContain("--oc-chat-user-bubble-bg");
     expect(styles).toContain("color: var(--oc-chat-user-bubble-text);");
+    expect(styles).toContain(".agent-chat__input {");
+    expect(styles).toContain("overflow: hidden;");
+    expect(styles).toContain("border-radius: 24px;");
+    expect(styles).toContain(".agent-chat__input:focus-within {");
+    expect(styles).toContain(".agent-chat__composer-combobox > textarea");
     expect(styles).toContain('[data-oc-voice-recording="true"]');
     expect(styles).toContain('[data-oc-voice-state="starting"]');
     expect(styles).toContain('[data-oc-voice-state="recording"]');
@@ -50,16 +55,16 @@ describe("zero-intrusive framework styles", () => {
     );
     expect(styles).toContain("@keyframes oc-voice-pulse");
     expect(styles).toContain(".chat-attachments-preview");
+    expect(styles).toContain(".agent-chat__toolbar {");
     expect(styles).toContain(".chat-send-btn");
     expect(styles).toContain(".agent-chat__input-btn");
   });
 
-  it("does not redraw the native chat composer shell in the zero-intrusive layer", () => {
+  it("keeps the native chat composer structure while avoiding the old intrusive redraw", () => {
     const styles = getFrameworkStyles();
 
     expect(styles).not.toContain(".agent-chat__input::before");
     expect(styles).not.toContain(".agent-chat__input::after");
-    expect(styles).not.toContain("border-radius: 24px;");
     expect(styles).not.toContain("display: contents;");
   });
 });

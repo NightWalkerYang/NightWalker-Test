@@ -16,7 +16,7 @@ function sanitizeComposerText(value) {
 }
 
 function findChatComposerElements() {
-  const textarea = document.querySelector(".agent-chat__input > textarea");
+  const textarea = document.querySelector(".agent-chat__input textarea");
   const sendButton = Array.from(
     document.querySelectorAll(".agent-chat__toolbar-right .chat-send-btn"),
   ).find((button) => !button.classList.contains("chat-send-btn--stop"));
@@ -25,10 +25,7 @@ function findChatComposerElements() {
 
 function setComposerDraft(textarea, value) {
   const nextValue = sanitizeComposerText(value);
-  const descriptor = Object.getOwnPropertyDescriptor(
-    window.HTMLTextAreaElement.prototype,
-    "value",
-  );
+  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value");
   if (descriptor?.set) {
     descriptor.set.call(textarea, nextValue);
   } else {
@@ -86,10 +83,7 @@ export async function sendPromptToChat(promptText) {
   await waitForFrame(2);
 
   const refreshed = findChatComposerElements();
-  if (
-    !(refreshed.sendButton instanceof HTMLButtonElement) ||
-    refreshed.sendButton.disabled
-  ) {
+  if (!(refreshed.sendButton instanceof HTMLButtonElement) || refreshed.sendButton.disabled) {
     setComposerDraft(
       textarea,
       previousDraft.trim()
