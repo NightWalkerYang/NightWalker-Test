@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bootMemberChatSurface,
   resetMemberChatSurfaceForTests,
+  syncMemberChatSurface,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js";
 import {
   writeSelectedTenantAgent,
@@ -1000,11 +1001,13 @@ describe("member chat surface", () => {
 
     const initialHistoryLoads = historyLoads;
     expect(initialHistoryLoads).toBeGreaterThan(0);
-    expect(app.chatMessages).toEqual([{ role: "assistant", text: `历史重载 ${initialHistoryLoads}` }]);
+    expect(app.chatMessages).toEqual([
+      { role: "assistant", text: `历史重载 ${initialHistoryLoads}` },
+    ]);
 
     app.chatMessages = [{ role: "assistant", text: "陈旧缓存" }];
     window.history.replaceState({}, "", "/");
-    await window.syncMemberChatSurface();
+    await syncMemberChatSurface();
     await flush();
 
     window.history.replaceState(
@@ -1012,7 +1015,7 @@ describe("member chat surface", () => {
       "",
       `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
     );
-    await window.syncMemberChatSurface();
+    await syncMemberChatSurface();
     await flush();
 
     expect(historyLoads).toBeGreaterThan(initialHistoryLoads);
@@ -1423,7 +1426,9 @@ describe("member chat surface", () => {
     await vi.advanceTimersByTimeAsync(0);
     await Promise.resolve();
 
-    const originalSessionKey = String(app.sessionKey || "").trim().toLowerCase();
+    const originalSessionKey = String(app.sessionKey || "")
+      .trim()
+      .toLowerCase();
     const nativeNewSessionButton = document.querySelector(
       ".agent-chat__toolbar-right .btn.btn--ghost[title='New session']",
     );
@@ -1439,17 +1444,23 @@ describe("member chat surface", () => {
     await vi.advanceTimersByTimeAsync(0);
     await Promise.resolve();
 
-    const currentSessionKey = String(app.sessionKey || "").trim().toLowerCase();
+    const currentSessionKey = String(app.sessionKey || "")
+      .trim()
+      .toLowerCase();
     expect(currentSessionKey).toMatch(
       /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
     );
     expect(currentSessionKey).not.toBe(originalSessionKey);
-    expect(apiState.sessions.some((session) => session.openclawSessionKey === currentSessionKey)).toBe(
-      true,
-    );
+    expect(
+      apiState.sessions.some((session) => session.openclawSessionKey === currentSessionKey),
+    ).toBe(true);
     expect(decodeURIComponent(window.location.search)).toContain("tenantAgentId=tenant-agent-1");
-    expect(decodeURIComponent(window.location.search)).not.toContain(`session=${originalSessionKey}`);
-    expect(decodeURIComponent(window.location.search)).not.toContain(`session=${currentSessionKey}`);
+    expect(decodeURIComponent(window.location.search)).not.toContain(
+      `session=${originalSessionKey}`,
+    );
+    expect(decodeURIComponent(window.location.search)).not.toContain(
+      `session=${currentSessionKey}`,
+    );
     expect(document.querySelector("[data-oc-member-chat-toast]")).toBeNull();
   });
 
@@ -1989,7 +2000,9 @@ describe("member chat surface", () => {
           return { sessions: [] };
         }
         if (method === "chat.send") {
-          draftSessionKey = String(params?.sessionKey || "").trim().toLowerCase();
+          draftSessionKey = String(params?.sessionKey || "")
+            .trim()
+            .toLowerCase();
           app.chatLoading = true;
           app.chatRunId = "run-1";
           apiState.sessions = [
@@ -2018,7 +2031,9 @@ describe("member chat surface", () => {
     await vi.advanceTimersByTimeAsync(0);
     await Promise.resolve();
 
-    const initialDraftSessionKey = String(app.sessionKey || "").trim().toLowerCase();
+    const initialDraftSessionKey = String(app.sessionKey || "")
+      .trim()
+      .toLowerCase();
     expect(initialDraftSessionKey).toMatch(
       /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
     );

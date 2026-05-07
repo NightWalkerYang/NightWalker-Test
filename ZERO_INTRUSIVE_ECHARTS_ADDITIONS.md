@@ -256,7 +256,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Workspace file paths can download through same-origin `workspace-downloads` mounts.
 - Shared runtime styles load at boot instead of waiting for a fenced block to appear.
 - Fenced-block adapters now warm their local libraries at boot and rescan only changed DOM roots, reducing the post-refresh delay before `echarts` and `file` cards appear.
-- Chat page visuals are customized through the injected framework styles layer.
+- Chat page visuals are customized through the injected framework styles layer, but the native `/chat` composer shell now stays on the upstream Control UI layout; the zero-intrusive layer only keeps surrounding visuals plus voice-status enhancements.
 - The chat background uses an injected animated ambient layer.
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.

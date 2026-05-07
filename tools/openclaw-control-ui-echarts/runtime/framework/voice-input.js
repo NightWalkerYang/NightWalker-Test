@@ -226,7 +226,6 @@ function createSpeechController() {
       state.starting = false;
       syncUiFromState(state);
       showStatus(normalizePermissionError(error), "error");
-      console.warn("[openclaw voice] microphone permission failed", error);
       return;
     }
 
@@ -266,7 +265,6 @@ function createSpeechController() {
       const error = event?.error || "unknown";
       if (error !== "aborted" && error !== "no-speech") {
         showStatus(normalizeRecognitionError(error), "error");
-        console.warn("[openclaw voice] recognition error", error);
       }
       state.starting = false;
       if (state.recognition === recognition) {
@@ -293,7 +291,6 @@ function createSpeechController() {
       state.recognition = null;
       syncUiFromState(state);
       showStatus(normalizeRecognitionError(error?.message || error), "error");
-      console.warn("[openclaw voice] recognition start failed", error);
     }
   };
 

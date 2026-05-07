@@ -69,7 +69,6 @@ export async function refreshTenantOverview(root, controller) {
     const result = await controller.apiClient.getTenantOverview();
     controller.overviewData = result || null;
   } catch (error) {
-    console.error("Failed to refresh tenant overview:", error);
     controller.overviewError = error instanceof Error ? error.message : String(error);
   }
 }
@@ -159,8 +158,7 @@ export async function initTenantOverviewCharts(root, controller) {
   try {
     const libs = await loadLibraries();
     echarts = libs.echarts;
-  } catch (error) {
-    console.error("Failed to load ECharts for overview:", error);
+  } catch {
     return;
   }
 
@@ -267,8 +265,8 @@ export async function initTenantOverviewCharts(root, controller) {
           ],
         });
       }
-    } catch (error) {
-      console.error("Failed to initialize charts:", error);
+    } catch {
+      // Keep the overview cards rendered even if chart init fails.
     }
   });
 }

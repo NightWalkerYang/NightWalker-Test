@@ -242,13 +242,13 @@ function buildChatLoadingProgressSignature(app) {
     return "";
   }
   const toolStreamOrder =
-    Array.isArray(app.toolStreamOrder) && app.toolStreamOrder.length > 0
-      ? app.toolStreamOrder
-      : [];
+    Array.isArray(app.toolStreamOrder) && app.toolStreamOrder.length > 0 ? app.toolStreamOrder : [];
   const lastToolStreamId =
     toolStreamOrder.length > 0 ? String(toolStreamOrder[toolStreamOrder.length - 1] || "") : "";
   const toolMessages =
-    Array.isArray(app.chatToolMessages) && app.chatToolMessages.length > 0 ? app.chatToolMessages : [];
+    Array.isArray(app.chatToolMessages) && app.chatToolMessages.length > 0
+      ? app.chatToolMessages
+      : [];
   const lastToolMessage =
     toolMessages.length > 0 ? toolMessages[toolMessages.length - 1] || null : null;
   const lastToolOutput = readToolMessageProgressValue(lastToolMessage);
@@ -659,7 +659,9 @@ function buildUsageRecords(messages) {
 }
 
 function resolveSessionUsageMetadata(controller, sessionKey) {
-  const normalizedKey = String(sessionKey || "").trim().toLowerCase();
+  const normalizedKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedKey) {
     return { provider: "", model: "" };
   }
@@ -668,7 +670,10 @@ function resolveSessionUsageMetadata(controller, sessionKey) {
     ...(Array.isArray(controller?.sessions) ? controller.sessions : []),
   ];
   const sessionRow = candidates.find(
-    (row) => String(row?.key || "").trim().toLowerCase() === normalizedKey,
+    (row) =>
+      String(row?.key || "")
+        .trim()
+        .toLowerCase() === normalizedKey,
   );
   return {
     provider: String(sessionRow?.modelProvider || sessionRow?.provider || "").trim(),
@@ -690,7 +695,14 @@ function extractUsagePointTimestampIso(point) {
   return "";
 }
 
-function buildUsagePointFingerprint(sessionKey, index, usageSnapshot, messageTimestamp, provider, model) {
+function buildUsagePointFingerprint(
+  sessionKey,
+  index,
+  usageSnapshot,
+  messageTimestamp,
+  provider,
+  model,
+) {
   return [
     "timeseries",
     String(sessionKey || "").trim(),
@@ -793,8 +805,8 @@ async function syncMemberUsageRecords(controller, sessionKey, messages) {
       controller.selectedAgent.balancePoints = nextBalance;
       writeSelectedTenantAgent(controller.selectedAgent);
     }
-  } catch (error) {
-    console.warn("Failed to sync member usage records", error);
+  } catch {
+    // Ignore usage sync failures and keep the current UI state.
   }
 }
 
@@ -821,8 +833,8 @@ function scheduleMemberUsageSync(controller, sessionKey, attempt = 0) {
         limit: 200,
       });
       await syncMemberUsageRecords(activeController, sessionKey, historyResp?.messages);
-    } catch (error) {
-      console.warn("Failed to refresh member usage records from history", error);
+    } catch {
+      // Ignore refresh failures and retry on a later surface sync.
     }
   }, delayMs);
 }
@@ -1109,8 +1121,8 @@ async function loadMemberSessions(app, selectedAgent, session) {
       MEMBER_SESSION_LIST_TIMEOUT_MS,
       "member_sessions.list",
     );
-  } catch (error) {
-    console.error("Failed to list member sessions from platform", error);
+  } catch {
+    // Ignore platform session list failures and fall back to gateway data.
   }
   const registeredMap = new Map(
     registeredSessions.map((r) => [String(r.openclawSessionKey).trim().toLowerCase(), r]),
@@ -1129,8 +1141,7 @@ async function loadMemberSessions(app, selectedAgent, session) {
           "gateway.sessions.list",
         ),
       );
-    } catch (error) {
-      console.error("Failed to list gateway sessions for member chat", error);
+    } catch {
       rows = [];
     }
   }
@@ -1169,8 +1180,8 @@ async function loadMemberSessions(app, selectedAgent, session) {
           if (nextTitle) {
             hydratedTitleMap.set(key, nextTitle);
           }
-        } catch (error) {
-          console.warn("Failed to hydrate member session title from history", error);
+        } catch {
+          // Ignore title hydration failures and keep the provisional title.
         }
       }),
     );
@@ -1277,8 +1288,7 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
       openclawSessionKey: normalizedSessionKey,
       title: nextTitle,
     });
-  } catch (error) {
-    console.warn("Failed to persist member session title", error);
+  } catch {
     return;
   }
 
@@ -1608,7 +1618,11 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
         ) {
           // Note: In most cases, the early interceptor in bootMemberChatSurface
           // will catch this before it reaches here.
-          showTransientToast(window._ocMemberChatSurfaceController, "积分不足请联系管理员。", "danger");
+          showTransientToast(
+            window._ocMemberChatSurfaceController,
+            "积分不足请联系管理员。",
+            "danger",
+          );
           return { ok: false, error: "insufficient_balance" };
         }
       }
@@ -1720,10 +1734,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           }
         }
       })
-      .catch((error) => {
-        if (isTimeoutError(error)) {
-          console.warn("Timed out while hydrating member chat history", { sessionKey: targetKey });
-        }
+      .catch(() => {
         if (app.__ocPinnedSessionHydratingKey === targetKey) {
           app.__ocPinnedSessionHydratingKey = "";
         }
@@ -1891,8 +1902,8 @@ async function resolveSelectedAgentForMemberChat(session, href = window.location
       writeSelectedTenantAgent(resolved);
       return resolved;
     }
-  } catch (error) {
-    console.warn("Failed to resolve selected member agent for chat route", error);
+  } catch {
+    // Ignore agent refresh failures and continue with cached selection.
   }
   return selectedAgent;
 }
@@ -2000,7 +2011,7 @@ async function syncMemberChatSurface() {
     }
   }
 }
-window.syncMemberChatSurface = syncMemberChatSurface;
+export { syncMemberChatSurface };
 
 export function bootMemberChatSurface() {
   bootTenantRouteSync();

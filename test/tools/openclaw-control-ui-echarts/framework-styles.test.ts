@@ -39,14 +39,6 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain('.chat-group[data-oc-tool-run="mid"] .chat-bubble');
     expect(styles).toContain("--oc-chat-user-bubble-bg");
     expect(styles).toContain("color: var(--oc-chat-user-bubble-text);");
-    expect(styles).toContain(".agent-chat__input");
-    expect(styles).toContain("overflow: hidden;");
-    expect(styles).toContain("border-radius: 24px;");
-    expect(styles).toContain("radial-gradient(");
-    expect(styles).toContain(".agent-chat__input::before");
-    expect(styles).toContain(".agent-chat__input:focus-within {");
-    expect(styles).toContain(".agent-chat__input > textarea");
-    expect(styles).toContain("border: none;");
     expect(styles).toContain('[data-oc-voice-recording="true"]');
     expect(styles).toContain('[data-oc-voice-state="starting"]');
     expect(styles).toContain('[data-oc-voice-state="recording"]');
@@ -58,13 +50,16 @@ describe("zero-intrusive framework styles", () => {
     );
     expect(styles).toContain("@keyframes oc-voice-pulse");
     expect(styles).toContain(".chat-attachments-preview");
-    expect(styles).toContain(".agent-chat__toolbar");
-    expect(styles).toContain("position: static;");
-    expect(styles).toContain("justify-content: center;");
-    expect(styles).toContain("display: contents;");
     expect(styles).toContain(".chat-send-btn");
-    expect(styles).toContain("position: absolute;");
-    expect(styles).toContain("min-height: 56px;");
     expect(styles).toContain(".agent-chat__input-btn");
+  });
+
+  it("does not redraw the native chat composer shell in the zero-intrusive layer", () => {
+    const styles = getFrameworkStyles();
+
+    expect(styles).not.toContain(".agent-chat__input::before");
+    expect(styles).not.toContain(".agent-chat__input::after");
+    expect(styles).not.toContain("border-radius: 24px;");
+    expect(styles).not.toContain("display: contents;");
   });
 });
