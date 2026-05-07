@@ -149,6 +149,8 @@ describe("package local runtime", () => {
     expect(shellScript).toContain('node "$TOOL_DIR/build-custom-control-ui.mjs"');
     expect(shellScript).toContain('--source "$source_dir"');
     expect(shellScript).toContain('--output "$OUTPUT_DIR"');
+    expect(shellScript).toContain("ensure_gateway_service_image_current()");
+    expect(shellScript).toContain("docker compose build openclaw-gateway");
     expect(shellScript).toContain("run_custom_control_ui_builder()");
     expect(shellScript).toContain('docker run --rm \\');
     expect(shellScript).toContain('-v "$ROOT_DIR:/workspace" \\');
@@ -168,6 +170,9 @@ describe("package local runtime", () => {
       "utf8",
     );
     expect(nodeScript).toContain("function syncManagedTenantMemberBootstrapHook()");
+    expect(nodeScript).toContain("function ensureGatewayServiceImageCurrent()");
+    expect(nodeScript).toContain('["compose", "build", "openclaw-gateway"]');
+    expect(nodeScript).toContain("ensureGatewayServiceImageCurrent();");
     expect(nodeScript).toContain('path.join(resolveOpenclawConfigDir(), "hooks")');
     expect(nodeScript).toContain("syncManagedTenantMemberBootstrapHook();");
   });

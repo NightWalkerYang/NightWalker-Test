@@ -141,6 +141,14 @@ function shouldSkipComposeUp() {
   );
 }
 
+function dockerComposeAvailable() {
+  const result = spawnSync(dockerCommand, ["compose", "config"], {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+  return result.status === 0;
+}
+
 function buildOverrideContent(extraMounts) {
   const lines = [
     GENERATED_MARKER,
@@ -297,12 +305,27 @@ function writeRootOverride() {
   return extraMounts;
 }
 
-function syncGatewayControlUiRoot() {
-  const check = spawnSync(dockerCommand, ["compose", "config"], {
+function ensureGatewayServiceImageCurrent() {
+  if (!dockerComposeAvailable()) {
+    return false;
+  }
+
+  const result = spawnSync(dockerCommand, ["compose", "build", "openclaw-gateway"], {
     cwd: repoRoot,
-    stdio: "ignore",
+    stdio: "inherit",
   });
-  if (check.status !== 0) {
+  if (result.status !== 0) {
+    throw new Error(`${dockerCommand} compose build failed for openclaw-gateway.`);
+  }
+
+  process.stdout.write(
+    "Rebuilt docker compose image for openclaw-gateway from current repository checkout\n",
+  );
+  return true;
+}
+
+function syncGatewayControlUiRoot() {
+  if (!dockerComposeAvailable()) {
     process.stderr.write(
       "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.root.\n",
     );
@@ -345,11 +368,7 @@ function syncGatewayControlUiRoot() {
 }
 
 function syncControlUiAllowedOrigins() {
-  const check = spawnSync(dockerCommand, ["compose", "config"], {
-    cwd: repoRoot,
-    stdio: "ignore",
-  });
-  if (check.status !== 0) {
+  if (!dockerComposeAvailable()) {
     process.stderr.write(
       "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.allowedOrigins.\n",
     );
@@ -424,11 +443,7 @@ function syncControlUiAllowedOrigins() {
 }
 
 function syncControlUiHostHeaderOriginFallbackDisabled() {
-  const check = spawnSync(dockerCommand, ["compose", "config"], {
-    cwd: repoRoot,
-    stdio: "ignore",
-  });
-  if (check.status !== 0) {
+  if (!dockerComposeAvailable()) {
     process.stderr.write(
       "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback.\n",
     );
@@ -474,11 +489,7 @@ function syncControlUiHostHeaderOriginFallbackDisabled() {
 }
 
 function syncControlUiDeviceAuthBypass() {
-  const check = spawnSync(dockerCommand, ["compose", "config"], {
-    cwd: repoRoot,
-    stdio: "ignore",
-  });
-  if (check.status !== 0) {
+  if (!dockerComposeAvailable()) {
     process.stderr.write(
       "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.dangerouslyDisableDeviceAuth.\n",
     );
@@ -522,11 +533,7 @@ function syncControlUiDeviceAuthBypass() {
 }
 
 function syncPortableBaselineConfig() {
-  const check = spawnSync(dockerCommand, ["compose", "config"], {
-    cwd: repoRoot,
-    stdio: "ignore",
-  });
-  if (check.status !== 0) {
+  if (!dockerComposeAvailable()) {
     process.stderr.write(
       "WARN: docker compose is not available in repo root; skip syncing portable baseline config.\n",
     );
@@ -583,11 +590,7 @@ function syncPortableBaselineConfig() {
 }
 
 function syncTenantMemberBootstrapHookConfig() {
-  const check = spawnSync(dockerCommand, ["compose", "config"], {
-    cwd: repoRoot,
-    stdio: "ignore",
-  });
-  if (check.status !== 0) {
+  if (!dockerComposeAvailable()) {
     process.stderr.write(
       "WARN: docker compose is not available in repo root; skip syncing tenant member bootstrap hook config.\n",
     );
@@ -690,11 +693,7 @@ function runTargetedComposeUp() {
     return false;
   }
 
-  const check = spawnSync(dockerCommand, ["compose", "config"], {
-    cwd: repoRoot,
-    stdio: "ignore",
-  });
-  if (check.status !== 0) {
+  if (!dockerComposeAvailable()) {
     throw new Error(
       "docker compose is not available in repo root; cannot apply the zero-intrusive deployment.",
     );
@@ -721,6 +720,7 @@ function runTargetedComposeUp() {
 }
 
 function main() {
+  ensureGatewayServiceImageCurrent();
   buildCustomControlUi();
   const extraMounts = writeRootOverride();
   syncWorkspaceOverlays();

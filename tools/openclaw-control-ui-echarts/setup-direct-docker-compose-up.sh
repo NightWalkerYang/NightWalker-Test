@@ -351,6 +351,11 @@ run_custom_control_ui_builder() {
       --output "$container_output_dir"
 }
 
+docker_compose_available() {
+  command -v docker >/dev/null 2>&1 || return 1
+  (cd "$ROOT_DIR" && docker compose config >/dev/null 2>&1)
+}
+
 resolve_gateway_image_ref() {
   if [[ -n "${OPENCLAW_IMAGE:-}" ]]; then
     printf '%s\n' "$OPENCLAW_IMAGE"
@@ -398,6 +403,19 @@ ensure_gateway_image_available() {
   fi
 
   docker image inspect "$image_ref" >/dev/null 2>&1 || fail "Could not resolve a local openclaw-gateway image."
+}
+
+ensure_gateway_service_image_current() {
+  if ! docker_compose_available; then
+    return 0
+  fi
+
+  if cd "$ROOT_DIR" && docker compose build openclaw-gateway; then
+    printf '%s\n' "Rebuilt docker compose image for openclaw-gateway from current repository checkout"
+    return 0
+  fi
+
+  fail "docker compose build failed for openclaw-gateway"
 }
 
 write_override() {
@@ -965,6 +983,7 @@ main() {
 
   local source_dir
   local compose_up_applied="0"
+  ensure_gateway_service_image_current
   source_dir="$(resolve_source_dir)"
 
   run_custom_control_ui_builder "$source_dir"

@@ -19,6 +19,7 @@
 4. Docker 侧部署流程以 `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh` 为准。
    - 零侵入页面、运行时脚本和 sidecar 相关能力，默认都要经过这条部署路径。
    - 这条 shell 部署路径里的 Control UI 产物构建，实际必须复用 `tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs` 这条中心构建链，不能再各自复制一套 HTML 注入步骤；否则很容易出现 `tenant/preboot.js`、`auto-token-preboot.js`、公共路由 preboot 等注入漂移，最终表现为统一登录壳不挂载、成员路由预处理失效，或者线上跑的 HTML 与本地测试产物不一致。
+   - 这条部署路径在读取宿主机 `dist/control-ui` 或复用 `openclaw:local` 镜像里的 `/app/dist/control-ui` 之前，还必须先基于当前仓库 checkout 执行一次 `docker compose build openclaw-gateway`。实际已经验证过：如果服务器仓库代码已同步到新版本、但 direct-docker 部署继续复用旧的 `openclaw:local` 镜像，页面左下角 `版本` 仍会显示旧版，且零侵入覆盖层也可能继续从旧镜像抽取旧的原生 Control UI 产物。
    - `tools/openclaw-control-ui-echarts/generated/control-ui/index.html` 里会通过零侵入 auto-token bootstrap 嵌入 `OPENCLAW_GATEWAY_TOKEN`；因此跨机器部署时，不能直接复用另一台机器上已经构建好的 `generated/control-ui/` 成品，必须在目标机器上用该机器当前容器/配置里的 `OPENCLAW_GATEWAY_TOKEN` 重新生成，或至少定向重写嵌入 token。否则浏览器会落回原生 Control UI 连接门，并报 `unauthorized: gateway token mismatch`。
    - 这条部署路径产出的 `generated/control-ui/assets/vendor/` 必须同步零侵入层完整 vendor 目录，而不只是离线 userscript 内嵌的 `echarts.min.js/json5.min.js`；否则 AI 生成的大屏一旦引用 `ECharts-GL`、`GSAP`、`tsParticles`、`PixiJS`、`Babylon.js`、`Three.js` 就会在正式环境直接 `404`。
    - 这条部署路径生成完 `docker-compose.override.yml` 后，还必须默认执行一次定向 `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy`；否则浏览器侧即使已经能拿到最新 HTML，gateway/proxy 也可能仍然跑在旧容器配置上，导致刷新后 `workspace-agent-downloads/.../__openclaw_echarts_view__-*` 这类重写脚本资源继续 `404`。
@@ -193,7 +194,7 @@ Logo 规则固定为：
 - 新打开页面直接读取最新品牌
 - 当前已是图片 Logo 时，只改品牌名称或页面标题不强制重新上传图片
 - 默认不要求重启容器
-- 默认不要求重打镜像
+- 品牌配置本身默认不要求重打镜像；但只要同步了 OpenClaw 仓库版本或需要刷新原生运行时代码，direct-docker 零侵入部署链路就必须先重建 `openclaw-gateway` 对应镜像，再继续生成覆盖层并执行 `docker compose up`
 
 品牌配置缺失或删除后的回退要求为：
 
