@@ -582,12 +582,25 @@ export function getFrameworkStyles() {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      overflow: visible;
-      padding: 0;
-      border: none;
-      border-radius: 0;
-      background: transparent;
-      box-shadow: none;
+      overflow: hidden;
+      padding: 10px 10px 12px;
+      border: 1px solid
+        color-mix(in srgb, var(--border-strong, var(--border)) 42%, transparent);
+      border-radius: 24px;
+      background:
+        linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--card) 94%, rgba(255, 255, 255, 0.02)),
+          color-mix(in srgb, var(--panel, var(--card)) 96%, transparent)
+        ),
+        radial-gradient(
+          circle at top right,
+          color-mix(in srgb, var(--accent) 10%, transparent),
+          transparent 52%
+        );
+      box-shadow:
+        0 18px 42px color-mix(in srgb, var(--bg, #020617) 18%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
     }
 
     .agent-chat__input[data-oc-voice-recording="true"] {
@@ -603,16 +616,53 @@ export function getFrameworkStyles() {
     }
 
     :root[data-theme-mode="light"] .agent-chat__input {
-      background: transparent;
-      box-shadow: none;
+      background:
+        linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.98),
+          color-mix(in srgb, var(--card) 94%, var(--panel, white) 6%)
+        ),
+        radial-gradient(
+          circle at top right,
+          color-mix(in srgb, var(--accent) 7%, transparent),
+          transparent 48%
+        );
+      box-shadow:
+        0 16px 34px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.66);
     }
 
     .agent-chat__input::before {
-      display: none;
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 1px;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in srgb, var(--accent) 56%, transparent),
+        transparent
+      );
+      opacity: 0.9;
+      pointer-events: none;
     }
 
     .agent-chat__input::after {
-      display: none;
+      content: "";
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      width: 84px;
+      height: 84px;
+      border-radius: 999px;
+      background: radial-gradient(
+        circle,
+        color-mix(in srgb, var(--accent) 12%, transparent),
+        transparent 70%
+      );
+      opacity: 0.8;
+      pointer-events: none;
+      filter: blur(6px);
     }
 
     .agent-chat__input > textarea {
@@ -621,34 +671,31 @@ export function getFrameworkStyles() {
       order: 3;
       min-height: 56px;
       padding: 14px 64px 14px 16px;
-      border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-      border-radius: 20px;
-      background:
-        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 94%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 88%, transparent)),
-        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%);
-      box-shadow:
-        inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
-        0 14px 30px color-mix(in srgb, var(--bg, #020617) 10%, transparent);
+      border: none;
+      border-radius: 16px;
+      background: transparent;
+      box-shadow: none;
       letter-spacing: 0.01em;
       color: var(--text-strong, var(--text));
       text-wrap: pretty;
     }
 
     :root[data-theme-mode="light"] .agent-chat__input > textarea {
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.98), color-mix(in srgb, var(--card) 94%, white 6%)),
-        radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 7%, transparent), transparent 58%);
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.8),
-        0 8px 24px rgba(15, 23, 42, 0.04);
+      background: transparent;
+      box-shadow: none;
     }
 
     .agent-chat__input:focus-within > textarea {
+      box-shadow:
+        none;
+    }
+
+    .agent-chat__input:focus-within {
       border-color: color-mix(in srgb, var(--accent) 28%, var(--border) 72%);
       box-shadow:
-        inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
         0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
-        0 16px 34px color-mix(in srgb, var(--accent) 10%, transparent);
+        0 16px 34px color-mix(in srgb, var(--accent) 10%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
     }
 
     .agent-chat__input > textarea::placeholder {

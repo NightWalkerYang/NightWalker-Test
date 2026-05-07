@@ -40,7 +40,13 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain("--oc-chat-user-bubble-bg");
     expect(styles).toContain("color: var(--oc-chat-user-bubble-text);");
     expect(styles).toContain(".agent-chat__input");
-    expect(styles).toContain("background: transparent;");
+    expect(styles).toContain("overflow: hidden;");
+    expect(styles).toContain("border-radius: 24px;");
+    expect(styles).toContain("radial-gradient(");
+    expect(styles).toContain(".agent-chat__input::before");
+    expect(styles).toContain(".agent-chat__input:focus-within {");
+    expect(styles).toContain(".agent-chat__input > textarea");
+    expect(styles).toContain("border: none;");
     expect(styles).toContain('[data-oc-voice-recording="true"]');
     expect(styles).toContain('[data-oc-voice-state="starting"]');
     expect(styles).toContain('[data-oc-voice-state="recording"]');
