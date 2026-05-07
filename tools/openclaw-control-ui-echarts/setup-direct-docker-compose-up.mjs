@@ -141,6 +141,14 @@ function shouldSkipComposeUp() {
   );
 }
 
+function shouldSkipGatewayImageBuild() {
+  return isTruthyEnvValue(
+    process.env.OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD ??
+      readDotenvValue("OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD") ??
+      "",
+  );
+}
+
 function dockerComposeAvailable() {
   const result = spawnSync(dockerCommand, ["compose", "config"], {
     cwd: repoRoot,
@@ -306,6 +314,13 @@ function writeRootOverride() {
 }
 
 function ensureGatewayServiceImageCurrent() {
+  if (shouldSkipGatewayImageBuild()) {
+    process.stdout.write(
+      "Skipped docker compose build for openclaw-gateway because OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1\n",
+    );
+    return false;
+  }
+
   if (!dockerComposeAvailable()) {
     return false;
   }

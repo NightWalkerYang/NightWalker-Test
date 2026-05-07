@@ -120,6 +120,14 @@ should_skip_compose_up() {
   is_truthy_env_value "$value"
 }
 
+should_skip_gateway_image_build() {
+  local value="${OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD:-}"
+  if [[ -z "$value" ]]; then
+    value="$(read_dotenv_value OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD || true)"
+  fi
+  is_truthy_env_value "$value"
+}
+
 merge_control_ui_allowed_origins_json() {
   local port="$1"
   local raw="${2:-}"
@@ -406,6 +414,11 @@ ensure_gateway_image_available() {
 }
 
 ensure_gateway_service_image_current() {
+  if should_skip_gateway_image_build; then
+    printf '%s\n' "Skipped docker compose build for openclaw-gateway because OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1"
+    return 0
+  fi
+
   if ! docker_compose_available; then
     return 0
   fi
