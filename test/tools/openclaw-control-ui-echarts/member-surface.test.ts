@@ -66,7 +66,9 @@ describe("member surface", () => {
     expect(content?.getAttribute("data-oc-member-surface-active")).toBe("true");
     expect(surfaceRoot).not.toBeNull();
     expect(surfaceRoot?.textContent).toContain("苏博泰克财务分析助手");
-    expect(surfaceRoot?.querySelector("[data-member-open-chat]")?.textContent).toContain("进入聊天");
+    expect(surfaceRoot?.querySelector("[data-member-open-chat]")?.textContent).toContain(
+      "进入聊天",
+    );
     expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
       "请选择一个已分配的 Agent 继续使用。",
@@ -96,5 +98,71 @@ describe("member surface", () => {
     expect(content?.getAttribute("data-oc-member-surface-active")).toBeNull();
     expect(document.querySelector("[data-oc-member-surface-root]")).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("cleans the selector overlay if the route switches to /chat before member agents finish loading", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-agent-selector");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+
+    let resolveAgents;
+    const agentsPromise = new Promise((resolve) => {
+      resolveAgents = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/member/agents")) {
+          return {
+            ok: true,
+            async json() {
+              return agentsPromise;
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    const bootPromise = bootMemberSurface();
+    await Promise.resolve();
+
+    const content = document.querySelector(".content");
+    expect(content?.getAttribute("data-oc-member-surface-active")).toBe("true");
+
+    window.history.pushState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    await Promise.resolve();
+
+    resolveAgents({
+      ok: true,
+      data: [
+        {
+          id: "tenant-agent-1",
+          agentId: "subotech-finance",
+          agentName: "苏博泰克财务分析助手",
+          status: "active",
+          balancePoints: 120,
+          description: "财务分析",
+        },
+      ],
+    });
+
+    await bootPromise;
+    await Promise.resolve();
+
+    expect(content?.getAttribute("data-oc-member-surface-active")).toBeNull();
+    expect(document.querySelector("[data-oc-member-surface-root]")).toBeNull();
+    expect(document.head.querySelector("[data-oc-member-surface-style]")).toBeNull();
   });
 });

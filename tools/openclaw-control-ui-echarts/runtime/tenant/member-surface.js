@@ -1,17 +1,11 @@
 import { mountMemberConsolePage } from "./member-console-page.js";
-import {
-  TENANT_AGENT_SELECTOR_VIEW,
-  readTenantSession,
-  readTenantView,
-} from "./tenant-context.js";
-import {
-  bootTenantRouteSync,
-  onTenantRouteChange,
-} from "./route-sync.js";
+import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
+import { TENANT_AGENT_SELECTOR_VIEW, readTenantSession, readTenantView } from "./tenant-context.js";
 
 const ROOT_ATTR = "data-oc-member-surface-root";
 const STYLE_ATTR = "data-oc-member-surface-style";
 const ACTIVE_ATTR = "data-oc-member-surface-active";
+let memberSurfaceScanToken = 0;
 
 function isRootControlPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
@@ -19,7 +13,9 @@ function isRootControlPath(pathname = window.location.pathname) {
 }
 
 function isMemberAgentRoute() {
-  return isRootControlPath(window.location.pathname) && readTenantView() === TENANT_AGENT_SELECTOR_VIEW;
+  return (
+    isRootControlPath(window.location.pathname) && readTenantView() === TENANT_AGENT_SELECTOR_VIEW
+  );
 }
 
 function ensureStyle() {
@@ -71,6 +67,7 @@ export async function bootMemberSurface() {
   bootTenantRouteSync();
 
   const scan = async (scope = document) => {
+    const scanToken = ++memberSurfaceScanToken;
     const content =
       scope instanceof Element && scope.matches(".content")
         ? scope
@@ -78,12 +75,21 @@ export async function bootMemberSurface() {
     if (!(content instanceof HTMLElement)) {
       return null;
     }
-    return mountCurrentSurface(content);
+    const result = await mountCurrentSurface(content);
+    if (scanToken !== memberSurfaceScanToken) {
+      return null;
+    }
+    if (!isMemberAgentRoute()) {
+      content.removeAttribute(ACTIVE_ATTR);
+      content.querySelector(`[${ROOT_ATTR}]`)?.remove();
+      document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+      return null;
+    }
+    return result;
   };
 
-  const initial = await scan(document);
   if (window.__openclawMemberSurfaceBooted) {
-    return initial;
+    return scan(document);
   }
   window.__openclawMemberSurfaceBooted = true;
 
@@ -117,5 +123,5 @@ export async function bootMemberSurface() {
     childList: true,
   });
 
-  return initial;
+  return scan(document);
 }
