@@ -142,15 +142,25 @@ function createSlotCard(slot, stateById) {
   hint.className = "oc-image-upload-card__slot-hint";
   hint.textContent = slot.hint || UI_TEXT.dropHint;
 
-  const path = document.createElement("code");
-  path.className = "oc-image-upload-card__slot-path";
-  path.textContent = slot.workspacePath;
+  const uploadBox = document.createElement("button");
+  uploadBox.type = "button";
+  uploadBox.className = "oc-image-upload-card__slot-upload-box";
+  uploadBox.setAttribute("data-oc-image-upload-trigger", slot.id);
+  uploadBox.setAttribute("aria-label", `${slot.label}${slot.required ? " 必填" : ""}`);
+  const uploadPlus = document.createElement("span");
+  uploadPlus.className = "oc-image-upload-card__slot-upload-plus";
+  uploadPlus.textContent = "+";
+  const uploadGuide = document.createElement("span");
+  uploadGuide.className = "oc-image-upload-card__slot-upload-guide";
+  uploadGuide.textContent = UI_TEXT.uploadLabel;
+  uploadBox.append(uploadPlus, uploadGuide);
 
   const input = document.createElement("input");
   input.className = "oc-image-upload-card__slot-input";
   input.type = "file";
   input.setAttribute("data-oc-image-upload-input", slot.id);
   input.setAttribute("aria-label", `${slot.label}${slot.required ? " 必填" : ""}`);
+  input.tabIndex = -1;
   input.accept = slot.accept.join(",");
 
   const error = document.createElement("div");
@@ -161,8 +171,8 @@ function createSlotCard(slot, stateById) {
     error.classList.add("is-visible");
   }
 
-  node.append(head, hint, path, input, error);
-  return { node, input, error };
+  node.append(head, hint, uploadBox, input, error);
+  return { node, input, uploadBox, error };
 }
 
 function createUploadCard(payload) {
@@ -322,6 +332,9 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
           if (!slot) {
             continue;
           }
+          entry.uploadBox.addEventListener("click", () => {
+            entry.input.click();
+          });
           entry.input.addEventListener("change", () => {
             const files = Array.from(entry.input.files || []);
             const file = files[0];

@@ -80,6 +80,11 @@ describe("image-upload adapter", () => {
       host,
     });
 
+    expect(host.querySelector('[data-oc-image-upload-trigger="logo"]')).not.toBeNull();
+    expect(host.querySelector('[data-oc-image-upload-trigger="hero"]')).not.toBeNull();
+    expect(host.textContent || "").not.toContain("Echarts/assets/logo.png");
+    expect(host.textContent || "").not.toContain("Echarts/assets/hero-banner.jpg");
+
     const submitButton = host.querySelector<HTMLButtonElement>(
       '[data-oc-image-upload-action="submit"]',
     );
