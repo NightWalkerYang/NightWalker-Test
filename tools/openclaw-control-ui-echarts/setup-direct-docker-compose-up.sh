@@ -332,7 +332,7 @@ ensure_gateway_service_image_current() {
     return 0
   fi
 
-  if cd "$ROOT_DIR" && docker compose build openclaw-gateway; then
+  if cd "$ROOT_DIR" && OPENCLAW_SKIP_RUNTIME_PRUNE=1 docker compose build openclaw-gateway; then
     printf '%s\n' "Rebuilt docker compose image for openclaw-gateway from current repository checkout"
     return 0
   fi

@@ -112,6 +112,7 @@ describe("Dockerfile", () => {
     expect(dockerfile).toContain("FROM build AS runtime-assets");
     expect(dockerfile).toContain("ARG OPENCLAW_EXTENSIONS");
     expect(dockerfile).toContain("ARG OPENCLAW_BUNDLED_PLUGIN_DIR");
+    expect(dockerfile).toContain('ARG OPENCLAW_SKIP_RUNTIME_PRUNE="0"');
     expect(dockerfile).toContain(
       "Opt-in plugin dependencies at build time (space- or comma-separated directory names).",
     );
@@ -124,7 +125,13 @@ describe("Dockerfile", () => {
     expect(dockerfile).toContain(
       "RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked",
     );
-    expect(dockerfile).toContain("CI=true NPM_CONFIG_FROZEN_LOCKFILE=false pnpm prune --prod");
+    expect(dockerfile).toContain('if [ "${OPENCLAW_SKIP_RUNTIME_PRUNE:-0}" = "1" ]; then \\');
+    expect(dockerfile).toContain(
+      'echo "Skipping pnpm prune --prod for fast local runtime image builds"; \\',
+    );
+    expect(dockerfile).toContain(
+      "CI=true NPM_CONFIG_FROZEN_LOCKFILE=false pnpm prune --prod --ignore-scripts",
+    );
     expect(dockerfile).toContain(
       'OPENCLAW_EXTENSIONS="$OPENCLAW_EXTENSIONS" node scripts/prune-docker-plugin-dist.mjs',
     );

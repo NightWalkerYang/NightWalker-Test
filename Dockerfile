@@ -18,6 +18,7 @@ ARG OPENCLAW_NODE_BOOKWORM_SLIM_DIGEST="sha256:e8e2e91b1378f83c5b2dd15f0247f3411
 ARG OPENCLAW_NPM_REGISTRY="https://registry.npmjs.org"
 ARG OPENCLAW_APT_MIRROR=""
 ARG OPENCLAW_APT_SECURITY_MIRROR=""
+ARG OPENCLAW_SKIP_RUNTIME_PRUNE="0"
 # Keep in sync with .github/actions/setup-node-env/action.yml bun-version.
 # To update: docker buildx imagetools inspect oven/bun:<version> and use the manifest-list digest.
 ARG OPENCLAW_BUN_IMAGE="oven/bun:1.3.13@sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e"
@@ -131,6 +132,7 @@ RUN pnpm qa:lab:build
 FROM build AS runtime-assets
 ARG OPENCLAW_EXTENSIONS
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
+ARG OPENCLAW_SKIP_RUNTIME_PRUNE
 # Keep the install layer frozen, but allow prune to run against the full copied
 # workspace tree subset used during `pnpm install`. The build stage only copied
 # the root, `ui`, and opted-in plugin manifests into the install layer, so
@@ -142,7 +144,11 @@ RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/sto
       printf '  - %s/%s\n' "$OPENCLAW_BUNDLED_PLUGIN_DIR" "$ext" >> /tmp/pnpm-workspace.runtime.yaml; \
     done && \
     cp /tmp/pnpm-workspace.runtime.yaml pnpm-workspace.yaml && \
-    CI=true NPM_CONFIG_FROZEN_LOCKFILE=false pnpm prune --prod && \
+    if [ "${OPENCLAW_SKIP_RUNTIME_PRUNE:-0}" = "1" ]; then \
+      echo "Skipping pnpm prune --prod for fast local runtime image builds"; \
+    else \
+      CI=true NPM_CONFIG_FROZEN_LOCKFILE=false pnpm prune --prod --ignore-scripts; \
+    fi && \
     node scripts/postinstall-bundled-plugins.mjs && \
     OPENCLAW_EXTENSIONS="$OPENCLAW_EXTENSIONS" node scripts/prune-docker-plugin-dist.mjs && \
     find dist -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' -o -name '*.map' \) -delete && \
