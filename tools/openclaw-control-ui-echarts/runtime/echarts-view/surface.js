@@ -149,6 +149,38 @@ function scrollFrameToFragment(frameDocument, frameWindow, fragmentValue) {
   scrollFrameToTop(frameWindow, frameDocument);
 }
 
+function resolveFrameEventElement(eventTarget) {
+  if (!eventTarget || typeof eventTarget !== "object") {
+    return null;
+  }
+  if (typeof eventTarget.closest === "function") {
+    return eventTarget;
+  }
+  const parentElement =
+    "parentElement" in eventTarget && eventTarget.parentElement ? eventTarget.parentElement : null;
+  if (parentElement && typeof parentElement.closest === "function") {
+    return parentElement;
+  }
+  return null;
+}
+
+function findFrameAnchorTarget(eventTarget) {
+  const eventElement = resolveFrameEventElement(eventTarget);
+  if (!eventElement) {
+    return null;
+  }
+  const anchor = eventElement.closest("a[href]");
+  if (
+    !anchor ||
+    String(anchor.tagName || "")
+      .trim()
+      .toLowerCase() !== "a"
+  ) {
+    return null;
+  }
+  return anchor;
+}
+
 export function installEchartsViewFrameNavigationBridge(frame) {
   if (!(frame instanceof HTMLIFrameElement)) {
     return;
@@ -180,12 +212,8 @@ export function installEchartsViewFrameNavigationBridge(frame) {
         ) {
           return;
         }
-        const target = event.target;
-        if (!(target instanceof Element)) {
-          return;
-        }
-        const anchor = target.closest("a[href]");
-        if (!(anchor instanceof HTMLAnchorElement)) {
+        const anchor = findFrameAnchorTarget(event.target);
+        if (!anchor) {
           return;
         }
         const rawHref = anchor.getAttribute("href")?.trim() || "";

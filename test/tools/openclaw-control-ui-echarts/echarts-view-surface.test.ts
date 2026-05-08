@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bootEchartsViewSurface,
@@ -96,51 +97,73 @@ describe("public echarts view surface", () => {
     expect(document.querySelector(`iframe#oc-echarts-view-frame`)).not.toBeNull();
   });
 
-  it("keeps fragment-only navigation inside the iframe document", () => {
+  it("keeps fragment-only navigation inside iframe documents across browser realms", () => {
     const frame = document.createElement("iframe");
-    const frameDocument = document.implementation.createHTMLDocument("可视化展示");
-    const frameWindow = {
-      scrollTo: vi.fn(),
-    };
-    frameDocument.body.innerHTML = `
-      <main id="top">overview</main>
-      <section id="contact">contact</section>
-      <a id="jump-section" href="#contact">jump</a>
-      <a id="jump-top" href="#">top</a>
-    `;
+    const foreignDom = new JSDOM(
+      `<!doctype html>
+       <html>
+         <body>
+           <main id="top">overview</main>
+           <section id="contact">contact</section>
+           <a id="jump-section" href="#contact"><span id="jump-section-label">jump</span></a>
+           <a id="jump-top" href="#"><span id="jump-top-label">top</span></a>
+         </body>
+       </html>`,
+      {
+        url: "https://www.hailstone.cn:18789/echarts-view/?token=member-visualization-token",
+      },
+    );
 
-    const contactSection = frameDocument.getElementById("contact");
-    contactSection.scrollIntoView = vi.fn();
+    try {
+      const frameDocument = foreignDom.window.document;
+      const frameWindow = foreignDom.window;
+      frameWindow.scrollTo = vi.fn();
 
-    Object.defineProperty(frame, "contentDocument", {
-      configurable: true,
-      value: frameDocument,
-    });
-    Object.defineProperty(frame, "contentWindow", {
-      configurable: true,
-      value: frameWindow,
-    });
+      const contactSection = frameDocument.getElementById("contact");
+      contactSection.scrollIntoView = vi.fn();
 
-    installEchartsViewFrameNavigationBridge(frame);
+      expect(frameDocument.getElementById("jump-section-label") instanceof Element).toBe(false);
 
-    const jumpSectionResult = frameDocument
-      .getElementById("jump-section")
-      .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    expect(jumpSectionResult).toBe(false);
-    expect(contactSection.scrollIntoView).toHaveBeenCalledWith({
-      behavior: "smooth",
-      block: "start",
-      inline: "nearest",
-    });
+      Object.defineProperty(frame, "contentDocument", {
+        configurable: true,
+        value: frameDocument,
+      });
+      Object.defineProperty(frame, "contentWindow", {
+        configurable: true,
+        value: frameWindow,
+      });
 
-    const jumpTopResult = frameDocument
-      .getElementById("jump-top")
-      .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    expect(jumpTopResult).toBe(false);
-    expect(frameWindow.scrollTo).toHaveBeenCalledWith({
-      top: 0,
-      left: 0,
-      behavior: "smooth",
-    });
+      installEchartsViewFrameNavigationBridge(frame);
+
+      const jumpSectionResult = frameDocument.getElementById("jump-section-label").dispatchEvent(
+        new frameWindow.MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+        }),
+      );
+      expect(jumpSectionResult).toBe(false);
+      expect(contactSection.scrollIntoView).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "start",
+        inline: "nearest",
+      });
+
+      const jumpTopResult = frameDocument.getElementById("jump-top-label").dispatchEvent(
+        new frameWindow.MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+        }),
+      );
+      expect(jumpTopResult).toBe(false);
+      expect(frameWindow.scrollTo).toHaveBeenCalledWith({
+        top: 0,
+        left: 0,
+        behavior: "smooth",
+      });
+    } finally {
+      foreignDom.window.close();
+    }
   });
 });
