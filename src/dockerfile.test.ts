@@ -121,6 +121,9 @@ describe("Dockerfile", () => {
     expect(dockerfile.split(normalizedExtensionLoop).length - 1).toBe(2);
     expect(dockerfile).toContain("pnpm-workspace.runtime.yaml");
     expect(dockerfile).toContain("  - ui\\n");
+    expect(dockerfile).toContain(
+      "RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked",
+    );
     expect(dockerfile).toContain("CI=true NPM_CONFIG_FROZEN_LOCKFILE=false pnpm prune --prod");
     expect(dockerfile).toContain(
       'OPENCLAW_EXTENSIONS="$OPENCLAW_EXTENSIONS" node scripts/prune-docker-plugin-dist.mjs',
