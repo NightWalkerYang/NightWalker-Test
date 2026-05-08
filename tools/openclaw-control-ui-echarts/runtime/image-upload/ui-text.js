@@ -1,0 +1,19 @@
+export const UI_TEXT = Object.freeze({
+  badge: "image-upload",
+  summaryLoading: "上传卡片生成中",
+  summarySuccess: "上传卡片已就绪",
+  summaryError: "上传卡片生成失败",
+  loadingTitle: "上传卡片生成中...",
+  loadingRuntimeDetail: "正在整理多槽位上传配置...",
+  loadingStreamingDetail: "正在等待 AI 输出完整的上传配置",
+  errorTitle: "无法渲染该上传卡片。",
+  actionInsert: "插入到聊天框",
+  actionSubmit: "上传完成并继续",
+  statusPending: "未上传",
+  statusUploaded: "已上传",
+  statusFailed: "失败",
+  statusReplaceable: "可替换",
+  uploadLabel: "选择图片",
+  dropHint: "支持 png / jpeg / webp",
+});
+

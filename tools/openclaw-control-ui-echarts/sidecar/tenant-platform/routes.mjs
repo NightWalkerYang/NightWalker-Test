@@ -191,15 +191,19 @@ function readJsonBody(request) {
   });
 }
 
-function readBodyText(request) {
+function readBodyBuffer(request) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
     request.on("end", () => {
-      resolve(Buffer.concat(chunks).toString("utf8"));
+      resolve(Buffer.concat(chunks));
     });
     request.on("error", reject);
   });
+}
+
+function readBodyText(request) {
+  return readBodyBuffer(request).then((buffer) => buffer.toString("utf8"));
 }
 
 async function readFormBody(request) {
@@ -208,6 +212,27 @@ async function readFormBody(request) {
     return {};
   }
   return Object.fromEntries(new URLSearchParams(text).entries());
+}
+
+async function readMultipartBody(request) {
+  const contentType = String(request.headers["content-type"] || "").trim();
+  if (!/^multipart\/form-data\b/i.test(contentType)) {
+    throw new Error("multipart_form_required");
+  }
+  const body = await readBodyBuffer(request);
+  const requestUrl = new URL(
+    request.url || "/",
+    `http://${String(request.headers.host || "127.0.0.1").trim()}`,
+  );
+  const formRequest = new Request(requestUrl, {
+    method: request.method || "POST",
+    headers: {
+      "content-type": contentType,
+    },
+    body,
+    duplex: "half",
+  });
+  return formRequest.formData();
 }
 
 function readManagedNodeRuntimeLease(deps) {
@@ -496,6 +521,62 @@ function readTenantAgentIds(value) {
 
 function readVisualizationToken(value) {
   return String(value || "").trim();
+}
+
+const IMAGE_UPLOAD_ALLOWED_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+const IMAGE_UPLOAD_ALLOWED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+
+function isAbsoluteOrUnsafeUploadPath(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return true;
+  }
+  if (/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(normalized)) {
+    return true;
+  }
+  return false;
+}
+
+function normalizeMemberUploadWorkspacePath(value) {
+  const normalized = String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\.\/+/, "")
+    .trim();
+  if (!normalized) {
+    throw new Error("workspace_path_required");
+  }
+  if (isAbsoluteOrUnsafeUploadPath(normalized)) {
+    throw new Error("workspace_path_absolute_forbidden");
+  }
+  const segments = normalized.split("/").filter(Boolean);
+  if (!segments.length) {
+    throw new Error("workspace_path_required");
+  }
+  for (const segment of segments) {
+    if (segment === "." || segment === "..") {
+      throw new Error("workspace_path_traversal_forbidden");
+    }
+  }
+  const workspacePath = segments.join("/");
+  if (!(workspacePath === "Echarts" || workspacePath.startsWith("Echarts/"))) {
+    throw new Error("workspace_path_must_be_under_echarts");
+  }
+  return workspacePath;
+}
+
+function resolveMemberRelativeAssetPath(workspacePath) {
+  if (workspacePath.startsWith("Echarts/assets/")) {
+    return `./assets/${workspacePath.slice("Echarts/assets/".length)}`;
+  }
+  if (workspacePath.startsWith("Echarts/")) {
+    return `./${workspacePath.slice("Echarts/".length)}`;
+  }
+  return `./${workspacePath}`;
 }
 
 function buildEchartsViewHref(token) {
@@ -3401,6 +3482,104 @@ export function createTenantPlatformRouter(deps) {
           configPath: deps.config?.configPath,
         });
         sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/member/image-uploads") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const form = await readMultipartBody(request);
+        const tenantAgentId = String(form.get("tenantAgentId") || "").trim();
+        const slotId = String(form.get("slotId") || "").trim();
+        const workspacePath = normalizeMemberUploadWorkspacePath(form.get("workspacePath"));
+        const file = form.get("file");
+
+        if (!tenantAgentId || !workspacePath || !file) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        if (
+          typeof file !== "object" ||
+          typeof file.arrayBuffer !== "function" ||
+          typeof file.name !== "string"
+        ) {
+          sendJson(request, response, 400, { ok: false, error: "file_required" });
+          return;
+        }
+
+        const assignment = listAssignedAgentsForUser(
+          deps.db,
+          {
+            tenantId: session.tenantId,
+            userId: session.userId,
+            configPath: deps.config.configPath,
+            configDir: deps.config.configDir,
+          },
+          configAgents,
+        ).find((item) => String(item.tenantAgentId || "").trim() === tenantAgentId);
+        const derivedWorkspaceDir = String(assignment?.derivedWorkspaceDir || "").trim();
+        if (!assignment || !derivedWorkspaceDir) {
+          sendJson(request, response, 403, { ok: false, error: "agent_assignment_not_found" });
+          return;
+        }
+
+        const mimeType = String(file.type || "")
+          .trim()
+          .toLowerCase();
+        const workspaceExtension = path.extname(workspacePath).toLowerCase();
+        const fileNameExtension = path.extname(String(file.name || "")).toLowerCase();
+        if (
+          !IMAGE_UPLOAD_ALLOWED_MIME_TYPES.has(mimeType) ||
+          !IMAGE_UPLOAD_ALLOWED_EXTENSIONS.has(workspaceExtension) ||
+          (fileNameExtension && !IMAGE_UPLOAD_ALLOWED_EXTENSIONS.has(fileNameExtension))
+        ) {
+          sendJson(request, response, 400, { ok: false, error: "image_type_not_allowed" });
+          return;
+        }
+
+        const targetPath = path.resolve(derivedWorkspaceDir, workspacePath);
+        if (!isPathInsideRoot(targetPath, derivedWorkspaceDir)) {
+          sendJson(request, response, 400, { ok: false, error: "workspace_path_out_of_scope" });
+          return;
+        }
+
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        const existed = fs.existsSync(targetPath);
+        const bytes = Buffer.from(await file.arrayBuffer());
+        fs.writeFileSync(targetPath, bytes);
+
+        const uploadedItem = {
+          tenantAgentId,
+          slotId,
+          workspacePath,
+          relativePath: resolveMemberRelativeAssetPath(workspacePath),
+          workspaceAbsolutePath: targetPath,
+          fileName: String(file.name || "").trim() || path.basename(workspacePath),
+          mimeType,
+          sizeBytes: bytes.byteLength,
+          overwritten: existed,
+        };
+
+        sendJson(request, response, 200, {
+          ok: true,
+          data: {
+            uploadedItems: [uploadedItem],
+            workspacePaths: [uploadedItem.workspacePath],
+            relativePaths: [uploadedItem.relativePath],
+          },
+        });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,

@@ -1546,6 +1546,121 @@ describe("tenant platform local edition", () => {
       .get(tenantId);
     expect(ledgerCount?.total).toBe(0);
   });
+
+  it("uploads member image files into the current member derived workspace under Echarts only", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-active",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "member-upload",
+        password: "secret",
+      },
+    });
+    expect(createMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "member-upload",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+    const memberToken = String(memberLogin.payload.data.token || "");
+    const memberAgents = await requestJson(baseUrl, "/member/agents", {
+      token: memberToken,
+    });
+    expect(memberAgents.status).toBe(200);
+    const derivedWorkspaceDir = String(
+      memberAgents.payload?.data?.[0]?.derivedWorkspaceDir || "",
+    ).trim();
+    expect(Boolean(derivedWorkspaceDir)).toBe(true);
+
+    const form = new FormData();
+    form.set("tenantAgentId", tenantAgentId);
+    form.set("slotId", "logo");
+    form.set("workspacePath", "Echarts/assets/logo.png");
+    form.set("file", new File([Uint8Array.from([1, 2, 3])], "logo.png", { type: "image/png" }));
+    const uploadResponse = await fetch(`${baseUrl}/member/image-uploads`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${memberToken}`,
+      },
+      body: form,
+    });
+    const uploadPayload = await uploadResponse.json();
+    expect(uploadResponse.status).toBe(200);
+    expect(uploadPayload?.ok).toBe(true);
+    expect(uploadPayload?.data?.uploadedItems?.[0]?.workspacePath).toBe("Echarts/assets/logo.png");
+    expect(uploadPayload?.data?.uploadedItems?.[0]?.relativePath).toBe("./assets/logo.png");
+
+    const uploadedPath = path.join(
+      derivedWorkspaceDir,
+      "Echarts",
+      "assets",
+      "logo.png",
+    );
+    expect(fs.existsSync(uploadedPath)).toBe(true);
+    expect(fs.readFileSync(uploadedPath)).toEqual(Buffer.from([1, 2, 3]));
+
+    const blockedForm = new FormData();
+    blockedForm.set("tenantAgentId", tenantAgentId);
+    blockedForm.set("slotId", "escape");
+    blockedForm.set("workspacePath", "../secrets.txt");
+    blockedForm.set(
+      "file",
+      new File([Uint8Array.from([7, 8])], "secrets.png", { type: "image/png" }),
+    );
+    const blockedResponse = await fetch(`${baseUrl}/member/image-uploads`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${memberToken}`,
+      },
+      body: blockedForm,
+    });
+    const blockedPayload = await blockedResponse.json();
+    expect(blockedResponse.status).toBe(400);
+    expect(String(blockedPayload?.error || "")).toContain("workspace_path");
+  });
 });
 
 describe("tenant platform managed node sync", () => {

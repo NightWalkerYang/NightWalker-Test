@@ -120,6 +120,13 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/select/styles.js`
 - `tools/openclaw-control-ui-echarts/runtime/select/ui-text.js`
 
+### Runtime: Image Upload
+
+- `tools/openclaw-control-ui-echarts/runtime/image-upload/adapter.js`
+- `tools/openclaw-control-ui-echarts/runtime/image-upload/parser.js`
+- `tools/openclaw-control-ui-echarts/runtime/image-upload/styles.js`
+- `tools/openclaw-control-ui-echarts/runtime/image-upload/ui-text.js`
+
 ### Runtime: Knowledge Graph
 
 - `tools/openclaw-control-ui-echarts/runtime/knowledge-graph/entry.js`
@@ -243,6 +250,9 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/select-adapter.test.ts`
 - `test/tools/openclaw-control-ui-echarts/select-parser.test.ts`
+- `test/tools/openclaw-control-ui-echarts/image-upload-adapter.test.ts`
+- `test/tools/openclaw-control-ui-echarts/image-upload-parser.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-api-client-upload.test.ts`
 - `test/tools/openclaw-control-ui-echarts/sync-smoke-gate-build.test.ts`
 - `test/tools/openclaw-control-ui-echarts/sync-smoke-gate-ui.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
@@ -264,6 +274,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 
 - Fenced `echarts` blocks render as inline chart cards with a detail modal.
 - Fenced `file` blocks render as compact download cards.
+- Fenced `image-upload` blocks render as single-card multi-slot upload forms (not generic form DSL): each slot validates `png/jpeg/webp`, uploads through member-auth `multipart/form-data`, persists only into the current member's derived workspace under `Echarts/**`, and then composes a continuation prompt with explicit `slot -> Echarts/...` plus `./assets/...` hints.
 - Fenced `single-select` and `multi-select` blocks now render as inline option cards. Users can select one or more suggested next steps, then either insert the composed prompt into the chat box or directly send it back to the chat flow.
 - The tenant member bootstrap filter is packaged in the `kingdee-cloud` workspace overlay for parent/child Agent file parity, and the deployment/runtime layer also syncs that hook into `OPENCLAW_CONFIG_DIR/hooks/tenant-member-bootstrap-filter` so gateway startup can actually register it for runtime bootstrap filtering.
 - Workspace file paths can download through same-origin `workspace-downloads` mounts.

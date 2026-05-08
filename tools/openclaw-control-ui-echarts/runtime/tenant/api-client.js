@@ -94,6 +94,60 @@ async function requestJson(path, options = {}) {
   throw lastError instanceof Error ? lastError : new Error(String(lastError || "request_failed"));
 }
 
+async function requestMultipart(path, options = {}) {
+  const baseUrls = resolveTenantApiBaseCandidates();
+  const session = options.session || readSessionForCurrentView();
+  const headers = {
+    ...options.headers,
+  };
+  if (session?.token) {
+    headers.authorization = `Bearer ${session.token}`;
+  }
+  if ("content-type" in headers) {
+    delete headers["content-type"];
+  }
+
+  const body = options.body instanceof FormData ? options.body : null;
+  if (!body) {
+    throw new Error("multipart_body_required");
+  }
+
+  let lastError = null;
+  for (const baseUrl of baseUrls) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: options.method || "POST",
+        cache: options.cache,
+        headers,
+        body,
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok || !payload?.ok) {
+        const message = payload?.error || `HTTP ${response.status}`;
+        throw new Error(message);
+      }
+
+      if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+        writeTenantApiBaseOverride(baseUrl);
+      }
+      return payload.data;
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryTransportError(error)) {
+        throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || "request_failed"));
+}
+
 export function createTenantApiClient() {
   return {
     bootstrap() {
@@ -309,6 +363,17 @@ export function createTenantApiClient() {
     },
     deleteMemberSession(body) {
       return requestJson("/member/sessions/delete", { method: "POST", body });
+    },
+    uploadMemberImageAsset({ tenantAgentId, slotId, workspacePath, file }) {
+      const form = new FormData();
+      form.set("tenantAgentId", String(tenantAgentId || "").trim());
+      form.set("slotId", String(slotId || "").trim());
+      form.set("workspacePath", String(workspacePath || "").trim());
+      form.set("file", file);
+      return requestMultipart("/member/image-uploads", {
+        method: "POST",
+        body: form,
+      });
     },
     persistSession(payload) {
       writeTenantSession(payload);
