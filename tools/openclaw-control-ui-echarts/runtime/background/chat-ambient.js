@@ -147,26 +147,66 @@ function pruneOrphanHosts() {
   }
 }
 
+function enqueueSyncRoot(pendingRoots, root) {
+  if (root instanceof Document) {
+    pendingRoots.clear();
+    pendingRoots.add(document);
+    return;
+  }
+
+  if (!(root instanceof Element)) {
+    pendingRoots.add(document);
+    return;
+  }
+
+  if (pendingRoots.has(document)) {
+    return;
+  }
+
+  for (const existing of pendingRoots) {
+    if (!(existing instanceof Element)) {
+      continue;
+    }
+    if (existing.contains(root)) {
+      return;
+    }
+    if (root.contains(existing)) {
+      pendingRoots.delete(existing);
+    }
+  }
+
+  pendingRoots.add(root);
+}
+
 export function bootChatAmbientBackground() {
   let frame = 0;
+  const pendingRoots = new Set([document]);
 
   const sync = () => {
     frame = 0;
     pruneOrphanHosts();
 
+    const surfaces = new Set();
     const rootSurface = findChatSurface(document);
     if (rootSurface instanceof HTMLElement) {
-      ensureAmbientHost(rootSurface);
+      surfaces.add(rootSurface);
     }
 
-    for (const candidate of document.querySelectorAll("main, section, div")) {
-      if (findChatSurface(candidate) === candidate) {
-        ensureAmbientHost(candidate);
+    for (const root of pendingRoots) {
+      const surface = findChatSurface(root);
+      if (surface instanceof HTMLElement) {
+        surfaces.add(surface);
       }
+    }
+    pendingRoots.clear();
+
+    for (const surface of surfaces) {
+      ensureAmbientHost(surface);
     }
   };
 
-  const schedule = () => {
+  const schedule = (root = document) => {
+    enqueueSyncRoot(pendingRoots, root);
     if (frame) {
       return;
     }
@@ -175,11 +215,22 @@ export function bootChatAmbientBackground() {
 
   sync();
 
-  const observer = new MutationObserver(schedule);
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.target instanceof Element) {
+        schedule(mutation.target);
+      }
+      for (const node of mutation.addedNodes) {
+        if (node instanceof Element) {
+          schedule(node);
+        }
+      }
+    }
+  });
   observer.observe(document.body, {
     childList: true,
     subtree: true,
   });
 
-  window.addEventListener("pageshow", schedule);
+  window.addEventListener("pageshow", () => schedule(document));
 }

@@ -1,5 +1,9 @@
 (() => {
-  if (typeof window === "undefined" || typeof document === "undefined" || typeof location === "undefined") {
+  if (
+    typeof window === "undefined" ||
+    typeof document === "undefined" ||
+    typeof location === "undefined"
+  ) {
     return;
   }
 
@@ -11,6 +15,12 @@
   const TENANT_VIEW_QUERY_KEY = "ocTenantView";
   const LOGIN_VIEW = "login";
   const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
+  const RESPONSIVENESS_WARNINGS = new Set([
+    "[openclaw] control-ui.long-animation-frame",
+    "[openclaw] control-ui.longtask",
+  ]);
+  const RESPONSIVENESS_WARN_STATE_KEY = "__openclawControlUiResponsivenessWarnCounts";
+  const RESPONSIVENESS_WARN_PATCH_FLAG = "__OPENCLAW_TENANT_PREBOOT_WARN_PATCHED__";
   const CONTROL_UI_TAB_PATHS = new Set([
     "/agents",
     "/overview",
@@ -57,6 +67,40 @@
     }
   };
 
+  const patchResponsivenessWarnings = () => {
+    if (window[RESPONSIVENESS_WARN_PATCH_FLAG]) {
+      return;
+    }
+    const originalWarn = console?.warn;
+    if (typeof originalWarn !== "function") {
+      return;
+    }
+
+    const counts =
+      window[RESPONSIVENESS_WARN_STATE_KEY] &&
+      typeof window[RESPONSIVENESS_WARN_STATE_KEY] === "object"
+        ? window[RESPONSIVENESS_WARN_STATE_KEY]
+        : Object.create(null);
+    window[RESPONSIVENESS_WARN_STATE_KEY] = counts;
+
+    try {
+      console.warn = (...args) => {
+        const message = typeof args[0] === "string" ? args[0].trim() : "";
+        if (RESPONSIVENESS_WARNINGS.has(message)) {
+          const nextCount = Number(counts[message] || 0) + 1;
+          counts[message] = nextCount;
+          if (nextCount > 1) {
+            return;
+          }
+        }
+        return originalWarn.apply(console, args);
+      };
+      window[RESPONSIVENESS_WARN_PATCH_FLAG] = true;
+    } catch {
+      // Best-effort only.
+    }
+  };
+
   const normalizePath = (value) => {
     const raw = String(value || "").trim() || "/";
     const prefixed = raw.startsWith("/") ? raw : `/${raw}`;
@@ -98,7 +142,10 @@
     return normalized === "/" || normalized.endsWith("/index.html");
   };
 
-  const isMemberSelectorRoute = (href = window.location.href, tenantSession = readTenantSession()) => {
+  const isMemberSelectorRoute = (
+    href = window.location.href,
+    tenantSession = readTenantSession(),
+  ) => {
     if (tenantSession?.session?.role !== "member") {
       return false;
     }
@@ -372,7 +419,8 @@
     `openclaw.control.settings.v1:${normalizeGatewayScope(gatewayUrl)}`;
 
   const clearPersistedControlUiSession = (routeLike = window.location.href) => {
-    const routeUrl = routeLike instanceof URL ? routeLike : new URL(routeLike, window.location.href);
+    const routeUrl =
+      routeLike instanceof URL ? routeLike : new URL(routeLike, window.location.href);
     const proto = routeUrl.protocol === "https:" ? "wss" : "ws";
     const rootGatewayUrl = `${proto}://${routeUrl.host}`;
     const basePath = inferBasePathFromPathname(routeUrl.pathname);
@@ -490,10 +538,7 @@
     if (targetTenantView === TENANT_AGENT_SELECTOR_VIEW) {
       return buildMemberSelectorRouteUrl();
     }
-    if (
-      isMemberSelectorRoute(baseHref, tenantSession) &&
-      !targetTenantAgentId
-    ) {
+    if (isMemberSelectorRoute(baseHref, tenantSession) && !targetTenantAgentId) {
       return buildMemberSelectorRouteUrl();
     }
     const selectedAgent = readSelectedTenantAgent(url.href);
@@ -543,7 +588,11 @@
     if (shouldRespectBlankRuntimeSession) {
       return url;
     }
-    const sessionKey = isTenantMemberSessionKey(effectiveQuerySessionKey, tenantSession, selectedAgent)
+    const sessionKey = isTenantMemberSessionKey(
+      effectiveQuerySessionKey,
+      tenantSession,
+      selectedAgent,
+    )
       ? normalizeTenantValue(effectiveQuerySessionKey)
       : readCachedMemberSessionKey(tenantSession, selectedAgent) ||
         readRegisteredMemberSessionKey(tenantSession, selectedAgent, registeredRows);
@@ -572,6 +621,7 @@
     writeCachedMemberSessionKey(tenantSession, selectedAgent, sessionKey);
   };
 
+  patchResponsivenessWarnings();
   document.documentElement.setAttribute("data-oc-tenant-preboot", "true");
 
   const currentHref = new URL(window.location.href, window.location.href);
@@ -588,19 +638,17 @@
     const originalReplaceState = window.history.replaceState.bind(window.history);
     const originalPushState = window.history.pushState.bind(window.history);
 
-    const wrap =
-      (original) =>
-      (state, unused, url) => {
-        if (url == null) {
-          return original(state, unused, url);
-        }
-        const normalized = resolveMemberRouteUrl(url, window.location.href);
-        if (isMemberSelectorRoute(normalized, readTenantSession())) {
-          clearPersistedControlUiSession(normalized);
-        }
-        persistRouteState(normalized);
-        return original(state, unused, normalized.toString());
-      };
+    const wrap = (original) => (state, unused, url) => {
+      if (url == null) {
+        return original(state, unused, url);
+      }
+      const normalized = resolveMemberRouteUrl(url, window.location.href);
+      if (isMemberSelectorRoute(normalized, readTenantSession())) {
+        clearPersistedControlUiSession(normalized);
+      }
+      persistRouteState(normalized);
+      return original(state, unused, normalized.toString());
+    };
 
     window.history.replaceState = wrap(originalReplaceState);
     window.history.pushState = wrap(originalPushState);

@@ -3,6 +3,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { bootTenantAuthSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
 import {
   bootPlatformAccessGuard,
   isNativeControlUiPath,
@@ -10,7 +11,6 @@ import {
   resolveMemberChatBootstrapHref,
   resolvePlatformAccessDecision,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js";
-import { bootTenantAuthSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
 import { resetTenantRouteSyncForTests } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js";
 import {
   isTenantMemberSessionKey,
@@ -19,6 +19,7 @@ import {
 
 const ORIGINAL_PUSH_STATE = window.history.pushState.bind(window.history);
 const ORIGINAL_REPLACE_STATE = window.history.replaceState.bind(window.history);
+const ORIGINAL_CONSOLE_WARN = console.warn;
 
 function readControlUiSettings() {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -52,9 +53,13 @@ async function importTenantPreboot() {
 
 afterEach(() => {
   window.localStorage.clear();
+  window.sessionStorage.clear();
   window.history.pushState = ORIGINAL_PUSH_STATE;
   window.history.replaceState = ORIGINAL_REPLACE_STATE;
+  console.warn = ORIGINAL_CONSOLE_WARN;
   delete window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__;
+  delete window.__OPENCLAW_TENANT_PREBOOT_WARN_PATCHED__;
+  delete window.__openclawControlUiResponsivenessWarnCounts;
   delete window.__OPENCLAW_CONTROL_UI_BASE_PATH__;
   delete window.__openclawPlatformAccessGuardBooted;
   document.documentElement.removeAttribute("data-oc-tenant-preboot");
@@ -325,8 +330,12 @@ describe("platform access guard", () => {
     const settings = readControlUiSettings();
     expect(settings.sessionKey).toBeUndefined();
     expect(settings.lastActiveSessionKey).toBeUndefined();
-    expect(settings.sessionsByGateway?.["wss://www.hailstone.cn:18789"]?.sessionKey).toBeUndefined();
-    expect(settings.sessionsByGateway?.["wss://www.hailstone.cn:18789"]?.lastActiveSessionKey).toBeUndefined();
+    expect(
+      settings.sessionsByGateway?.["wss://www.hailstone.cn:18789"]?.sessionKey,
+    ).toBeUndefined();
+    expect(
+      settings.sessionsByGateway?.["wss://www.hailstone.cn:18789"]?.lastActiveSessionKey,
+    ).toBeUndefined();
   });
 
   it("normalizes invalid member chat restores back to the selector route", async () => {
@@ -409,6 +418,30 @@ describe("platform access guard", () => {
 
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
+  });
+
+  it("suppresses repeated native responsiveness warnings after the first occurrence", async () => {
+    const warnings = [];
+    console.warn = (...args) => {
+      warnings.push(args);
+    };
+
+    await importTenantPreboot();
+
+    console.warn("[openclaw] control-ui.long-animation-frame", { durationMs: 51 });
+    console.warn("[openclaw] control-ui.long-animation-frame", { durationMs: 52 });
+    console.warn("[openclaw] control-ui.longtask", { durationMs: 55 });
+    console.warn("plain warning", { ok: true });
+
+    expect(warnings).toEqual([
+      ["[openclaw] control-ui.long-animation-frame", { durationMs: 51 }],
+      ["[openclaw] control-ui.longtask", { durationMs: 55 }],
+      ["plain warning", { ok: true }],
+    ]);
+    expect(window.__openclawControlUiResponsivenessWarnCounts).toMatchObject({
+      "[openclaw] control-ui.long-animation-frame": 2,
+      "[openclaw] control-ui.longtask": 1,
+    });
   });
 
   it("heals malformed authenticated member routes with replaceState instead of a full reload", async () => {

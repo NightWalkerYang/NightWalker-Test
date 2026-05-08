@@ -60,6 +60,7 @@
 - preboot 优先复用本地缓存的安全成员 session
 - 如果本地没有缓存，则允许同步调用同源 `/tenant-platform-api/v1/member/sessions`
 - 只有这两条都拿不到时，才保持无 `session` 路由，后续由成员聊天 surface 接管
+- preboot 还会把原生 Control UI 的 `control-ui.long-animation-frame` / `control-ui.longtask` 控制台告警压成“每类型首条保留、后续抑制”，避免浏览器 DevTools 因高频响应性诊断刷屏继续放大卡顿；真正的诊断事件仍由原生 event log 缓冲保留有限条数
 
 目标：
 

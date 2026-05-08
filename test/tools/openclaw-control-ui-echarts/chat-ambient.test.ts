@@ -40,4 +40,28 @@ describe("zero-intrusive chat ambient background", () => {
     const hosts = document.querySelectorAll(".conversation-stage > .oc-chat-ambient");
     expect(hosts).toHaveLength(1);
   });
+
+  it("re-homes the ambient host when the chat surface rerenders", async () => {
+    document.body.innerHTML = `<main class="content content--chat"><section class="chat"></section></main>`;
+
+    bootChatAmbientBackground();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    document.body.innerHTML = `
+      <main class="conversation-stage">
+        <section class="message-pane">
+          <div class="composer-shell">
+            <textarea aria-label="发送消息"></textarea>
+          </div>
+          <article class="chat-group"></article>
+        </section>
+      </main>
+    `;
+
+    await Promise.resolve();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(document.querySelectorAll(".oc-chat-ambient")).toHaveLength(1);
+    expect(document.querySelectorAll(".conversation-stage > .oc-chat-ambient")).toHaveLength(1);
+  });
 });
