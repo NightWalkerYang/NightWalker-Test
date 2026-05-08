@@ -1,5 +1,16 @@
+import {
+  findBreadcrumb,
+  findClosestComposerTextarea,
+  findClosestNewSessionButton,
+  findClosestSendButton,
+  findOpenClawApp,
+  findSidebar,
+  isSendButtonElement,
+  isStopButtonElement,
+} from "../framework/dom-compat.js";
 import { createTenantApiClient } from "./api-client.js";
 import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
+import { resetTenantRouteSyncForTests } from "./route-sync.js";
 import {
   TENANT_AGENT_SELECTOR_ROUTE,
   buildTenantMemberChatRoute,
@@ -26,9 +37,6 @@ const DELETE_DIALOG_CLOSE_SELECTOR = "[data-oc-member-chat-delete-close]";
 const DELETE_DIALOG_CONFIRM_SELECTOR = "[data-oc-member-chat-confirm-delete]";
 const TOAST_ROOT_ATTR = "data-oc-member-chat-toast-root";
 const TOAST_SELECTOR = "[data-oc-member-chat-toast]";
-const APP_SELECTOR = "openclaw-app";
-const SIDEBAR_SELECTOR = ".sidebar-nav";
-const BREADCRUMB_SELECTOR = ".dashboard-header__breadcrumb";
 const SECTION_CLASS = "nav-section oc-member-chat-section";
 const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
 const CHAT_FAILSAFE_TIMEOUT_MS = 300_000;
@@ -1884,6 +1892,17 @@ function renderTopAction(controller) {
   attachTopActionHandlers(root);
 }
 
+function resolveMemberChatShell() {
+  const app = findOpenClawApp(document);
+  const sidebar = findSidebar(document);
+  const breadcrumb = findBreadcrumb(document);
+  return {
+    app: app instanceof HTMLElement ? app : null,
+    sidebar: sidebar instanceof HTMLElement ? sidebar : null,
+    breadcrumb: breadcrumb instanceof HTMLElement ? breadcrumb : null,
+  };
+}
+
 async function resolveSelectedAgentForMemberChat(session, href = window.location.href) {
   const selectedAgent = readSelectedTenantAgent(href);
   if (hasResolvedSelectedTenantAgent(selectedAgent)) {
@@ -1916,7 +1935,7 @@ async function syncMemberChatSurface() {
   memberChatSurfaceSyncing = true;
   try {
     if (!isMemberChatRoute()) {
-      const app = document.querySelector(APP_SELECTOR);
+      const app = findOpenClawApp(document);
       if (app instanceof HTMLElement) {
         clearChatLoadingFailsafe(app);
         delete app.__ocPinnedSessionHydratedKey;
@@ -1937,9 +1956,7 @@ async function syncMemberChatSurface() {
     ensureStyle();
     closeAllDialogs();
 
-    const app = document.querySelector(APP_SELECTOR);
-    const sidebar = document.querySelector(SIDEBAR_SELECTOR);
-    const breadcrumb = document.querySelector(BREADCRUMB_SELECTOR);
+    const { app, sidebar, breadcrumb } = resolveMemberChatShell();
     const session = readTenantSession();
     const selectedAgent = await resolveSelectedAgentForMemberChat(session);
     if (
@@ -2043,19 +2060,21 @@ export function bootMemberChatSurface() {
 
   memberChatClickHandler ||= (e) => {
     const event = e;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) {
+      return;
+    }
     if (isMemberChatRoute()) {
       const ctrl = window._ocMemberChatSurfaceController;
-      const newSessionBtn = event.target.closest?.(
-        ".agent-chat__toolbar-right .btn.btn--ghost[title='New session'], .agent-chat__toolbar-right .btn.btn--ghost[aria-label='New session']",
-      );
+      const newSessionBtn = findClosestNewSessionButton(target);
       if (newSessionBtn && beginNewMemberDraftSession(ctrl)) {
         event.stopImmediatePropagation();
         event.preventDefault();
         return;
       }
     }
-    const btn = event.target.closest?.(".chat-send-btn");
-    if (btn && !btn.classList.contains("chat-send-btn--stop")) {
+    const btn = findClosestSendButton(target);
+    if (isSendButtonElement(btn) && !isStopButtonElement(btn)) {
       if (!checkCreditBeforeAction()) {
         event.stopImmediatePropagation();
         event.preventDefault();
@@ -2067,8 +2086,9 @@ export function bootMemberChatSurface() {
   memberChatKeydownHandler ||= (e) => {
     const event = e;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-      const textarea = event.target.closest?.(".agent-chat__input textarea");
-      if (textarea) {
+      const textarea =
+        event.target instanceof Element ? findClosestComposerTextarea(event.target) : null;
+      if (textarea instanceof HTMLTextAreaElement) {
         if (!checkCreditBeforeAction()) {
           event.stopImmediatePropagation();
           event.preventDefault();
@@ -2096,18 +2116,14 @@ export function bootMemberChatSurface() {
           continue;
         }
         if (
-          node.matches(APP_SELECTOR) ||
-          node.matches(SIDEBAR_SELECTOR) ||
-          node.matches(BREADCRUMB_SELECTOR)
+          findOpenClawApp(node) === node ||
+          findSidebar(node) === node ||
+          findBreadcrumb(node) === node
         ) {
           void syncMemberChatSurface();
           return;
         }
-        if (
-          node.querySelector?.(APP_SELECTOR) ||
-          node.querySelector?.(SIDEBAR_SELECTOR) ||
-          node.querySelector?.(BREADCRUMB_SELECTOR)
-        ) {
+        if (findOpenClawApp(node) || findSidebar(node) || findBreadcrumb(node)) {
           void syncMemberChatSurface();
           return;
         }
@@ -2145,4 +2161,5 @@ export function resetMemberChatSurfaceForTests() {
   document.querySelector(`[${TOAST_ROOT_ATTR}]`)?.remove();
   delete window._ocMemberChatSurfaceController;
   delete window.__openclawMemberChatSurfaceBooted;
+  resetTenantRouteSyncForTests();
 }

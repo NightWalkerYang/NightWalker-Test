@@ -100,6 +100,23 @@ describe("zero-intrusive brand replacer", () => {
     expect(message.textContent).toBe("OpenClaw should still stay here.");
   });
 
+  it("updates the breadcrumb slot through compat detection when the exact breadcrumb-link class drifts", async () => {
+    document.head.innerHTML = `<title>OpenClaw</title>`;
+    document.body.innerHTML = `
+      <nav aria-label="breadcrumb">
+        <a href="/">OpenClaw</a>
+        <span>/</span>
+        <a href="/chat">聊天</a>
+      </nav>
+    `;
+
+    bootBrandReplacer();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.querySelector('nav[aria-label="breadcrumb"] a')?.textContent).toBe("苏博泰克");
+  });
+
   it("renders the configured text logo and page title from dynamic brand state", async () => {
     document.head.innerHTML = `<title>OpenClaw</title>`;
     document.body.innerHTML = `

@@ -1,27 +1,33 @@
-const BUTTON_SELECTOR =
-  '.agent-chat__input-btn[title="Voice input"], ' +
-  '.agent-chat__input-btn[aria-label="Voice input"], ' +
-  '.agent-chat__input-btn[title="Stop recording"], ' +
-  '.agent-chat__input-btn[aria-label="Stop recording"]';
-const INPUT_SELECTOR = ".agent-chat__input textarea";
+import {
+  findChatComposer,
+  findChatComposerTextarea,
+  findChatVoiceButton,
+  findClosestVoiceButton,
+  isVoiceButtonElement,
+  supportsSpeechRecognition,
+} from "./dom-compat.js";
+
 const STATUS_SELECTOR = ".oc-voice-status";
 const RECORDING_ATTR = "data-oc-voice-recording";
 const VOICE_STATE_ATTR = "data-oc-voice-state";
 
 function getSpeechRecognitionCtor() {
+  if (!supportsSpeechRecognition()) {
+    return null;
+  }
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
 function getVoiceButton() {
-  return document.querySelector(BUTTON_SELECTOR);
+  return findChatVoiceButton(document);
 }
 
 function getComposer() {
-  return document.querySelector(".agent-chat__input");
+  return findChatComposer(document);
 }
 
 function getTextarea() {
-  return document.querySelector(INPUT_SELECTOR);
+  return findChatComposerTextarea(document);
 }
 
 function clearStatus() {
@@ -65,7 +71,7 @@ function applyButtonState(mode) {
   }
 
   const button = getVoiceButton();
-  if (!button) {
+  if (!isVoiceButtonElement(button)) {
     return;
   }
 
@@ -308,8 +314,8 @@ export function bootVoiceInputBridge() {
   document.addEventListener(
     "click",
     (event) => {
-      const button = event.target instanceof Element ? event.target.closest(BUTTON_SELECTOR) : null;
-      if (!button) {
+      const button = event.target instanceof Element ? findClosestVoiceButton(event.target) : null;
+      if (!isVoiceButtonElement(button)) {
         return;
       }
 

@@ -309,4 +309,19 @@ describe("zero-intrusive echarts parser", () => {
       { value: 70.71, itemStyle: { color: "#f39c12" } },
     ]);
   });
+
+  it("extracts a chart option object from noisy wrapper text and smart quotes", () => {
+    const payload = parse(String.raw`说明：图表如下
+echarts {
+  “title”: { “text”: “资产负债率趋势” },
+  “xAxis”: { “type”: “category”, “data”: [“Q1”, “Q2”,] },
+  “yAxis”: { “type”: “value” },
+  “series”: [{ “type”: “line”, “data”: [12, 15,], }],
+}
+结束`);
+
+    expect(payload.option.title.text).toBe("资产负债率趋势");
+    expect(payload.option.xAxis.data).toEqual(["Q1", "Q2"]);
+    expect(payload.option.series[0].data).toEqual([12, 15]);
+  });
 });

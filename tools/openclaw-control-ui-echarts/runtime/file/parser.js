@@ -32,6 +32,120 @@ function stripMatchingQuotes(value) {
   return text;
 }
 
+function scanLineComment(source, start) {
+  let cursor = start + 2;
+  while (cursor < source.length && source[cursor] !== "\n") {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function scanBlockComment(source, start) {
+  const endIndex = source.indexOf("*/", start + 2);
+  if (endIndex === -1) {
+    throw new Error("Unterminated block comment in file block.");
+  }
+  return endIndex + 2;
+}
+
+function scanQuotedString(source, start, quote) {
+  let cursor = start + 1;
+  while (cursor < source.length) {
+    const char = source[cursor];
+    if (char === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (char === quote) {
+      return cursor + 1;
+    }
+    cursor += 1;
+  }
+  throw new Error("Unterminated string literal in file block.");
+}
+
+function scanBalanced(source, start, openChar, closeChar) {
+  let depth = 1;
+  let cursor = start + 1;
+
+  while (cursor < source.length) {
+    const char = source[cursor];
+    const next = source[cursor + 1];
+    if (char === "'" || char === '"' || char === "`") {
+      cursor = scanQuotedString(source, cursor, char);
+      continue;
+    }
+    if (char === "/" && next === "/") {
+      cursor = scanLineComment(source, cursor);
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      cursor = scanBlockComment(source, cursor);
+      continue;
+    }
+    if (char === openChar) {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === closeChar) {
+      depth -= 1;
+      cursor += 1;
+      if (depth === 0) {
+        return cursor;
+      }
+      continue;
+    }
+    cursor += 1;
+  }
+
+  throw new Error(`Unterminated ${openChar}${closeChar} pair in file block.`);
+}
+
+function extractBalancedSlice(source, openChar, closeChar) {
+  const text = String(source || "").trim();
+  if (!text) {
+    return "";
+  }
+  const openIndex = text.indexOf(openChar);
+  if (openIndex === -1) {
+    return "";
+  }
+  try {
+    const endIndex = scanBalanced(text, openIndex, openChar, closeChar);
+    return text.slice(openIndex, endIndex).trim();
+  } catch {
+    return "";
+  }
+}
+
+function buildStructuredParseCandidates(text) {
+  const base = String(text || "").trim();
+  if (!base) {
+    return [];
+  }
+
+  const candidates = new Set();
+  const pushCandidate = (value) => {
+    const normalized = String(value || "").trim();
+    if (normalized) {
+      candidates.add(normalized);
+    }
+  };
+
+  pushCandidate(base);
+  if (base.startsWith("{")) {
+    pushCandidate(extractBalancedSlice(base, "{", "}"));
+  } else if (base.startsWith("[")) {
+    pushCandidate(extractBalancedSlice(base, "[", "]"));
+  } else {
+    pushCandidate(extractBalancedSlice(base, "{", "}"));
+    pushCandidate(extractBalancedSlice(base, "[", "]"));
+  }
+
+  return [...candidates];
+}
+
 function normalizeFileSource(raw) {
   let text = normalizeText(raw);
   if (!text) {
@@ -65,6 +179,13 @@ function normalizeFileSource(raw) {
     }
   }
 
+  text = text
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u00a0/g, " ")
+    .replace(/\u202f/g, " ")
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "");
+
   return text;
 }
 
@@ -73,21 +194,29 @@ function isStructuredInput(text) {
 }
 
 function parseStructuredInput(text, json5) {
-  if (!isStructuredInput(text)) {
+  const shouldParseStructured = isStructuredInput(text) || /[{[]/.test(text);
+  if (!shouldParseStructured) {
+    return null;
+  }
+  const sourceVariants = buildStructuredParseCandidates(text);
+  if (sourceVariants.length === 0) {
     return null;
   }
 
   let lastError = null;
-  const parsers = [() => JSON.parse(text)];
+  const parsers = [JSON.parse];
   if (json5?.parse) {
-    parsers.push(() => json5.parse(text));
+    parsers.push(json5.parse.bind(json5));
   }
 
-  for (const parse of parsers) {
-    try {
-      return parse();
-    } catch (error) {
-      lastError = error;
+  const candidates = sourceVariants.length > 0 ? sourceVariants : [text];
+  for (const candidate of candidates) {
+    for (const parse of parsers) {
+      try {
+        return parse(candidate);
+      } catch (error) {
+        lastError = error;
+      }
     }
   }
 
@@ -321,7 +450,12 @@ function inferDomainLabel(url) {
 }
 
 function normalizeDescriptor(candidate, fields = {}) {
-  const rawValue = normalizeText(candidate);
+  const rawValue = normalizeText(candidate)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u00a0/g, " ")
+    .replace(/\u202f/g, " ")
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "");
   if (!rawValue) {
     throw new Error("The file code block is empty.");
   }
@@ -414,9 +548,35 @@ export function parseFilePayload(raw, json5) {
     });
   }
 
-  const structured = parseStructuredInput(normalized, json5);
+  let structured = null;
+  try {
+    structured = parseStructuredInput(normalized, json5);
+  } catch (error) {
+    if (isStructuredInput(normalized)) {
+      throw error;
+    }
+    structured = null;
+  }
   if (structured !== null) {
+    if (Array.isArray(structured)) {
+      for (const entry of structured) {
+        if (typeof entry !== "string" && (!entry || typeof entry !== "object")) {
+          continue;
+        }
+        try {
+          return unwrapStructuredPayload(entry);
+        } catch {
+          // Continue until a valid descriptor is found.
+        }
+      }
+      throw new Error("File payload must include a url or a path field.");
+    }
     return unwrapStructuredPayload(structured);
+  }
+
+  const extractedLink = normalized.match(/https?:\/\/\S+/i)?.[0];
+  if (extractedLink) {
+    return normalizeDescriptor(extractedLink);
   }
 
   return normalizeDescriptor(normalized);

@@ -55,10 +55,11 @@ function computeExpectedRuntimeFingerprint() {
     "openclaw-echarts-renderer.js",
   );
   const runtimeDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "runtime");
+  const staticDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "static");
   const vendorDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "vendor");
   const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(runtimeScriptPath));
-  for (const directory of [runtimeDir, vendorDir]) {
+  for (const directory of [runtimeDir, staticDir, vendorDir]) {
     for (const file of collectFilesRecursively(directory)) {
       hash.update(`\nfile:${file.relativePath}\n`);
       hash.update(fs.readFileSync(file.fullPath));
@@ -226,6 +227,19 @@ describe("package local runtime", () => {
     const loginHtml = fs.readFileSync(path.join(outputDir, "login.html"), "utf8");
     expect(loginIndex).toContain('<base href="/" />');
     expect(loginHtml).toContain('<base href="/" />');
+
+    const buildManifestPath = path.join(outputDir, "openclaw-control-ui-build-manifest.json");
+    expect(fs.existsSync(buildManifestPath)).toBe(true);
+    const buildManifest = JSON.parse(fs.readFileSync(buildManifestPath, "utf8"));
+    expect(buildManifest.sourceFingerprint).toMatch(/^[a-f0-9]{16}$/);
+    expect(buildManifest.runtimeFingerprint).toBe(expectedFingerprint);
+    expect(buildManifest.runtimeAssetBaseRelativePath).toBe(expectedRuntimeBasePath);
+    expect(buildManifest.rendererAssetRelativePath).toBe(expectedRendererRelativePath);
+    expect(buildManifest.rendererAssetAbsolutePath).toBe(expectedRendererAbsolutePath);
+    expect(buildManifest.checks?.smokeChecksPassed).toBe(true);
+    expect(buildManifest.deploymentDecision?.mode).toBe("already-in-sync");
+    expect(buildManifest.deploymentDecision?.requiresGatewayImageRebuild).toBe(false);
+    expect(buildManifest.deploymentDecision?.reason).toContain("unchanged");
   });
 
   it("keeps bash direct-docker setup hook sync aligned with the node helper", () => {
@@ -251,9 +265,20 @@ describe("package local runtime", () => {
     expect(shellScript).toContain("ensure_gateway_service_image_current()");
     expect(shellScript).toContain("docker compose build openclaw-gateway");
     expect(shellScript).toContain("OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD");
+    expect(shellScript).toContain("host_control_ui_matches_current_checkout()");
+    expect(shellScript).toContain("dist/.buildstamp");
+    expect(shellScript).toContain(
+      "Skipped docker compose build for openclaw-gateway because host dist/control-ui matches the current git checkout",
+    );
+    expect(shellScript).toContain(
+      "Host dist/control-ui exists but is not stamped for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead",
+    );
     expect(shellScript).toContain("run_custom_control_ui_builder()");
     expect(shellScript).toContain("docker run --rm \\");
     expect(shellScript).toContain('-v "$ROOT_DIR:/workspace" \\');
+    expect(shellScript).toContain('-v "$config_dir:/tmp/openclaw-config:ro" \\');
+    expect(shellScript).toContain("-e OPENCLAW_CONFIG_DIR=/tmp/openclaw-config \\");
+    expect(shellScript).toContain('-e OPENCLAW_GATEWAY_TOKEN="$auto_gateway_token" \\');
     expect(shellScript).toContain('-v "$source_dir:/tmp/openclaw-source-ui:ro" \\');
     expect(shellScript).toContain(
       "node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \\",

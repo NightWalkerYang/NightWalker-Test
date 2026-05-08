@@ -165,9 +165,44 @@ describe("zero-intrusive file parser", () => {
   });
 
   it("rejects multi-line plain text that is not a path payload", () => {
-    expect(() =>
-      parse(`下载地址如下:
-https://files.example.com/a.xlsx`),
-    ).toThrow("File blocks must contain one URL or one workspace path.");
+    const payload = parse(`下载地址如下:
+https://files.example.com/a.xlsx`);
+
+    expect(payload).toMatchObject({
+      kind: "url",
+      url: "https://files.example.com/a.xlsx",
+      name: "a.xlsx",
+      extension: "XLSX",
+    });
+  });
+
+  it("parses noisy payloads that include smart quotes and wrapper text", () => {
+    const payload = parse(`说明：这是导出文件
+{
+  “name”: “资产负债率.xlsx”,
+  “url”: “https://files.example.com/export/debt-ratio.xlsx”,
+}
+请下载`);
+
+    expect(payload).toMatchObject({
+      kind: "url",
+      name: "资产负债率.xlsx",
+      url: "https://files.example.com/export/debt-ratio.xlsx",
+      extension: "XLSX",
+    });
+  });
+
+  it("uses the first valid entry when structured payload is an array", () => {
+    const payload = parse(String.raw`[
+  { name: "无效", note: "missing url/path" },
+  { path: "output/reports/final-summary.csv", name: "final-summary.csv" }
+]`);
+
+    expect(payload).toMatchObject({
+      kind: "path",
+      path: "output/reports/final-summary.csv",
+      name: "final-summary.csv",
+      extension: "CSV",
+    });
   });
 });

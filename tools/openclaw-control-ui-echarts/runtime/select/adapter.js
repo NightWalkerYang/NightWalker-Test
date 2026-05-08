@@ -1,5 +1,6 @@
 import { insertPromptIntoChatBox, sendPromptToChat } from "../framework/chat-composer.js";
 import { createJson5Loader } from "../file/libraries.js";
+import { normalizeText } from "../framework/shared.js";
 import { getSelectStyles } from "./styles.js";
 import {
   detectSelectMode,
@@ -219,6 +220,55 @@ function createOptionControl(payload, option, index, groupName) {
   };
 }
 
+function createFallbackPrompt(mode, source) {
+  const normalizedSource = normalizeText(source)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join("\n")
+    .slice(0, 280);
+  if (mode === "multi") {
+    return normalizedSource
+      ? `请根据这个多选配置继续推进，并自行补全缺失字段：\n${normalizedSource}`
+      : "请根据这段多选配置继续推进，并自行补全缺失字段。";
+  }
+  return normalizedSource
+    ? `请根据这个单选配置继续推进，并自行补全缺失字段：\n${normalizedSource}`
+    : "请根据这段单选配置继续推进，并自行补全缺失字段。";
+}
+
+function renderFallbackCard(cardEl, source, mode, detail) {
+  const fallbackPrompt = createFallbackPrompt(mode, source);
+  const shell = createSelectCard({
+    kind: mode,
+    title: "选项配置暂未完整解析",
+    description: localizeErrorMessage(detail),
+    submitLabel: UI_TEXT.actionSend,
+    options: [],
+  });
+  shell.count.textContent = "已降级";
+  shell.hint.textContent = "可直接把修复建议发送到聊天框。";
+  shell.options.innerHTML = `
+    <div class="oc-select-card__option is-selected is-disabled" data-oc-select-fallback="true">
+      <span class="oc-select-card__control" aria-hidden="true"></span>
+      <div class="oc-select-card__option-copy">
+        <div class="oc-select-card__option-title">已启用容错降级</div>
+        <div class="oc-select-card__option-description">卡片未报废，你仍可一键继续本轮任务。</div>
+      </div>
+    </div>
+  `;
+  shell.insertButton.disabled = false;
+  shell.sendButton.disabled = false;
+  shell.insertButton.addEventListener("click", () => {
+    void insertPromptIntoChatBox(fallbackPrompt);
+  });
+  shell.sendButton.addEventListener("click", () => {
+    void sendPromptToChat(fallbackPrompt);
+  });
+  cardEl.replaceChildren(shell.card);
+}
+
 export function createSelectAdapter({ vendorBaseUrl }) {
   const ensureJson5 = createJson5Loader(vendorBaseUrl);
 
@@ -233,12 +283,29 @@ export function createSelectAdapter({ vendorBaseUrl }) {
     ensureReady: ensureJson5,
     localizeErrorMessage,
     async renderContent({ source, wrapper, host, context, renderHostScaffold }) {
-      const mode = detectSelectMode(source, getWrapperLanguage(wrapper));
-      const payload = parseSelectPayload(source, context?.json5, mode);
+      const mode =
+        detectSelectMode(source, getWrapperLanguage(wrapper)) || "single";
+      let payload = null;
+      let parseErrorDetail = "";
+      try {
+        payload = parseSelectPayload(source, context?.json5, mode);
+      } catch (error) {
+        parseErrorDetail =
+          error && typeof error.message === "string"
+            ? error.message
+            : String(error || "Unknown error");
+      }
       const cardEl = renderHostScaffold(host, wrapper, "success", "", {
-        summaryText: buildSummaryText(payload),
+        summaryText: payload
+          ? buildSummaryText(payload)
+          : `${UI_TEXT.summaryError}（已降级）`,
       });
       cardEl.classList.add("oc-select-renderer");
+
+      if (!payload) {
+        renderFallbackCard(cardEl, source, mode, parseErrorDetail);
+        return null;
+      }
 
       const shell = createSelectCard(payload);
       const groupName = `oc-select-${payload.kind}-${Math.random().toString(36).slice(2, 10)}`;

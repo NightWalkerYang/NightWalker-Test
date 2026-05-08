@@ -149,16 +149,67 @@ describe("zero-intrusive select parser", () => {
   });
 
   it("rejects duplicate option values", () => {
-    expect(() =>
-      parse(
-        String.raw`{
+    const payload = parse(
+      String.raw`{
   options: [
     { value: "theme-red", label: "红色一" },
     { value: "theme-red", label: "红色二" }
   ]
 }`,
-        "single",
-      ),
-    ).toThrow("Select option values must be unique.");
+      "single",
+    );
+
+    expect(payload.options).toHaveLength(1);
+    expect(payload.options[0]).toMatchObject({
+      value: "theme-red",
+      label: "红色一",
+    });
+  });
+
+  it("accepts noisy wrappers with prefixed chatter and balanced json extraction", () => {
+    const payload = parse(
+      String.raw`这里是配置，请直接渲染 single-select：
+single-select {
+  title: "请选择处理方向",
+  options: [
+    { value: "red", label: "红色方案", },
+    { value: "blue", label: "蓝色方案", },
+  ],
+}
+谢谢`,
+      "single",
+    );
+
+    expect(payload.kind).toBe("single");
+    expect(payload.options.map((item) => item.value)).toEqual(["red", "blue"]);
+  });
+
+  it("accepts top-level arrays and normalizes them into options", () => {
+    const payload = parse(
+      String.raw`[
+  "方案 A",
+  "方案 B",
+]`,
+      "single",
+    );
+
+    expect(payload.options).toHaveLength(2);
+    expect(payload.options[0]).toMatchObject({
+      value: "方案 A",
+      label: "方案 A",
+    });
+  });
+
+  it("falls back to single mode when mode is unknown", () => {
+    const payload = parseSelectPayload(
+      String.raw`{
+  options: ["保守方案", "激进方案"]
+}`,
+      JSON5,
+      "" as "single",
+    );
+
+    expect(payload.kind).toBe("single");
+    expect(payload.options).toHaveLength(2);
   });
 });

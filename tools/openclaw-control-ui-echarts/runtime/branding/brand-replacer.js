@@ -1,10 +1,11 @@
-import { getBrandFaviconAsset } from "./favicon.js";
+import { findBreadcrumb } from "../framework/dom-compat.js";
 import {
   bootBrandStateSync,
   getCurrentBrandState,
   loadBrandState,
   subscribeBrandState,
 } from "./brand-state.js";
+import { getBrandFaviconAsset } from "./favicon.js";
 
 const BRAND_TEXT_SELECTOR = [
   ".sidebar-brand__title",
@@ -20,11 +21,18 @@ const LOGO_SELECTOR = [
 ].join(", ");
 const INJECTED_TEXT_LOGO_SELECTOR = ".oc-text-logo";
 const INJECTED_IMAGE_LOGO_SELECTOR = ".oc-image-logo";
-const FAVICON_LINKS = [
-  { rel: "icon" },
-  { rel: "shortcut icon" },
-  { rel: "apple-touch-icon" },
-];
+const FAVICON_LINKS = [{ rel: "icon" }, { rel: "shortcut icon" }, { rel: "apple-touch-icon" }];
+
+function findBreadcrumbBrandLink(root = document) {
+  const breadcrumb = findBreadcrumb(root);
+  if (!(breadcrumb instanceof HTMLElement)) {
+    return null;
+  }
+  const directLink =
+    breadcrumb.querySelector(".dashboard-header__breadcrumb-link") ||
+    breadcrumb.querySelector("a, button, [role='link']");
+  return directLink instanceof HTMLElement ? directLink : null;
+}
 
 function getResolvedBrandState() {
   return getCurrentBrandState();
@@ -106,12 +114,19 @@ function replaceLogoElement(element, logoText, imageSrc) {
   const imageMode = isImageLogoMode();
 
   if (element.matches(".agent-chat__badge img")) {
-    if (element.parentElement?.querySelector(imageMode ? ".oc-image-logo--badge" : ".oc-text-logo--badge")) {
+    if (
+      element.parentElement?.querySelector(
+        imageMode ? ".oc-image-logo--badge" : ".oc-text-logo--badge",
+      )
+    ) {
       element.remove();
       return;
     }
 
-    replaceNode(element, imageMode ? createImageLogo("badge", imageSrc) : createTextLogo("badge", logoText));
+    replaceNode(
+      element,
+      imageMode ? createImageLogo("badge", imageSrc) : createTextLogo("badge", logoText),
+    );
     return;
   }
 
@@ -141,17 +156,26 @@ function replaceLogoElement(element, logoText, imageSrc) {
   }
 
   if (element.matches(".sidebar-brand__logo")) {
-    replaceNode(element, imageMode ? createImageLogo("sidebar", imageSrc) : createTextLogo("sidebar", logoText));
+    replaceNode(
+      element,
+      imageMode ? createImageLogo("sidebar", imageSrc) : createTextLogo("sidebar", logoText),
+    );
     return;
   }
 
   if (element.matches(".login-gate__logo")) {
-    replaceNode(element, imageMode ? createImageLogo("login", imageSrc) : createTextLogo("login", logoText));
+    replaceNode(
+      element,
+      imageMode ? createImageLogo("login", imageSrc) : createTextLogo("login", logoText),
+    );
     return;
   }
 
   if (element.matches(".chat-avatar--logo")) {
-    replaceNode(element, imageMode ? createImageLogo("avatar", imageSrc) : createTextLogo("avatar", logoText));
+    replaceNode(
+      element,
+      imageMode ? createImageLogo("avatar", imageSrc) : createTextLogo("avatar", logoText),
+    );
   }
 }
 
@@ -224,6 +248,11 @@ function processBrandTextSubtree(root, brandName) {
     return;
   }
 
+  const breadcrumbLink = findBreadcrumbBrandLink(root);
+  if (breadcrumbLink instanceof HTMLElement) {
+    processBrandTextElement(breadcrumbLink, brandName);
+  }
+
   if (root.matches(BRAND_TEXT_SELECTOR)) {
     processBrandTextElement(root, brandName);
   }
@@ -253,7 +282,9 @@ function processFavicons() {
   const favicon = getBrandFaviconAsset();
   const seenRels = new Set();
 
-  for (const link of document.head.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')) {
+  for (const link of document.head.querySelectorAll(
+    'link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]',
+  )) {
     if (!(link instanceof HTMLLinkElement)) {
       continue;
     }

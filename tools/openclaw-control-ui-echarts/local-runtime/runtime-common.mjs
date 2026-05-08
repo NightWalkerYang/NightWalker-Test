@@ -6,6 +6,8 @@ const DEFAULT_GATEWAY_TOKEN = "local-runtime-shared-token";
 const AUTO_TOKEN_MARKER = "data-openclaw-auto-token-bootstrap";
 const LUFENG_TOKEN_MARKER = "data-openclaw-lufeng-bootstrap";
 const ECHARTS_VIEW_TOKEN_MARKER = "data-openclaw-echarts-view-bootstrap";
+const TENANT_PREBOOT_MARKER = "data-openclaw-tenant-preboot";
+const BUILD_MANIFEST_FILENAME = "openclaw-control-ui-build-manifest.json";
 const TENANT_MEMBER_BOOTSTRAP_HOOK_NAME = "tenant-member-bootstrap-filter";
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
@@ -67,6 +69,11 @@ function buildStaticBootstrapTag(marker, scriptSrc) {
   return `    <script type="module" src="${scriptSrc}" ${marker}></script>`;
 }
 
+function normalizeRuntimeAssetBasePath(basePath) {
+  const normalized = String(basePath || "").trim() || DEFAULT_RUNTIME_ASSET_BASE_PATH;
+  return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+}
+
 function resolveRuntimeAssetBasePath(indexHtml) {
   const html = String(indexHtml ?? "");
   const patterns = [
@@ -113,6 +120,246 @@ function replaceTaggedScript(indexHtml, marker, nextTag) {
     throw new Error("control_ui_index_missing_head");
   }
   return cleaned.replace("  </head>", `${nextTag}\n  </head>`);
+}
+
+function escapeRegexFragment(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function countMarker(indexHtml, marker) {
+  const matches = String(indexHtml ?? "").match(new RegExp(escapeRegexFragment(marker), "g"));
+  return matches ? matches.length : 0;
+}
+
+function resolveMarkerScriptSrc(indexHtml, marker) {
+  const escapedMarker = escapeRegexFragment(marker);
+  const patterns = [
+    new RegExp(`<script[^>]*\\ssrc="([^"]+)"[^>]*\\s${escapedMarker}[^>]*><\\/script>`, "i"),
+    new RegExp(`<script[^>]*\\s${escapedMarker}[^>]*\\ssrc="([^"]+)"[^>]*><\\/script>`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = String(indexHtml ?? "").match(pattern);
+    const src = String(match?.[1] ?? "").trim();
+    if (src) {
+      return src;
+    }
+  }
+  return "";
+}
+
+function resolveMarkerGatewayToken(indexHtml, marker) {
+  const escapedMarker = escapeRegexFragment(marker);
+  const patterns = [
+    new RegExp(
+      `<script[^>]*\\sdata-gateway-token="([^"]*)"[^>]*\\s${escapedMarker}[^>]*><\\/script>`,
+      "i",
+    ),
+    new RegExp(
+      `<script[^>]*\\s${escapedMarker}[^>]*\\sdata-gateway-token="([^"]*)"[^>]*><\\/script>`,
+      "i",
+    ),
+  ];
+  for (const pattern of patterns) {
+    const match = String(indexHtml ?? "").match(pattern);
+    if (match) {
+      return String(match[1] ?? "").trim();
+    }
+  }
+  return "";
+}
+
+function resolveControlUiAssetPath(controlUiRoot, scriptSrc) {
+  const trimmed = String(scriptSrc ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  const withoutQuery = trimmed.split("?")[0].split("#")[0];
+  if (withoutQuery.startsWith("/")) {
+    return path.join(controlUiRoot, withoutQuery.slice(1));
+  }
+  const withoutDotSlash = withoutQuery.startsWith("./") ? withoutQuery.slice(2) : withoutQuery;
+  return path.join(controlUiRoot, withoutDotSlash);
+}
+
+function ensurePreflight(condition, code, detail) {
+  if (!condition) {
+    throw new Error(`${code}:${detail}`);
+  }
+}
+
+function readControlUiBuildManifest(controlUiRoot) {
+  const manifestPath = path.join(controlUiRoot, BUILD_MANIFEST_FILENAME);
+  ensurePreflight(
+    fs.existsSync(manifestPath),
+    "control_ui_preflight_manifest_missing",
+    `${manifestPath} not found. Rebuild via tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs.`,
+  );
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`control_ui_preflight_manifest_invalid:${manifestPath}: ${message}`);
+  }
+  ensurePreflight(
+    manifest && typeof manifest === "object",
+    "control_ui_preflight_manifest_invalid",
+    `${manifestPath} must contain a JSON object.`,
+  );
+  return { manifestPath, manifest };
+}
+
+function readManifestString(manifest, key, label) {
+  const value = String(manifest?.[key] ?? "").trim();
+  ensurePreflight(
+    !!value,
+    "control_ui_preflight_manifest_field_missing",
+    `${label} is missing in ${BUILD_MANIFEST_FILENAME}. Rebuild via build-custom-control-ui.mjs.`,
+  );
+  return value;
+}
+
+function assertManifestPathExists(controlUiRoot, manifestPathValue, label) {
+  const assetPath = resolveControlUiAssetPath(controlUiRoot, manifestPathValue);
+  ensurePreflight(
+    !!assetPath && fs.existsSync(assetPath) && fs.statSync(assetPath).isFile(),
+    "control_ui_preflight_asset_missing",
+    `${label} is missing at ${assetPath || "unknown path"}`,
+  );
+  return assetPath;
+}
+
+function shouldSkipControlUiPreflight(env) {
+  const value = String(env?.OPENCLAW_SKIP_CONTROL_UI_PREFLIGHT ?? "")
+    .trim()
+    .toLowerCase();
+  return ["1", "true", "yes", "on"].includes(value);
+}
+
+export function runControlUiPreflight(resolvedRuntime) {
+  const controlUiIndexPath = resolvedRuntime.controlUiIndexPath;
+  ensurePreflight(
+    fs.existsSync(controlUiIndexPath),
+    "control_ui_preflight_index_missing",
+    controlUiIndexPath,
+  );
+  const controlUiRoot = path.dirname(controlUiIndexPath);
+  const indexHtml = fs.readFileSync(controlUiIndexPath, "utf8");
+  const { manifest } = readControlUiBuildManifest(controlUiRoot);
+  const sourceMainBundleScriptSrc = readManifestString(
+    manifest,
+    "sourceMainBundleScriptSrc",
+    "sourceMainBundleScriptSrc",
+  );
+  const runtimeAssetBaseRelativePath = normalizeRuntimeAssetBasePath(
+    readManifestString(manifest, "runtimeAssetBaseRelativePath", "runtimeAssetBaseRelativePath"),
+  );
+  const rendererAssetRelativePath = readManifestString(
+    manifest,
+    "rendererAssetRelativePath",
+    "rendererAssetRelativePath",
+  );
+  const rendererAssetAbsolutePath = readManifestString(
+    manifest,
+    "rendererAssetAbsolutePath",
+    "rendererAssetAbsolutePath",
+  );
+
+  ensurePreflight(
+    indexHtml.includes(sourceMainBundleScriptSrc),
+    "control_ui_preflight_main_bundle_missing",
+    `main bundle ${sourceMainBundleScriptSrc} is missing from index.html`,
+  );
+
+  const markers = [
+    {
+      marker: ECHARTS_VIEW_TOKEN_MARKER,
+      expectedSrc: `${runtimeAssetBaseRelativePath}/echarts-view/preboot.js`,
+      requireToken: false,
+    },
+    {
+      marker: TENANT_PREBOOT_MARKER,
+      expectedSrc: `${runtimeAssetBaseRelativePath}/tenant/preboot.js`,
+      requireToken: false,
+    },
+    {
+      marker: LUFENG_TOKEN_MARKER,
+      expectedSrc: `${runtimeAssetBaseRelativePath}/lufeng/preboot.js`,
+      requireToken: true,
+    },
+    {
+      marker: AUTO_TOKEN_MARKER,
+      expectedSrc: `${runtimeAssetBaseRelativePath}/branding/auto-token-preboot.js`,
+      requireToken: true,
+    },
+  ];
+
+  for (const { marker, expectedSrc, requireToken } of markers) {
+    const markerCount = countMarker(indexHtml, marker);
+    ensurePreflight(
+      markerCount === 1,
+      "control_ui_preflight_marker_count_mismatch",
+      `${marker} expected 1, got ${markerCount}`,
+    );
+    const markerSrc = resolveMarkerScriptSrc(indexHtml, marker);
+    ensurePreflight(
+      markerSrc === expectedSrc,
+      "control_ui_preflight_marker_src_mismatch",
+      `${marker} expected ${expectedSrc}, got ${markerSrc || "missing"}`,
+    );
+    assertManifestPathExists(controlUiRoot, markerSrc, `${marker} script`);
+    if (requireToken) {
+      const markerToken = resolveMarkerGatewayToken(indexHtml, marker);
+      ensurePreflight(
+        !!markerToken,
+        "control_ui_preflight_marker_token_missing",
+        `${marker} missing data-gateway-token. Rebuild with OPENCLAW_GATEWAY_TOKEN set.`,
+      );
+    }
+  }
+
+  assertManifestPathExists(controlUiRoot, rendererAssetRelativePath, "renderer asset");
+
+  const loginIndexPath = path.join(controlUiRoot, "login", "index.html");
+  const loginHtmlPath = path.join(controlUiRoot, "login.html");
+  const echartsViewIndexPath = path.join(controlUiRoot, "echarts-view", "index.html");
+  ensurePreflight(
+    fs.existsSync(loginIndexPath) && fs.statSync(loginIndexPath).isFile(),
+    "control_ui_preflight_login_alias_missing",
+    `${loginIndexPath} missing`,
+  );
+  ensurePreflight(
+    fs.existsSync(loginHtmlPath) && fs.statSync(loginHtmlPath).isFile(),
+    "control_ui_preflight_login_alias_missing",
+    `${loginHtmlPath} missing`,
+  );
+  ensurePreflight(
+    fs.existsSync(echartsViewIndexPath) && fs.statSync(echartsViewIndexPath).isFile(),
+    "control_ui_preflight_echarts_view_missing",
+    `${echartsViewIndexPath} missing`,
+  );
+
+  const loginIndexHtml = fs.readFileSync(loginIndexPath, "utf8");
+  const loginHtml = fs.readFileSync(loginHtmlPath, "utf8");
+  ensurePreflight(
+    loginIndexHtml.includes('<base href="/" />') && loginHtml.includes('<base href="/" />'),
+    "control_ui_preflight_login_base_missing",
+    'login aliases must include <base href="/" />',
+  );
+
+  const echartsViewIndexHtml = fs.readFileSync(echartsViewIndexPath, "utf8");
+  ensurePreflight(
+    echartsViewIndexHtml.includes(rendererAssetAbsolutePath),
+    "control_ui_preflight_echarts_view_renderer_mismatch",
+    `${echartsViewIndexPath} is missing ${rendererAssetAbsolutePath}`,
+  );
+
+  return {
+    runtimeAssetBaseRelativePath,
+    rendererAssetRelativePath,
+    rendererAssetAbsolutePath,
+    deploymentDecision: manifest?.deploymentDecision ?? null,
+  };
 }
 
 export function parseRuntimeEnvFile(text) {
@@ -223,11 +470,7 @@ export function resolveRuntimeEnv(rootDir, processEnv = process.env) {
 
 export function syncControlUiBootstrapScripts(indexHtml, gatewayToken) {
   const runtimeAssetBasePath = resolveRuntimeAssetBasePath(indexHtml);
-  const normalizeBasePath = (basePath) => {
-    const normalized = String(basePath || "").trim() || DEFAULT_RUNTIME_ASSET_BASE_PATH;
-    return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
-  };
-  const runtimeBasePath = normalizeBasePath(runtimeAssetBasePath);
+  const runtimeBasePath = normalizeRuntimeAssetBasePath(runtimeAssetBasePath);
   const nextEchartsTag = buildStaticBootstrapTag(
     ECHARTS_VIEW_TOKEN_MARKER,
     `${runtimeBasePath}/echarts-view/preboot.js`,
@@ -328,6 +571,9 @@ export function prepareLocalRuntime(rootDir, processEnv = process.env) {
   if (!fs.existsSync(resolved.controlUiIndexPath)) {
     throw new Error(`missing_control_ui_index:${resolved.controlUiIndexPath}`);
   }
+  const controlUiPreflight = shouldSkipControlUiPreflight(resolved.env)
+    ? null
+    : runControlUiPreflight(resolved);
   const nextIndexHtml = syncControlUiBootstrapScripts(
     fs.readFileSync(resolved.controlUiIndexPath, "utf8"),
     resolved.env.OPENCLAW_GATEWAY_TOKEN,
@@ -336,5 +582,8 @@ export function prepareLocalRuntime(rootDir, processEnv = process.env) {
   ensureDirectoryLink(resolved.workspaceDownloadsPath, resolved.workspaceDir);
   ensureDirectoryLink(resolved.workspaceAgentDownloadsPath, resolved.workspaceAgentsDir);
   syncManagedHook(resolved, rootDir);
-  return resolved;
+  return {
+    ...resolved,
+    controlUiPreflight,
+  };
 }

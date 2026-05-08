@@ -1,4 +1,5 @@
-const CHAT_ROOT_SELECTOR = ".content--chat";
+import { findChatSurface } from "../framework/dom-compat.js";
+
 const HOST_CLASS = "oc-chat-ambient";
 
 let ambientIdCounter = 0;
@@ -122,7 +123,9 @@ function createAmbientHost() {
 }
 
 function findDirectAmbientHost(surface) {
-  return Array.from(surface.children).find((child) => child.classList?.contains(HOST_CLASS)) || null;
+  return (
+    Array.from(surface.children).find((child) => child.classList?.contains(HOST_CLASS)) || null
+  );
 }
 
 function ensureAmbientHost(surface) {
@@ -138,7 +141,7 @@ function ensureAmbientHost(surface) {
 
 function pruneOrphanHosts() {
   for (const host of document.querySelectorAll(`.${HOST_CLASS}`)) {
-    if (!host.parentElement?.matches?.(CHAT_ROOT_SELECTOR)) {
+    if (findChatSurface(host.parentElement || undefined) !== host.parentElement) {
       host.remove();
     }
   }
@@ -151,8 +154,15 @@ export function bootChatAmbientBackground() {
     frame = 0;
     pruneOrphanHosts();
 
-    for (const surface of document.querySelectorAll(CHAT_ROOT_SELECTOR)) {
-      ensureAmbientHost(surface);
+    const rootSurface = findChatSurface(document);
+    if (rootSurface instanceof HTMLElement) {
+      ensureAmbientHost(rootSurface);
+    }
+
+    for (const candidate of document.querySelectorAll("main, section, div")) {
+      if (findChatSurface(candidate) === candidate) {
+        ensureAmbientHost(candidate);
+      }
     }
   };
 

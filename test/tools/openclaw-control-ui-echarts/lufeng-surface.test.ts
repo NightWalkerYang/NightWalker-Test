@@ -20,7 +20,10 @@ afterEach(() => {
 describe("lufeng public chat surface", () => {
   it("locks the native app to chat, keeps an isolated finance session, pins gpt-5.4, and trims the sidebar", async () => {
     window.history.replaceState({}, "", "/lufeng");
-    vi.stubGlobal("setInterval", vi.fn(() => 1));
+    vi.stubGlobal(
+      "setInterval",
+      vi.fn(() => 1),
+    );
 
     document.body.innerHTML = `
       <nav class="sidebar-nav">
@@ -162,33 +165,33 @@ describe("lufeng public chat surface", () => {
     expect(styleElement).not.toBeNull();
     expect(styleElement).toBeInstanceOf(HTMLLinkElement);
     expect(styleElement?.getAttribute("href")).toContain("/surface.css");
-    expect(readFileSync("tools/openclaw-control-ui-echarts/runtime/lufeng/surface.css", "utf8")).toContain(
-      ".chat-group.assistant > .oc-text-logo--avatar",
-    );
+    expect(
+      readFileSync("tools/openclaw-control-ui-echarts/runtime/lufeng/surface.css", "utf8"),
+    ).toContain(".chat-group.assistant > .oc-text-logo--avatar");
     expect(document.querySelector('[data-group="chat"]')?.getAttribute("data-oc-lufeng-nav")).toBe(
       "chat",
     );
     expect(
       document.querySelector('[data-group="control"]')?.getAttribute("data-oc-lufeng-nav"),
     ).toBe("hidden");
-    expect(document.querySelector(".sidebar-shell__footer")?.getAttribute("data-oc-lufeng-footer")).toBe(
-      "hidden",
-    );
+    expect(
+      document.querySelector(".sidebar-shell__footer")?.getAttribute("data-oc-lufeng-footer"),
+    ).toBe("hidden");
     expect(document.querySelector(".topbar-search")?.getAttribute("data-oc-lufeng-search")).toBe(
       "hidden",
     );
     expect(
-      document.querySelector(".chat-controls__session:not(.chat-controls__model)")?.getAttribute(
-        "data-oc-lufeng-session",
-      ),
+      document
+        .querySelector(".chat-controls__session:not(.chat-controls__model)")
+        ?.getAttribute("data-oc-lufeng-session"),
     ).toBe("hidden");
     const modelSelect = document.querySelector('select[data-chat-model-select="true"]');
     expect(modelSelect?.getAttribute("data-oc-lufeng-model")).toBe("locked");
     expect(modelSelect?.disabled).toBe(true);
     expect(modelSelect?.value).toBe("openai/gpt-5.4");
-    expect([...(modelSelect?.querySelectorAll("option") ?? [])].map((option) => option.textContent)).toEqual([
-      "GPT-5.4 · openai",
-    ]);
+    expect(
+      [...(modelSelect?.querySelectorAll("option") ?? [])].map((option) => option.textContent),
+    ).toEqual(["GPT-5.4 · openai"]);
     expect(modelSelect?.getAttribute("title")).toBe("模型已固定为 GPT-5.4 · openai");
     expect(app.tab).toBe("chat");
     expect(app.sessionKey).toBe("agent:subotech-finance:lufeng");
@@ -268,5 +271,71 @@ describe("lufeng public chat surface", () => {
       thinkingLevel: null,
     });
     expect(requestUpdate).toHaveBeenCalled();
+  });
+
+  it("trims the shell through compat detection when sidebar or search classes drift", async () => {
+    window.history.replaceState({}, "", "/lufeng");
+    vi.stubGlobal(
+      "setInterval",
+      vi.fn(() => 1),
+    );
+
+    document.body.innerHTML = `
+      <aside aria-label="navigation sidebar">
+        <section class="nav-section" data-group="chat">
+          <button class="nav-section__label" aria-expanded="false"></button>
+          <div class="nav-section__items">
+            <a class="nav-item" href="/lufeng/chat">聊天</a>
+          </div>
+        </section>
+        <section class="nav-section" data-group="control">
+          <div class="nav-section__items">
+            <a class="nav-item" href="/lufeng/overview">总览</a>
+          </div>
+        </section>
+      </aside>
+      <div class="sidebar-shell__footer"></div>
+      <button aria-label="搜索控制台">搜索</button>
+      <label class="field chat-controls__session"><select><option value="a">会话</option></select></label>
+      <label class="field chat-controls__session chat-controls__model">
+        <select data-chat-model-select="true"><option value="">ark-code-latest · volcengine-plan</option></select>
+      </label>
+    `;
+
+    const app = document.createElement("openclaw-app");
+    app.tab = "overview";
+    app.sessionKey = "agent:main:main";
+    app.settings = { sessionKey: "agent:main:main", lastActiveSessionKey: "agent:main:main" };
+    app.setTab = vi.fn((next) => {
+      app.tab = next;
+    });
+    app.applySettings = vi.fn((next) => {
+      app.settings = next;
+      app.sessionKey = next.sessionKey;
+    });
+    app.loadAssistantIdentity = vi.fn(async () => {});
+    app.client = {
+      request: vi.fn(async (method) => {
+        if (method === "sessions.patch") {
+          return { ok: true };
+        }
+        return {};
+      }),
+    };
+    app.requestUpdate = vi.fn(() => {});
+    document.body.append(app);
+
+    bootLufengSurface();
+    await Promise.resolve();
+
+    expect(document.querySelector('[data-group="chat"]')?.getAttribute("data-oc-lufeng-nav")).toBe(
+      "chat",
+    );
+    expect(
+      document.querySelector('[data-group="control"]')?.getAttribute("data-oc-lufeng-nav"),
+    ).toBe("hidden");
+    expect(
+      document.querySelector('[aria-label="搜索控制台"]')?.getAttribute("data-oc-lufeng-search"),
+    ).toBe("hidden");
   });
 });

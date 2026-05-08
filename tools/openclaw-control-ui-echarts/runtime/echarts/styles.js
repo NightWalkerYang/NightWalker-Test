@@ -123,6 +123,49 @@ export function getEchartsStyles() {
       z-index: 0;
     }
 
+    .oc-echarts-fallback {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      margin: 10px;
+      border-radius: 14px;
+      border: 1px solid color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.28)) 78%, transparent);
+      background: color-mix(in srgb, var(--panel, var(--card)) 90%, transparent);
+      box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
+    }
+
+    .oc-echarts-fallback__title {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.4;
+      font-weight: 700;
+    }
+
+    .oc-echarts-fallback__reason,
+    .oc-echarts-fallback__hint {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.55;
+      color: color-mix(in srgb, currentColor 74%, transparent);
+    }
+
+    .oc-echarts-fallback__source {
+      margin: 0;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.22)) 74%, transparent);
+      background: color-mix(in srgb, var(--bg-elevated, var(--panel)) 84%, transparent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 180px;
+      overflow: auto;
+    }
+
     .oc-echarts-detail-modal[hidden] {
       display: none;
     }

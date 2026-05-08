@@ -43,6 +43,17 @@ function renderComposer() {
   `;
 }
 
+function renderComposerWithoutFixedClasses() {
+  document.body.innerHTML = `
+    <form data-testid="chat-composer">
+      <textarea aria-label="chat composer"></textarea>
+      <div role="toolbar" aria-label="chat actions">
+        <button type="button" aria-label="Voice input">mic</button>
+      </div>
+    </form>
+  `;
+}
+
 beforeEach(() => {
   FakeSpeechRecognition.instances = [];
   (window as unknown as Record<string, unknown>).__openclawVoiceInputBridgeBooted = false;
@@ -78,10 +89,16 @@ describe("zero-intrusive voice input bridge", () => {
     expect(FakeSpeechRecognition.instances).toHaveLength(1);
     expect(FakeSpeechRecognition.instances[0]?.started).toBe(true);
     expect(stop).toHaveBeenCalled();
-    expect(document.querySelector(".agent-chat__input")?.getAttribute("data-oc-voice-recording")).toBe("true");
-    expect(document.querySelector(".agent-chat__input")?.getAttribute("data-oc-voice-state")).toBe("recording");
+    expect(
+      document.querySelector(".agent-chat__input")?.getAttribute("data-oc-voice-recording"),
+    ).toBe("true");
+    expect(document.querySelector(".agent-chat__input")?.getAttribute("data-oc-voice-state")).toBe(
+      "recording",
+    );
     expect(document.querySelector(".oc-voice-status")?.textContent).toContain("正在听写");
-    expect(document.querySelector("button")?.classList.contains("agent-chat__input-btn--recording")).toBe(true);
+    expect(
+      document.querySelector("button")?.classList.contains("agent-chat__input-btn--recording"),
+    ).toBe(true);
 
     const resultEvent = new Event("result");
     Object.assign(resultEvent, {
@@ -100,8 +117,12 @@ describe("zero-intrusive voice input bridge", () => {
     expect((document.querySelector("textarea") as HTMLTextAreaElement).value).toBe("测试语音");
 
     FakeSpeechRecognition.instances[0]?.stop();
-    expect(document.querySelector(".agent-chat__input")?.hasAttribute("data-oc-voice-recording")).toBe(false);
-    expect(document.querySelector(".agent-chat__input")?.hasAttribute("data-oc-voice-state")).toBe(false);
+    expect(
+      document.querySelector(".agent-chat__input")?.hasAttribute("data-oc-voice-recording"),
+    ).toBe(false);
+    expect(document.querySelector(".agent-chat__input")?.hasAttribute("data-oc-voice-state")).toBe(
+      false,
+    );
   });
 
   it("shows a visible error when microphone permission is denied", async () => {
@@ -123,5 +144,26 @@ describe("zero-intrusive voice input bridge", () => {
     const status = document.querySelector(".oc-voice-status");
     expect(status?.textContent).toContain("麦克风权限");
     expect(FakeSpeechRecognition.instances).toHaveLength(0);
+  });
+
+  it("starts voice flow without relying on fixed chat-input classes", async () => {
+    renderComposerWithoutFixedClasses();
+
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+      },
+    });
+
+    bootVoiceInputBridge();
+    document.querySelector("button")?.click();
+    await flushMicrotasks();
+
+    expect(FakeSpeechRecognition.instances).toHaveLength(1);
+    expect(FakeSpeechRecognition.instances[0]?.started).toBe(true);
+    expect(document.querySelector(".oc-voice-status")?.textContent).toContain("正在听写");
   });
 });

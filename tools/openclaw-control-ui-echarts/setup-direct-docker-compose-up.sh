@@ -4,15 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TOOL_DIR="$ROOT_DIR/tools/openclaw-control-ui-echarts"
 OUTPUT_DIR="$TOOL_DIR/generated/control-ui"
-CONTROL_UI_RUNTIME_SCRIPT="$TOOL_DIR/openclaw-echarts-renderer.js"
-CONTROL_UI_RUNTIME_MODULE_DIR="$TOOL_DIR/runtime"
-CONTROL_UI_STATIC_DIR="$TOOL_DIR/static"
-CONTROL_UI_VENDOR_DIR="$TOOL_DIR/vendor"
 WORKSPACE_OVERLAY_DIR="$TOOL_DIR/workspace-overlays/kingdee-cloud"
 TENANT_MEMBER_BOOTSTRAP_HOOK_DIR="$WORKSPACE_OVERLAY_DIR/hooks/tenant-member-bootstrap-filter"
 PORTABLE_CONFIG_SCRIPT="$TOOL_DIR/local-runtime/portable-config.mjs"
 PORTABLE_CONFIG_SOURCE="$TOOL_DIR/local-runtime/openclaw.local.example.json5"
-OFFLINE_BUNDLED_USERSCRIPT="$ROOT_DIR/tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js"
 OVERRIDE_PATH="$ROOT_DIR/docker-compose.override.yml"
 ENV_FILE="$ROOT_DIR/.env"
 
@@ -52,12 +47,6 @@ require_dir() {
   local dir_path="$1"
   local label="$2"
   [[ -d "$dir_path" ]] || fail "$label not found at $dir_path"
-}
-
-reset_output_dir_preserve_mount() {
-  local dir_path="$1"
-  mkdir -p "$dir_path"
-  find "$dir_path" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 }
 
 trim_whitespace() {
@@ -110,6 +99,30 @@ resolve_openclaw_config_dir() {
     dir="$HOME/.openclaw"
   fi
   printf '%s\n' "$dir"
+}
+
+resolve_git_head() {
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || true
+}
+
+read_dist_buildstamp_head() {
+  local stamp_path="$ROOT_DIR/dist/.buildstamp"
+  [[ -f "$stamp_path" ]] || return 0
+  sed -nE 's/.*"head"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$stamp_path" | head -n 1
+}
+
+host_control_ui_matches_current_checkout() {
+  [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]] || return 1
+
+  local current_head=""
+  local dist_head=""
+  current_head="$(trim_whitespace "$(resolve_git_head || true)")"
+  dist_head="$(trim_whitespace "$(read_dist_buildstamp_head || true)")"
+
+  [[ -n "$current_head" ]] || return 1
+  [[ -n "$dist_head" ]] || return 1
+  [[ "$current_head" == "$dist_head" ]]
 }
 
 should_skip_compose_up() {
@@ -168,104 +181,6 @@ print(json.dumps(merged))
 PY
 }
 
-resolve_auto_gateway_token() {
-  local token="${OPENCLAW_GATEWAY_TOKEN:-}"
-  if [[ -z "$token" ]]; then
-    token="$(read_dotenv_value OPENCLAW_GATEWAY_TOKEN || true)"
-  fi
-  trim_whitespace "$token"
-}
-
-inject_echarts_view_public_bootstrap() {
-  local index_path="$1"
-  local python_bin
-
-  python_bin="$(resolve_python)"
-
-  "$python_bin" - "$index_path" <<'PY'
-import pathlib
-import re
-import sys
-
-index_path = pathlib.Path(sys.argv[1])
-
-html = index_path.read_text(encoding="utf-8")
-html = re.sub(
-    r'^\s*<script[^>]*data-openclaw-echarts-view-bootstrap[^>]*></script>\s*$',
-    "",
-    html,
-    flags=re.M,
-)
-
-script = (
-    '    <script type="module" src="./assets/runtime/echarts-view/preboot.js" '
-    'data-openclaw-echarts-view-bootstrap></script>'
-)
-
-main_bundle_pattern = re.compile(
-    r'^\s*<script type="module" crossorigin src="\./assets/index-[^"]+"></script>\s*$',
-    re.M,
-)
-
-if main_bundle_pattern.search(html):
-    html = main_bundle_pattern.sub(lambda match: f"{script}\n{match.group(0)}", html, count=1)
-elif "</head>" not in html:
-    raise SystemExit(f"index.html is missing </head>: {index_path}")
-else:
-    html = html.replace("  </head>", f"{script}\n  </head>", 1)
-index_path.write_text(html, encoding="utf-8")
-PY
-}
-
-inject_lufeng_public_bootstrap() {
-  local index_path="$1"
-  local token="$2"
-  local python_bin
-
-  python_bin="$(resolve_python)"
-
-  "$python_bin" - "$index_path" "$token" <<'PY'
-import pathlib
-import re
-import sys
-
-index_path = pathlib.Path(sys.argv[1])
-token = (sys.argv[2] or "").strip()
-
-html = index_path.read_text(encoding="utf-8")
-html = re.sub(
-    r'^\s*<script[^>]*data-openclaw-lufeng-bootstrap[^>]*></script>\s*$',
-    "",
-    html,
-    flags=re.M,
-)
-
-token_attr = (
-    token.replace("&", "&amp;")
-    .replace('"', "&quot;")
-    .replace("<", "&lt;")
-    .replace(">", "&gt;")
-)
-script = (
-    '    <script src="./assets/runtime/lufeng/preboot.js" '
-    f'data-openclaw-lufeng-bootstrap data-gateway-token="{token_attr}"></script>'
-)
-
-main_bundle_pattern = re.compile(
-    r'^\s*<script type="module" crossorigin src="\./assets/index-[^"]+"></script>\s*$',
-    re.M,
-)
-
-if main_bundle_pattern.search(html):
-    html = main_bundle_pattern.sub(lambda match: f"{script}\n{match.group(0)}", html, count=1)
-elif "</head>" not in html:
-    raise SystemExit(f"index.html is missing </head>: {index_path}")
-else:
-    html = html.replace("  </head>", f"{script}\n  </head>", 1)
-index_path.write_text(html, encoding="utf-8")
-PY
-}
-
 validate_extra_mount_spec() {
   local mount="$1"
 
@@ -303,23 +218,14 @@ collect_extra_mounts() {
   done
 }
 
-resolve_python() {
-  if command -v python3 >/dev/null 2>&1; then
-    printf '%s\n' "python3"
-    return 0
-  fi
-
-  if command -v python >/dev/null 2>&1; then
-    printf '%s\n' "python"
-    return 0
-  fi
-
-  fail "python3 or python is required to extract the bundled vendor libraries."
-}
-
 run_custom_control_ui_builder() {
   local source_dir="$1"
-  local auto_gateway_token=""
+  local auto_gateway_token="${OPENCLAW_GATEWAY_TOKEN:-}"
+  local config_dir=""
+  if [[ -z "$auto_gateway_token" ]]; then
+    auto_gateway_token="$(read_dotenv_value OPENCLAW_GATEWAY_TOKEN || true)"
+  fi
+  config_dir="$(resolve_openclaw_config_dir)"
 
   if command -v node >/dev/null 2>&1; then
     node "$TOOL_DIR/build-custom-control-ui.mjs" --source "$source_dir" --output "$OUTPUT_DIR"
@@ -333,13 +239,14 @@ run_custom_control_ui_builder() {
   local container_source_dir=""
   image_ref="$(resolve_gateway_image_ref)"
   ensure_gateway_image_available "$image_ref"
-  auto_gateway_token="$(resolve_auto_gateway_token)"
 
   if [[ "$source_dir" == "$ROOT_DIR"* ]]; then
     container_source_dir="/workspace${source_dir#$ROOT_DIR}"
     docker run --rm \
       -v "$ROOT_DIR:/workspace" \
+      -v "$config_dir:/tmp/openclaw-config:ro" \
       -w /workspace \
+      -e OPENCLAW_CONFIG_DIR=/tmp/openclaw-config \
       -e OPENCLAW_GATEWAY_TOKEN="$auto_gateway_token" \
       "$image_ref" \
       node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \
@@ -350,8 +257,10 @@ run_custom_control_ui_builder() {
 
   docker run --rm \
     -v "$ROOT_DIR:/workspace" \
+    -v "$config_dir:/tmp/openclaw-config:ro" \
     -v "$source_dir:/tmp/openclaw-source-ui:ro" \
     -w /workspace \
+    -e OPENCLAW_CONFIG_DIR=/tmp/openclaw-config \
     -e OPENCLAW_GATEWAY_TOKEN="$auto_gateway_token" \
     "$image_ref" \
     node /workspace/tools/openclaw-control-ui-echarts/build-custom-control-ui.mjs \
@@ -696,212 +605,6 @@ run_targeted_compose_up() {
   fail "docker compose up failed for ${COMPOSE_UP_SERVICES[*]}"
 }
 
-inject_runtime_script() {
-  local index_path="$1"
-  local temp_index="$index_path.tmp"
-
-  grep -Fq 'openclaw-echarts-renderer.js' "$index_path" && return 0
-
-  awk '
-    $0 == "  </body>" {
-      print "    <script type=\"module\" src=\"./assets/openclaw-echarts-renderer.js\"></script>"
-    }
-    { print }
-  ' "$index_path" >"$temp_index"
-
-  mv "$temp_index" "$index_path"
-  grep -Fq 'openclaw-echarts-renderer.js' "$index_path" || fail "Failed to inject the ECharts runtime into $index_path"
-}
-
-replace_brand_favicons() {
-  local index_path="$1"
-  local python_bin
-  python_bin="$(resolve_python)"
-
-  "$python_bin" - "$index_path" <<'PY'
-import pathlib
-import re
-import sys
-import urllib.parse
-
-index_path = pathlib.Path(sys.argv[1])
-svg = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="sptc-bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#f7fbff" />
-      <stop offset="1" stop-color="#d9e6f4" />
-    </linearGradient>
-    <linearGradient id="sptc-stroke" x1="14" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#88acd0" />
-      <stop offset="1" stop-color="#5f88b1" />
-    </linearGradient>
-  </defs>
-  <rect x="5.5" y="5.5" width="53" height="53" rx="16" fill="url(#sptc-bg)" stroke="url(#sptc-stroke)" stroke-width="1.5" />
-  <text x="32" y="37" text-anchor="middle" font-size="18" font-weight="800" letter-spacing="2.2" fill="#48698d" font-family="Inter, Segoe UI, Arial, sans-serif">SPTC</text>
-</svg>
-""".strip()
-href = "data:image/svg+xml;charset=utf-8," + urllib.parse.quote(svg)
-lines = index_path.read_text(encoding="utf-8").splitlines()
-filtered = [
-    line
-    for line in lines
-    if not re.search(r'<link\\s+rel="icon"', line, flags=re.I)
-    and not re.search(r'<link\\s+rel="shortcut icon"', line, flags=re.I)
-    and not re.search(r'<link\\s+rel="apple-touch-icon"', line, flags=re.I)
-]
-try:
-    head_close_index = next(index for index, line in enumerate(filtered) if "</head>" in line)
-except StopIteration as exc:
-    raise SystemExit(f"index.html is missing </head>: {index_path}") from exc
-filtered[head_close_index:head_close_index] = [
-    f'    <link rel="icon" type="image/svg+xml" href="{href}" />',
-    f'    <link rel="shortcut icon" type="image/svg+xml" href="{href}" />',
-    f'    <link rel="apple-touch-icon" type="image/svg+xml" href="{href}" />',
-]
-index_path.write_text("\n".join(filtered) + "\n", encoding="utf-8")
-PY
-}
-
-inject_auto_gateway_token_bootstrap() {
-  local index_path="$1"
-  local token="$2"
-  local python_bin
-
-  token="$(trim_whitespace "$token")"
-  [[ -n "$token" ]] || return 0
-
-  python_bin="$(resolve_python)"
-
-  "$python_bin" - "$index_path" "$token" <<'PY'
-import pathlib
-import re
-import sys
-
-index_path = pathlib.Path(sys.argv[1])
-token = (sys.argv[2] or "").strip()
-if not token:
-    raise SystemExit(0)
-
-html = index_path.read_text(encoding="utf-8")
-html = re.sub(
-    r'^\s*<script[^>]*data-openclaw-auto-token-bootstrap[^>]*></script>\s*$',
-    "",
-    html,
-    flags=re.M,
-)
-
-token_attr = (
-    token.replace("&", "&amp;")
-    .replace('"', "&quot;")
-    .replace("<", "&lt;")
-    .replace(">", "&gt;")
-)
-script = (
-    '    <script src="./assets/runtime/branding/auto-token-preboot.js" '
-    f'data-openclaw-auto-token-bootstrap data-gateway-token="{token_attr}"></script>'
-)
-
-main_bundle_pattern = re.compile(
-    r'^\s*<script type="module" crossorigin src="\./assets/index-[^"]+"></script>\s*$',
-    re.M,
-)
-
-if main_bundle_pattern.search(html):
-    html = main_bundle_pattern.sub(lambda match: f"{script}\n{match.group(0)}", html, count=1)
-elif "</head>" not in html:
-    raise SystemExit(f"index.html is missing </head>: {index_path}")
-else:
-    html = html.replace("  </head>", f"{script}\n  </head>", 1)
-index_path.write_text(html, encoding="utf-8")
-PY
-}
-
-create_login_route_entry() {
-  local index_path="$1"
-  local login_dir
-  local login_html
-  local temp_login
-  login_dir="$(dirname "$index_path")/login"
-  login_html="$(dirname "$index_path")/login.html"
-  temp_login="$(mktemp)"
-  mkdir -p "$login_dir"
-
-  if grep -Eqi '<base[[:space:]][^>]*href=' "$index_path"; then
-    cp "$index_path" "$login_dir/index.html"
-    cp "$index_path" "$login_html"
-    return 0
-  fi
-
-  awk '
-    BEGIN { inserted = 0 }
-    /<\/head>/ && inserted == 0 {
-      print "    <base href=\"/\" />"
-      inserted = 1
-    }
-    { print }
-  ' "$index_path" >"$temp_login"
-
-  cp "$temp_login" "$login_dir/index.html"
-  cp "$temp_login" "$login_html"
-  rm -f "$temp_login"
-}
-
-create_echarts_view_route_entry() {
-  local output_dir="$1"
-  local echarts_view_dir="$output_dir/echarts-view"
-  mkdir -p "$echarts_view_dir"
-
-  cat >"$echarts_view_dir/index.html" <<'HTML'
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>可视化展示</title>
-  </head>
-  <body>
-    <script type="module" src="/assets/openclaw-echarts-renderer.js"></script>
-  </body>
-</html>
-HTML
-}
-
-extract_offline_vendors() {
-  local bundle_path="$1"
-  local vendor_dir="$2"
-  local python_bin
-
-  python_bin="$(resolve_python)"
-  mkdir -p "$vendor_dir"
-
-  "$python_bin" - "$bundle_path" "$vendor_dir" <<'PY'
-import json
-import pathlib
-import re
-import sys
-
-bundle_path = pathlib.Path(sys.argv[1])
-vendor_dir = pathlib.Path(sys.argv[2])
-bundle_source = bundle_path.read_text(encoding="utf-8")
-match = re.search(
-    r'const EMBEDDED_LIBRARY_SOURCES = \{\s*echarts:\s*("(?:\\.|[^"\\])*")\s*,\s*json5:\s*("(?:\\.|[^"\\])*")\s*,\s*\};',
-    bundle_source,
-    re.S,
-)
-if not match:
-    raise SystemExit(
-        f"ERROR: Could not extract embedded vendor sources from {bundle_path}"
-    )
-
-(vendor_dir / "echarts.min.js").write_text(json.loads(match.group(1)), encoding="utf-8")
-(vendor_dir / "json5.min.js").write_text(json.loads(match.group(2)), encoding="utf-8")
-PY
-
-  [[ -f "$vendor_dir/echarts.min.js" ]] || fail "Failed to write $vendor_dir/echarts.min.js"
-  [[ -f "$vendor_dir/json5.min.js" ]] || fail "Failed to write $vendor_dir/json5.min.js"
-}
-
 sync_workspace_overlay_tree() {
   local overlay_root="$1"
   local workspace_dir="$2"
@@ -961,7 +664,9 @@ sync_managed_tenant_member_bootstrap_hook() {
 }
 
 resolve_source_dir() {
-  if [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
+  local mode="${1:-auto}"
+
+  if [[ "$mode" != "image-only" ]] && [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
     printf '%s\n' "$ROOT_DIR/dist/control-ui"
     return 0
   fi
@@ -987,17 +692,25 @@ resolve_source_dir() {
 }
 
 main() {
-  require_file "$CONTROL_UI_RUNTIME_SCRIPT" "Control UI ECharts runtime"
-  require_dir "$CONTROL_UI_RUNTIME_MODULE_DIR" "Control UI ECharts runtime modules"
-  require_dir "$CONTROL_UI_STATIC_DIR" "Control UI static overlay assets"
-  require_dir "$CONTROL_UI_VENDOR_DIR" "Control UI vendor assets"
-  require_file "$OFFLINE_BUNDLED_USERSCRIPT" "Offline bundled ECharts userscript"
   require_file "$TOOL_DIR/build-custom-control-ui.mjs" "Custom Control UI builder"
 
-  local source_dir
+  local source_dir=""
+  local source_dir_mode=""
   local compose_up_applied="0"
-  ensure_gateway_service_image_current
-  source_dir="$(resolve_source_dir)"
+  if host_control_ui_matches_current_checkout; then
+    source_dir="$ROOT_DIR/dist/control-ui"
+    source_dir_mode="host-dist"
+    printf '%s\n' "Skipped docker compose build for openclaw-gateway because host dist/control-ui matches the current git checkout"
+  else
+    source_dir_mode="image-sourced"
+    if [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
+      printf '%s\n' "Host dist/control-ui exists but is not stamped for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead"
+    else
+      printf '%s\n' "Host dist/control-ui is missing or not trusted for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead"
+    fi
+    ensure_gateway_service_image_current
+    source_dir="$(resolve_source_dir image-only)"
+  fi
 
   run_custom_control_ui_builder "$source_dir"
   collect_extra_mounts

@@ -27,6 +27,22 @@ function mountComposer(initialValue = "") {
   };
 }
 
+function mountComposerWithoutFixedClasses() {
+  document.body.innerHTML = `
+    <form data-testid="chat-composer">
+      <textarea aria-label="输入消息"></textarea>
+      <div role="toolbar" aria-label="chat actions">
+        <button type="button" aria-label="Stop generating">stop</button>
+        <button type="button" aria-label="发送消息">发送</button>
+      </div>
+    </form>
+  `;
+  return {
+    textarea: document.querySelector("textarea"),
+    sendButton: document.querySelector("button[aria-label='发送消息']"),
+  };
+}
+
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", ((callback) => {
     callback(0);
@@ -60,6 +76,22 @@ describe("chat composer helpers", () => {
 
     expect(sent).toBe(true);
     expect((textarea as HTMLTextAreaElement).value).toBe("直接发送");
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("supports capability probing when class names change", async () => {
+    const { textarea, sendButton } = mountComposerWithoutFixedClasses();
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    expect(sendButton).toBeInstanceOf(HTMLButtonElement);
+    const clickSpy = vi.spyOn(sendButton as HTMLButtonElement, "click");
+
+    const inserted = await insertPromptIntoChatBox("探测插入");
+    expect(inserted).toBe(true);
+    expect((textarea as HTMLTextAreaElement).value).toBe("探测插入");
+
+    const sent = await sendPromptToChat("探测发送");
+    expect(sent).toBe(true);
+    expect((textarea as HTMLTextAreaElement).value).toBe("探测发送");
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 });

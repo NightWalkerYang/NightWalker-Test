@@ -198,9 +198,10 @@ Because the mount replaces the container's default Control UI asset directory, t
 
 The shell variant also works when the host has no `dist/control-ui` yet:
 
-- if `dist/control-ui` exists on the host, it uses that
-- otherwise it extracts `/app/dist/control-ui` from the local `openclaw-gateway` Docker image
+- if `dist/control-ui` exists on the host and `dist/.buildstamp` matches the current `git HEAD`, it uses that and skips a gateway image rebuild
+- otherwise it first rebuilds `openclaw-gateway`, then extracts `/app/dist/control-ui` from that current image
 - if that image does not exist yet, it builds `openclaw:local` from `Dockerfile` or pulls `OPENCLAW_IMAGE` when you set a non-default image
+- when the shell has to run the builder inside Docker, it also passes the target machine's `OPENCLAW_GATEWAY_TOKEN` plus `OPENCLAW_CONFIG_DIR` into the container so tokenized bootstrap injection still matches the target host
 - the injected chart runtime stays CSP-safe by loading same-origin `assets/vendor/*.js` files extracted from the tracked offline bundle
 
 If you only want to refresh generated files and `docker-compose.override.yml` without restarting the related containers, set:

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   parseRuntimeEnvFile,
   prepareLocalRuntime,
+  runControlUiPreflight,
   resolveRuntimeEnv,
   syncControlUiBootstrapScripts,
 } from "../../../tools/openclaw-control-ui-echarts/local-runtime/runtime-common.mjs";
@@ -157,7 +158,9 @@ OPENCLAW_GATEWAY_PORT=19999
       "{ gateway: { mode: 'local' } }\n",
     );
 
-    const prepared = prepareLocalRuntime(rootDir, {});
+    const prepared = prepareLocalRuntime(rootDir, {
+      OPENCLAW_SKIP_CONTROL_UI_PREFLIGHT: "1",
+    });
     expect(fs.existsSync(prepared.env.OPENCLAW_CONFIG_PATH)).toBe(true);
     expect(fs.readFileSync(prepared.env.OPENCLAW_CONFIG_PATH, "utf8")).toContain("mode");
     expect(
@@ -181,5 +184,224 @@ OPENCLAW_GATEWAY_PORT=19999
         "utf8",
       ),
     ).toContain("noop");
+  });
+
+  it("fails preflight when control-ui build manifest is missing", () => {
+    const rootDir = createTempDir();
+    const packageRoot = path.join(rootDir, "runtime", "node_modules", "openclaw");
+    fs.mkdirSync(path.join(packageRoot, "dist", "control-ui"), { recursive: true });
+    fs.mkdirSync(path.join(packageRoot, "tools", "openclaw-control-ui-echarts"), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(packageRoot, "dist", "control-ui", "index.html"), "<html></html>\n");
+
+    const runtime = resolveRuntimeEnv(rootDir, {});
+    expect(() => runControlUiPreflight(runtime)).toThrow(/control_ui_preflight_manifest_missing/);
+  });
+
+  it("passes preflight for a valid control-ui manifest and assets", () => {
+    const rootDir = createTempDir();
+    const packageRoot = path.join(rootDir, "runtime", "node_modules", "openclaw");
+    const controlUiRoot = path.join(packageRoot, "dist", "control-ui");
+    fs.mkdirSync(
+      path.join(controlUiRoot, "assets", "openclaw-echarts", "fp", "runtime", "tenant"),
+      {
+        recursive: true,
+      },
+    );
+    fs.mkdirSync(
+      path.join(controlUiRoot, "assets", "openclaw-echarts", "fp", "runtime", "branding"),
+      { recursive: true },
+    );
+    fs.mkdirSync(
+      path.join(controlUiRoot, "assets", "openclaw-echarts", "fp", "runtime", "lufeng"),
+      {
+        recursive: true,
+      },
+    );
+    fs.mkdirSync(
+      path.join(controlUiRoot, "assets", "openclaw-echarts", "fp", "runtime", "echarts-view"),
+      { recursive: true },
+    );
+    fs.mkdirSync(path.join(controlUiRoot, "assets", "openclaw-echarts", "fp"), { recursive: true });
+    fs.mkdirSync(path.join(controlUiRoot, "login"), { recursive: true });
+    fs.mkdirSync(path.join(controlUiRoot, "echarts-view"), { recursive: true });
+    fs.mkdirSync(path.join(controlUiRoot, "assets"), { recursive: true });
+    fs.writeFileSync(path.join(controlUiRoot, "assets", "index-realhash.js"), "export {};\n");
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        "fp",
+        "runtime",
+        "tenant",
+        "preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        "fp",
+        "runtime",
+        "branding",
+        "auto-token-preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        "fp",
+        "runtime",
+        "lufeng",
+        "preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        "fp",
+        "runtime",
+        "echarts-view",
+        "preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(controlUiRoot, "assets", "openclaw-echarts", "fp", "openclaw-echarts-renderer.js"),
+      "export {};\n",
+    );
+
+    const runtimeBase = "./assets/openclaw-echarts/fp/runtime";
+    const rendererRelative = "./assets/openclaw-echarts/fp/openclaw-echarts-renderer.js";
+    const rendererAbsolute = "/assets/openclaw-echarts/fp/openclaw-echarts-renderer.js";
+    const indexHtml = [
+      "<html>",
+      "  <head>",
+      `    <script type="module" src="${runtimeBase}/echarts-view/preboot.js" data-openclaw-echarts-view-bootstrap></script>`,
+      `    <script src="${runtimeBase}/tenant/preboot.js" data-openclaw-tenant-preboot></script>`,
+      `    <script src="${runtimeBase}/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="token-a"></script>`,
+      `    <script src="${runtimeBase}/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="token-a"></script>`,
+      '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
+      "  </head>",
+      "  <body>",
+      `    <script type="module" src="${rendererRelative}"></script>`,
+      "  </body>",
+      "</html>",
+      "",
+    ].join("\n");
+    fs.writeFileSync(path.join(controlUiRoot, "index.html"), indexHtml);
+    fs.writeFileSync(path.join(controlUiRoot, "login", "index.html"), '<base href="/" />\n');
+    fs.writeFileSync(path.join(controlUiRoot, "login.html"), '<base href="/" />\n');
+    fs.writeFileSync(
+      path.join(controlUiRoot, "echarts-view", "index.html"),
+      `<script type="module" src="${rendererAbsolute}"></script>\n`,
+    );
+    fs.writeFileSync(
+      path.join(controlUiRoot, "openclaw-control-ui-build-manifest.json"),
+      JSON.stringify(
+        {
+          sourceMainBundleScriptSrc: "./assets/index-realhash.js",
+          runtimeAssetBaseRelativePath: runtimeBase,
+          rendererAssetRelativePath: rendererRelative,
+          rendererAssetAbsolutePath: rendererAbsolute,
+          deploymentDecision: {
+            mode: "update-zero-intrusive-artifacts-only",
+            requiresGatewayImageRebuild: false,
+            reason: "test",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const runtime = resolveRuntimeEnv(rootDir, {});
+    const result = runControlUiPreflight(runtime);
+    expect(result.runtimeAssetBaseRelativePath).toBe(runtimeBase);
+    expect(result.rendererAssetRelativePath).toBe(rendererRelative);
+    expect(result.deploymentDecision?.mode).toBe("update-zero-intrusive-artifacts-only");
+  });
+
+  it("skips preflight when OPENCLAW_SKIP_CONTROL_UI_PREFLIGHT is set", () => {
+    const rootDir = createTempDir();
+    const packageRoot = path.join(rootDir, "runtime", "node_modules", "openclaw");
+    fs.mkdirSync(path.join(packageRoot, "dist", "control-ui"), { recursive: true });
+    fs.mkdirSync(
+      path.join(packageRoot, "tools", "openclaw-control-ui-echarts", "sidecar", "tenant-platform"),
+      { recursive: true },
+    );
+    fs.mkdirSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "workspace-overlays",
+        "kingdee-cloud",
+        "hooks",
+        "tenant-member-bootstrap-filter",
+      ),
+      { recursive: true },
+    );
+    fs.writeFileSync(path.join(packageRoot, "openclaw.mjs"), "export {};\n");
+    fs.writeFileSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "sidecar",
+        "tenant-platform",
+        "server.mjs",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "workspace-overlays",
+        "kingdee-cloud",
+        "hooks",
+        "tenant-member-bootstrap-filter",
+        "HOOK.md",
+      ),
+      "---\nname: tenant-member-bootstrap-filter\n---\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        packageRoot,
+        "tools",
+        "openclaw-control-ui-echarts",
+        "workspace-overlays",
+        "kingdee-cloud",
+        "hooks",
+        "tenant-member-bootstrap-filter",
+        "handler.js",
+      ),
+      "export default function noop() {}\n",
+    );
+    fs.writeFileSync(
+      path.join(packageRoot, "dist", "control-ui", "index.html"),
+      "<html><head></head><body></body></html>\n",
+    );
+    fs.writeFileSync(
+      path.join(rootDir, "openclaw.local.example.json5"),
+      "{ gateway: { mode: 'local' } }\n",
+    );
+
+    const prepared = prepareLocalRuntime(rootDir, {
+      OPENCLAW_SKIP_CONTROL_UI_PREFLIGHT: "1",
+    });
+    expect(prepared.controlUiPreflight).toBeNull();
   });
 });

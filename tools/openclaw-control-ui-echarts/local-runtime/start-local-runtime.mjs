@@ -3,6 +3,23 @@ import { prepareLocalRuntime, resolveRuntimePackageRoot } from "./runtime-common
 
 const rootDir = resolveRuntimePackageRoot(import.meta.url);
 const runtime = prepareLocalRuntime(rootDir);
+const deploymentDecision = runtime?.controlUiPreflight?.deploymentDecision;
+if (deploymentDecision && typeof deploymentDecision === "object") {
+  const mode = String(deploymentDecision.mode ?? "").trim();
+  const requiresGatewayImageRebuild = Boolean(deploymentDecision.requiresGatewayImageRebuild);
+  const reason = String(deploymentDecision.reason ?? "").trim();
+  if (mode || reason) {
+    process.stdout.write(
+      [
+        `[control-ui-preflight] deployment mode: ${mode || "unknown"}`,
+        `[control-ui-preflight] requires gateway image rebuild: ${requiresGatewayImageRebuild ? "yes" : "no"}`,
+        reason ? `[control-ui-preflight] reason: ${reason}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n") + "\n",
+    );
+  }
+}
 const extraGatewayArgs = process.argv.slice(2);
 
 const sidecar = spawn(process.execPath, [runtime.tenantPlatformEntry], {

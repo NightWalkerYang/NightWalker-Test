@@ -65,6 +65,7 @@ function createButton({ label, primary = false, href = "", onClick = null }) {
 }
 
 function buildCard(payload, uiText, options = {}) {
+  const disableDownload = options.disableDownload === true;
   const surface = document.createElement("article");
   surface.className = "oc-file-card__surface";
 
@@ -124,7 +125,7 @@ function buildCard(payload, uiText, options = {}) {
   const actions = document.createElement("div");
   actions.className = "oc-file-card__actions";
 
-  if (payload.kind === "url") {
+  if (!disableDownload && payload.kind === "url") {
     actions.append(
       createButton({
         label: uiText.actionDownload,
@@ -136,7 +137,7 @@ function buildCard(payload, uiText, options = {}) {
         },
       }),
     );
-  } else {
+  } else if (!disableDownload) {
     const downloadUrl = buildWorkspaceDownloadUrl(
       options.controlUiRootUrl,
       payload.path,
@@ -162,6 +163,20 @@ function buildCard(payload, uiText, options = {}) {
   return surface;
 }
 
+function renderFallbackCard(detail, uiText) {
+  const payload = {
+    kind: "path",
+    name: "文件信息待补全",
+    extension: "FILE",
+    description: localizeErrorMessage(detail),
+    sizeLabel: "",
+    sourceLabel: "degraded",
+    path: "请检查 file 代码块后重试",
+    scope: "workspace",
+  };
+  return buildCard(payload, uiText, { disableDownload: true });
+}
+
 export function createFileAdapter({ vendorBaseUrl, controlUiRootUrl }) {
   const ensureJson5 = createJson5Loader(vendorBaseUrl);
 
@@ -179,18 +194,36 @@ export function createFileAdapter({ vendorBaseUrl, controlUiRootUrl }) {
     ensureReady: ensureJson5,
     localizeErrorMessage,
     async renderContent({ source, wrapper, host, context, renderHostScaffold }) {
-      const payload = parseFilePayload(source, context?.json5);
-      const summaryText =
-        payload.kind === "url" ? UI_TEXT.summarySuccessUrl : UI_TEXT.summarySuccessPath;
+      let payload = null;
+      let parseErrorDetail = "";
+      try {
+        payload = parseFilePayload(source, context?.json5);
+      } catch (error) {
+        parseErrorDetail =
+          error && typeof error.message === "string"
+            ? error.message
+            : String(error || "Unknown error");
+      }
+      const summaryText = payload
+        ? payload.kind === "url"
+          ? UI_TEXT.summarySuccessUrl
+          : UI_TEXT.summarySuccessPath
+        : `${UI_TEXT.summaryError}（已降级）`;
       const cardEl = renderHostScaffold(host, wrapper, "success", "", {
         summaryText,
       });
 
       cardEl.classList.add("oc-file-card");
-      cardEl.replaceChildren(buildCard(payload, UI_TEXT, { controlUiRootUrl }));
+      if (payload) {
+        cardEl.replaceChildren(buildCard(payload, UI_TEXT, { controlUiRootUrl }));
+      } else {
+        cardEl.replaceChildren(renderFallbackCard(parseErrorDetail, UI_TEXT));
+      }
       cardEl.setAttribute(
         "aria-label",
-        `${payload.kind === "url" ? UI_TEXT.kindUrl : UI_TEXT.kindPath}: ${payload.name}`,
+        payload
+          ? `${payload.kind === "url" ? UI_TEXT.kindUrl : UI_TEXT.kindPath}: ${payload.name}`
+          : `${UI_TEXT.kindPath}: 文件信息待补全`,
       );
 
       return null;

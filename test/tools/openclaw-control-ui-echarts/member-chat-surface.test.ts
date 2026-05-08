@@ -151,12 +151,12 @@ async function flush() {
 }
 
 afterEach(() => {
+  resetMemberChatSurfaceForTests();
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   window.localStorage.clear();
   window.sessionStorage.clear();
   window.history.replaceState({}, "", "/");
-  resetMemberChatSurfaceForTests();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -1513,6 +1513,112 @@ describe("member chat surface", () => {
     textarea?.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
+    expect(document.querySelector("[data-oc-member-chat-toast]")?.textContent).toContain(
+      "积分不足请联系管理员。",
+    );
+  });
+
+  it("intercepts new-session and send events through dom-compat instead of fixed chat classes", async () => {
+    const apiState = installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "本周分析",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 0,
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    document.body.innerHTML = `
+      <nav aria-label="breadcrumb">
+        <a href="/">苏博泰克</a>
+        <a href="/chat">聊天</a>
+      </nav>
+      <aside aria-label="navigation sidebar"></aside>
+      <section class="composer-host">
+        <textarea aria-label="发送消息">余额不足测试</textarea>
+        <div role="toolbar" aria-label="chat actions">
+          <button type="button" aria-label="Stop generating">stop</button>
+          <button type="button" aria-label="Send message">send</button>
+          <button type="button" title="New session">+</button>
+        </div>
+      </section>
+    `;
+    const app = createAppStub();
+    app.sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    app.settings = {
+      sessionKey: app.sessionKey,
+      lastActiveSessionKey: app.sessionKey,
+    };
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const originalSessionKey = String(app.sessionKey || "")
+      .trim()
+      .toLowerCase();
+    const newSessionButton = document.querySelector('button[title="New session"]');
+    newSessionButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flush();
+
+    const currentSessionKey = String(app.sessionKey || "")
+      .trim()
+      .toLowerCase();
+    expect(currentSessionKey).not.toBe(originalSessionKey);
+    expect(
+      apiState.sessions.some((session) => session.openclawSessionKey === currentSessionKey),
+    ).toBe(true);
+    expect(decodeURIComponent(window.location.search)).toContain("tenantAgentId=tenant-agent-1");
+    expect(decodeURIComponent(window.location.search)).not.toContain(
+      `session=${currentSessionKey}`,
+    );
+
+    const textarea = document.querySelector('textarea[aria-label="发送消息"]');
+    const enterEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Enter",
+    });
+    textarea?.dispatchEvent(enterEvent);
+    expect(enterEvent.defaultPrevented).toBe(true);
+
+    const sendButton = document.querySelector('button[aria-label="Send message"]');
+    sendButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
     expect(document.querySelector("[data-oc-member-chat-toast]")?.textContent).toContain(
       "积分不足请联系管理员。",
     );

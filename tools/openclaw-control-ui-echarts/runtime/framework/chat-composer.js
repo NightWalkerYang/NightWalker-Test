@@ -1,3 +1,4 @@
+import { findChatComposerTextarea, findChatSendButton, isSendButtonElement } from "./dom-compat.js";
 import { waitForFrame } from "./shared.js";
 
 function sanitizeComposerText(value) {
@@ -16,10 +17,8 @@ function sanitizeComposerText(value) {
 }
 
 function findChatComposerElements() {
-  const textarea = document.querySelector(".agent-chat__input textarea");
-  const sendButton = Array.from(
-    document.querySelectorAll(".agent-chat__toolbar-right .chat-send-btn"),
-  ).find((button) => !button.classList.contains("chat-send-btn--stop"));
+  const textarea = findChatComposerTextarea(document);
+  const sendButton = findChatSendButton(document);
   return { textarea, sendButton };
 }
 
@@ -33,6 +32,22 @@ function setComposerDraft(textarea, value) {
   }
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
   textarea.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function isControlDisabled(control) {
+  if (!(control instanceof HTMLElement)) {
+    return true;
+  }
+
+  if ("disabled" in control && control.disabled) {
+    return true;
+  }
+
+  if (control.getAttribute("aria-disabled") === "true") {
+    return true;
+  }
+
+  return control.classList.contains("disabled");
 }
 
 function focusComposer(textarea) {
@@ -83,7 +98,7 @@ export async function sendPromptToChat(promptText) {
   await waitForFrame(2);
 
   const refreshed = findChatComposerElements();
-  if (!(refreshed.sendButton instanceof HTMLButtonElement) || refreshed.sendButton.disabled) {
+  if (!isSendButtonElement(refreshed.sendButton) || isControlDisabled(refreshed.sendButton)) {
     setComposerDraft(
       textarea,
       previousDraft.trim()

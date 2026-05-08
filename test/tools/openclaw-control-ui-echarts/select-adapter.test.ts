@@ -162,4 +162,37 @@ describe("select adapter", () => {
     ).not.toBeNull();
     expect(host.textContent).toContain("改成财务分析大屏");
   });
+
+  it("renders a degraded fallback card instead of throwing when payload is malformed", async () => {
+    const { createSelectAdapter } = await import(
+      "../../../tools/openclaw-control-ui-echarts/runtime/select/adapter.js"
+    );
+    const adapter = createSelectAdapter({
+      vendorBaseUrl: new URL("https://hailstone.cn:18789/assets/vendor/"),
+    });
+
+    const host = document.createElement("div");
+    const wrapper = document.createElement("pre");
+    wrapper.innerHTML = `<span class="code-block-lang">single-select</span><code class="language-single-select"></code>`;
+
+    await adapter.renderContent({
+      source: "single-select {{{ not-valid-json",
+      wrapper,
+      host,
+      context: { json5: (await import("json5")).default },
+      renderHostScaffold(currentHost) {
+        const surface = document.createElement("div");
+        currentHost.append(surface);
+        return surface;
+      },
+    });
+
+    expect(host.textContent).toContain("已启用容错降级");
+    const sendButton = host.querySelector<HTMLButtonElement>(
+      '[data-oc-select-action="send"]',
+    );
+    expect(sendButton).not.toBeNull();
+    sendButton?.click();
+    expect(sendPromptToChat).toHaveBeenCalledTimes(1);
+  });
 });

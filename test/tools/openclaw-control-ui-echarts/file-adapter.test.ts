@@ -74,6 +74,17 @@ describe("file adapter workspace download urls", () => {
       "subotech-finance/cache/company_summary_202601_1775178979.xlsx",
     );
   });
+
+  it("renders a stable degraded card when payload cannot be parsed", async () => {
+    const { host } = await renderCard("file {{{ broken payload");
+    const labels = [...host.querySelectorAll(".oc-file-card__button")].map((element) =>
+      element.textContent?.trim(),
+    );
+
+    expect(labels).toEqual([]);
+    expect(host.textContent).toContain("文件信息待补全");
+    expect(host.textContent).toContain("请检查 file 代码块后重试");
+  });
 });
 
 async function renderCard(source: string) {

@@ -3,6 +3,7 @@
 这是给**不安装 Docker 的客户机器**准备的本地运行包模板。
 
 目标：
+
 - 客户机器不参与构建
 - 客户机器只负责运行
 - 本地版只走 **License 授权**
@@ -88,7 +89,7 @@
 - 租户管理员通过：
   - 导入授权文件
   - 输入续期码
-来控制有效期
+    来控制有效期
 - 到期后保持只读，不允许继续写操作
 
 ## 说明
@@ -96,6 +97,9 @@
 - 运行包启动时会自动：
   - 同步 Gateway token 到 Control UI 预启动脚本
   - 将 `workspace-downloads` 和 `workspace-agent-downloads` 指向本地数据目录
+- 运行包启动前会做 Control UI 预检（manifest + 关键注入点 + 产物 smoke）。
+  - 预检失败会直接阻止启动，并给出缺失项（例如注入标记、脚本路径、login/echarts-view 入口）。
+  - 如需临时绕过（不建议常态使用），可设置 `OPENCLAW_SKIP_CONTROL_UI_PREFLIGHT=1`。
 - 因为这是**运行包**，不是源码仓库，交付时只需要打包生成目录，不需要额外交付 Git 历史
 - 如果你想把现有环境的 `openclaw.json` 重新整理成这份可移植基线，可以用 `portable-config.mjs` 重新导出，再覆盖 `openclaw.local.example.json5`
   - 例如：`node tools/openclaw-control-ui-echarts/local-runtime/portable-config.mjs --source ~/.openclaw/openclaw.json --emit example --write tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5`

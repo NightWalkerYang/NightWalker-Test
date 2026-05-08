@@ -3,7 +3,10 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bootTenantEntry } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
+import {
+  bootTenantEntry,
+  resetTenantEntryForTests,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/entry.js";
 import {
   resolveTenantApiBaseCandidates,
   writeSelectedTenantAgent,
@@ -92,7 +95,10 @@ function stubUpdateLogCrud(initialLogs = []) {
           versionLabel: payload.versionLabel,
           title: payload.title,
           content: payload.content,
-          excerpt: String(payload.content || "").replace(/\s+/g, " ").trim().slice(0, 40),
+          excerpt: String(payload.content || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 40),
           createdByUsername: "platform-root",
           publishedAt: createdAt,
           createdAt,
@@ -110,7 +116,10 @@ function stubUpdateLogCrud(initialLogs = []) {
                 versionLabel: payload.versionLabel,
                 title: payload.title,
                 content: payload.content,
-                excerpt: String(payload.content || "").replace(/\s+/g, " ").trim().slice(0, 40),
+                excerpt: String(payload.content || "")
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .slice(0, 40),
                 updatedAt: "2026-04-23T09:30:00.000Z",
               }
             : entry,
@@ -154,6 +163,7 @@ async function flushMicrotasks() {
 }
 
 afterEach(() => {
+  resetTenantEntryForTests();
   document.body.innerHTML = "";
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
@@ -162,9 +172,6 @@ afterEach(() => {
     window.clearInterval(visualizationPollTimer);
   }
   delete window.__openclawMemberVisualizationPollTimer;
-  delete window.__openclawTenantEntryBooted;
-  delete window.__openclawTenantRouteSyncBooted;
-  delete window.__openclawUpdateLogState;
   document.head.querySelector("[data-oc-update-log-style]")?.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -314,9 +321,7 @@ describe("zero-intrusive tenant entry", () => {
       "ocTenantView=tenant-agent-assignment",
     );
     expect(agentSection).not.toBeNull();
-    expect(agentSection?.querySelector(".nav-section__label-text")?.textContent).toContain(
-      "Agent",
-    );
+    expect(agentSection?.querySelector(".nav-section__label-text")?.textContent).toContain("Agent");
     expect(agentItems).toHaveLength(1);
     expect(agentItems[0]?.textContent).toContain("已有Agent");
     expect(agentItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-owned-agents");
@@ -644,9 +649,7 @@ describe("zero-intrusive tenant entry", () => {
     bootTenantEntry();
     await flushMicrotasks();
 
-    document
-      .querySelector(".sidebar-nav")
-      ?.append(document.createElement("div"));
+    document.querySelector(".sidebar-nav")?.append(document.createElement("div"));
     await flushMicrotasks();
 
     deferred.resolve({
@@ -1221,5 +1224,35 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems).toHaveLength(1);
     expect(utilityItems[0]?.textContent).toContain("版本");
     expect(utilityItems[0] instanceof HTMLElement ? utilityItems[0].hidden : true).toBe(false);
+  });
+
+  it("uses dom-compat shell detection when sidebar and topbar classes drift", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+        edition: "cloud",
+      },
+    });
+    document.body.innerHTML = `
+      <button aria-label="搜索控制台">搜索</button>
+      <aside aria-label="navigation sidebar">
+        <section class="nav-section" data-native-group="chat"></section>
+      </aside>
+      <footer class="sidebar-shell__footer">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </footer>
+    `;
+
+    bootTenantEntry();
+    await flushAsync();
+
+    expect(document.querySelector(".oc-platform-management-section")).not.toBeNull();
+    expect(document.querySelector(".oc-tenant-agent-section")).not.toBeNull();
+    expect(document.querySelector(".oc-tenant-stats-section")).not.toBeNull();
+    expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
+      "tenant_admin",
+    );
   });
 });

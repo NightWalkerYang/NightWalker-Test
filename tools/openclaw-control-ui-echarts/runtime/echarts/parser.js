@@ -10,8 +10,17 @@ export const ECHARTS_LANGUAGE_ALIASES = new Set([
 
 const JS_PLACEHOLDER_PREFIX = "__OC_ECHARTS_JS__";
 
+function normalizeParserWhitespace(text) {
+  return String(text || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\u202f/g, " ")
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+}
+
 function normalizeOptionSource(raw) {
-  let text = normalizeText(raw);
+  let text = normalizeParserWhitespace(normalizeText(raw));
   if (!text) {
     return text;
   }
@@ -24,6 +33,8 @@ function normalizeOptionSource(raw) {
   const wrappers = [
     /^(?:const|let|var)\s+option\s*=\s*/i,
     /^option\s*=\s*/i,
+    /^echarts(?:-option)?\s+/i,
+    /^chart\s+/i,
     /^return\s+/i,
     /^export\s+default\s+/i,
   ];
@@ -194,6 +205,25 @@ function scanBalanced(source, start, openChar, closeChar) {
   }
 
   throw new Error(`Unterminated ${openChar}${closeChar} pair in echarts block.`);
+}
+
+function extractBalancedSlice(source, openChar, closeChar) {
+  const text = String(source || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  const openIndex = text.indexOf(openChar);
+  if (openIndex === -1) {
+    return "";
+  }
+
+  try {
+    const endIndex = scanBalanced(text, openIndex, openChar, closeChar);
+    return text.slice(openIndex, endIndex).trim();
+  } catch {
+    return text.slice(openIndex).trim();
+  }
 }
 
 function scanFunctionExpression(source, start) {
@@ -631,6 +661,39 @@ function splitTopLevelCommaSeparated(source) {
   return parts;
 }
 
+function buildEchartsParseCandidates(source) {
+  const text = String(source || "").trim();
+  if (!text) {
+    return [];
+  }
+
+  const candidates = new Set();
+  const pushCandidate = (value) => {
+    const normalized = String(value || "").trim();
+    if (normalized) {
+      candidates.add(normalized);
+    }
+  };
+
+  pushCandidate(text);
+  pushCandidate(extractBalancedSlice(text, "{", "}"));
+  pushCandidate(extractBalancedSlice(text, "[", "]"));
+
+  for (const candidate of [...candidates]) {
+    if (!candidate.startsWith("{")) {
+      pushCandidate(wrapBareObjectLiteral(candidate));
+    }
+    if (candidate.startsWith("[")) {
+      pushCandidate(`{ series: ${candidate} }`);
+    }
+    if (!candidate.startsWith("{") && /(?:^|\s)(?:option|series|xAxis|yAxis|title)\s*:/.test(candidate)) {
+      pushCandidate(`{ ${candidate} }`);
+    }
+  }
+
+  return [...candidates];
+}
+
 function buildGenericTooltipFormatter() {
   return function genericTooltipFormatter(params) {
     const rows = Array.isArray(params) ? params : [params];
@@ -854,22 +917,32 @@ export function parseEchartsPayload(raw, json5, echarts) {
     throw new Error("The echarts code block is empty.");
   }
 
-  const preparedSource = wrapBareObjectLiteral(normalized);
-  const { sanitizedSource, placeholders } = extractJsOnlyConstructs(preparedSource);
-  const repairedSource = repairLikelyMissingClosers(sanitizedSource);
-  const sourceVariants =
-    repairedSource === sanitizedSource ? [sanitizedSource] : [sanitizedSource, repairedSource];
-
+  const sourceCandidates = buildEchartsParseCandidates(normalized);
   let lastError = null;
-  for (const candidateSource of sourceVariants) {
-    const parsers = [() => JSON.parse(candidateSource), () => json5.parse(candidateSource)];
-    for (const parse of parsers) {
-      try {
-        const payload = unwrapParsedPayload(parse());
-        payload.option = reviveJsPlaceholders(payload.option, placeholders, echarts, json5, []);
-        return payload;
-      } catch (error) {
-        lastError = error;
+  for (const sourceCandidate of sourceCandidates) {
+    const { sanitizedSource, placeholders } = extractJsOnlyConstructs(sourceCandidate);
+    const repairedSource = repairLikelyMissingClosers(sanitizedSource);
+    const sourceVariants =
+      repairedSource === sanitizedSource
+        ? [sanitizedSource]
+        : [sanitizedSource, repairedSource];
+
+    for (const candidateSource of sourceVariants) {
+      const parsers = [() => JSON.parse(candidateSource), () => json5.parse(candidateSource)];
+      for (const parse of parsers) {
+        try {
+          const payload = unwrapParsedPayload(parse());
+          payload.option = reviveJsPlaceholders(
+            payload.option,
+            placeholders,
+            echarts,
+            json5,
+            [],
+          );
+          return payload;
+        } catch (error) {
+          lastError = error;
+        }
       }
     }
   }

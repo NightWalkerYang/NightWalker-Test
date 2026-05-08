@@ -1,9 +1,13 @@
-import { LUFENG_ROUTE, LUFENG_SESSION_KEY, isLufengPublicPath, normalizeLufengRouteUrl } from "./context.js";
+import { findSidebar, findTopbarSearch } from "../framework/dom-compat.js";
+import {
+  LUFENG_ROUTE,
+  LUFENG_SESSION_KEY,
+  isLufengPublicPath,
+  normalizeLufengRouteUrl,
+} from "./context.js";
 
 const STYLE_ATTR = "data-oc-lufeng-style";
-const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
 const SIDEBAR_FOOTER_SELECTOR = ".sidebar-shell__footer";
-const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 const LUFENG_MODEL_VALUE = "openai/gpt-5.4";
 const LUFENG_MODEL_LABEL = "GPT-5.4 · openai";
 const CHAT_SESSION_SELECTORS = [
@@ -80,10 +84,7 @@ function syncSidebar(navRoot) {
     ) ?? sections[0];
 
   for (const section of sections) {
-    section.setAttribute(
-      "data-oc-lufeng-nav",
-      section === chatSection ? "chat" : "hidden",
-    );
+    section.setAttribute("data-oc-lufeng-nav", section === chatSection ? "chat" : "hidden");
   }
 
   chatSection.classList.remove("nav-section--collapsed");
@@ -110,14 +111,14 @@ function clearFooterSync(footer) {
 }
 
 function syncTopbarSearch() {
-  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  const search = findTopbarSearch(document);
   if (search instanceof HTMLElement) {
     search.setAttribute("data-oc-lufeng-search", "hidden");
   }
 }
 
 function clearTopbarSearch() {
-  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  const search = findTopbarSearch(document);
   if (search instanceof HTMLElement) {
     search.removeAttribute("data-oc-lufeng-search");
   }
@@ -240,7 +241,9 @@ function pinPublicChatSession(app) {
 }
 
 function isPinnedLufengModel(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   return normalized === LUFENG_MODEL_VALUE || normalized === "gpt-5.4";
 }
 
@@ -271,7 +274,9 @@ function isStaleLufengStartupError(message) {
   if (!message || typeof message !== "object") {
     return false;
   }
-  const role = String(message.role || "").trim().toLowerCase();
+  const role = String(message.role || "")
+    .trim()
+    .toLowerCase();
   if (role !== "assistant") {
     return false;
   }
@@ -279,8 +284,12 @@ function isStaleLufengStartupError(message) {
   if (!LUFENG_STALE_STARTUP_ERROR_PATTERN.test(text)) {
     return false;
   }
-  const provider = String(message.provider || message.modelProvider || "").trim().toLowerCase();
-  const model = String(message.model || "").trim().toLowerCase();
+  const provider = String(message.provider || message.modelProvider || "")
+    .trim()
+    .toLowerCase();
+  const model = String(message.model || "")
+    .trim()
+    .toLowerCase();
   return (
     provider === "volcengine-plan" ||
     provider === "byteplus-plan" ||
@@ -290,7 +299,9 @@ function isStaleLufengStartupError(message) {
 }
 
 function isAllowedLufengModelValue(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!normalized) {
     return false;
   }
@@ -305,8 +316,12 @@ function isAllowedLufengModelEntry(entry) {
   if (!entry || typeof entry !== "object") {
     return false;
   }
-  const provider = String(entry.provider || "").trim().toLowerCase();
-  const id = String(entry.id || "").trim().toLowerCase();
+  const provider = String(entry.provider || "")
+    .trim()
+    .toLowerCase();
+  const id = String(entry.id || "")
+    .trim()
+    .toLowerCase();
   return provider === LUFENG_PINNED_MODEL_PROVIDER && id.startsWith("gpt");
 }
 
@@ -372,7 +387,9 @@ function sanitizeLufengHistoryMessage(message) {
   if (isStaleLufengStartupError(message)) {
     return null;
   }
-  const role = String(message.role || "").trim().toLowerCase();
+  const role = String(message.role || "")
+    .trim()
+    .toLowerCase();
   const model = typeof message.model === "string" ? message.model.trim() : "";
   if (role !== "assistant" || !model || model === "gateway-injected") {
     return message;
@@ -414,7 +431,9 @@ function normalizeLufengSessionsPatchResult(result) {
 
 function setPinnedLufengModelOverride(app, override) {
   const existing =
-    app?.chatModelOverrides && typeof app.chatModelOverrides === "object" ? app.chatModelOverrides : {};
+    app?.chatModelOverrides && typeof app.chatModelOverrides === "object"
+      ? app.chatModelOverrides
+      : {};
   const next = { ...existing };
   if (override) {
     next[LUFENG_SESSION_KEY] = override;
@@ -603,7 +622,11 @@ function syncLufengSurface() {
   if (!isLufengPublicPath()) {
     document.documentElement.removeAttribute("data-oc-lufeng-route");
     document.body?.removeAttribute("data-oc-lufeng-route");
-    document.querySelectorAll(SIDEBAR_NAV_SELECTOR).forEach(clearSidebarSync);
+    for (const candidate of document.querySelectorAll("div, nav, aside, section")) {
+      if (findSidebar(candidate) === candidate) {
+        clearSidebarSync(candidate);
+      }
+    }
     document.querySelectorAll(SIDEBAR_FOOTER_SELECTOR).forEach(clearFooterSync);
     clearTopbarSearch();
     clearSessionControls();
@@ -616,7 +639,11 @@ function syncLufengSurface() {
   document.documentElement.setAttribute("data-oc-lufeng-route", "true");
   document.body?.setAttribute("data-oc-lufeng-route", "true");
   normalizeLufengLocation();
-  document.querySelectorAll(SIDEBAR_NAV_SELECTOR).forEach(syncSidebar);
+  for (const candidate of document.querySelectorAll("div, nav, aside, section")) {
+    if (findSidebar(candidate) === candidate) {
+      syncSidebar(candidate);
+    }
+  }
   document.querySelectorAll(SIDEBAR_FOOTER_SELECTOR).forEach((footer) => {
     if (footer instanceof HTMLElement) {
       footer.setAttribute("data-oc-lufeng-footer", "hidden");

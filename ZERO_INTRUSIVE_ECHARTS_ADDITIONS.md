@@ -11,6 +11,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `ZERO_INTRUSIVE_ECHARTS_ADDITIONS.md`
 - `ZERO_INTRUSIVE_3D_VISUALIZATION_RUNTIME_SPEC.md`
 - `ZERO_INTRUSIVE_TENANT_SYSTEM_PLAN.md`
+- `ZERO_INTRUSIVE_TENANT_RUNTIME_AND_ROUTING.md`
 - `ZERO_INTRUSIVE_TENANT_DEPLOYMENT_AND_OPERATIONS.md`
 - `ZERO_INTRUSIVE_KNOWLEDGE_GRAPH_TENANT_PLAN.md`
 
@@ -99,6 +100,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `tools/openclaw-control-ui-echarts/runtime/framework/adapter-registry.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/chat-composer.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/dom-compat.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/fenced-block-runtime.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/shared.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/styles.js`
@@ -205,6 +207,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/brand-state.test.ts`
 - `test/tools/openclaw-control-ui-echarts/chat-ambient.test.ts`
 - `test/tools/openclaw-control-ui-echarts/chat-composer.test.ts`
+- `test/tools/openclaw-control-ui-echarts/dom-compat-core.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-parser.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-styles.test.ts`
 - `test/tools/openclaw-control-ui-echarts/fenced-block-runtime.test.ts`
@@ -234,6 +237,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/select-adapter.test.ts`
 - `test/tools/openclaw-control-ui-echarts/select-parser.test.ts`
+- `test/tools/openclaw-control-ui-echarts/sync-smoke-gate-build.test.ts`
+- `test/tools/openclaw-control-ui-echarts/sync-smoke-gate-ui.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-license.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-local-edition.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-member-bootstrap-filter.test.ts`
@@ -258,11 +263,11 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Workspace file paths can download through same-origin `workspace-downloads` mounts.
 - Shared runtime styles load at boot instead of waiting for a fenced block to appear.
 - Fenced-block adapters now warm their local libraries at boot and rescan only changed DOM roots, reducing the post-refresh delay before `echarts` and `file` cards appear.
-- Chat page visuals are customized through the injected framework styles layer. The zero-intrusive layer now restores a minimal visible shell for the native `/chat` composer when deployments render `.agent-chat__input` as visually empty, while still avoiding the earlier pseudo-element redraw and toolbar-flattening path.
+- Chat page visuals are customized through the injected framework styles layer. The zero-intrusive layer now restores a minimal visible shell for the native `/chat` composer when upstream chat-shell DOM drifts, while still avoiding the earlier pseudo-element redraw and toolbar-flattening path.
 - The chat background uses an injected animated ambient layer.
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
-- Prompt-insertion helpers now target the native nested composer textarea through the resilient `.agent-chat__input textarea` selector, so option cards and ECharts follow-up actions keep working after upstream wrapped the textarea in `.agent-chat__composer-combobox`.
+- Prompt-insertion helpers, member-chat send interception, native `New session` takeover, tenant shell trimming, lufeng shell trimming, brand breadcrumb replacement, and chat background mounting now all consume a shared zero-intrusive DOM compatibility contract (`runtime/framework/dom-compat.js`) instead of scattering direct upstream selectors across feature modules.
 - Member chat now uses a progress-aware idle failsafe instead of a fixed 75-second absolute timeout, so long ECharts/file-generation runs keep going while text or tool output is still advancing and only fail after a real stall.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap that mirrors the gateway token into both the route scope and the root scope so public routes can reuse existing stored settings.
 - Platform admins can now replace the default `知识图谱` utility entry with a zero-intrusive `更改品牌` action, open a machine-global branding panel, and save either a text logo or an uploaded image logo without touching repository files or existing OpenClaw source files; if the current brand already uses an image logo, later name/title edits can keep that machine-local image without forcing a re-upload.
@@ -286,7 +291,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - The zero-intrusive Control UI vendor layer now also preinstalls same-origin `Three.js`, browser-ready `three/examples/jsm` addons, `GSAP`, `PixiJS`, `Babylon.js`, `ECharts-GL`, and `tsParticles` assets under `/assets/vendor/`, so AI-generated 3D or particle dashboards can directly reference local libraries instead of relying on CDN delivery.
 - The primary Docker deployment script now also stages that full zero-intrusive `vendor/` directory into `generated/control-ui/assets/vendor/` instead of only extracting embedded `echarts.min.js` / `json5.min.js`, so the same-origin advanced visualization libraries remain available after real deployments.
 - The direct `setup-direct-docker-compose-up.*` deployment helpers now also apply a targeted `docker compose up -d --force-recreate` for `openclaw-gateway`, `openclaw-tenant-platform`, and `openclaw-gateway-proxy` by default, so refreshed public visualization pages do not keep serving stale gateway/proxy containers that are missing the `workspace-agent-downloads` bind mount.
-- The same direct-docker setup helpers now also rebuild the `openclaw-gateway` compose image from the current repository checkout before they reuse host `dist/control-ui`, inspect `/app/dist/control-ui`, or `docker compose up` the stack. This prevents version-skew deployments where Git has already advanced to a newer OpenClaw tag but `openclaw:local` still serves the previous runtime and keeps the footer `版本` block pinned to the old release.
+- The same direct-docker setup helpers now only skip `openclaw-gateway` image rebuilds when host `dist/control-ui` exists and `dist/.buildstamp` proves that it was built from the current repository checkout; otherwise they rebuild the image first and then extract `/app/dist/control-ui`. This prevents version-skew deployments where Git has already advanced to a newer OpenClaw tag but either stale host `dist/control-ui` or stale `openclaw:local` content would keep the footer `版本` block pinned to the old release.
 - Those helpers also expose an explicit `OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1` escape hatch for offline-style rollouts where a fresh `openclaw:local` image was already prebuilt on another machine and imported onto the target host. The skip path is only valid after the operator has confirmed that the imported image already matches the current repository checkout.
 - Platform management now renders inside the native Control UI content area through single-entry query views instead of jumping to the legacy standalone platform page.
 - Platform-admin Agent allocation now opens a tenant-scoped wide multi-select dialog aligned with the tenant-admin assignment flow: it first loads the tenant's existing Agents, hides already assigned catalog Agents, supports per-Agent multi-select plus select-all, and submits the remaining catalog Agents in one batch while reusing a shared description / rate / initial-points payload for that batch.
@@ -338,6 +343,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Tenant-admin statistics overview now renders cumulative `已用积分` with fixed two-decimal formatting so values such as `8` display as `8.00`, using usage-ledger totals instead of the tenant wallet balance.
 - Tenant-admin statistics overview no longer shows the `钱包余额` metric card or the `立即充值` shortcut; wallet balance, recharge, order, and ledger actions remain available only under the dedicated `钱包` group.
 - The ECharts overview assets are now emitted under both `assets/vendor/` and the legacy `assets/runtime/echarts/` path so mixed deployments and cached bundles can still load the overview charts.
+- The zero-intrusive build chain now rewrites `knowledge-graph.html` to the current fingerprinted runtime asset root during packaging, so static knowledge-graph pages no longer pin to stale fixed `assets/runtime/knowledge-graph/*` paths after an upstream sync or cache rollover.
 - The tenant-admin sidebar now injects a sibling `统计` dropdown alongside `管理`, with a `耗量统计` entry that renders a server-paginated usage list for member, Agent, total token, input, output, cache read, cache write, credit, and time columns. The page now prefers debit-direction `tenant_wallet_ledger` usage charges for `消耗积分`, falls back to synced `tenant_usage_records` for older rows, and keeps the existing `data-table` layout from 成员管理 / Agent 分配 pages.
 - The same tenant-admin sidebar now also injects a sibling `Agent` dropdown between `管理` and `统计`, and the new `已有Agent` page reuses the existing `listTenantAgents()` sidecar API instead of adding a new backend surface.
 - Member chat usage sync now writes both `tenant_usage_records` and, for cloud tenants, idempotent `tenant_wallet_ledger` usage-charge rows keyed by `openclaw_session_key + source_fingerprint`, then deducts the matching `tenant_agents.balance_points` inside the same sidecar transaction.

@@ -83,18 +83,47 @@ shell 部署路径里的 Control UI 产物构建，必须复用：
 
 - 仍保留 `assets/vendor/echarts.min.js`、`assets/vendor/json5.min.js` 与 `assets/runtime/echarts/*.js` 给旧 bundle/旧缓存路径兜底。
 - 新部署链路的零侵入入口必须以指纹路径为主，不应继续依赖固定 `assets/openclaw-echarts-renderer.js` 或固定 `assets/runtime/**`。
+- `knowledge-graph.html` 这类静态零侵入页也必须在构建阶段重写到当前指纹 runtime 根；源文件可以保留开发期相对路径，但部署产物不能继续指向固定 `assets/runtime/knowledge-graph/*`。
+
+## 构建产物 manifest 与 smoke gate
+
+当前 Control UI 零侵入构建产物必须同时输出：
+
+- `openclaw-control-ui-build-manifest.json`
+
+它不是可选附件，而是后续部署判断和本地运行预检的契约输入。当前至少承担：
+
+- 记录本轮 upstream Control UI 指纹与零侵入 runtime 指纹
+- 区分这次变更是 upstream 变化还是 zero-intrusive-only 变化
+- 让部署层知道是否需要先重建 gateway image
+
+构建阶段还必须对关键注入点做 fail-fast smoke：
+
+- `index.html` 主 bundle 存在且零侵入 preboot 标记位只出现一次
+- `tenant preboot`、`auto-token preboot`、`lufeng preboot`、`echarts-view preboot` 都在主 bundle 前注入
+- `login/index.html`、`login.html`、`/echarts-view/index.html` 这些入口别名存在
+- auto-token 与 lufeng bootstrap 已嵌入当前机器 token
+- `knowledge-graph.html` 已重写到当前指纹 runtime/vendor 路径
+
+如果这些 smoke 失败，构建必须直接报错，不能继续把缺注入或旧路径产物当成“可部署”结果。
 
 ## gateway 镜像重建规则
 
-在 direct-docker 路径里，读取宿主机 `dist/control-ui` 或复用 `openclaw:local` 镜像里的 `/app/dist/control-ui` 之前，必须先基于当前仓库 checkout 执行：
+在 direct-docker 路径里，是否需要重建 `openclaw-gateway` image，必须按下面规则判断：
 
-- `docker compose build openclaw-gateway`
+- 如果宿主机 `dist/control-ui/index.html` 存在，且 `dist/.buildstamp` 里的 `head` 与当前仓库 `git HEAD` 一致：
+  - 可以直接把它当作当前 checkout 的 upstream Control UI 来源
+  - 这时允许跳过 `docker compose build openclaw-gateway`
+- 只要宿主机 `dist/control-ui` 缺失，或 `dist/.buildstamp` 缺失，或 buildstamp 里的 `head` 与当前 `git HEAD` 不一致：
+  - 就不能再信任宿主机 `dist/control-ui`
+  - 必须先执行 `docker compose build openclaw-gateway`
+  - 然后再从当前 image 提取 `/app/dist/control-ui`
 
 原因：
 
-- 如果服务器仓库代码已经同步，但部署继续复用旧 `openclaw:local`
-- 页面左下角 `版本` 仍会显示旧版
-- 零侵入覆盖层也可能继续从旧镜像抽取旧的原生 Control UI 产物
+- 服务器上残留的 `dist/control-ui` 不受 `git pull` 自动刷新保护
+- 如果它不是当前 checkout 构建出来的产物，部署会把旧 upstream UI 当成新版本继续覆盖
+- 这会同时带来页面 `版本` 漂移和零侵入入口注入漂移
 
 唯一例外：
 
@@ -117,6 +146,17 @@ shell 部署路径里的 Control UI 产物构建，必须复用：
 否则浏览器会回落到原生连接门，并报：
 
 - `unauthorized: gateway token mismatch`
+
+shell 的 docker fallback 还必须同时把目标机当前 token/config 来源带进 builder 容器：
+
+- 优先透传 `OPENCLAW_GATEWAY_TOKEN`
+- 同时把目标机 `OPENCLAW_CONFIG_DIR` 只读挂到容器内，并传给 builder
+
+原因：
+
+- builder 现在会对 token 注入做 hard-fail smoke
+- 某些服务器并不会把 token 写进 repo `.env`
+- 如果 fallback 不透传宿主 env/config，builder 会因为拿不到目标机 token 而直接失败
 
 ## vendor 目录同步规则
 
@@ -213,6 +253,25 @@ shell 部署路径里的 Control UI 产物构建，必须复用：
 - 零侵入 Control UI
 - 本地授权模板
 - runtime.env 与 portable config 基线
+
+## 本地运行包 preflight 规则
+
+当前本地运行包在启动 gateway 或一键本地 runtime 前，必须先校验 Control UI 产物是否仍与当前零侵入契约一致。
+
+preflight 至少要拦住这些情况：
+
+- `openclaw-control-ui-build-manifest.json` 缺失或字段损坏
+- `index.html` 缺少关键 bootstrap marker
+- marker 指向的 runtime 脚本、renderer、login 别名页、`/echarts-view/index.html` 缺失
+- 构建 manifest 缺失关键路径字段，导致 preflight 无法确认当前 Control UI 产物结构
+
+只有紧急排障时才允许通过：
+
+- `OPENCLAW_SKIP_CONTROL_UI_PREFLIGHT=1`
+
+绕过 preflight。
+
+这不是常规部署选项；如果需要长期依赖这个开关，说明本地运行包或构建链已经与真实零侵入契约漂移。
 
 ## 部署问题排查时先看哪里
 

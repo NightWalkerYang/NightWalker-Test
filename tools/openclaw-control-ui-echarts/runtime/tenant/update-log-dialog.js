@@ -13,6 +13,8 @@ const HISTORY_SEARCH_SELECTOR = "[data-oc-update-log-history-search]";
 const MANAGE_SEARCH_SELECTOR = "[data-oc-update-log-manage-search]";
 const SEEN_STORAGE_KEY = "openclaw:tenant-platform:update-log-seen:v1";
 const HISTORY_DIALOG_GUIDE_TEXT = '点击页面左下角"版本"可打开更新日志。';
+let updateLogRouteCleanup = null;
+let updateLogClickHandler = null;
 
 function createInitialState() {
   return {
@@ -50,9 +52,7 @@ function escapeHtml(value) {
 }
 
 function escapeAttribute(value) {
-  return escapeHtml(value)
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return escapeHtml(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function normalizeSearch(value) {
@@ -501,13 +501,9 @@ function filterEntries(entries, search) {
     return entries;
   }
   return entries.filter((entry) =>
-    [
-      entry.versionLabel,
-      entry.title,
-      entry.content,
-      entry.excerpt,
-      entry.createdByUsername,
-    ].some((field) => normalizeSearch(field).includes(normalizedSearch)),
+    [entry.versionLabel, entry.title, entry.content, entry.excerpt, entry.createdByUsername].some(
+      (field) => normalizeSearch(field).includes(normalizedSearch),
+    ),
   );
 }
 
@@ -725,8 +721,9 @@ function renderEditorDialog() {
   }
   const entry =
     state.editorMode === "edit"
-      ? state.history.find((item) => item.id === String(form.elements.namedItem("id")?.value || "").trim()) ||
-        null
+      ? state.history.find(
+          (item) => item.id === String(form.elements.namedItem("id")?.value || "").trim(),
+        ) || null
       : null;
   const inputId = form.elements.namedItem("id");
   const versionLabelInput = form.elements.namedItem("versionLabel");
@@ -1005,9 +1002,25 @@ export function bootUpdateLogDialogs() {
     return;
   }
   window.__openclawUpdateLogDialogsBooted = true;
-  document.addEventListener("click", handleDocumentClick, true);
-  onTenantRouteChange(() => {
+  updateLogClickHandler ||= handleDocumentClick;
+  document.addEventListener("click", updateLogClickHandler, true);
+  updateLogRouteCleanup = onTenantRouteChange(() => {
     scheduleRouteSync();
   });
   scheduleRouteSync();
+}
+
+export function resetUpdateLogDialogsForTests() {
+  if (typeof updateLogRouteCleanup === "function") {
+    updateLogRouteCleanup();
+  }
+  updateLogRouteCleanup = null;
+  if (updateLogClickHandler) {
+    document.removeEventListener("click", updateLogClickHandler, true);
+  }
+  updateLogClickHandler = null;
+  document.querySelector(`[${ROOT_ATTR}]`)?.remove();
+  document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+  delete window.__openclawUpdateLogDialogsBooted;
+  delete window.__openclawUpdateLogState;
 }

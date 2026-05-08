@@ -1,8 +1,14 @@
 import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/context.js";
+import { writeEchartsViewToken } from "../echarts-view/context.js";
+import { findSidebar, findSidebarUtilityGroup, findTopbarSearch } from "../framework/dom-compat.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { createTenantApiClient } from "./api-client.js";
-import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
-import { bootUpdateLogDialogs } from "./update-log-dialog.js";
+import {
+  bootTenantRouteSync,
+  navigateTenantRoute,
+  onTenantRouteChange,
+  resetTenantRouteSyncForTests,
+} from "./route-sync.js";
 import {
   LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
@@ -42,10 +48,8 @@ import {
   readSessionForCurrentView,
   readTenantView,
 } from "./tenant-context.js";
-import { writeEchartsViewToken } from "../echarts-view/context.js";
+import { bootUpdateLogDialogs, resetUpdateLogDialogsForTests } from "./update-log-dialog.js";
 
-const SIDEBAR_NAV_SELECTOR = ".sidebar-nav";
-const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
 const AGENT_SECTION_CLASS = "oc-tenant-agent-section";
 const STATS_SECTION_CLASS = "oc-tenant-stats-section";
@@ -58,7 +62,6 @@ const NAV_SECTION_CLASSES = [
   WALLET_SECTION_CLASS,
 ];
 const NAV_SECTION_SELECTOR = NAV_SECTION_CLASSES.map((name) => `.${name}`).join(", ");
-const TOPBAR_SEARCH_SELECTOR = ".topbar-search";
 const TOPBAR_META_STYLE_ATTR = "data-oc-platform-topbar-style";
 const TOPBAR_META_MODE_ATTR = "data-oc-platform-search-mode";
 const TOPBAR_META_ROLE_ATTR = "data-oc-platform-role";
@@ -75,6 +78,9 @@ const TOPBAR_DIALOG_CONFIRM_LOGOUT_SELECTOR = "[data-oc-platform-confirm-logout]
 const TENANT_ROLE_CONTEXT_ATTR = "data-oc-tenant-role-context";
 const MEMBER_VISUALIZATION_CACHE = new Map();
 const MEMBER_VISUALIZATION_SIGNATURE_ATTR = "data-oc-member-visualization-signature";
+const MEMBER_VISUALIZATION_SYNC_TOKEN_KEY = "__ocMemberVisualizationSyncToken";
+const MEMBER_VISUALIZATION_IN_FLIGHT_KEY = "__ocMemberVisualizationInFlight";
+const MEMBER_VISUALIZATION_PENDING_SYNC_KEY = "__ocMemberVisualizationPendingSync";
 const MEMBER_VISUALIZATION_POLL_INTERVAL_MS = 5000;
 const MEMBER_VISUALIZATION_POLL_TIMER_KEY = "__openclawMemberVisualizationPollTimer";
 const TENANT_WALLET_BALANCE_CACHE = {
@@ -83,6 +89,10 @@ const TENANT_WALLET_BALANCE_CACHE = {
   loading: false,
   promise: null,
 };
+let tenantEntryRouteCleanup = null;
+let tenantEntryObserver = null;
+let tenantEntryTopbarLogoutHandler = null;
+let tenantEntryWalletBalanceHandler = null;
 
 const ICONS = {
   tenants: `
@@ -427,6 +437,64 @@ function insertVisualizationSection(container, section) {
   container.insertBefore(section, firstSection ?? null);
 }
 
+function findTenantSidebar(scope = document) {
+  const compatSidebar = findSidebar(scope);
+  if (compatSidebar instanceof HTMLElement) {
+    return compatSidebar;
+  }
+  if (!(scope instanceof Element || scope instanceof Document)) {
+    return null;
+  }
+  return scope.querySelector(".sidebar-nav, aside[aria-label*='navigation' i], nav") ?? null;
+}
+
+function listTenantSidebarRoots(scope = document) {
+  if (!(scope instanceof Element || scope instanceof Document)) {
+    return [];
+  }
+  const roots = new Set();
+  const direct = findTenantSidebar(scope);
+  if (direct instanceof HTMLElement) {
+    roots.add(direct);
+  }
+  for (const candidate of scope.querySelectorAll(
+    ".sidebar-nav, aside[aria-label*='navigation' i], nav",
+  )) {
+    if (!(candidate instanceof HTMLElement)) {
+      continue;
+    }
+    const resolved = findTenantSidebar(candidate);
+    if (resolved instanceof HTMLElement && resolved === candidate) {
+      roots.add(candidate);
+    }
+  }
+  return Array.from(roots);
+}
+
+function findTenantSidebarUtility(scope = document) {
+  const compatUtility = findSidebarUtilityGroup(scope);
+  if (compatUtility instanceof HTMLElement) {
+    return compatUtility;
+  }
+  if (!(scope instanceof Element || scope instanceof Document)) {
+    return null;
+  }
+  return scope.querySelector(".sidebar-utility-group, .sidebar-shell__footer, footer") ?? null;
+}
+
+function findTenantTopbarSearch(scope = document) {
+  const compatSearch = findTopbarSearch(scope);
+  if (compatSearch instanceof HTMLElement) {
+    return compatSearch;
+  }
+  if (!(scope instanceof Element || scope instanceof Document)) {
+    return null;
+  }
+  return (
+    scope.querySelector(".topbar-search, [role='search'], button[aria-label*='搜索' i]") ?? null
+  );
+}
+
 function listDirectMemberVisualizationSections(container) {
   if (!(container instanceof HTMLElement)) {
     return [];
@@ -440,79 +508,101 @@ async function syncMemberVisualizationSection(container) {
   if (!(container instanceof HTMLElement)) {
     return;
   }
+  if (container[MEMBER_VISUALIZATION_IN_FLIGHT_KEY]) {
+    container[MEMBER_VISUALIZATION_PENDING_SYNC_KEY] = true;
+    return;
+  }
+  const syncToken = Number(container[MEMBER_VISUALIZATION_SYNC_TOKEN_KEY] || 0) + 1;
+  container[MEMBER_VISUALIZATION_SYNC_TOKEN_KEY] = syncToken;
+  container[MEMBER_VISUALIZATION_IN_FLIGHT_KEY] = true;
+  container[MEMBER_VISUALIZATION_PENDING_SYNC_KEY] = false;
   const session = readSessionForCurrentView();
   const role = String(session?.session?.role || "");
   const existingSections = listDirectMemberVisualizationSections(container);
-  const existing = existingSections[0] ?? null;
-  if (role !== "member") {
-    for (const section of existingSections) {
-      section.remove();
-    }
-    return;
-  }
-
-  const sessionKey = readMemberVisualizationSessionKey(session);
-  if (!sessionKey) {
-    for (const section of existingSections) {
-      section.remove();
-    }
-    return;
-  }
-
-  let visualizations = [];
   try {
-    visualizations = await loadMemberVisualizations(session);
-  } catch {
-    visualizations = [];
-  }
-
-  const latestSession = readSessionForCurrentView();
-  if (
-    readMemberVisualizationSessionKey(latestSession) !== sessionKey ||
-    String(latestSession?.session?.role || "") !== "member"
-  ) {
-    return;
-  }
-
-  if (!Array.isArray(visualizations) || visualizations.length === 0) {
-    for (const section of listDirectMemberVisualizationSections(container)) {
-      section.remove();
+    if (role !== "member") {
+      for (const section of existingSections) {
+        section.remove();
+      }
+      return;
     }
-    return;
-  }
 
-  const links = buildMemberVisualizationLinks(visualizations);
-  const signature = getMemberVisualizationSignature(visualizations);
-  const latestExistingSections = listDirectMemberVisualizationSections(container);
-  const latestExisting = latestExistingSections[0] ?? null;
-  for (const duplicateSection of latestExistingSections.slice(1)) {
-    duplicateSection.remove();
-  }
-  if (
-    latestExisting instanceof HTMLElement &&
-    latestExisting.getAttribute("data-oc-management-role") === role &&
-    latestExisting.getAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR) === signature
-  ) {
-    updateManagementSectionState(latestExisting);
-    return;
-  }
+    const sessionKey = readMemberVisualizationSessionKey(session);
+    if (!sessionKey) {
+      for (const section of existingSections) {
+        section.remove();
+      }
+      return;
+    }
 
-  latestExisting?.remove();
-  const section = createNavSection(session, {
-    className: MEMBER_VISUALIZATION_SECTION_CLASS,
-    label: "可视化展示",
-    links,
-  });
-  section.setAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR, signature);
-  insertVisualizationSection(container, section);
+    let visualizations = [];
+    try {
+      visualizations = await loadMemberVisualizations(session);
+    } catch {
+      visualizations = [];
+    }
+
+    const latestSession = readSessionForCurrentView();
+    if (
+      container[MEMBER_VISUALIZATION_SYNC_TOKEN_KEY] !== syncToken ||
+      readMemberVisualizationSessionKey(latestSession) !== sessionKey ||
+      String(latestSession?.session?.role || "") !== "member"
+    ) {
+      return;
+    }
+
+    if (!Array.isArray(visualizations) || visualizations.length === 0) {
+      if (container[MEMBER_VISUALIZATION_SYNC_TOKEN_KEY] !== syncToken) {
+        return;
+      }
+      for (const section of listDirectMemberVisualizationSections(container)) {
+        section.remove();
+      }
+      return;
+    }
+
+    const links = buildMemberVisualizationLinks(visualizations);
+    const signature = getMemberVisualizationSignature(visualizations);
+    if (container[MEMBER_VISUALIZATION_SYNC_TOKEN_KEY] !== syncToken) {
+      return;
+    }
+    const latestExistingSections = listDirectMemberVisualizationSections(container);
+    const latestExisting = latestExistingSections[0] ?? null;
+    for (const duplicateSection of latestExistingSections.slice(1)) {
+      duplicateSection.remove();
+    }
+    if (
+      latestExisting instanceof HTMLElement &&
+      latestExisting.getAttribute("data-oc-management-role") === role &&
+      latestExisting.getAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR) === signature
+    ) {
+      updateManagementSectionState(latestExisting);
+      return;
+    }
+
+    latestExisting?.remove();
+    const section = createNavSection(session, {
+      className: MEMBER_VISUALIZATION_SECTION_CLASS,
+      label: "可视化展示",
+      links,
+    });
+    section.setAttribute(MEMBER_VISUALIZATION_SIGNATURE_ATTR, signature);
+    insertVisualizationSection(container, section);
+  } finally {
+    const needsResync = Boolean(container[MEMBER_VISUALIZATION_PENDING_SYNC_KEY]);
+    container[MEMBER_VISUALIZATION_IN_FLIGHT_KEY] = false;
+    container[MEMBER_VISUALIZATION_PENDING_SYNC_KEY] = false;
+    if (needsResync && container.isConnected) {
+      queueMicrotask(() => {
+        void syncMemberVisualizationSection(container);
+      });
+    }
+  }
 }
 
 function syncAllMemberVisualizationSections(root = document) {
   const scope = root instanceof Element || root instanceof Document ? root : document;
-  if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
-    void syncMemberVisualizationSection(scope);
-  }
-  for (const container of scope.querySelectorAll(SIDEBAR_NAV_SELECTOR)) {
+  for (const container of listTenantSidebarRoots(scope)) {
     void syncMemberVisualizationSection(container);
   }
 }
@@ -1040,7 +1130,7 @@ function renderProfileDialog(session) {
 }
 
 function syncPlatformTopbarMeta(session) {
-  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  const search = findTenantTopbarSearch(document);
   if (!(search instanceof HTMLElement)) {
     return;
   }
@@ -1084,7 +1174,7 @@ function syncPlatformTopbarMeta(session) {
 }
 
 function clearPlatformTopbarMeta() {
-  const search = document.querySelector(TOPBAR_SEARCH_SELECTOR);
+  const search = findTenantTopbarSearch(document);
   if (!(search instanceof HTMLElement)) {
     return;
   }
@@ -1113,7 +1203,7 @@ function ensureTopbarLogoutHandler() {
     return;
   }
   document.documentElement.dataset.ocPlatformLogoutHandler = "true";
-  document.addEventListener("click", async (event) => {
+  tenantEntryTopbarLogoutHandler ||= async (event) => {
     const target = event.target;
     if (!(target instanceof Element)) {
       return;
@@ -1171,7 +1261,8 @@ function ensureTopbarLogoutHandler() {
     closeDialog(document.querySelector(TOPBAR_LOGOUT_DIALOG_SELECTOR));
     clearPlatformTopbarMeta();
     navigateTenantRoute(LOGIN_ROUTE, { replace: true });
-  });
+  };
+  document.addEventListener("click", tenantEntryTopbarLogoutHandler);
 }
 
 function ensureTenantWalletBalanceSyncHandler() {
@@ -1179,7 +1270,7 @@ function ensureTenantWalletBalanceSyncHandler() {
     return;
   }
   document.documentElement.dataset.ocTenantWalletBalanceHandler = "true";
-  window.addEventListener(TENANT_WALLET_SUMMARY_EVENT, (event) => {
+  tenantEntryWalletBalanceHandler ||= (event) => {
     const session = readSessionForCurrentView();
     if (String(session?.session?.role || "").trim() !== "tenant_admin") {
       return;
@@ -1190,7 +1281,8 @@ function ensureTenantWalletBalanceSyncHandler() {
     }
     updateTenantWalletBalanceCache(session, detail?.summary);
     syncPlatformTopbarMeta(session);
-  });
+  };
+  window.addEventListener(TENANT_WALLET_SUMMARY_EVENT, tenantEntryWalletBalanceHandler);
 }
 
 export function bootTenantEntry() {
@@ -1223,12 +1315,7 @@ export function bootTenantEntry() {
       !isTenantAuthViewActive() &&
       (role === "platform_admin" || role === "tenant_admin" || role === "member")
     ) {
-      if (scope instanceof Element && scope.matches(SIDEBAR_NAV_SELECTOR)) {
-        ensureSidebarRouteHandlers(scope);
-        ensureManagementSection(scope);
-        syncSidebarNavForRole(scope, role);
-      }
-      for (const container of scope.querySelectorAll(SIDEBAR_NAV_SELECTOR)) {
+      for (const container of listTenantSidebarRoots(scope)) {
         ensureSidebarRouteHandlers(container);
         ensureManagementSection(container);
         syncSidebarNavForRole(container, role);
@@ -1238,13 +1325,17 @@ export function bootTenantEntry() {
       }
     }
 
-    if (scope instanceof Element && scope.matches(SIDEBAR_UTILITY_SELECTOR)) {
+    const directUtility = scope instanceof Element ? findTenantSidebarUtility(scope) : null;
+    if (directUtility instanceof HTMLElement && directUtility === scope) {
       if (!role) {
         ensureTenantUtilityLink(scope);
       }
       syncSidebarUtilityForRole(scope, role);
     }
-    for (const container of scope.querySelectorAll(SIDEBAR_UTILITY_SELECTOR)) {
+    for (const container of scope.querySelectorAll("div, footer, section")) {
+      if (findTenantSidebarUtility(container) !== container) {
+        continue;
+      }
       if (!role) {
         ensureTenantUtilityLink(container);
       }
@@ -1265,21 +1356,18 @@ export function bootTenantEntry() {
   };
 
   scan(document);
-  onTenantRouteChange(() => {
+  tenantEntryRouteCleanup = onTenantRouteChange(() => {
     scan(document);
   });
 
-  const observer = new MutationObserver((mutations) => {
+  tenantEntryObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node instanceof Element) {
           const relevantRoot =
-            node.closest?.(SIDEBAR_NAV_SELECTOR) ||
-            node.closest?.(SIDEBAR_UTILITY_SELECTOR) ||
-            node.closest?.(TOPBAR_SEARCH_SELECTOR) ||
-            node.querySelector?.(SIDEBAR_NAV_SELECTOR) ||
-            node.querySelector?.(SIDEBAR_UTILITY_SELECTOR) ||
-            node.querySelector?.(TOPBAR_SEARCH_SELECTOR);
+            node.closest?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
+            findTenantSidebarUtility(node) ||
+            findTenantTopbarSearch(node);
           if (relevantRoot instanceof Element) {
             scheduleScan(document);
             return;
@@ -1289,8 +1377,35 @@ export function bootTenantEntry() {
     }
   });
 
-  observer.observe(document.documentElement, {
+  tenantEntryObserver.observe(document.documentElement, {
     subtree: true,
     childList: true,
   });
+}
+
+export function resetTenantEntryForTests() {
+  if (typeof tenantEntryRouteCleanup === "function") {
+    tenantEntryRouteCleanup();
+  }
+  tenantEntryRouteCleanup = null;
+  tenantEntryObserver?.disconnect();
+  tenantEntryObserver = null;
+  clearMemberVisualizationPolling();
+  MEMBER_VISUALIZATION_CACHE.clear();
+  resetTenantWalletBalanceCache();
+  if (tenantEntryTopbarLogoutHandler) {
+    document.removeEventListener("click", tenantEntryTopbarLogoutHandler);
+  }
+  if (tenantEntryWalletBalanceHandler) {
+    window.removeEventListener(TENANT_WALLET_SUMMARY_EVENT, tenantEntryWalletBalanceHandler);
+  }
+  document.documentElement.removeAttribute(TENANT_ROLE_CONTEXT_ATTR);
+  delete document.documentElement.dataset.ocPlatformLogoutHandler;
+  delete document.documentElement.dataset.ocTenantWalletBalanceHandler;
+  clearPlatformTopbarMeta();
+  document.querySelector("[data-oc-platform-dialog-root]")?.remove();
+  document.head.querySelector(`[${TOPBAR_META_STYLE_ATTR}]`)?.remove();
+  resetUpdateLogDialogsForTests();
+  resetTenantRouteSyncForTests();
+  delete window.__openclawTenantEntryBooted;
 }

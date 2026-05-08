@@ -27,6 +27,9 @@ const MULTI_SELECT_ALIASES = new Set([
   "checkboxes",
 ]);
 
+const LOOSE_OBJECT_PREFIX_PATTERN =
+  /^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_$][\w$-]*)\s*:/;
+
 function normalizeAlias(value) {
   return String(value || "")
     .trim()
@@ -78,7 +81,136 @@ function normalizeParserWhitespace(text) {
   return String(text || "")
     .replace(/\u00a0/g, " ")
     .replace(/\u202f/g, " ")
-    .replace(/[\u200b\u200c\u200d\ufeff]/g, "");
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+}
+
+function scanLineComment(source, start) {
+  let cursor = start + 2;
+  while (cursor < source.length && source[cursor] !== "\n") {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function scanBlockComment(source, start) {
+  const endIndex = source.indexOf("*/", start + 2);
+  if (endIndex === -1) {
+    throw new Error("Unterminated block comment in select block.");
+  }
+  return endIndex + 2;
+}
+
+function scanQuotedString(source, start, quote) {
+  let cursor = start + 1;
+  while (cursor < source.length) {
+    const char = source[cursor];
+    if (char === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (char === quote) {
+      return cursor + 1;
+    }
+    cursor += 1;
+  }
+  throw new Error("Unterminated string literal in select block.");
+}
+
+function scanBalanced(source, start, openChar, closeChar) {
+  let depth = 1;
+  let cursor = start + 1;
+
+  while (cursor < source.length) {
+    const char = source[cursor];
+    const next = source[cursor + 1];
+
+    if (char === "'" || char === '"' || char === "`") {
+      cursor = scanQuotedString(source, cursor, char);
+      continue;
+    }
+    if (char === "/" && next === "/") {
+      cursor = scanLineComment(source, cursor);
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      cursor = scanBlockComment(source, cursor);
+      continue;
+    }
+    if (char === openChar) {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === closeChar) {
+      depth -= 1;
+      cursor += 1;
+      if (depth === 0) {
+        return cursor;
+      }
+      continue;
+    }
+    cursor += 1;
+  }
+
+  throw new Error(`Unterminated ${openChar}${closeChar} pair in select block.`);
+}
+
+function extractBalancedSlice(source, openChar, closeChar) {
+  const text = String(source || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  const openIndex = text.indexOf(openChar);
+  if (openIndex === -1) {
+    return "";
+  }
+
+  try {
+    const endIndex = scanBalanced(text, openIndex, openChar, closeChar);
+    return text.slice(openIndex, endIndex).trim();
+  } catch {
+    return "";
+  }
+}
+
+function buildStructuredParseCandidates(text) {
+  const base = String(text || "").trim();
+  if (!base) {
+    return [];
+  }
+
+  const candidates = new Set();
+  const pushCandidate = (value) => {
+    const normalized = String(value || "").trim();
+    if (normalized) {
+      candidates.add(normalized);
+    }
+  };
+
+  pushCandidate(base);
+
+  if (base.startsWith("{")) {
+    pushCandidate(extractBalancedSlice(base, "{", "}"));
+  } else if (base.startsWith("[")) {
+    pushCandidate(extractBalancedSlice(base, "[", "]"));
+  } else {
+    pushCandidate(extractBalancedSlice(base, "{", "}"));
+    pushCandidate(extractBalancedSlice(base, "[", "]"));
+  }
+
+  for (const value of [...candidates]) {
+    if (value.startsWith("[")) {
+      pushCandidate(`{ options: ${value} }`);
+    }
+    if (!value.startsWith("{") && LOOSE_OBJECT_PREFIX_PATTERN.test(value)) {
+      pushCandidate(`{ ${value} }`);
+    }
+  }
+
+  return [...candidates];
 }
 
 function normalizeSelectSource(raw, mode) {
@@ -127,21 +259,36 @@ function normalizeSelectSource(raw, mode) {
 }
 
 function parseStructuredInput(text, json5) {
-  if (!/^\{/.test(text)) {
+  const sourceVariants = buildStructuredParseCandidates(text);
+  if (sourceVariants.length === 0) {
     throw new Error("Select blocks must use an object payload.");
   }
-
   let lastError = null;
-  const parsers = [() => JSON.parse(text)];
+  const parsers = [JSON.parse];
   if (json5?.parse) {
-    parsers.push(() => json5.parse(text));
+    parsers.push(json5.parse.bind(json5));
   }
 
-  for (const parse of parsers) {
-    try {
-      return parse();
-    } catch (error) {
-      lastError = error;
+  for (const source of sourceVariants) {
+    for (const parse of parsers) {
+      try {
+        const parsed = parse(source);
+        if (Array.isArray(parsed)) {
+          return { options: parsed };
+        }
+        if (
+          typeof parsed === "string" ||
+          typeof parsed === "number" ||
+          typeof parsed === "boolean"
+        ) {
+          return { options: [parsed] };
+        }
+        if (parsed && typeof parsed === "object") {
+          return parsed;
+        }
+      } catch (error) {
+        lastError = error;
+      }
     }
   }
 
@@ -161,7 +308,7 @@ function normalizeOption(option, index) {
   ) {
     const label = normalizeScalarText(option);
     if (!label) {
-      throw new Error("Select option labels cannot be empty.");
+      return null;
     }
     return {
       value: label,
@@ -174,7 +321,7 @@ function normalizeOption(option, index) {
   }
 
   if (!option || typeof option !== "object" || Array.isArray(option)) {
-    throw new Error("Select options must be strings or objects.");
+    return null;
   }
 
   const label = firstNonEmpty(
@@ -185,14 +332,22 @@ function normalizeOption(option, index) {
     option.value,
     option.id,
     option.key,
+    option.prompt,
+    option.message,
   );
   if (!label) {
-    throw new Error("Select option labels cannot be empty.");
+    return null;
   }
 
-  const value = firstNonEmpty(option.value, option.id, option.key, label);
+  const value = firstNonEmpty(
+    option.value,
+    option.id,
+    option.key,
+    label,
+    `option-${index + 1}`,
+  );
   if (!value) {
-    throw new Error("Select option values cannot be empty.");
+    return null;
   }
 
   return {
@@ -215,30 +370,93 @@ function normalizeOption(option, index) {
   };
 }
 
+function toOptionCandidates(rawOptions) {
+  if (Array.isArray(rawOptions)) {
+    return rawOptions;
+  }
+
+  if (typeof rawOptions === "string") {
+    return rawOptions
+      .split(/\r?\n|[;,，、]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (rawOptions && typeof rawOptions === "object") {
+    return Object.entries(rawOptions).map(([key, value]) => {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        return {
+          value: firstNonEmpty(value.value, key),
+          label: firstNonEmpty(
+            value.label,
+            value.text,
+            value.title,
+            value.name,
+            key,
+          ),
+          description: firstNonEmpty(
+            value.description,
+            value.desc,
+            value.hint,
+            value.summary,
+          ),
+          prompt: firstNonEmpty(
+            value.prompt,
+            value.message,
+            value.request,
+            value.instruction,
+          ),
+          disabled: value.disabled === true,
+        };
+      }
+
+      const scalarLabel = firstNonEmpty(value, key);
+      return { value: key, label: scalarLabel || key };
+    });
+  }
+
+  return [];
+}
+
 function resolveOptions(parsed) {
   const rawOptions =
+    (Array.isArray(parsed) ? parsed : null) ??
     parsed?.options ??
     parsed?.choices ??
     parsed?.items ??
-    parsed?.list;
+    parsed?.list ??
+    parsed?.data;
 
-  if (!Array.isArray(rawOptions) || rawOptions.length === 0) {
+  const candidates = toOptionCandidates(rawOptions);
+  if (candidates.length === 0) {
     throw new Error("Select payload must include a non-empty options array.");
   }
 
-  const options = rawOptions.map((option, index) => normalizeOption(option, index));
+  const options = [];
   const uniqueValues = new Set();
 
-  for (const option of options) {
+  for (let index = 0; index < candidates.length; index += 1) {
+    const option = normalizeOption(candidates[index], index);
+    if (!option) {
+      continue;
+    }
     const normalizedValue = normalizeAlias(option.value);
-    if (uniqueValues.has(normalizedValue)) {
-      throw new Error("Select option values must be unique.");
+    if (!normalizedValue || uniqueValues.has(normalizedValue)) {
+      continue;
     }
     uniqueValues.add(normalizedValue);
+    options.push(option);
+  }
+
+  if (options.length === 0) {
+    throw new Error("Select payload must include a non-empty options array.");
   }
 
   if (!options.some((option) => !option.disabled)) {
-    throw new Error("Select payload must include at least one enabled option.");
+    options[0] = {
+      ...options[0],
+      disabled: false,
+    };
   }
 
   return options;
@@ -326,15 +544,25 @@ export function detectSelectMode(raw, explicitLanguage = "") {
     return "multi";
   }
 
+  const normalized = normalizeParserWhitespace(text).toLowerCase();
+  if (/\b(minselected|maxselected|defaultvalues|selectedvalues)\b/.test(normalized)) {
+    return "multi";
+  }
+  if (/\b(defaultvalue|selectedvalue)\b/.test(normalized)) {
+    return "single";
+  }
+
   return "";
 }
 
 export function parseSelectPayload(raw, json5, mode) {
-  if (mode !== "single" && mode !== "multi") {
-    throw new Error("Unknown select mode.");
-  }
+  const resolvedMode =
+    mode === "single" || mode === "multi"
+      ? mode
+      : detectSelectMode(raw);
+  const effectiveMode = resolvedMode || "single";
 
-  const normalized = normalizeSelectSource(raw, mode);
+  const normalized = normalizeSelectSource(raw, effectiveMode);
   if (!normalized) {
     throw new Error("The select code block is empty.");
   }
@@ -346,7 +574,7 @@ export function parseSelectPayload(raw, json5, mode) {
 
   const options = resolveOptions(parsed);
   const payload = {
-    kind: mode,
+    kind: effectiveMode,
     title: firstNonEmpty(parsed.title, parsed.question, parsed.label),
     description: firstNonEmpty(
       parsed.description,
@@ -363,7 +591,7 @@ export function parseSelectPayload(raw, json5, mode) {
     options,
   };
 
-  if (mode === "single") {
+  if (effectiveMode === "single") {
     return {
       ...payload,
       defaultValue: resolveSingleDefaultValue(parsed, options),

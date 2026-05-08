@@ -12,8 +12,19 @@ import { injectLufengPublicBootstrap } from "./runtime/lufeng/bootstrap.js";
 
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
+const MAIN_BUNDLE_CAPTURE_PATTERN =
+  /<script type="module" crossorigin src="(?<src>\.\/assets\/index-[^"]+)"><\/script>/;
+const RUNTIME_RENDERER_SCRIPT_PATTERN =
+  /<script\s+type="module"\s+src="(?<src>[^"]*openclaw-echarts-renderer\.js[^"]*)"><\/script>/g;
+const BOOTSTRAP_MARKERS = {
+  tenantPreboot: "data-openclaw-tenant-preboot",
+  autoToken: "data-openclaw-auto-token-bootstrap",
+  lufeng: "data-openclaw-lufeng-bootstrap",
+  echartsView: "data-openclaw-echarts-view-bootstrap",
+};
 const TENANT_PREBOOT_PATTERN = /^\s*<script[^>]*data-openclaw-tenant-preboot[^>]*><\/script>\s*$/gm;
 const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
+const BUILD_MANIFEST_FILENAME = "openclaw-control-ui-build-manifest.json";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -131,6 +142,12 @@ function ensureFileExists(filePath, label) {
 function ensureDirectoryExists(dirPath, label) {
   if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
     throw new Error(`${label} not found at ${dirPath}`);
+  }
+}
+
+function ensureValuePresent(value, errorMessage) {
+  if (!String(value ?? "").trim()) {
+    throw new Error(errorMessage);
   }
 }
 
@@ -264,7 +281,11 @@ function computeRuntimeAssetFingerprint() {
   const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(CONTROL_UI_RUNTIME_SCRIPT_SOURCE));
 
-  const directories = [CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE, CONTROL_UI_VENDOR_DIR_SOURCE];
+  const directories = [
+    CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE,
+    CONTROL_UI_STATIC_DIR_SOURCE,
+    CONTROL_UI_VENDOR_DIR_SOURCE,
+  ];
   for (const directory of directories) {
     const files = collectFilesRecursively(directory);
     for (const file of files) {
@@ -273,6 +294,102 @@ function computeRuntimeAssetFingerprint() {
     }
   }
   return hash.digest("hex").slice(0, 16);
+}
+
+function computeDirectoryFingerprint(rootDir) {
+  const hash = crypto.createHash("sha256");
+  const files = collectFilesRecursively(rootDir);
+  for (const file of files) {
+    hash.update(`\nfile:${file.relativePath}\n`);
+    hash.update(fs.readFileSync(file.fullPath));
+  }
+  return hash.digest("hex").slice(0, 16);
+}
+
+function extractMainBundleScriptSrc(indexHtml) {
+  const match = String(indexHtml ?? "").match(MAIN_BUNDLE_CAPTURE_PATTERN);
+  const src = String(match?.groups?.src ?? "").trim();
+  if (!src) {
+    throw new Error(
+      "source index is missing the main Vite bundle script; upstream Control UI HTML changed and injection selectors must be updated.",
+    );
+  }
+  return src;
+}
+
+function readPreviousBuildManifest(outputDir) {
+  const manifestPath = path.join(outputDir, BUILD_MANIFEST_FILENAME);
+  if (!fs.existsSync(manifestPath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse previous build manifest at ${manifestPath}: ${message}`);
+  }
+}
+
+function classifyDeploymentDecision(previousManifest, sourceFingerprint, runtimeFingerprint) {
+  if (!previousManifest || typeof previousManifest !== "object") {
+    return {
+      mode: "overlay-baseline-missing",
+      zeroIntrusiveOnly: false,
+      requiresGatewayImageRebuild: true,
+      requiresGatewayImageRebuildForImageSourcedDeploy: true,
+      requiresGatewayImageRebuildForHostDistDeploy: false,
+      reason:
+        "No previous build manifest found. Image-sourced deploys should rebuild the gateway image before extracting /app/dist/control-ui. Host-dist deploys can regenerate the zero-intrusive overlay without forcing a gateway image rebuild from this script.",
+    };
+  }
+  const previousSourceFingerprint = String(previousManifest.sourceFingerprint ?? "").trim();
+  const previousRuntimeFingerprint = String(previousManifest.runtimeFingerprint ?? "").trim();
+
+  if (!previousSourceFingerprint || !previousRuntimeFingerprint) {
+    return {
+      mode: "previous-manifest-invalid",
+      zeroIntrusiveOnly: false,
+      requiresGatewayImageRebuild: true,
+      requiresGatewayImageRebuildForImageSourcedDeploy: true,
+      requiresGatewayImageRebuildForHostDistDeploy: false,
+      reason:
+        "Previous build manifest is missing source/runtime fingerprints. Image-sourced deploys should rebuild the gateway image before extracting /app/dist/control-ui. Host-dist deploys can regenerate the zero-intrusive overlay without forcing a gateway image rebuild from this script.",
+    };
+  }
+
+  const sourceChanged = previousSourceFingerprint !== sourceFingerprint;
+  const runtimeChanged = previousRuntimeFingerprint !== runtimeFingerprint;
+
+  if (sourceChanged) {
+    return {
+      mode: "upstream-control-ui-changed",
+      zeroIntrusiveOnly: false,
+      requiresGatewayImageRebuild: true,
+      requiresGatewayImageRebuildForImageSourcedDeploy: true,
+      requiresGatewayImageRebuildForHostDistDeploy: false,
+      reason:
+        "Upstream Control UI source changed since the previous build. This is not a zero-intrusive-only update. Rebuild the gateway image only when the deploy flow extracts /app/dist/control-ui from that image; host-dist deploys can reuse the current host build output.",
+    };
+  }
+  if (runtimeChanged) {
+    return {
+      mode: "update-zero-intrusive-artifacts-only",
+      zeroIntrusiveOnly: true,
+      requiresGatewayImageRebuild: false,
+      requiresGatewayImageRebuildForImageSourcedDeploy: false,
+      requiresGatewayImageRebuildForHostDistDeploy: false,
+      reason:
+        "Only zero-intrusive runtime/assets changed while upstream Control UI source stayed unchanged.",
+    };
+  }
+  return {
+    mode: "already-in-sync",
+    zeroIntrusiveOnly: true,
+    requiresGatewayImageRebuild: false,
+    requiresGatewayImageRebuildForImageSourcedDeploy: false,
+    requiresGatewayImageRebuildForHostDistDeploy: false,
+    reason: "Source and zero-intrusive fingerprints are unchanged from the previous build.",
+  };
 }
 
 function buildFingerprintAssetPaths(runtimeFingerprint) {
@@ -286,6 +403,217 @@ function buildFingerprintAssetPaths(runtimeFingerprint) {
     rendererAssetAbsolutePath,
     fingerprintAssetDirectoryPath: path.join("assets", "openclaw-echarts", runtimeFingerprint),
   };
+}
+
+function countMarker(indexHtml, marker) {
+  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = String(indexHtml ?? "").match(new RegExp(escapedMarker, "g"));
+  return matches ? matches.length : 0;
+}
+
+function resolveMarkerScriptSrc(indexHtml, marker) {
+  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`<script[^>]*\\ssrc="([^"]+)"[^>]*\\s${escapedMarker}[^>]*><\\/script>`, "i"),
+    new RegExp(`<script[^>]*\\s${escapedMarker}[^>]*\\ssrc="([^"]+)"[^>]*><\\/script>`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = String(indexHtml ?? "").match(pattern);
+    const src = String(match?.[1] ?? "").trim();
+    if (src) {
+      return src;
+    }
+  }
+  return "";
+}
+
+function resolveMarkerGatewayToken(indexHtml, marker) {
+  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(
+      `<script[^>]*\\sdata-gateway-token="([^"]*)"[^>]*\\s${escapedMarker}[^>]*><\\/script>`,
+      "i",
+    ),
+    new RegExp(
+      `<script[^>]*\\s${escapedMarker}[^>]*\\sdata-gateway-token="([^"]*)"[^>]*><\\/script>`,
+      "i",
+    ),
+  ];
+  for (const pattern of patterns) {
+    const match = String(indexHtml ?? "").match(pattern);
+    if (match) {
+      return String(match[1] ?? "").trim();
+    }
+  }
+  return "";
+}
+
+function resolveOutputAssetPath(outputDir, scriptSrc) {
+  const trimmed = String(scriptSrc ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  const withoutQuery = trimmed.split("?")[0].split("#")[0];
+  if (withoutQuery.startsWith("/")) {
+    return path.join(outputDir, withoutQuery.slice(1));
+  }
+  const withoutDotSlash = withoutQuery.startsWith("./") ? withoutQuery.slice(2) : withoutQuery;
+  return path.join(outputDir, withoutDotSlash);
+}
+
+function ensureOutputFileExists(filePath, label) {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    throw new Error(`output smoke failed: missing ${label} at ${filePath}`);
+  }
+}
+
+function assertCriticalInjectionAndSmoke({
+  outputDir,
+  indexHtml,
+  expectedMainBundleScriptSrc,
+  expectedRuntimeBasePath,
+  expectedRendererRelativePath,
+  expectedRendererAbsolutePath,
+}) {
+  const mainBundlePosition = indexHtml.indexOf(expectedMainBundleScriptSrc);
+  if (mainBundlePosition < 0) {
+    throw new Error(
+      `output smoke failed: main bundle script ${expectedMainBundleScriptSrc} is missing from index.html`,
+    );
+  }
+
+  const expectedMarkerSources = [
+    {
+      marker: BOOTSTRAP_MARKERS.echartsView,
+      expectedSrc: `${expectedRuntimeBasePath}/echarts-view/preboot.js`,
+    },
+    {
+      marker: BOOTSTRAP_MARKERS.tenantPreboot,
+      expectedSrc: `${expectedRuntimeBasePath}/tenant/preboot.js`,
+    },
+    {
+      marker: BOOTSTRAP_MARKERS.lufeng,
+      expectedSrc: `${expectedRuntimeBasePath}/lufeng/preboot.js`,
+    },
+    {
+      marker: BOOTSTRAP_MARKERS.autoToken,
+      expectedSrc: `${expectedRuntimeBasePath}/branding/auto-token-preboot.js`,
+    },
+  ];
+
+  for (const { marker, expectedSrc } of expectedMarkerSources) {
+    const markerCount = countMarker(indexHtml, marker);
+    if (markerCount !== 1) {
+      throw new Error(
+        `output smoke failed: expected exactly 1 '${marker}' marker in index.html, found ${markerCount}`,
+      );
+    }
+    const markerSrc = resolveMarkerScriptSrc(indexHtml, marker);
+    if (markerSrc !== expectedSrc) {
+      throw new Error(
+        `output smoke failed: marker '${marker}' src mismatch. expected '${expectedSrc}', got '${markerSrc || "missing"}'`,
+      );
+    }
+    const markerPosition = indexHtml.indexOf(marker);
+    if (markerPosition < 0 || markerPosition > mainBundlePosition) {
+      throw new Error(
+        `output smoke failed: marker '${marker}' is not injected before the main bundle script`,
+      );
+    }
+    const markerOutputPath = resolveOutputAssetPath(outputDir, markerSrc);
+    ensureOutputFileExists(markerOutputPath, `${marker} script`);
+  }
+
+  const autoToken = resolveMarkerGatewayToken(indexHtml, BOOTSTRAP_MARKERS.autoToken);
+  const lufengToken = resolveMarkerGatewayToken(indexHtml, BOOTSTRAP_MARKERS.lufeng);
+  ensureValuePresent(
+    autoToken,
+    "output smoke failed: auto-token bootstrap is missing data-gateway-token. Set OPENCLAW_GATEWAY_TOKEN before building.",
+  );
+  ensureValuePresent(
+    lufengToken,
+    "output smoke failed: lufeng bootstrap is missing data-gateway-token. Set OPENCLAW_GATEWAY_TOKEN before building.",
+  );
+
+  const rendererMatches = Array.from(indexHtml.matchAll(RUNTIME_RENDERER_SCRIPT_PATTERN));
+  if (rendererMatches.length !== 1) {
+    throw new Error(
+      `output smoke failed: expected exactly 1 renderer script in index.html, found ${rendererMatches.length}`,
+    );
+  }
+  const rendererSrc = String(rendererMatches[0]?.groups?.src ?? "").trim();
+  if (rendererSrc !== expectedRendererRelativePath) {
+    throw new Error(
+      `output smoke failed: renderer script src mismatch. expected '${expectedRendererRelativePath}', got '${rendererSrc || "missing"}'`,
+    );
+  }
+  ensureOutputFileExists(
+    resolveOutputAssetPath(outputDir, rendererSrc),
+    "fingerprinted openclaw-echarts renderer",
+  );
+
+  const loginIndexPath = path.join(outputDir, "login", "index.html");
+  const loginHtmlPath = path.join(outputDir, "login.html");
+  const echartsViewIndexPath = path.join(outputDir, "echarts-view", "index.html");
+  ensureOutputFileExists(loginIndexPath, "login/index.html");
+  ensureOutputFileExists(loginHtmlPath, "login.html");
+  ensureOutputFileExists(echartsViewIndexPath, "echarts-view/index.html");
+
+  const loginIndexHtml = fs.readFileSync(loginIndexPath, "utf8");
+  const loginHtml = fs.readFileSync(loginHtmlPath, "utf8");
+  if (!loginIndexHtml.includes('<base href="/" />') || !loginHtml.includes('<base href="/" />')) {
+    throw new Error('output smoke failed: login route aliases are missing <base href="/" />');
+  }
+
+  const echartsViewIndexHtml = fs.readFileSync(echartsViewIndexPath, "utf8");
+  if (!echartsViewIndexHtml.includes(expectedRendererAbsolutePath)) {
+    throw new Error(
+      `output smoke failed: echarts-view entry is missing renderer '${expectedRendererAbsolutePath}'`,
+    );
+  }
+
+  const knowledgeGraphPath = path.join(outputDir, "knowledge-graph.html");
+  if (fs.existsSync(knowledgeGraphPath)) {
+    const knowledgeGraphHtml = fs.readFileSync(knowledgeGraphPath, "utf8");
+    const expectedKnowledgeGraphVendor = expectedRendererRelativePath.replace(
+      /\/openclaw-echarts-renderer\.js$/,
+      "/vendor/echarts.min.js",
+    );
+    const expectedKnowledgeGraphCss = `${expectedRuntimeBasePath}/knowledge-graph/page.css`;
+    const expectedKnowledgeGraphJs = `${expectedRuntimeBasePath}/knowledge-graph/page.js`;
+    if (!knowledgeGraphHtml.includes(expectedKnowledgeGraphVendor)) {
+      throw new Error(
+        `output smoke failed: knowledge-graph entry is missing vendor script '${expectedKnowledgeGraphVendor}'`,
+      );
+    }
+    if (!knowledgeGraphHtml.includes(expectedKnowledgeGraphCss)) {
+      throw new Error(
+        `output smoke failed: knowledge-graph entry is missing stylesheet '${expectedKnowledgeGraphCss}'`,
+      );
+    }
+    if (!knowledgeGraphHtml.includes(expectedKnowledgeGraphJs)) {
+      throw new Error(
+        `output smoke failed: knowledge-graph entry is missing script '${expectedKnowledgeGraphJs}'`,
+      );
+    }
+    ensureOutputFileExists(
+      resolveOutputAssetPath(outputDir, expectedKnowledgeGraphVendor),
+      "fingerprinted knowledge-graph vendor script",
+    );
+    ensureOutputFileExists(
+      resolveOutputAssetPath(outputDir, expectedKnowledgeGraphCss),
+      "fingerprinted knowledge-graph stylesheet",
+    );
+    ensureOutputFileExists(
+      resolveOutputAssetPath(outputDir, expectedKnowledgeGraphJs),
+      "fingerprinted knowledge-graph script",
+    );
+  }
+}
+
+function writeBuildManifest(outputDir, manifest) {
+  const manifestPath = path.join(outputDir, BUILD_MANIFEST_FILENAME);
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
 function injectRuntimeScriptWithSrc(indexHtml, runtimeScriptSrc) {
@@ -331,6 +659,31 @@ function writeEchartsViewRouteEntry(outputDir, rendererScriptSrc) {
   );
 }
 
+function rewriteKnowledgeGraphEntry(outputDir, runtimeAssetBasePath, runtimeFingerprint) {
+  const knowledgeGraphPath = path.join(outputDir, "knowledge-graph.html");
+  if (!fs.existsSync(knowledgeGraphPath)) {
+    return;
+  }
+
+  const fingerprintedVendorBasePath = `./assets/openclaw-echarts/${runtimeFingerprint}/vendor`;
+  const nextHtml = fs
+    .readFileSync(knowledgeGraphPath, "utf8")
+    .replace(
+      /\.\/assets\/runtime\/knowledge-graph\/page\.css/g,
+      `${runtimeAssetBasePath}/knowledge-graph/page.css`,
+    )
+    .replace(
+      /\.\/assets\/runtime\/knowledge-graph\/page\.js/g,
+      `${runtimeAssetBasePath}/knowledge-graph/page.js`,
+    )
+    .replace(
+      /\.\/assets\/vendor\/echarts\.min\.js/g,
+      `${fingerprintedVendorBasePath}/echarts.min.js`,
+    );
+
+  fs.writeFileSync(knowledgeGraphPath, nextHtml, "utf8");
+}
+
 function extractEmbeddedLibraries(bundleSource) {
   const match = bundleSource.match(EMBEDDED_LIBRARY_PATTERN);
   if (!match?.groups) {
@@ -354,6 +707,7 @@ function main() {
 
   const sourceDir = resolveRepoPath(options.source, DEFAULT_SOURCE_DIR);
   const outputDir = resolveRepoPath(options.output, DEFAULT_OUTPUT_DIR);
+  const previousManifest = readPreviousBuildManifest(outputDir);
 
   if (path.resolve(sourceDir) === path.resolve(outputDir)) {
     throw new Error("Refusing to write the custom Control UI root over the source directory.");
@@ -366,6 +720,11 @@ function main() {
   ensureDirectoryExists(CONTROL_UI_STATIC_DIR_SOURCE, "Control UI static overlay assets");
   ensureFileExists(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "Offline bundled ECharts userscript");
 
+  const sourceIndexPath = path.join(sourceDir, "index.html");
+  const sourceIndexHtml = fs.readFileSync(sourceIndexPath, "utf8");
+  const sourceMainBundleScriptSrc = extractMainBundleScriptSrc(sourceIndexHtml);
+  const sourceFingerprint = computeDirectoryFingerprint(sourceDir);
+
   resetDirectoryContents(outputDir);
   fs.cpSync(sourceDir, outputDir, { recursive: true, force: true });
   fs.cpSync(CONTROL_UI_STATIC_DIR_SOURCE, outputDir, { recursive: true, force: true });
@@ -375,8 +734,20 @@ function main() {
   const outputIndexPath = path.join(outputDir, "index.html");
   const outputIndex = fs.readFileSync(outputIndexPath, "utf8");
   const autoGatewayToken = resolveAutoGatewayToken();
+  ensureValuePresent(
+    autoGatewayToken,
+    [
+      "OPENCLAW_GATEWAY_TOKEN is missing.",
+      "Set OPENCLAW_GATEWAY_TOKEN in env/.env, or set gateway.auth.token in OPENCLAW_CONFIG_DIR/openclaw.json before building.",
+    ].join(" "),
+  );
   const runtimeFingerprint = computeRuntimeAssetFingerprint();
   const fingerprintPaths = buildFingerprintAssetPaths(runtimeFingerprint);
+  const deploymentDecision = classifyDeploymentDecision(
+    previousManifest,
+    sourceFingerprint,
+    runtimeFingerprint,
+  );
   const finalizedIndexHtml = replaceBrandFavicons(
     injectAutoGatewayTokenBootstrap(
       injectLufengPublicBootstrap(
@@ -400,6 +771,11 @@ function main() {
   fs.writeFileSync(outputIndexPath, indexWithFingerprintedRuntime, "utf8");
   writeLoginRouteAliases(outputDir, buildLoginEntryHtml(indexWithFingerprintedRuntime));
   writeEchartsViewRouteEntry(outputDir, fingerprintPaths.rendererAssetAbsolutePath);
+  rewriteKnowledgeGraphEntry(
+    outputDir,
+    fingerprintPaths.runtimeAssetBaseRelativePath,
+    fingerprintPaths.runtimeFingerprint,
+  );
 
   const embeddedLibraries = extractEmbeddedLibraries(
     fs.readFileSync(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "utf8"),
@@ -440,10 +816,46 @@ function main() {
     path.join(outputDir, "assets", "runtime", "echarts", "json5.min.js"),
   );
 
+  assertCriticalInjectionAndSmoke({
+    outputDir,
+    indexHtml: fs.readFileSync(outputIndexPath, "utf8"),
+    expectedMainBundleScriptSrc: sourceMainBundleScriptSrc,
+    expectedRuntimeBasePath: fingerprintPaths.runtimeAssetBaseRelativePath,
+    expectedRendererRelativePath: fingerprintPaths.rendererAssetRelativePath,
+    expectedRendererAbsolutePath: fingerprintPaths.rendererAssetAbsolutePath,
+  });
+
+  const buildManifest = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    sourceFingerprint,
+    sourceMainBundleScriptSrc,
+    runtimeFingerprint,
+    runtimeAssetBaseRelativePath: fingerprintPaths.runtimeAssetBaseRelativePath,
+    rendererAssetRelativePath: fingerprintPaths.rendererAssetRelativePath,
+    rendererAssetAbsolutePath: fingerprintPaths.rendererAssetAbsolutePath,
+    deploymentDecision,
+    checks: {
+      verifiedMarkers: [
+        BOOTSTRAP_MARKERS.echartsView,
+        BOOTSTRAP_MARKERS.tenantPreboot,
+        BOOTSTRAP_MARKERS.lufeng,
+        BOOTSTRAP_MARKERS.autoToken,
+      ],
+      smokeChecksPassed: true,
+    },
+  };
+  writeBuildManifest(outputDir, buildManifest);
+
   process.stdout.write(
     [
       `Custom Control UI root written to: ${outputDir}`,
       `Set gateway.controlUi.root to this directory (or mount it into your container and point gateway.controlUi.root there).`,
+      `Deployment decision: ${deploymentDecision.mode}`,
+      `Zero-intrusive-only update: ${deploymentDecision.zeroIntrusiveOnly ? "yes" : "no"}`,
+      `Gateway image rebuild required for image-sourced deploy: ${deploymentDecision.requiresGatewayImageRebuildForImageSourcedDeploy ? "yes" : "no"}`,
+      `Gateway image rebuild required for host-dist deploy: ${deploymentDecision.requiresGatewayImageRebuildForHostDistDeploy ? "yes" : "no"}`,
+      `Reason: ${deploymentDecision.reason}`,
     ].join("\n"),
   );
 }

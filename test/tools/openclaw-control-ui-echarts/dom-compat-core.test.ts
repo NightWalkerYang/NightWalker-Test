@@ -1,0 +1,230 @@
+/**
+ * @vitest-environment jsdom
+ */
+
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  findBreadcrumb,
+  findChatComposer,
+  findChatComposerTextarea,
+  findChatNewSessionButton,
+  findChatSendButton,
+  findChatSurface,
+  findChatToolbar,
+  findChatVoiceButton,
+  findClosestComposerTextarea,
+  findClosestNewSessionButton,
+  findClosestOpenClawApp,
+  findClosestSendButton,
+  findClosestVoiceButton,
+  findOpenClawApp,
+  findSidebar,
+  findSidebarUtilityGroup,
+  findTopbarSearch,
+  getFrameworkDomCompat,
+  isComposerTextareaElement,
+  isNewSessionButtonElement,
+  isSendButtonElement,
+  isStopButtonElement,
+  isVoiceButtonElement,
+  supportsSpeechRecognition,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/framework/dom-compat.js";
+
+afterEach(() => {
+  document.body.innerHTML = "";
+  delete (window as unknown as Record<string, unknown>).SpeechRecognition;
+  delete (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
+});
+
+describe("framework dom compatibility contract", () => {
+  it("resolves composer, toolbar, and send button via capability probing", () => {
+    document.body.innerHTML = `
+      <section class="chat-page">
+        <form data-testid="Chat-Composer">
+          <div class="composer-frame">
+            <label>消息</label>
+            <textarea placeholder="Type your message"></textarea>
+          </div>
+          <div role="toolbar" aria-label="chat actions">
+            <button type="button" aria-label="Stop generating">Stop</button>
+            <button type="submit" aria-label="发送消息">发送</button>
+          </div>
+        </form>
+      </section>
+    `;
+
+    const composer = findChatComposer();
+    const textarea = findChatComposerTextarea();
+    const toolbar = findChatToolbar();
+    const sendButton = findChatSendButton();
+
+    expect(composer).toBeInstanceOf(HTMLFormElement);
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    expect(toolbar).toBeInstanceOf(HTMLElement);
+    expect(sendButton).toBeInstanceOf(HTMLElement);
+    expect(isSendButtonElement(sendButton)).toBe(true);
+    expect((sendButton as HTMLElement).getAttribute("aria-label")).toContain("发送");
+
+    const stopButton = toolbar?.querySelector("button");
+    expect(stopButton).toBeInstanceOf(HTMLButtonElement);
+    expect(isSendButtonElement(stopButton as Element)).toBe(false);
+
+    const icon = document.createElement("span");
+    sendButton?.append(icon);
+    expect(findClosestSendButton(icon)).toBe(sendButton);
+  });
+
+  it("finds new-session and voice buttons without fixed class hierarchy", () => {
+    document.body.innerHTML = `
+      <div class="shell-chat">
+        <div class="message-box">
+          <textarea aria-label="chat composer"></textarea>
+          <div class="action-row" data-testid="chat-actions-toolbar">
+            <button type="button" title="New session">+</button>
+            <button type="button" aria-label="Voice input">mic</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const newSessionButton = findChatNewSessionButton();
+    const voiceButton = findChatVoiceButton();
+
+    expect(newSessionButton).toBeInstanceOf(HTMLElement);
+    expect(voiceButton).toBeInstanceOf(HTMLElement);
+    expect(isNewSessionButtonElement(newSessionButton)).toBe(true);
+    expect(isVoiceButtonElement(voiceButton)).toBe(true);
+
+    const newSessionInner = document.createElement("strong");
+    newSessionButton?.append(newSessionInner);
+    const voiceInner = document.createElement("span");
+    voiceButton?.append(voiceInner);
+
+    expect(findClosestNewSessionButton(newSessionInner)).toBe(newSessionButton);
+    expect(findClosestVoiceButton(voiceInner)).toBe(voiceButton);
+  });
+
+  it("detects sidebar and breadcrumb containers through semantic hints", () => {
+    document.body.innerHTML = `
+      <div class="dashboard-shell">
+        <aside class="custom-sidenav" aria-label="navigation sidebar">
+          <a class="nav-item" href="/chat">Chat</a>
+        </aside>
+        <header>
+          <nav aria-label="Breadcrumb">
+            <a href="/">Home</a>
+            <span>/</span>
+            <a href="/chat">Chat</a>
+          </nav>
+        </header>
+      </div>
+    `;
+
+    const sidebar = findSidebar();
+    const breadcrumb = findBreadcrumb();
+
+    expect(sidebar).toBeInstanceOf(HTMLElement);
+    expect(breadcrumb).toBeInstanceOf(HTMLElement);
+  });
+
+  it("reports consolidated compat capabilities for tenant/chat callers", () => {
+    document.body.innerHTML = `
+      <openclaw-app></openclaw-app>
+      <div class="sidebar-nav">
+        <a class="nav-item" href="/chat">Chat</a>
+      </div>
+      <nav class="dashboard-header__breadcrumb">
+        <a href="/">Root</a>
+      </nav>
+      <button class="topbar-search">搜索</button>
+      <div class="sidebar-utility-group"><a href="/docs">文档</a></div>
+      <main class="content--chat">
+      <section class="agent-chat__input">
+        <textarea></textarea>
+        <div class="agent-chat__toolbar">
+          <button class="chat-send-btn chat-send-btn--stop" type="button">stop</button>
+          <button class="chat-send-btn" type="button">send</button>
+          <button class="agent-chat__input-btn" type="button" aria-label="Voice input">mic</button>
+          <button class="btn btn--ghost" type="button" title="New session">new</button>
+        </div>
+      </section>
+      </main>
+    `;
+
+    const compat = getFrameworkDomCompat();
+    expect(compat.contractVersion).toBe("dom-compat-v1");
+    expect(compat.app?.tagName.toLowerCase()).toBe("openclaw-app");
+    expect(compat.chatSurface).toBeInstanceOf(HTMLElement);
+    expect(compat.capabilities.hasComposer).toBe(true);
+    expect(compat.capabilities.hasSendButton).toBe(true);
+    expect(compat.capabilities.hasNewSessionButton).toBe(true);
+    expect(compat.capabilities.hasVoiceButton).toBe(true);
+    expect(compat.capabilities.hasSidebar).toBe(true);
+    expect(compat.capabilities.hasBreadcrumb).toBe(true);
+    expect(compat.capabilities.hasChatSurface).toBe(true);
+    expect(compat.capabilities.hasTopbarSearch).toBe(true);
+    expect(compat.capabilities.hasSidebarUtility).toBe(true);
+    expect(isStopButtonElement(document.querySelector(".chat-send-btn--stop"))).toBe(true);
+  });
+
+  it("finds app, surface, topbar, utility, and textarea ancestors without fixed wrappers", () => {
+    document.body.innerHTML = `
+      <div class="shell">
+        <openclaw-app data-openclaw-app></openclaw-app>
+        <header>
+          <button class="header-search-trigger" aria-label="搜索控制台">搜索</button>
+        </header>
+        <main class="conversation-stage">
+          <section class="message-pane">
+            <div class="composer-shell">
+              <textarea aria-label="消息输入"></textarea>
+            </div>
+          </section>
+        </main>
+        <footer class="sidebar-shell__footer">
+          <a href="/docs">文档</a>
+          <a href="/version">版本</a>
+        </footer>
+      </div>
+    `;
+
+    const textarea = document.querySelector("textarea");
+    const appInner = document.createElement("span");
+    document.querySelector("openclaw-app")?.append(appInner);
+
+    expect(findOpenClawApp()).toBeInstanceOf(HTMLElement);
+    expect(findClosestOpenClawApp(appInner)).toBe(document.querySelector("openclaw-app"));
+    expect(findChatSurface()).toBeInstanceOf(HTMLElement);
+    expect(findTopbarSearch()).toBeInstanceOf(HTMLElement);
+    expect(findSidebarUtilityGroup()).toBeInstanceOf(HTMLElement);
+    expect(findClosestComposerTextarea(textarea)).toBe(textarea);
+    expect(isComposerTextareaElement(textarea)).toBe(true);
+  });
+
+  it("prefers a header-mounted topbar search over sidebar search-like utilities", () => {
+    document.body.innerHTML = `
+      <div class="shell">
+        <header class="workspace-header">
+          <button aria-label="搜索控制台">搜索</button>
+        </header>
+        <aside aria-label="navigation sidebar">
+          <button class="sidebar-search-link" aria-label="搜索帮助文档">搜索文档</button>
+        </aside>
+      </div>
+    `;
+
+    const search = findTopbarSearch();
+
+    expect(search).toBe(document.querySelector("header button"));
+    expect(search).not.toBe(document.querySelector("aside button"));
+  });
+
+  it("reflects speech-recognition capability from runtime APIs", () => {
+    expect(supportsSpeechRecognition()).toBe(false);
+
+    class FakeSpeechRecognition {}
+    (window as unknown as Record<string, unknown>).webkitSpeechRecognition = FakeSpeechRecognition;
+
+    expect(supportsSpeechRecognition()).toBe(true);
+  });
+});
