@@ -1,7 +1,12 @@
 services:
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
-    build: .
+    build:
+      context: .
+      args:
+        OPENCLAW_NPM_REGISTRY: ${OPENCLAW_NPM_REGISTRY:-}
+        OPENCLAW_APT_MIRROR: ${OPENCLAW_APT_MIRROR:-}
+        OPENCLAW_APT_SECURITY_MIRROR: ${OPENCLAW_APT_SECURITY_MIRROR:-}
     env_file:
       - path: .env
         required: false

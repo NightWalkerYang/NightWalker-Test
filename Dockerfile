@@ -15,6 +15,9 @@ ARG OPENCLAW_BUNDLED_PLUGIN_DIR=extensions
 ARG OPENCLAW_NODE_BOOKWORM_IMAGE="node:24-bookworm@sha256:3a09aa6354567619221ef6c45a5051b671f953f0a1924d1f819ffb236e520e6b"
 ARG OPENCLAW_NODE_BOOKWORM_SLIM_IMAGE="node:24-bookworm-slim@sha256:e8e2e91b1378f83c5b2dd15f0247f34110e2fe895f6ca7719dbb780f929368eb"
 ARG OPENCLAW_NODE_BOOKWORM_SLIM_DIGEST="sha256:e8e2e91b1378f83c5b2dd15f0247f34110e2fe895f6ca7719dbb780f929368eb"
+ARG OPENCLAW_NPM_REGISTRY="https://registry.npmjs.org"
+ARG OPENCLAW_APT_MIRROR=""
+ARG OPENCLAW_APT_SECURITY_MIRROR=""
 # Keep in sync with .github/actions/setup-node-env/action.yml bun-version.
 # To update: docker buildx imagetools inspect oven/bun:<version> and use the manifest-list digest.
 ARG OPENCLAW_BUN_IMAGE="oven/bun:1.3.13@sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e"
@@ -43,11 +46,14 @@ RUN --mount=type=bind,source=${OPENCLAW_BUNDLED_PLUGIN_DIR},target=/tmp/${OPENCL
 FROM ${OPENCLAW_BUN_IMAGE} AS bun-binary
 FROM ${OPENCLAW_NODE_BOOKWORM_IMAGE} AS build
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
+ARG OPENCLAW_NPM_REGISTRY
 
 # Copy pinned Bun binary from the official image instead of fetching via curl.
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
 
 RUN corepack enable
+ENV COREPACK_NPM_REGISTRY=${OPENCLAW_NPM_REGISTRY}
+ENV NPM_CONFIG_REGISTRY=${OPENCLAW_NPM_REGISTRY}
 
 WORKDIR /app
 
@@ -67,19 +73,32 @@ RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/sto
 
 # pnpm v10+ may append peer-resolution hashes to virtual-store folder names; do not hardcode `.pnpm/...`
 # paths. Matrix's native downloader can hit transient release CDN errors while
-# still exiting successfully, so retry the package downloader before failing.
+# still exiting successfully, so retry the package downloader before deferring
+# to the plugin's runtime bootstrap.
 RUN set -eux; \
     echo "==> Verifying critical native addons..."; \
-    for attempt in 1 2 3 4 5; do \
-      if find /app/node_modules -name "matrix-sdk-crypto*.node" 2>/dev/null | grep -q .; then \
-        exit 0; \
+    matrix_download_script=/app/node_modules/@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js; \
+    if [ ! -f "$matrix_download_script" ]; then \
+      echo "matrix-sdk-crypto package not installed; skipping native addon verification"; \
+    else \
+      matrix_native_present=0; \
+      for attempt in 1 2 3 4 5; do \
+        if find /app/node_modules -name "matrix-sdk-crypto*.node" 2>/dev/null | grep -q .; then \
+          matrix_native_present=1; \
+          break; \
+        fi; \
+        echo "matrix-sdk-crypto native addon missing; retrying download (${attempt}/5)"; \
+        node "$matrix_download_script" || true; \
+        sleep $((attempt * 2)); \
+      done; \
+      if [ "$matrix_native_present" != "1" ] && \
+        find /app/node_modules -name "matrix-sdk-crypto*.node" 2>/dev/null | grep -q .; then \
+        matrix_native_present=1; \
       fi; \
-      echo "matrix-sdk-crypto native addon missing; retrying download (${attempt}/5)"; \
-      node /app/node_modules/@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js || true; \
-      sleep $((attempt * 2)); \
-    done; \
-    find /app/node_modules -name "matrix-sdk-crypto*.node" 2>/dev/null | grep -q . || \
-      (echo "ERROR: matrix-sdk-crypto native addon missing after retries" >&2 && exit 1)
+      if [ "$matrix_native_present" != "1" ]; then \
+        echo "WARN: matrix-sdk-crypto native addon missing after retries; Matrix runtime will bootstrap it lazily when first used." >&2; \
+      fi; \
+    fi
 
 COPY . .
 
@@ -137,6 +156,9 @@ LABEL org.opencontainers.image.base.name="docker.io/library/node:24-bookworm-sli
 # ── Stage 3: Runtime ────────────────────────────────────────────
 FROM base-runtime
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
+ARG OPENCLAW_NPM_REGISTRY
+ARG OPENCLAW_APT_MIRROR
+ARG OPENCLAW_APT_SECURITY_MIRROR
 
 # OCI base-image metadata for downstream image consumers.
 # If you change these annotations, also update:
@@ -150,6 +172,16 @@ LABEL org.opencontainers.image.source="https://github.com/openclaw/openclaw" \
   org.opencontainers.image.description="OpenClaw gateway and CLI runtime container image"
 
 WORKDIR /app
+
+RUN set -eux; \
+    apt_mirror="${OPENCLAW_APT_MIRROR:-}"; \
+    apt_security_mirror="${OPENCLAW_APT_SECURITY_MIRROR:-$apt_mirror}"; \
+    if [ -n "$apt_mirror" ]; then \
+      sed -i "s|http://deb.debian.org/debian|$apt_mirror|g" /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    if [ -n "$apt_security_mirror" ]; then \
+      sed -i "s|http://deb.debian.org/debian-security|$apt_security_mirror|g" /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 # Install runtime system utilities missing from bookworm-slim.
 # `ca-certificates` ships in `bookworm` (full) but not in `bookworm-slim`,
@@ -179,6 +211,8 @@ COPY --from=runtime-assets --chown=node:node /app/qa ./qa
 # Use a shared Corepack home so the non-root `node` user does not need a
 # first-run network fetch when invoking pnpm.
 ENV COREPACK_HOME=/usr/local/share/corepack
+ENV COREPACK_NPM_REGISTRY=${OPENCLAW_NPM_REGISTRY}
+ENV NPM_CONFIG_REGISTRY=${OPENCLAW_NPM_REGISTRY}
 RUN install -d -m 0755 "$COREPACK_HOME" && \
     corepack enable && \
     for attempt in 1 2 3 4 5; do \

@@ -127,6 +127,9 @@ The setup script accepts these optional environment variables:
 | `OPENCLAW_IMAGE`                           | Use a remote image instead of building locally                  |
 | `OPENCLAW_DOCKER_APT_PACKAGES`             | Install extra apt packages during build (space-separated)       |
 | `OPENCLAW_EXTENSIONS`                      | Include selected bundled plugin helpers at build time           |
+| `OPENCLAW_NPM_REGISTRY`                    | Override the npm registry used by Docker build-time pnpm steps  |
+| `OPENCLAW_APT_MIRROR`                      | Override the Debian package mirror used by Docker build steps   |
+| `OPENCLAW_APT_SECURITY_MIRROR`             | Override the Debian security mirror used by Docker build steps  |
 | `OPENCLAW_EXTRA_MOUNTS`                    | Extra host bind mounts (comma-separated `source:target[:opts]`) |
 | `OPENCLAW_HOME_VOLUME`                     | Persist `/home/node` in a named Docker volume                   |
 | `OPENCLAW_SANDBOX`                         | Opt in to sandbox bootstrap (`1`, `true`, `yes`, `on`)          |
@@ -140,6 +143,16 @@ The setup script accepts these optional environment variables:
 | `OTEL_SERVICE_NAME`                        | Service name used for OpenTelemetry resources                   |
 | `OTEL_SEMCONV_STABILITY_OPT_IN`            | Opt in to latest experimental GenAI semantic attributes         |
 | `OPENCLAW_OTEL_PRELOADED`                  | Skip starting a second OpenTelemetry SDK when one is preloaded  |
+
+If your Docker host is behind a regional mirror or cannot reach the default
+registries directly, set the build mirrors in `.env` before running the setup
+script, for example:
+
+```bash
+OPENCLAW_NPM_REGISTRY=https://registry.npmmirror.com
+OPENCLAW_APT_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+OPENCLAW_APT_SECURITY_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian-security
+```
 
 Maintainers can test bundled plugin source against a packaged image by mounting
 one plugin source directory over its packaged source path, for example
