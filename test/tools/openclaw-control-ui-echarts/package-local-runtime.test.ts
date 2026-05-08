@@ -265,13 +265,25 @@ describe("package local runtime", () => {
     expect(shellScript).toContain("ensure_gateway_service_image_current()");
     expect(shellScript).toContain("docker compose build openclaw-gateway");
     expect(shellScript).toContain("OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD");
+    expect(shellScript).toContain("gateway_image_matches_current_checkout_for_direct_deploy()");
+    expect(shellScript).toContain("read_image_buildstamp_head()");
+    expect(shellScript).toContain("git_diff_requires_gateway_image_build()");
     expect(shellScript).toContain("host_control_ui_matches_current_checkout()");
     expect(shellScript).toContain("dist/.buildstamp");
     expect(shellScript).toContain(
-      "Skipped docker compose build for openclaw-gateway because host dist/control-ui matches the current git checkout",
+      "Host dist/control-ui matches the current git checkout; using it as the upstream Control UI source",
     );
     expect(shellScript).toContain(
       "Host dist/control-ui exists but is not stamped for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead",
+    );
+    expect(shellScript).toContain(
+      "Host dist/control-ui exists but is not stamped for the current git checkout; reusing the current gateway image because only zero-intrusive files changed since it was built",
+    );
+    expect(shellScript).toContain(
+      "Host dist/control-ui is missing; reusing the current gateway image because only zero-intrusive files changed since it was built",
+    );
+    expect(shellScript).toContain(
+      "Skipped docker compose build for openclaw-gateway because the current image already covers this checkout",
     );
     expect(shellScript).toContain("run_custom_control_ui_builder()");
     expect(shellScript).toContain("docker run --rm \\");
@@ -303,9 +315,24 @@ describe("package local runtime", () => {
     expect(nodeScript).toContain("function syncManagedTenantMemberBootstrapHook()");
     expect(nodeScript).toContain("function ensureGatewayServiceImageCurrent()");
     expect(nodeScript).toContain("function shouldSkipGatewayImageBuild()");
+    expect(nodeScript).toContain(
+      "function gatewayImageMatchesCurrentCheckoutForDirectDeploy(imageRef)",
+    );
+    expect(nodeScript).toContain("function hostControlUiMatchesCurrentCheckout()");
+    expect(nodeScript).toContain("function readImageBuildstampHead(imageRef)");
+    expect(nodeScript).toContain("function resolveSourceDirFromImage(imageRef)");
     expect(nodeScript).toContain('["compose", "build", "openclaw-gateway"]');
     expect(nodeScript).toContain("OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1");
-    expect(nodeScript).toContain("ensureGatewayServiceImageCurrent();");
+    expect(nodeScript).toContain(
+      "Host dist/control-ui matches the current git checkout; using it as the upstream Control UI source",
+    );
+    expect(nodeScript).toContain(
+      "Host dist/control-ui exists but is not stamped for the current git checkout; reusing the current gateway image because only zero-intrusive files changed since it was built",
+    );
+    expect(nodeScript).toContain(
+      "Skipped docker compose build for openclaw-gateway because the current image already covers this checkout",
+    );
+    expect(nodeScript).toContain("buildCustomControlUiFromSource(sourceDir);");
     expect(nodeScript).toContain('path.join(resolveOpenclawConfigDir(), "hooks")');
     expect(nodeScript).toContain("syncManagedTenantMemberBootstrapHook();");
   });

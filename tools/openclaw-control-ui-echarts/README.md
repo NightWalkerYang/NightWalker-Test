@@ -199,6 +199,7 @@ Because the mount replaces the container's default Control UI asset directory, t
 The shell variant also works when the host has no `dist/control-ui` yet:
 
 - if `dist/control-ui` exists on the host and `dist/.buildstamp` matches the current `git HEAD`, it uses that and skips a gateway image rebuild
+- if host `dist/control-ui` is stale but the current local gateway image was built from an older commit whose diff to the current checkout only touches zero-intrusive files, it reuses that image and extracts `/app/dist/control-ui` without rebuilding the gateway image first
 - otherwise it first rebuilds `openclaw-gateway`, then extracts `/app/dist/control-ui` from that current image
 - if that image does not exist yet, it builds `openclaw:local` from `Dockerfile` or pulls `OPENCLAW_IMAGE` when you set a non-default image
 - when the shell has to run the builder inside Docker, it also passes the target machine's `OPENCLAW_GATEWAY_TOKEN` plus `OPENCLAW_CONFIG_DIR` into the container so tokenized bootstrap injection still matches the target host

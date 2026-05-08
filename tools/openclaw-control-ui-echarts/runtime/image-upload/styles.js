@@ -36,18 +36,18 @@ export function getImageUploadStyles() {
     .oc-image-upload-card__slots {
       display: grid;
       gap: 12px;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
       align-items: stretch;
     }
 
     .oc-image-upload-card__slot {
       display: grid;
-      gap: 8px;
+      gap: 6px;
       border: 1px solid color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.2)) 76%, transparent);
       border-radius: 12px;
-      padding: 10px;
+      padding: 10px 10px 8px;
       background: color-mix(in srgb, var(--panel, var(--card)) 86%, transparent);
-      min-height: 188px;
+      min-height: 170px;
       align-content: start;
     }
 
@@ -66,14 +66,20 @@ export function getImageUploadStyles() {
     }
 
     .oc-image-upload-card__slot-status {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       color: color-mix(in srgb, var(--accent, #7eaad4) 82%, var(--text-strong, #fff) 8%);
       background: color-mix(in srgb, var(--accent, #7eaad4) 14%, transparent);
       border: 1px solid color-mix(in srgb, var(--accent, #7eaad4) 30%, transparent);
       border-radius: 999px;
-      padding: 2px 8px;
+      padding: 2px 7px;
       white-space: nowrap;
+    }
+
+    .oc-image-upload-card__slot-status.is-ready {
+      color: color-mix(in srgb, #2563eb 84%, var(--text-strong, #fff) 8%);
+      border-color: color-mix(in srgb, #2563eb 28%, transparent);
+      background: color-mix(in srgb, #2563eb 10%, transparent);
     }
 
     .oc-image-upload-card__slot-status.is-failed {
@@ -93,7 +99,7 @@ export function getImageUploadStyles() {
       width: 100%;
       border: 1px dashed color-mix(in srgb, var(--accent, #7eaad4) 42%, var(--border, rgba(148, 163, 184, 0.4)));
       border-radius: 12px;
-      min-height: 106px;
+      min-height: 100px;
       background:
         linear-gradient(
           0deg,
@@ -106,21 +112,39 @@ export function getImageUploadStyles() {
       cursor: pointer;
       position: relative;
       overflow: hidden;
+      padding: 0;
     }
 
     .oc-image-upload-card__slot-upload-box::before,
     .oc-image-upload-card__slot-upload-box::after {
       content: "";
       position: absolute;
-      inset: 11% 11%;
-      border: 1px solid color-mix(in srgb, var(--accent, #7eaad4) 20%, transparent);
-      border-radius: 8px;
+      inset: 0;
       pointer-events: none;
     }
 
+    .oc-image-upload-card__slot-upload-box::before {
+      background:
+        linear-gradient(
+          to right,
+          transparent calc(50% - 0.5px),
+          color-mix(in srgb, var(--accent, #7eaad4) 22%, transparent) calc(50% - 0.5px),
+          color-mix(in srgb, var(--accent, #7eaad4) 22%, transparent) calc(50% + 0.5px),
+          transparent calc(50% + 0.5px)
+        ),
+        linear-gradient(
+          to bottom,
+          transparent calc(50% - 0.5px),
+          color-mix(in srgb, var(--accent, #7eaad4) 22%, transparent) calc(50% - 0.5px),
+          color-mix(in srgb, var(--accent, #7eaad4) 22%, transparent) calc(50% + 0.5px),
+          transparent calc(50% + 0.5px)
+        );
+    }
+
     .oc-image-upload-card__slot-upload-box::after {
-      inset: 28% 28%;
-      border-radius: 6px;
+      inset: 12px;
+      border: 1px solid color-mix(in srgb, var(--accent, #7eaad4) 18%, transparent);
+      border-radius: 10px;
     }
 
     .oc-image-upload-card__slot-upload-box:hover {
@@ -133,11 +157,59 @@ export function getImageUploadStyles() {
         );
     }
 
+    .oc-image-upload-card__slot-upload-box.has-preview {
+      border-style: solid;
+      border-color: color-mix(in srgb, var(--accent, #7eaad4) 30%, var(--border, rgba(148, 163, 184, 0.35)));
+      background: color-mix(in srgb, var(--panel, var(--card)) 96%, transparent);
+    }
+
+    .oc-image-upload-card__slot-upload-box.has-preview::before {
+      opacity: 0;
+    }
+
+    .oc-image-upload-card__slot-preview-image {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      position: absolute;
+      inset: 0;
+    }
+
+    .oc-image-upload-card__slot-upload-overlay {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      gap: 4px;
+      padding: 12px;
+      min-height: 100px;
+      width: 100%;
+      background: color-mix(in srgb, var(--panel, var(--card)) 12%, transparent);
+      backdrop-filter: blur(0px);
+      transition: background 160ms ease;
+    }
+
+    .oc-image-upload-card__slot-upload-box.has-preview .oc-image-upload-card__slot-upload-overlay {
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, rgba(15, 23, 42, 0.02) 20%, transparent),
+        color-mix(in srgb, rgba(15, 23, 42, 0.5) 100%, transparent)
+      );
+      align-content: end;
+    }
+
     .oc-image-upload-card__slot-upload-plus {
       font-size: 32px;
       line-height: 1;
       font-weight: 700;
       color: color-mix(in srgb, var(--accent, #7eaad4) 90%, var(--text-strong, #fff) 10%);
+    }
+
+    .oc-image-upload-card__slot-upload-box.has-preview .oc-image-upload-card__slot-upload-plus,
+    .oc-image-upload-card__slot-upload-box.has-preview .oc-image-upload-card__slot-upload-guide {
+      color: #fff;
+      text-shadow: 0 1px 6px rgba(15, 23, 42, 0.45);
     }
 
     .oc-image-upload-card__slot-upload-guide {
@@ -168,7 +240,7 @@ export function getImageUploadStyles() {
 
     @media (max-width: 720px) {
       .oc-image-upload-card__slots {
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       }
     }
 

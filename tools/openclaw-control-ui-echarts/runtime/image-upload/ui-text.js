@@ -10,10 +10,13 @@ export const UI_TEXT = Object.freeze({
   actionInsert: "插入到聊天框",
   actionSubmit: "上传完成并继续",
   statusPending: "未上传",
+  statusReady: "待上传",
+  statusUploading: "上传中",
   statusUploaded: "已上传",
   statusFailed: "失败",
   statusReplaceable: "可替换",
   uploadLabel: "选择图片",
+  previewLabel: "点击可替换",
+  actionUploadFirst: "请先点击“上传完成并继续”后再继续",
   dropHint: "支持 png / jpeg / webp",
 });
-

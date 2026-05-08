@@ -18,13 +18,10 @@ const uploadMemberImageAsset = vi.fn(async ({ workspacePath, slotId }) => ({
   ],
 }));
 
-vi.mock(
-  "../../../tools/openclaw-control-ui-echarts/runtime/framework/chat-composer.js",
-  () => ({
-    insertPromptIntoChatBox,
-    sendPromptToChat,
-  }),
-);
+vi.mock("../../../tools/openclaw-control-ui-echarts/runtime/framework/chat-composer.js", () => ({
+  insertPromptIntoChatBox,
+  sendPromptToChat,
+}));
 vi.mock("../../../tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js", () => ({
   createTenantApiClient() {
     return {
@@ -48,9 +45,8 @@ describe("image-upload adapter", () => {
   });
 
   it("renders single-card multi-slot upload UI and gates continue by required slots", async () => {
-    const { createImageUploadAdapter } = await import(
-      "../../../tools/openclaw-control-ui-echarts/runtime/image-upload/adapter.js"
-    );
+    const { createImageUploadAdapter } =
+      await import("../../../tools/openclaw-control-ui-echarts/runtime/image-upload/adapter.js");
     const adapter = createImageUploadAdapter({
       vendorBaseUrl: new URL("https://hailstone.cn:18789/assets/vendor/"),
     });
@@ -91,9 +87,7 @@ describe("image-upload adapter", () => {
     expect(submitButton).not.toBeNull();
     expect(submitButton?.disabled).toBe(true);
 
-    const fileInput = host.querySelector<HTMLInputElement>(
-      '[data-oc-image-upload-input="logo"]',
-    );
+    const fileInput = host.querySelector<HTMLInputElement>('[data-oc-image-upload-input="logo"]');
     expect(fileInput).not.toBeNull();
 
     const logoFile = new File(["abc"], "logo.png", { type: "image/png" });
@@ -102,15 +96,20 @@ describe("image-upload adapter", () => {
       value: [logoFile],
     });
     fileInput!.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
 
     const rerenderedSubmitButton = host.querySelector<HTMLButtonElement>(
       '[data-oc-image-upload-action="submit"]',
     );
     expect(rerenderedSubmitButton?.disabled).toBe(true);
-
-    const heroInput = host.querySelector<HTMLInputElement>(
-      '[data-oc-image-upload-input="hero"]',
+    expect(uploadMemberImageAsset).toHaveBeenCalledTimes(0);
+    expect(host.textContent || "").toContain("待上传");
+    const logoPreview = host.querySelector<HTMLImageElement>(
+      '[data-oc-image-upload-slot="logo"] .oc-image-upload-card__slot-preview-image',
     );
+    expect(logoPreview?.getAttribute("src") || "").toContain("blob:");
+
+    const heroInput = host.querySelector<HTMLInputElement>('[data-oc-image-upload-input="hero"]');
     const heroFile = new File(["xyz"], "hero-banner.jpg", { type: "image/jpeg" });
     Object.defineProperty(heroInput!, "files", {
       configurable: true,
@@ -118,13 +117,15 @@ describe("image-upload adapter", () => {
     });
     heroInput!.dispatchEvent(new Event("change", { bubbles: true }));
     await Promise.resolve();
-    await Promise.resolve();
 
     const enabledSubmitButton = host.querySelector<HTMLButtonElement>(
       '[data-oc-image-upload-action="submit"]',
     );
     expect(enabledSubmitButton?.disabled).toBe(false);
+    expect(uploadMemberImageAsset).toHaveBeenCalledTimes(0);
     enabledSubmitButton?.click();
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(sendPromptToChat).toHaveBeenCalledTimes(1);
     const promptArg = sendPromptToChat.mock.calls[0]?.[0] || "";

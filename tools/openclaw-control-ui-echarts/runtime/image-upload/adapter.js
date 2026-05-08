@@ -1,20 +1,19 @@
-import {
-  insertPromptIntoChatBox,
-  sendPromptToChat,
-} from "../framework/chat-composer.js";
 import { createJson5Loader } from "../file/libraries.js";
+import { insertPromptIntoChatBox, sendPromptToChat } from "../framework/chat-composer.js";
 import { createTenantApiClient } from "../tenant/api-client.js";
 import { readSelectedTenantAgent } from "../tenant/tenant-context.js";
-import { getImageUploadStyles } from "./styles.js";
 import {
   IMAGE_UPLOAD_LANGUAGE_ALIASES,
   localizeErrorMessage,
   parseImageUploadPayload,
 } from "./parser.js";
+import { getImageUploadStyles } from "./styles.js";
 import { UI_TEXT } from "./ui-text.js";
 
 function normalizeFileExtension(name) {
-  const match = String(name || "").toLowerCase().match(/(\.[a-z0-9]+)$/);
+  const match = String(name || "")
+    .toLowerCase()
+    .match(/(\.[a-z0-9]+)$/);
   return match ? match[1] : "";
 }
 
@@ -32,6 +31,18 @@ function formatBytes(bytes) {
   }
   const digits = value >= 100 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(digits).replace(/\.0+$/, "")} ${units[unitIndex]}`;
+}
+
+function revokePreviewUrl(entry) {
+  const previewUrl = String(entry?.previewUrl || "").trim();
+  if (!previewUrl) {
+    return;
+  }
+  try {
+    URL.revokeObjectURL(previewUrl);
+  } catch {
+    // Ignore preview URL cleanup failures in the browser runtime.
+  }
 }
 
 function matchesAccept(file, acceptList) {
@@ -103,12 +114,17 @@ function createStatusBadge(slot, state) {
   const badge = document.createElement("span");
   badge.className = "oc-image-upload-card__slot-status";
   if (state.uploading) {
-    badge.textContent = "上传中";
+    badge.textContent = UI_TEXT.statusUploading;
     return badge;
   }
   if (state.failedMessage) {
     badge.textContent = UI_TEXT.statusFailed;
     badge.classList.add("is-failed");
+    return badge;
+  }
+  if (state.pendingFile) {
+    badge.textContent = UI_TEXT.statusReady;
+    badge.classList.add("is-ready");
     return badge;
   }
   if (state.uploadCount >= 2) {
@@ -152,8 +168,21 @@ function createSlotCard(slot, stateById) {
   uploadPlus.textContent = "+";
   const uploadGuide = document.createElement("span");
   uploadGuide.className = "oc-image-upload-card__slot-upload-guide";
-  uploadGuide.textContent = UI_TEXT.uploadLabel;
-  uploadBox.append(uploadPlus, uploadGuide);
+  uploadGuide.textContent = state.previewUrl ? UI_TEXT.previewLabel : UI_TEXT.uploadLabel;
+
+  if (state.previewUrl) {
+    uploadBox.classList.add("has-preview");
+    const previewImage = document.createElement("img");
+    previewImage.className = "oc-image-upload-card__slot-preview-image";
+    previewImage.src = state.previewUrl;
+    previewImage.alt = slot.label;
+    uploadBox.append(previewImage);
+  }
+
+  const uploadOverlay = document.createElement("span");
+  uploadOverlay.className = "oc-image-upload-card__slot-upload-overlay";
+  uploadOverlay.append(uploadPlus, uploadGuide);
+  uploadBox.append(uploadOverlay);
 
   const input = document.createElement("input");
   input.className = "oc-image-upload-card__slot-input";
@@ -224,6 +253,22 @@ function hasUploadedRequiredSlots(payload, uploadedById) {
       continue;
     }
     if (!uploadedById.has(slot.id)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function hasResolvedRequiredSlots(payload, stateById, uploadedById) {
+  for (const slot of payload.slots) {
+    if (!slot.required) {
+      continue;
+    }
+    const state = stateById.get(slot.id);
+    if (uploadedById.has(slot.id)) {
+      continue;
+    }
+    if (!state?.pendingFile) {
       return false;
     }
   }
@@ -307,6 +352,8 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
             uploadCount: 0,
             uploading: false,
             failedMessage: "",
+            pendingFile: null,
+            previewUrl: "",
           },
         ]),
       );
@@ -318,9 +365,10 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
       shell.slots.replaceChildren(...slotEntries.map((entry) => entry.node));
 
       const syncActions = () => {
-        const ready = hasUploadedRequiredSlots(payload, uploadedById);
-        shell.submitButton.disabled = !ready;
-        shell.insertButton.disabled = !ready;
+        const submitReady = hasResolvedRequiredSlots(payload, stateById, uploadedById);
+        const insertReady = hasUploadedRequiredSlots(payload, uploadedById);
+        shell.submitButton.disabled = !submitReady;
+        shell.insertButton.disabled = !insertReady;
       };
 
       const rerenderSlots = () => {
@@ -348,6 +396,9 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
 
             if (!matchesAccept(file, slot.accept)) {
               slotState.failedMessage = `文件类型不支持，仅允许：${slot.accept.join(", ")}`;
+              revokePreviewUrl(slotState);
+              slotState.previewUrl = "";
+              slotState.pendingFile = null;
               uploadedById.delete(slot.id);
               rerenderSlots();
               syncActions();
@@ -355,59 +406,22 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
             }
             if (slot.maxBytes > 0 && file.size > slot.maxBytes) {
               slotState.failedMessage = `文件超过大小限制：${formatBytes(slot.maxBytes)}`;
+              revokePreviewUrl(slotState);
+              slotState.previewUrl = "";
+              slotState.pendingFile = null;
               uploadedById.delete(slot.id);
               rerenderSlots();
               syncActions();
               return;
             }
-            slotState.uploading = true;
+            revokePreviewUrl(slotState);
+            slotState.pendingFile = file;
+            slotState.previewUrl = URL.createObjectURL(file);
+            slotState.uploading = false;
             slotState.failedMessage = "";
+            uploadedById.delete(slot.id);
             rerenderSlots();
             syncActions();
-
-            void (async () => {
-              try {
-                const apiClient = createTenantApiClient();
-                const selectedAgent = readSelectedTenantAgent(window.location.href);
-                const tenantAgentId = String(
-                  selectedAgent?.id ||
-                    wrapper?.getAttribute?.("data-oc-tenant-agent-id") ||
-                    "",
-                ).trim();
-                if (!tenantAgentId) {
-                  throw new Error("missing_tenant_agent_id");
-                }
-                const uploadResult = await apiClient.uploadMemberImageAsset({
-                  tenantAgentId,
-                  slotId: slot.id,
-                  workspacePath: slot.workspacePath,
-                  file,
-                });
-                const uploadedItem = Array.isArray(uploadResult?.uploadedItems)
-                  ? uploadResult.uploadedItems[0]
-                  : null;
-                slotState.uploading = false;
-                slotState.uploadCount += 1;
-                slotState.failedMessage = "";
-                uploadedById.set(slot.id, {
-                  fileName: file.name,
-                  workspacePath: String(
-                    uploadedItem?.workspacePath || slot.workspacePath,
-                  ).trim(),
-                  relativePath: String(uploadedItem?.relativePath || "").trim(),
-                });
-              } catch (error) {
-                slotState.uploading = false;
-                slotState.failedMessage = localizeErrorMessage(
-                  error && typeof error.message === "string"
-                    ? error.message
-                    : String(error || "upload_failed"),
-                );
-                uploadedById.delete(slot.id);
-              }
-              rerenderSlots();
-              syncActions();
-            })();
           });
         }
       };
@@ -416,15 +430,84 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
       syncActions();
 
       const runAction = async (mode) => {
-        const ready = hasUploadedRequiredSlots(payload, uploadedById);
-        if (!ready) {
+        if (mode === "insert") {
+          const insertedReady = hasUploadedRequiredSlots(payload, uploadedById);
+          if (!insertedReady) {
+            return false;
+          }
+          const promptText = buildSuccessPrompt(payload, uploadedById);
+          return insertPromptIntoChatBox(promptText);
+        }
+
+        const submitReady = hasResolvedRequiredSlots(payload, stateById, uploadedById);
+        if (!submitReady) {
           return false;
         }
-        const promptText = buildSuccessPrompt(payload, uploadedById);
-        if (mode === "submit") {
-          return sendPromptToChat(promptText);
+
+        const apiClient = createTenantApiClient();
+        const selectedAgent = readSelectedTenantAgent(window.location.href);
+        const tenantAgentId = String(
+          selectedAgent?.id || wrapper?.getAttribute?.("data-oc-tenant-agent-id") || "",
+        ).trim();
+        if (!tenantAgentId) {
+          return false;
         }
-        return insertPromptIntoChatBox(promptText);
+
+        for (const slot of payload.slots) {
+          const state = stateById.get(slot.id);
+          if (!state) {
+            continue;
+          }
+          if (!state.pendingFile || uploadedById.has(slot.id)) {
+            continue;
+          }
+          state.uploading = true;
+          state.failedMessage = "";
+          rerenderSlots();
+          syncActions();
+          try {
+            const uploadResult = await apiClient.uploadMemberImageAsset({
+              tenantAgentId,
+              slotId: slot.id,
+              workspacePath: slot.workspacePath,
+              file: state.pendingFile,
+            });
+            const uploadedItem = Array.isArray(uploadResult?.uploadedItems)
+              ? uploadResult.uploadedItems[0]
+              : null;
+            const uploadedFile = state.pendingFile;
+            state.uploading = false;
+            state.uploadCount += 1;
+            state.failedMessage = "";
+            state.pendingFile = null;
+            uploadedById.set(slot.id, {
+              fileName: uploadedFile.name,
+              workspacePath: String(uploadedItem?.workspacePath || slot.workspacePath).trim(),
+              relativePath: String(uploadedItem?.relativePath || "").trim(),
+            });
+          } catch (error) {
+            state.uploading = false;
+            state.failedMessage = localizeErrorMessage(
+              error && typeof error.message === "string"
+                ? error.message
+                : String(error || "upload_failed"),
+            );
+            uploadedById.delete(slot.id);
+            rerenderSlots();
+            syncActions();
+            return false;
+          }
+          rerenderSlots();
+          syncActions();
+        }
+
+        const uploadedReady = hasUploadedRequiredSlots(payload, uploadedById);
+        if (!uploadedReady) {
+          return false;
+        }
+
+        const promptText = buildSuccessPrompt(payload, uploadedById);
+        return sendPromptToChat(promptText);
       };
 
       shell.insertButton.addEventListener("click", () => {

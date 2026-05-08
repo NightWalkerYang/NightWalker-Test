@@ -112,6 +112,88 @@ read_dist_buildstamp_head() {
   sed -nE 's/.*"head"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$stamp_path" | head -n 1
 }
 
+read_image_buildstamp_head() {
+  local image_ref="$1"
+  local image_container=""
+  local stamp_copy_path=""
+  local image_head=""
+
+  docker image inspect "$image_ref" >/dev/null 2>&1 || return 0
+
+  image_container="$(docker create "$image_ref" 2>/dev/null || true)"
+  [[ -n "$image_container" ]] || return 0
+
+  stamp_copy_path="$(mktemp "$tmp_dir/image-buildstamp.XXXXXX")"
+  if docker cp "$image_container:/app/dist/.buildstamp" "$stamp_copy_path" >/dev/null 2>&1; then
+    image_head="$(sed -nE 's/.*"head"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$stamp_copy_path" | head -n 1)"
+  fi
+  docker rm -f "$image_container" >/dev/null 2>&1 || true
+  rm -f "$stamp_copy_path"
+
+  printf '%s\n' "$image_head"
+}
+
+path_is_zero_intrusive_only_for_gateway_image() {
+  local relative_path="$1"
+  case "$relative_path" in
+  tools/openclaw-control-ui-echarts/* | \
+    tools/openclaw-echarts-userscript/* | \
+    docs/reference/templates/* | \
+    test/tools/openclaw-control-ui-echarts/* | \
+    .agents/skills/zero-intrusive-tenant/* | \
+    ZERO_INTRUSIVE_*.md | \
+    CHANGELOG.md)
+    return 0
+    ;;
+  *)
+    return 1
+    ;;
+  esac
+}
+
+git_diff_requires_gateway_image_build() {
+  local base_head="$1"
+  local current_head="$2"
+  local changed_path=""
+
+  command -v git >/dev/null 2>&1 || return 0
+  [[ -n "$base_head" && -n "$current_head" ]] || return 0
+
+  while IFS= read -r changed_path; do
+    [[ -n "$changed_path" ]] || continue
+    if ! path_is_zero_intrusive_only_for_gateway_image "$changed_path"; then
+      return 0
+    fi
+  done < <(git -C "$ROOT_DIR" diff --name-only "$base_head..$current_head" 2>/dev/null || return 0)
+
+  return 1
+}
+
+gateway_image_exists_locally() {
+  local image_ref="$1"
+  docker image inspect "$image_ref" >/dev/null 2>&1
+}
+
+gateway_image_matches_current_checkout_for_direct_deploy() {
+  local image_ref="$1"
+  local current_head=""
+  local image_head=""
+
+  gateway_image_exists_locally "$image_ref" || return 1
+
+  current_head="$(trim_whitespace "$(resolve_git_head || true)")"
+  image_head="$(trim_whitespace "$(read_image_buildstamp_head "$image_ref" || true)")"
+
+  [[ -n "$current_head" && -n "$image_head" ]] || return 1
+  if [[ "$current_head" == "$image_head" ]]; then
+    return 0
+  fi
+  if git_diff_requires_gateway_image_build "$image_head" "$current_head"; then
+    return 1
+  fi
+  return 0
+}
+
 host_control_ui_matches_current_checkout() {
   [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]] || return 1
 
@@ -697,22 +779,47 @@ main() {
   local source_dir=""
   local source_dir_mode=""
   local compose_up_applied="0"
+  local image_ref=""
+  local gateway_image_ready="0"
+  image_ref="$(resolve_gateway_image_ref)"
   if host_control_ui_matches_current_checkout; then
     source_dir="$ROOT_DIR/dist/control-ui"
     source_dir_mode="host-dist"
-    printf '%s\n' "Skipped docker compose build for openclaw-gateway because host dist/control-ui matches the current git checkout"
+    printf '%s\n' "Host dist/control-ui matches the current git checkout; using it as the upstream Control UI source"
   else
     source_dir_mode="image-sourced"
-    if [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
-      printf '%s\n' "Host dist/control-ui exists but is not stamped for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead"
+    if gateway_image_matches_current_checkout_for_direct_deploy "$image_ref"; then
+      if [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
+        printf '%s\n' "Host dist/control-ui exists but is not stamped for the current git checkout; reusing the current gateway image because only zero-intrusive files changed since it was built"
+      else
+        printf '%s\n' "Host dist/control-ui is missing; reusing the current gateway image because only zero-intrusive files changed since it was built"
+      fi
     else
-      printf '%s\n' "Host dist/control-ui is missing or not trusted for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead"
+      if should_skip_gateway_image_build && ! gateway_image_exists_locally "$image_ref"; then
+        fail "OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1 was set, but $image_ref is not available locally."
+      fi
+      if [[ -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
+        printf '%s\n' "Host dist/control-ui exists but is not stamped for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead"
+      else
+        printf '%s\n' "Host dist/control-ui is missing or not trusted for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead"
+      fi
+      ensure_gateway_service_image_current
+      gateway_image_ready="1"
     fi
-    ensure_gateway_service_image_current
     source_dir="$(resolve_source_dir image-only)"
   fi
 
   run_custom_control_ui_builder "$source_dir"
+  if [[ "$gateway_image_ready" != "1" ]]; then
+    if gateway_image_matches_current_checkout_for_direct_deploy "$image_ref"; then
+      printf '%s\n' "Skipped docker compose build for openclaw-gateway because the current image already covers this checkout"
+    else
+      if should_skip_gateway_image_build && ! gateway_image_exists_locally "$image_ref"; then
+        fail "OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1 was set, but $image_ref is not available locally."
+      fi
+      ensure_gateway_service_image_current
+    fi
+  fi
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_workspace_overlays

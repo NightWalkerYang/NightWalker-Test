@@ -114,9 +114,13 @@ shell 部署路径里的 Control UI 产物构建，必须复用：
 - 如果宿主机 `dist/control-ui/index.html` 存在，且 `dist/.buildstamp` 里的 `head` 与当前仓库 `git HEAD` 一致：
   - 可以直接把它当作当前 checkout 的 upstream Control UI 来源
   - 这时允许跳过 `docker compose build openclaw-gateway`
+- 如果宿主机 `dist/control-ui` 不能信任，但当前本地 `openclaw:local` image 的 `/app/dist/.buildstamp` 仍可追溯，并且从那个 image 对应 commit 到当前 `git HEAD` 的改动只落在 zero-intrusive 文件边界内：
+  - 允许直接复用当前 image 里的 `/app/dist/control-ui`
+  - 这时也允许跳过 `docker compose build openclaw-gateway`
+  - 目的不是省略 upstream 变更，而是确认 upstream Control UI 没变，只是 zero-intrusive 层变了
 - 只要宿主机 `dist/control-ui` 缺失，或 `dist/.buildstamp` 缺失，或 buildstamp 里的 `head` 与当前 `git HEAD` 不一致：
-  - 就不能再信任宿主机 `dist/control-ui`
-  - 必须先执行 `docker compose build openclaw-gateway`
+  - 且当前 image 也不能按上面的 zero-intrusive-only 规则复用时，就不能再信任宿主机 `dist/control-ui`
+  - 这时必须先执行 `docker compose build openclaw-gateway`
   - 然后再从当前 image 提取 `/app/dist/control-ui`
 
 原因：

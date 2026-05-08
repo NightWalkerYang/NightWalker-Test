@@ -8,22 +8,14 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 const buildScriptPath = path.join(here, "build-custom-control-ui.mjs");
-const workspaceOverlayPath = path.join(
-  here,
-  "workspace-overlays",
-  "kingdee-cloud",
-);
+const workspaceOverlayPath = path.join(here, "workspace-overlays", "kingdee-cloud");
 const tenantMemberBootstrapHookPath = path.join(
   workspaceOverlayPath,
   "hooks",
   "tenant-member-bootstrap-filter",
 );
 const portableConfigScriptPath = path.join(here, "local-runtime", "portable-config.mjs");
-const portableConfigSourcePath = path.join(
-  here,
-  "local-runtime",
-  "openclaw.local.example.json5",
-);
+const portableConfigSourcePath = path.join(here, "local-runtime", "openclaw.local.example.json5");
 const overridePath = path.join(repoRoot, "docker-compose.override.yml");
 const envFilePath = path.join(repoRoot, ".env");
 const dockerCommand = process.platform === "win32" ? "docker.exe" : "docker";
@@ -40,7 +32,11 @@ const COMPOSE_UP_SERVICES = [
 ];
 
 function isTruthyEnvValue(value) {
-  return ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
+  return ["1", "true", "yes", "on"].includes(
+    String(value ?? "")
+      .trim()
+      .toLowerCase(),
+  );
 }
 
 function readDotenvValue(key) {
@@ -94,10 +90,9 @@ function resolveGatewayPort() {
 
 function resolveOpenclawConfigDir() {
   return String(
-    process.env.OPENCLAW_CONFIG_DIR ?? readDotenvValue("OPENCLAW_CONFIG_DIR") ?? path.join(
-      process.env.HOME ?? process.env.USERPROFILE ?? repoRoot,
-      ".openclaw",
-    ),
+    process.env.OPENCLAW_CONFIG_DIR ??
+      readDotenvValue("OPENCLAW_CONFIG_DIR") ??
+      path.join(process.env.HOME ?? process.env.USERPROFILE ?? repoRoot, ".openclaw"),
   ).trim();
 }
 
@@ -149,6 +144,133 @@ function shouldSkipGatewayImageBuild() {
   );
 }
 
+function resolveGatewayImageRef() {
+  if (String(process.env.OPENCLAW_IMAGE ?? "").trim()) {
+    return String(process.env.OPENCLAW_IMAGE).trim();
+  }
+  return "openclaw:local";
+}
+
+function resolveGitHead() {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: repoRoot,
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    return "";
+  }
+  return String(result.stdout ?? "").trim();
+}
+
+function readImageBuildstampHead(imageRef) {
+  const inspectResult = spawnSync(dockerCommand, ["image", "inspect", imageRef], {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+  if (inspectResult.status !== 0) {
+    return "";
+  }
+
+  const createResult = spawnSync(dockerCommand, ["create", imageRef], {
+    cwd: repoRoot,
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  if (createResult.status !== 0) {
+    return "";
+  }
+
+  const containerId = String(createResult.stdout ?? "").trim();
+  if (!containerId) {
+    return "";
+  }
+
+  const stampCopyPath = path.join(
+    fs.mkdtempSync(path.join(resolveOpenclawConfigDir(), "..", ".openclaw-image-buildstamp-")),
+    "buildstamp.json",
+  );
+
+  let imageHead = "";
+  try {
+    const copyResult = spawnSync(
+      dockerCommand,
+      ["cp", `${containerId}:/app/dist/.buildstamp`, stampCopyPath],
+      {
+        cwd: repoRoot,
+        stdio: "ignore",
+      },
+    );
+    if (copyResult.status === 0 && fs.existsSync(stampCopyPath)) {
+      const stampText = fs.readFileSync(stampCopyPath, "utf8");
+      imageHead = (/"head"\s*:\s*"([^"]+)"/.exec(stampText)?.[1] ?? "").trim();
+    }
+  } finally {
+    spawnSync(dockerCommand, ["rm", "-f", containerId], {
+      cwd: repoRoot,
+      stdio: "ignore",
+    });
+    fs.rmSync(path.dirname(stampCopyPath), { recursive: true, force: true });
+  }
+
+  return imageHead;
+}
+
+function pathIsZeroIntrusiveOnlyForGatewayImage(relativePath) {
+  return (
+    relativePath.startsWith("tools/openclaw-control-ui-echarts/") ||
+    relativePath.startsWith("tools/openclaw-echarts-userscript/") ||
+    relativePath.startsWith("docs/reference/templates/") ||
+    relativePath.startsWith("test/tools/openclaw-control-ui-echarts/") ||
+    relativePath.startsWith(".agents/skills/zero-intrusive-tenant/") ||
+    relativePath.startsWith("ZERO_INTRUSIVE_") ||
+    relativePath === "CHANGELOG.md"
+  );
+}
+
+function gitDiffRequiresGatewayImageBuild(baseHead, currentHead) {
+  if (!baseHead || !currentHead) {
+    return true;
+  }
+  const diffResult = spawnSync("git", ["diff", "--name-only", `${baseHead}..${currentHead}`], {
+    cwd: repoRoot,
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  if (diffResult.status !== 0) {
+    return true;
+  }
+  const changedPaths = String(diffResult.stdout ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return changedPaths.some((relativePath) => !pathIsZeroIntrusiveOnlyForGatewayImage(relativePath));
+}
+
+function gatewayImageExistsLocally(imageRef) {
+  return (
+    spawnSync(dockerCommand, ["image", "inspect", imageRef], {
+      cwd: repoRoot,
+      stdio: "ignore",
+    }).status === 0
+  );
+}
+
+function gatewayImageMatchesCurrentCheckoutForDirectDeploy(imageRef) {
+  if (!gatewayImageExistsLocally(imageRef)) {
+    return false;
+  }
+  const currentHead = resolveGitHead();
+  const imageHead = readImageBuildstampHead(imageRef);
+  if (!currentHead || !imageHead) {
+    return false;
+  }
+  if (currentHead === imageHead) {
+    return true;
+  }
+  return !gitDiffRequiresGatewayImageBuild(imageHead, currentHead);
+}
+
 function dockerComposeAvailable() {
   const result = spawnSync(dockerCommand, ["compose", "config"], {
     cwd: repoRoot,
@@ -163,7 +285,7 @@ function buildOverrideContent(extraMounts) {
     "services:",
     "  openclaw-gateway:",
     "    ports: !override",
-    "      - \"${OPENCLAW_BRIDGE_PORT:-18790}:18790\"",
+    '      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"',
     "    volumes:",
     "      - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro",
     "      - ${OPENCLAW_WORKSPACE_DIR}:/app/dist/control-ui/workspace-downloads:ro",
@@ -220,17 +342,17 @@ function buildOverrideContent(extraMounts) {
     "      - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro",
     "    command:",
     "      [",
-    "        \"node\",",
-    "        \"tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs\"",
+    '        "node",',
+    '        "tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs"',
     "      ]",
     "    ports:",
-    "      - \"${OPENCLAW_TENANT_PLATFORM_PORT:-18801}:18801\"",
+    '      - "${OPENCLAW_TENANT_PLATFORM_PORT:-18801}:18801"',
     "    healthcheck:",
     "      test:",
     "        [",
-    "          \"CMD\",",
-    "          \"node\",",
-    "          \"-e\",",
+    '          "CMD",',
+    '          "node",',
+    '          "-e",',
     "          \"fetch('http://127.0.0.1:18801/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
     "        ]",
     "      interval: 15s",
@@ -248,7 +370,7 @@ function buildOverrideContent(extraMounts) {
     "    volumes:",
     "      - ./tools/openclaw-control-ui-echarts/docker-local-proxy/nginx.conf:/etc/nginx/nginx.conf:ro",
     "    ports:",
-    "      - \"${OPENCLAW_GATEWAY_PORT:-18789}:18789\"",
+    '      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"',
     "    restart: unless-stopped",
   );
 
@@ -497,9 +619,7 @@ function syncControlUiHostHeaderOriginFallbackDisabled() {
     );
     return false;
   }
-  process.stdout.write(
-    "Synced gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=false\n",
-  );
+  process.stdout.write("Synced gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=false\n");
   return true;
 }
 
@@ -557,13 +677,7 @@ function syncPortableBaselineConfig() {
 
   const batchResult = spawnSync(
     process.execPath,
-    [
-      portableConfigScriptPath,
-      "--source",
-      portableConfigSourcePath,
-      "--emit",
-      "batch",
-    ],
+    [portableConfigScriptPath, "--source", portableConfigSourcePath, "--emit", "batch"],
     {
       cwd: repoRoot,
       stdio: "pipe",
@@ -624,7 +738,7 @@ function syncTenantMemberBootstrapHookConfig() {
     process.stderr.write(
       [
         "WARN: failed to sync tenant member bootstrap hook config automatically; run this manually:",
-        "  docker compose run --rm --no-deps openclaw-cli config set --batch-json '[{\"path\":\"hooks.internal.entries[tenant-member-bootstrap-filter].enabled\",\"value\":true}]'",
+        '  docker compose run --rm --no-deps openclaw-cli config set --batch-json \'[{"path":"hooks.internal.entries[tenant-member-bootstrap-filter].enabled","value":true}]\'',
         result.stderr?.trim(),
       ]
         .filter(Boolean)
@@ -632,7 +746,9 @@ function syncTenantMemberBootstrapHookConfig() {
     );
     return false;
   }
-  process.stdout.write("Synced hooks.internal.entries[tenant-member-bootstrap-filter].enabled=true\n");
+  process.stdout.write(
+    "Synced hooks.internal.entries[tenant-member-bootstrap-filter].enabled=true\n",
+  );
   return true;
 }
 
@@ -675,9 +791,7 @@ function syncWorkspaceOverlays() {
     .readdirSync(workspaceRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .filter(
-      (name) => name === "kingdee-cloud" || /^tenant-.*-kingdee-cloud-.*$/.test(name),
-    )
+    .filter((name) => name === "kingdee-cloud" || /^tenant-.*-kingdee-cloud-.*$/.test(name))
     .sort();
 
   const targets = names.length > 0 ? names : ["kingdee-cloud"];
@@ -723,9 +837,7 @@ function runTargetedComposeUp() {
     },
   );
   if (result.status !== 0) {
-    throw new Error(
-      `${dockerCommand} compose up failed for ${COMPOSE_UP_SERVICES.join(", ")}.`,
-    );
+    throw new Error(`${dockerCommand} compose up failed for ${COMPOSE_UP_SERVICES.join(", ")}.`);
   }
 
   process.stdout.write(
@@ -734,9 +846,164 @@ function runTargetedComposeUp() {
   return true;
 }
 
+function hostControlUiMatchesCurrentCheckout() {
+  const hostIndexPath = path.join(repoRoot, "dist", "control-ui", "index.html");
+  const stampPath = path.join(repoRoot, "dist", ".buildstamp");
+  if (!fs.existsSync(hostIndexPath) || !fs.existsSync(stampPath)) {
+    return false;
+  }
+  const currentHead = resolveGitHead();
+  const distHead = (
+    /"head"\s*:\s*"([^"]+)"/.exec(fs.readFileSync(stampPath, "utf8"))?.[1] ?? ""
+  ).trim();
+  return Boolean(currentHead && distHead && currentHead === distHead);
+}
+
+function ensureGatewayImageAvailable(imageRef) {
+  if (gatewayImageExistsLocally(imageRef)) {
+    return;
+  }
+  if (imageRef === "openclaw:local") {
+    process.stderr.write(`No local ${imageRef} image found; building it from Dockerfile...\n`);
+    const buildResult = spawnSync(
+      dockerCommand,
+      ["build", "-t", imageRef, "-f", "Dockerfile", "."],
+      {
+        cwd: repoRoot,
+        stdio: "inherit",
+      },
+    );
+    if (buildResult.status !== 0) {
+      throw new Error(`Could not build local ${imageRef} image.`);
+    }
+  } else {
+    process.stderr.write(`Image ${imageRef} is not available locally; pulling it now...\n`);
+    const pullResult = spawnSync(dockerCommand, ["pull", imageRef], {
+      cwd: repoRoot,
+      stdio: "inherit",
+    });
+    if (pullResult.status !== 0) {
+      throw new Error(`Could not pull image ${imageRef}.`);
+    }
+  }
+}
+
+function resolveSourceDirFromImage(imageRef) {
+  ensureGatewayImageAvailable(imageRef);
+  const tempRoot = fs.mkdtempSync(
+    path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "generated", ".image-source-"),
+  );
+  const extractedDir = path.join(tempRoot, "source-control-ui");
+  fs.mkdirSync(extractedDir, { recursive: true });
+
+  const createResult = spawnSync(dockerCommand, ["create", imageRef], {
+    cwd: repoRoot,
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  if (createResult.status !== 0) {
+    throw new Error(`Could not create container from ${imageRef}.`);
+  }
+
+  const containerId = String(createResult.stdout ?? "").trim();
+  if (!containerId) {
+    throw new Error(`Could not resolve container id for ${imageRef}.`);
+  }
+
+  try {
+    const copyResult = spawnSync(
+      dockerCommand,
+      ["cp", `${containerId}:/app/dist/control-ui/.`, extractedDir],
+      {
+        cwd: repoRoot,
+        stdio: "inherit",
+      },
+    );
+    if (copyResult.status !== 0) {
+      throw new Error(`The Docker image does not contain /app/dist/control-ui.`);
+    }
+  } finally {
+    spawnSync(dockerCommand, ["rm", "-f", containerId], {
+      cwd: repoRoot,
+      stdio: "ignore",
+    });
+  }
+
+  if (!fs.existsSync(path.join(extractedDir, "index.html"))) {
+    throw new Error(`The Docker image does not contain /app/dist/control-ui/index.html`);
+  }
+
+  return extractedDir;
+}
+
+function buildCustomControlUiFromSource(sourceDir) {
+  const result = spawnSync(process.execPath, [buildScriptPath, "--source", sourceDir], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+}
+
 function main() {
-  ensureGatewayServiceImageCurrent();
-  buildCustomControlUi();
+  const imageRef = resolveGatewayImageRef();
+  let sourceDir = "";
+  let gatewayImageReady = false;
+
+  if (hostControlUiMatchesCurrentCheckout()) {
+    sourceDir = path.join(repoRoot, "dist", "control-ui");
+    process.stdout.write(
+      "Host dist/control-ui matches the current git checkout; using it as the upstream Control UI source\n",
+    );
+  } else {
+    if (gatewayImageMatchesCurrentCheckoutForDirectDeploy(imageRef)) {
+      if (fs.existsSync(path.join(repoRoot, "dist", "control-ui", "index.html"))) {
+        process.stdout.write(
+          "Host dist/control-ui exists but is not stamped for the current git checkout; reusing the current gateway image because only zero-intrusive files changed since it was built\n",
+        );
+      } else {
+        process.stdout.write(
+          "Host dist/control-ui is missing; reusing the current gateway image because only zero-intrusive files changed since it was built\n",
+        );
+      }
+    } else if (shouldSkipGatewayImageBuild() && !gatewayImageExistsLocally(imageRef)) {
+      throw new Error(
+        `OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1 was set, but ${imageRef} is not available locally.`,
+      );
+    } else {
+      if (fs.existsSync(path.join(repoRoot, "dist", "control-ui", "index.html"))) {
+        process.stdout.write(
+          "Host dist/control-ui exists but is not stamped for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead\n",
+        );
+      } else {
+        process.stdout.write(
+          "Host dist/control-ui is missing or not trusted for the current git checkout; rebuilding gateway image and extracting /app/dist/control-ui instead\n",
+        );
+      }
+      ensureGatewayServiceImageCurrent();
+      gatewayImageReady = true;
+    }
+    process.stderr.write(
+      "Host dist/control-ui is missing; extracting it from the Docker image...\n",
+    );
+    sourceDir = resolveSourceDirFromImage(imageRef);
+  }
+
+  buildCustomControlUiFromSource(sourceDir);
+  if (!gatewayImageReady) {
+    if (gatewayImageMatchesCurrentCheckoutForDirectDeploy(imageRef)) {
+      process.stdout.write(
+        "Skipped docker compose build for openclaw-gateway because the current image already covers this checkout\n",
+      );
+    } else if (shouldSkipGatewayImageBuild() && !gatewayImageExistsLocally(imageRef)) {
+      throw new Error(
+        `OPENCLAW_SKIP_GATEWAY_IMAGE_BUILD=1 was set, but ${imageRef} is not available locally.`,
+      );
+    } else {
+      ensureGatewayServiceImageCurrent();
+    }
+  }
   const extraMounts = writeRootOverride();
   syncWorkspaceOverlays();
   syncManagedTenantMemberBootstrapHook();
