@@ -6,6 +6,7 @@ import {
 } from "./context.js";
 
 const VISUALIZATION_FRAME_ID = "oc-echarts-view-frame";
+const ECHARTS_VIEW_FRAME_NAVIGATION_BRIDGE_MARKER = "data-oc-echarts-view-navigation-bridge";
 
 function readDocumentTitle(html) {
   const match = String(html || "").match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
@@ -84,6 +85,130 @@ function createVisualizationFrame(html) {
   return frame;
 }
 
+function decodeFragmentValue(fragmentValue) {
+  const normalized = String(fragmentValue || "")
+    .trim()
+    .replace(/^#/, "");
+  if (!normalized) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(normalized);
+  } catch {
+    return normalized;
+  }
+}
+
+function findFragmentTarget(frameDocument, fragmentValue) {
+  const normalizedFragment = decodeFragmentValue(fragmentValue);
+  if (!normalizedFragment) {
+    return null;
+  }
+  const byId = frameDocument.getElementById(normalizedFragment);
+  if (byId) {
+    return byId;
+  }
+  for (const element of frameDocument.querySelectorAll("[name]")) {
+    if (element.getAttribute("name") === normalizedFragment) {
+      return element;
+    }
+  }
+  return null;
+}
+
+function scrollFrameToTop(frameWindow, frameDocument) {
+  if (typeof frameWindow?.scrollTo === "function") {
+    frameWindow.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: "smooth",
+    });
+    return;
+  }
+  const scrollingElement = frameDocument.scrollingElement || frameDocument.documentElement;
+  if (scrollingElement) {
+    scrollingElement.scrollTop = 0;
+    scrollingElement.scrollLeft = 0;
+  }
+}
+
+function scrollFrameToFragment(frameDocument, frameWindow, fragmentValue) {
+  if (String(fragmentValue || "").trim() === "#") {
+    scrollFrameToTop(frameWindow, frameDocument);
+    return;
+  }
+  const target = findFragmentTarget(frameDocument, fragmentValue);
+  if (target && typeof target.scrollIntoView === "function") {
+    target.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+      inline: "nearest",
+    });
+    return;
+  }
+  scrollFrameToTop(frameWindow, frameDocument);
+}
+
+export function installEchartsViewFrameNavigationBridge(frame) {
+  if (!(frame instanceof HTMLIFrameElement)) {
+    return;
+  }
+
+  const bindNavigationBridge = () => {
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    if (!frameDocument || !frameWindow) {
+      return;
+    }
+    if (
+      frameDocument.documentElement?.getAttribute(ECHARTS_VIEW_FRAME_NAVIGATION_BRIDGE_MARKER) ===
+      "true"
+    ) {
+      return;
+    }
+
+    frameDocument.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          return;
+        }
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+        const anchor = target.closest("a[href]");
+        if (!(anchor instanceof HTMLAnchorElement)) {
+          return;
+        }
+        const rawHref = anchor.getAttribute("href")?.trim() || "";
+        const rawTarget = anchor.getAttribute("target")?.trim().toLowerCase() || "";
+        if (!rawHref.startsWith("#") || (rawTarget && rawTarget !== "_self")) {
+          return;
+        }
+        event.preventDefault();
+        scrollFrameToFragment(frameDocument, frameWindow, rawHref);
+      },
+      true,
+    );
+
+    frameDocument.documentElement?.setAttribute(
+      ECHARTS_VIEW_FRAME_NAVIGATION_BRIDGE_MARKER,
+      "true",
+    );
+  };
+
+  frame.addEventListener("load", bindNavigationBridge);
+  bindNavigationBridge();
+}
+
 export async function bootEchartsViewSurface() {
   if (window.__openclawEchartsViewSurfaceBooted) {
     return null;
@@ -111,6 +236,7 @@ export async function bootEchartsViewSurface() {
       document.title = visualizationDocument.title;
     }
     const frame = createVisualizationFrame(visualizationDocument.html);
+    installEchartsViewFrameNavigationBridge(frame);
     document.body.append(frame);
     return visualizationDocument;
   } catch {
