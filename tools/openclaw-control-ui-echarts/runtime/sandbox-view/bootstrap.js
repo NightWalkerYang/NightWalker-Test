@@ -75,7 +75,7 @@ export function applySandboxViewPublicBootstrap() {
 }
 
 export function buildSandboxViewPublicBootstrapTag() {
-  return `    <script type="module" src="./assets/runtime/sandbox-view/preboot.js" ${SANDBOX_VIEW_BOOTSTRAP_MARKER}></script>`;
+  return `    <script type="module" src="/assets/runtime/sandbox-view/preboot.js" ${SANDBOX_VIEW_BOOTSTRAP_MARKER}></script>`;
 }
 
 export function injectSandboxViewPublicBootstrap(indexHtml) {

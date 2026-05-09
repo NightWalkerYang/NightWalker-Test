@@ -21,6 +21,15 @@ function createAppStub(overrides = {}) {
       if (method === "chat.history") {
         return { messages: [] };
       }
+      if (method === "sessions.patch") {
+        return {
+          ok: true,
+          resolved: {
+            model: "gpt-5.4",
+            modelProvider: "gpt",
+          },
+        };
+      }
       if (method !== "sessions.list") {
         throw new Error(`unexpected method: ${method}`);
       }
@@ -154,7 +163,7 @@ afterEach(() => {
 });
 
 describe("member chat surface", () => {
-  it("mounts a member session sidebar on /chat and pins the latest assigned session", async () => {
+  it("mounts a member session sidebar on /chat and starts a fresh session by default", async () => {
     installTenantApiFetchStub();
     writeTenantSession({
       token: "member-token",
@@ -206,12 +215,14 @@ describe("member chat surface", () => {
       "苏博泰克财务分析助手",
     );
     expect(window.location.search).toContain("tenantAgentId=tenant-agent-1");
-    expect(window.location.search).toContain(
-      "session=agent%3Asubotech-finance%3Atenant%3At-1%3Atenant-agent%3Atenant-agent-1%3Auser%3Auser-1%3Achat%3Alatest",
+    const activeSessionKey = app.sessionKey;
+    expect(activeSessionKey).toMatch(
+      /^agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:/,
     );
-    expect(app.sessionKey).toBe(
+    expect(activeSessionKey).not.toBe(
       "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
     );
+    expect(window.location.search).toContain(encodeURIComponent(activeSessionKey));
     expect(app.tab).toBe("chat");
   });
 
@@ -391,6 +402,15 @@ describe("member chat surface", () => {
         if (method === "chat.history") {
           return { messages: [] };
         }
+        if (method === "sessions.patch") {
+          return {
+            ok: true,
+            resolved: {
+              model: "gpt-5.4",
+              modelProvider: "gpt",
+            },
+          };
+        }
         throw new Error(`unexpected method: ${method}`);
       },
     });
@@ -430,7 +450,13 @@ describe("member chat surface", () => {
       status: "active",
       balancePoints: 10,
     });
-    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    window.history.replaceState(
+      {},
+      "",
+      `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
+    );
     document.body.innerHTML = `
       <div class="dashboard-header__breadcrumb">
         <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
@@ -438,8 +464,6 @@ describe("member chat surface", () => {
       </div>
       <nav class="sidebar-nav"></nav>
     `;
-    const sessionKey =
-      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
     const app = createAppStub({
       request: async (method, params) => {
         if (method === "sessions.list") {
@@ -507,7 +531,13 @@ describe("member chat surface", () => {
       status: "active",
       balancePoints: 10,
     });
-    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    window.history.replaceState(
+      {},
+      "",
+      `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
+    );
     document.body.innerHTML = `
       <div class="dashboard-header__breadcrumb">
         <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
@@ -515,8 +545,6 @@ describe("member chat surface", () => {
       </div>
       <nav class="sidebar-nav"></nav>
     `;
-    const sessionKey =
-      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
     const app = createAppStub({
       request: async (method) => {
         if (method === "sessions.list") {
@@ -651,7 +679,13 @@ describe("member chat surface", () => {
       status: "active",
       balancePoints: 10,
     });
-    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    window.history.replaceState(
+      {},
+      "",
+      `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
+    );
     document.body.innerHTML = `
       <div class="dashboard-header__breadcrumb">
         <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
@@ -659,8 +693,6 @@ describe("member chat surface", () => {
       </div>
       <nav class="sidebar-nav"></nav>
     `;
-    const sessionKey =
-      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
     const app = createAppStub({
       request: async (method, params) => {
         if (method === "sessions.list") {
@@ -746,7 +778,13 @@ describe("member chat surface", () => {
       status: "active",
       balancePoints: 10,
     });
-    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    window.history.replaceState(
+      {},
+      "",
+      `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
+    );
     document.body.innerHTML = `
       <div class="dashboard-header__breadcrumb">
         <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
@@ -754,8 +792,6 @@ describe("member chat surface", () => {
       </div>
       <nav class="sidebar-nav"></nav>
     `;
-    const sessionKey =
-      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
     const app = createAppStub({
       request: async (method, params) => {
         if (method === "sessions.list") {
@@ -838,7 +874,11 @@ describe("member chat surface", () => {
       status: "active",
       balancePoints: 10,
     });
-    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent%3Asubotech-finance%3Atenant%3At-1%3Atenant-agent%3Atenant-agent-1%3Auser%3Auser-1%3Achat%3Alatest",
+    );
     document.body.innerHTML = `
       <div class="dashboard-header__breadcrumb">
         <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
@@ -899,7 +939,7 @@ describe("member chat surface", () => {
     expect(syncPayload.records).toEqual([
       expect.objectContaining({
         usageDay: "2026-04-13",
-        provider: "openai",
+        provider: "gpt",
         model: "gpt-5.4",
         inputTokens: 120,
         outputTokens: 45,
@@ -1005,7 +1045,11 @@ describe("member chat surface", () => {
       status: "active",
       balancePoints: 10,
     });
-    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent%3Asubotech-finance%3Atenant%3At-1%3Atenant-agent%3Atenant-agent-1%3Auser%3Auser-1%3Achat%3Alatest",
+    );
     document.body.innerHTML = `
       <div class="dashboard-header__breadcrumb">
         <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
@@ -1019,9 +1063,11 @@ describe("member chat surface", () => {
     bootMemberChatSurface();
     await flush();
 
-    const deleteButtons = [...document.querySelectorAll("[data-member-chat-delete]")];
-    expect(deleteButtons).toHaveLength(2);
-    deleteButtons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    const deleteButton = document.querySelector(
+      "[data-member-chat-delete='agent:subotech-finance:tenant-tenant-agent-1']",
+    );
+    expect(deleteButton).not.toBeNull();
+    deleteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
     expect(document.querySelector("[data-oc-member-chat-delete-dialog]")?.open).toBe(true);
 
@@ -1091,9 +1137,11 @@ describe("member chat surface", () => {
     bootMemberChatSurface();
     await flush();
 
-    const deleteButtons = [...document.querySelectorAll("[data-member-chat-delete]")];
-    expect(deleteButtons).toHaveLength(2);
-    deleteButtons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    const deleteButton = document.querySelector(
+      "[data-member-chat-delete='agent:subotech-finance:tenant-tenant-agent-1']",
+    );
+    expect(deleteButton).not.toBeNull();
+    deleteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await flush();
     expect(document.querySelector("[data-oc-member-chat-delete-dialog]")?.open).toBe(true);
 
@@ -1159,6 +1207,15 @@ describe("member chat surface", () => {
         }
         if (method === "chat.send") {
           return { ok: true };
+        }
+        if (method === "sessions.patch") {
+          return {
+            ok: true,
+            resolved: {
+              model: "gpt-5.4",
+              modelProvider: "gpt",
+            },
+          };
         }
         throw new Error(`unexpected method: ${method}`);
       },
@@ -1290,5 +1347,115 @@ describe("member chat surface", () => {
     expect(document.querySelector("[data-oc-member-chat-section]")?.textContent).toContain(
       "新会话",
     );
+  });
+
+  it("pins member chat sessions to gpt-5.4 while preserving history message metadata", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    const sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    window.history.replaceState(
+      {},
+      "",
+      `/chat?tenantAgentId=tenant-agent-1&session=${encodeURIComponent(sessionKey)}`,
+    );
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const requests = [];
+    const app = createAppStub({
+      request: async (method, params) => {
+        requests.push({ method, params });
+        if (method === "sessions.list") {
+          return {
+            defaults: {
+              model: "glm-5",
+              modelProvider: "zai",
+            },
+            sessions: [
+              {
+                key: sessionKey,
+                title: "本周分析",
+                updatedAt: Date.now(),
+                model: "glm-5",
+                modelProvider: "zai",
+                providerOverride: "zai",
+              },
+            ],
+          };
+        }
+        if (method === "sessions.patch") {
+          return {
+            ok: true,
+            resolved: {
+              model: "gpt-5.4",
+              modelProvider: "gpt",
+            },
+          };
+        }
+        if (method === "chat.history") {
+          return {
+            messages: [
+              {
+                role: "assistant",
+                provider: "zai",
+                model: "glm-5",
+                text: "现在应该固定到 gpt",
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+    await flush();
+
+    expect(requests).toContainEqual({
+      method: "sessions.patch",
+      params: {
+        key: sessionKey,
+        model: "gpt/gpt-5.4",
+      },
+    });
+    expect(app.chatModelOverrides[sessionKey]).toEqual({
+      kind: "qualified",
+      value: "gpt/gpt-5.4",
+    });
+    expect(app.sessionsResult?.defaults).toMatchObject({
+      model: "gpt-5.4",
+      modelProvider: "gpt",
+    });
+    expect(app.chatMessages).toEqual([
+      {
+        role: "assistant",
+        provider: "zai",
+        model: "glm-5",
+        text: "现在应该固定到 gpt",
+      },
+    ]);
   });
 });

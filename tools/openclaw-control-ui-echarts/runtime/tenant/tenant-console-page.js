@@ -135,6 +135,10 @@ function getMemberOrgScopeSummary(member, controller) {
   return "未分配";
 }
 
+function getMemberSandboxSummary(member) {
+  return Number(member?.sandboxEnabled || 0) > 0 ? "已启用" : "未启用";
+}
+
 function getEffectiveMemberStatus(controller, member) {
   const userId = String(member?.id || "").trim();
   const pendingStatus =
@@ -453,6 +457,7 @@ function createMemberOrgScopeDialogState() {
     dataSourceName: "",
     dataSourceId: "",
     scopeMode: "none",
+    sandboxEnabled: false,
     orgs: [],
     selectedOrgIds: new Set(),
     searchQuery: "",
@@ -714,6 +719,7 @@ function renderMembersTable(rows, controller) {
             <th>成员账号</th>
             <th>状态</th>
             <th>组织范围</th>
+            <th>沙盒模拟</th>
             <th>已分配 Agent</th>
             <th>创建时间</th>
             <th>操作</th>
@@ -735,6 +741,7 @@ function renderMembersTable(rows, controller) {
                             ${escapeHtml(getMemberOrgScopeSummary(member, controller))}
                           </div>
                         </td>
+                        <td>${escapeHtml(getMemberSandboxSummary(member))}</td>
                         <td>${formatNumber(member.assignedAgentCount)}</td>
                         <td>${escapeHtml(formatDateTime(member.createdAt))}</td>
                         <td>
@@ -775,7 +782,7 @@ function renderMembersTable(rows, controller) {
                     `;
                   })
                   .join("")
-              : `<tr><td colspan="6" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
+              : `<tr><td colspan="7" class="oc-tenant-table-empty">暂无成员数据</td></tr>`
           }
         </tbody>
       </table>
@@ -1182,6 +1189,18 @@ function renderMemberOrgScopeDialog(controller) {
                     <span>已绑定数据源</span>
                     <input type="text" value="${escapeHtml(dialog.dataSourceName || "未绑定数据源")}" disabled />
                   </label>
+                  <div class="field">
+                    <span>沙盒模拟</span>
+                    <label class="oc-tenant-member-sandbox-field">
+                      <input
+                        type="checkbox"
+                        data-tenant-member-sandbox-enabled
+                        ${dialog.busy || !hasBinding ? "disabled" : ""}
+                        ${dialog.sandboxEnabled ? "checked" : ""}
+                      />
+                      <span>允许该成员使用当前数据源的沙盒模拟</span>
+                    </label>
+                  </div>
                   <div class="field">
                     <span>组织访问范围</span>
                     <div class="oc-tenant-member-org-scope-modes">
@@ -1882,6 +1901,8 @@ async function openMemberOrgScopeDialog(root, controller, memberId) {
         .filter(Boolean),
     );
     currentDialog.scopeMode = normalizeMemberOrgScopeMode(scope?.scopeMode);
+    currentDialog.sandboxEnabled =
+      scope?.sandboxEnabled === true || Number(scope?.sandboxEnabled || 0) > 0;
     currentDialog.selectedOrgIds = new Set(
       (Array.isArray(scope?.orgScopes) ? scope.orgScopes : [])
         .map((org) => String(org?.orgId || "").trim())
@@ -2275,6 +2296,11 @@ function handleInput(root, controller, event) {
     render(root, controller);
     return;
   }
+  if (target.hasAttribute("data-tenant-member-sandbox-enabled")) {
+    getMemberOrgScopeDialog(controller).sandboxEnabled = target.checked;
+    render(root, controller);
+    return;
+  }
   if (target.hasAttribute("data-tenant-member-org-scope-select-all")) {
     const dialog = getMemberOrgScopeDialog(controller);
     const selected = target.checked;
@@ -2416,6 +2442,7 @@ async function handleSubmit(root, controller, event) {
       await controller.apiClient.setTenantMemberOrgScope({
         userId: dialog.memberId,
         scopeMode,
+        sandboxEnabled: dialog.sandboxEnabled,
         ...(scopeMode === "custom" ? { orgIds } : {}),
       });
       controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();

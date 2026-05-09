@@ -271,6 +271,50 @@ export function createTenantApiClient() {
     resolveMemberSandbox(token) {
       return requestJson(withQuery("/member/sandboxes/resolve", { token }));
     },
+    listMemberSandboxDataCatalog(token, { inputStartDate = "", inputEndDate = "" } = {}) {
+      return requestJson(
+        withQuery("/member/sandboxes/data-catalog", {
+          token,
+          inputStartDate,
+          inputEndDate,
+        }),
+        { cache: "no-store" },
+      );
+    },
+    listMemberSandboxMaterialCandidates(
+      token,
+      { inputStartDate = "", inputEndDate = "", keyword = "" } = {},
+    ) {
+      return requestJson(
+        withQuery("/member/sandboxes/material-candidates", {
+          token,
+          inputStartDate,
+          inputEndDate,
+          keyword,
+        }),
+        { cache: "no-store" },
+      );
+    },
+    submitMemberSandboxRun(body) {
+      return requestJson("/member/sandboxes/run", { method: "POST", body });
+    },
+    getMemberSandboxRun(token, runId) {
+      return requestJson(
+        withQuery(`/member/sandboxes/runs/${encodeURIComponent(String(runId || "").trim())}`, {
+          token,
+        }),
+        { cache: "no-store" },
+      );
+    },
+    getMemberSandboxRunResult(token, runId) {
+      return requestJson(
+        withQuery(
+          `/member/sandboxes/runs/${encodeURIComponent(String(runId || "").trim())}/result`,
+          { token },
+        ),
+        { cache: "no-store" },
+      );
+    },
     syncMemberUsageRecords(body) {
       return requestJson("/member/usage-records/sync", { method: "POST", body });
     },

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   openTenantPlatformDb,
   closeTenantPlatformDb,
@@ -13,6 +13,7 @@ import {
   createTenantWithAdmin,
   createTenantMember,
   getUserByUsername,
+  upsertDataSource,
   listTenants,
   listPlatformUpdateLogs,
   listTenantAgents,
@@ -31,12 +32,20 @@ import {
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
+  setTenantDataSourceBinding,
+  setTenantMemberOrgScope,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 import {
   buildDashboardManifestHtml,
   createTenantPlatformRouter,
   rewriteVisualizationHtml,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
+import {
+  buildAnalyticsConnectionCandidates,
+  isRetryableAnalyticsConnectionError,
+  listSandboxMaterialCandidatesForDataSource,
+  listSandboxDataCatalogForDataSource,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs";
 import {
   issueSessionToken,
   verifyPassword,
@@ -190,6 +199,440 @@ afterEach(async () => {
 });
 
 describe("tenant platform database foundation", () => {
+  describe("analytics connection fallbacks", () => {
+    it("adds a default docker-host postgres retry for stale local analytics ports", () => {
+      expect(
+        buildAnalyticsConnectionCandidates({
+          host: "host.docker.internal",
+          port: 65432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        }),
+      ).toEqual([
+        {
+          host: "host.docker.internal",
+          port: 65432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        },
+        {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        },
+      ]);
+    });
+
+    it("adds docker-host retries when a local analytics connection still points at loopback", () => {
+      expect(
+        buildAnalyticsConnectionCandidates({
+          host: "127.0.0.1",
+          port: 65432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        }),
+      ).toEqual([
+        {
+          host: "127.0.0.1",
+          port: 65432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        },
+        {
+          host: "host.docker.internal",
+          port: 65432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        },
+        {
+          host: "127.0.0.1",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        },
+        {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+        },
+      ]);
+    });
+
+    it("retries only socket-level analytics connection failures", () => {
+      expect(
+        isRetryableAnalyticsConnectionError(
+          new Error("connect ECONNREFUSED 127.0.0.1:65432"),
+        ),
+      ).toBe(true);
+      expect(
+        isRetryableAnalyticsConnectionError(
+          new Error('relation "pur_order_current" does not exist'),
+        ),
+      ).toBe(false);
+      expect(
+        isRetryableAnalyticsConnectionError(
+          new Error('password authentication failed for user "kb_local"'),
+        ),
+      ).toBe(false);
+    });
+
+    it("returns normalized date ranges and a recommended input period for live-like pg date values", async () => {
+      class FakeClient {
+        constructor() {
+          this.queryCounts = FakeClient.queryCounts;
+        }
+        async connect() {}
+        async end() {}
+        async query(sql) {
+          if (String(sql).includes("FROM analytics_table_dictionary") && String(sql).includes("WHERE relation_name = ANY")) {
+            return {
+              rows: [
+                {
+                  relationName: "sales_order_current",
+                  objectCode: "sales_order",
+                  storageRole: "current",
+                  businessGrain: "销售业务分录粒度",
+                  description: "销售订单当前表",
+                },
+                {
+                  relationName: "sales_delivery_notice_current",
+                  objectCode: "sales_delivery_notice",
+                  storageRole: "current",
+                  businessGrain: "销售业务分录粒度",
+                  description: "销售出库当前表",
+                },
+                {
+                  relationName: "bd_material_current",
+                  objectCode: "bd_material",
+                  storageRole: "current",
+                  businessGrain: "基础资料粒度",
+                  description: "物料主数据当前表",
+                },
+                {
+                  relationName: "pur_purchaseorder_current",
+                  objectCode: "pur_purchaseorder",
+                  storageRole: "current",
+                  businessGrain: "采购业务粒度",
+                  description: "采购订单当前表",
+                },
+                {
+                  relationName: "pur_receivebill_current",
+                  objectCode: "pur_receivebill",
+                  storageRole: "current",
+                  businessGrain: "采购业务粒度",
+                  description: "采购收货当前表",
+                },
+                {
+                  relationName: "bd_supplier_current",
+                  objectCode: "bd_supplier",
+                  storageRole: "current",
+                  businessGrain: "基础资料粒度",
+                  description: "供应商当前表",
+                },
+              ],
+            };
+          }
+          if (String(sql).includes("FROM analytics_table_dictionary d")) {
+            return { rows: [] };
+          }
+          if (String(sql).includes("FROM information_schema.columns")) {
+            return { rows: [] };
+          }
+          if (String(sql).includes('FROM "sales_order_current"')) {
+            FakeClient.queryCounts.salesOrder += 1;
+            if (FakeClient.queryCounts.salesOrder === 1) {
+              return {
+                rows: [
+                  {
+                    rowCount: 38,
+                    minDate: new Date("2024-02-09T00:00:00.000Z"),
+                    maxDate: new Date("2024-03-16T00:00:00.000Z"),
+                    orgCount: 1,
+                    lastUpdatedAt: new Date("2026-04-29T00:56:52.842Z"),
+                  },
+                ],
+              };
+            }
+            return {
+              rows: [
+                {
+                  rowCount: 38,
+                  minDate: new Date("2024-02-09T00:00:00.000Z"),
+                  maxDate: new Date("2024-03-16T00:00:00.000Z"),
+                  orgCount: 1,
+                  lastUpdatedAt: new Date("2026-04-29T00:56:52.842Z"),
+                },
+              ],
+            };
+          }
+          if (String(sql).includes('FROM "sales_delivery_notice_current"')) {
+            FakeClient.queryCounts.salesOutbound += 1;
+            if (FakeClient.queryCounts.salesOutbound === 1) {
+              return {
+                rows: [
+                  {
+                    rowCount: 196,
+                    minDate: new Date("2024-02-18T00:00:00.000Z"),
+                    maxDate: new Date("2024-04-29T00:00:00.000Z"),
+                    orgCount: 1,
+                    lastUpdatedAt: new Date("2026-04-29T01:33:37.698Z"),
+                  },
+                ],
+              };
+            }
+            return {
+              rows: [
+                {
+                  rowCount: 196,
+                  minDate: new Date("2024-02-18T00:00:00.000Z"),
+                  maxDate: new Date("2024-04-29T00:00:00.000Z"),
+                  orgCount: 1,
+                  lastUpdatedAt: new Date("2026-04-29T01:33:37.698Z"),
+                },
+              ],
+            };
+          }
+          return {
+            rows: [
+              {
+                rowCount: 12,
+                minDate: null,
+                maxDate: null,
+                orgCount: 0,
+                lastUpdatedAt: new Date("2026-04-27T15:25:09.442Z"),
+              },
+            ],
+          };
+        }
+      }
+      FakeClient.queryCounts = { salesOrder: 0, salesOutbound: 0 };
+      vi.resetModules();
+      vi.doMock("pg", () => ({
+        default: {
+          Client: FakeClient,
+        },
+      }));
+      try {
+        const { listSandboxDataCatalogForDataSource: listCatalog } = await import(
+          "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs"
+        );
+        const catalog = await listCatalog(
+          {
+            dataSourceId: "ds_1",
+            dataSourceName: "本机 kingdee-analytics",
+            dataSourceType: "kingdee_analytics",
+            connection: {
+              host: "127.0.0.1",
+              port: 65432,
+              database: "kingdee_analytics",
+              user: "kb_local",
+            },
+          },
+          {
+            inputStartDate: "2024-01-05",
+            inputEndDate: "2024-06-05",
+            scopeMode: "all",
+          },
+        );
+
+        expect(catalog.recommendedInputPeriod).toEqual({
+          startDate: "2024-02-18",
+          endDate: "2024-04-29",
+          source: "sales_outbound",
+        });
+        expect(catalog.datasets.find((entry) => entry.id === "sales_order")).toMatchObject({
+          minDate: "2024-02-09",
+          maxDate: "2024-03-16",
+          status: "available",
+        });
+        expect(catalog.datasets.find((entry) => entry.id === "sales_outbound")).toMatchObject({
+          minDate: "2024-02-18",
+          maxDate: "2024-04-29",
+          status: "available",
+        });
+      } finally {
+        vi.doUnmock("pg");
+        vi.resetModules();
+      }
+    });
+
+    it("falls back to a global demand-backed recommendation when the selected period has no sales evidence", async () => {
+      class FakeClient {
+        async connect() {}
+        async end() {}
+        async query(sql) {
+          if (String(sql).includes("FROM analytics_table_dictionary") && String(sql).includes("WHERE relation_name = ANY")) {
+            return {
+              rows: [
+                {
+                  relationName: "sales_order_current",
+                  objectCode: "sales_order",
+                  storageRole: "current",
+                  businessGrain: "销售业务分录粒度",
+                  description: "销售订单当前表",
+                },
+                {
+                  relationName: "sales_delivery_notice_current",
+                  objectCode: "sales_delivery_notice",
+                  storageRole: "current",
+                  businessGrain: "销售业务分录粒度",
+                  description: "销售出库当前表",
+                },
+                {
+                  relationName: "bd_material_current",
+                  objectCode: "bd_material",
+                  storageRole: "current",
+                  businessGrain: "基础资料粒度",
+                  description: "物料主数据当前表",
+                },
+                {
+                  relationName: "pur_purchaseorder_current",
+                  objectCode: "pur_purchaseorder",
+                  storageRole: "current",
+                  businessGrain: "采购业务粒度",
+                  description: "采购订单当前表",
+                },
+                {
+                  relationName: "pur_receivebill_current",
+                  objectCode: "pur_receivebill",
+                  storageRole: "current",
+                  businessGrain: "采购业务粒度",
+                  description: "采购收货当前表",
+                },
+                {
+                  relationName: "bd_supplier_current",
+                  objectCode: "bd_supplier",
+                  storageRole: "current",
+                  businessGrain: "基础资料粒度",
+                  description: "供应商当前表",
+                },
+              ],
+            };
+          }
+          if (String(sql).includes("FROM analytics_table_dictionary d")) {
+            return { rows: [] };
+          }
+          if (String(sql).includes("FROM information_schema.columns")) {
+            return { rows: [] };
+          }
+          if (String(sql).includes('FROM "sales_order_current"')) {
+            if (String(sql).includes("bill_date")) {
+              if (String(sql).includes(">=") || String(sql).includes("<=")) {
+                return {
+                  rows: [
+                    {
+                      rowCount: 0,
+                      minDate: null,
+                      maxDate: null,
+                      orgCount: 0,
+                      lastUpdatedAt: null,
+                    },
+                  ],
+                };
+              }
+              return {
+                rows: [
+                  {
+                    rowCount: 38,
+                    minDate: new Date("2024-02-09T00:00:00.000Z"),
+                    maxDate: new Date("2024-03-16T00:00:00.000Z"),
+                    orgCount: 1,
+                    lastUpdatedAt: new Date("2026-04-29T00:56:52.842Z"),
+                  },
+                ],
+              };
+            }
+          }
+          if (String(sql).includes('FROM "sales_delivery_notice_current"')) {
+            if (String(sql).includes(">=") || String(sql).includes("<=")) {
+              return {
+                rows: [
+                  {
+                    rowCount: 0,
+                    minDate: null,
+                    maxDate: null,
+                    orgCount: 0,
+                    lastUpdatedAt: null,
+                  },
+                ],
+              };
+            }
+            return {
+              rows: [
+                {
+                  rowCount: 196,
+                  minDate: new Date("2024-02-18T00:00:00.000Z"),
+                  maxDate: new Date("2024-04-29T00:00:00.000Z"),
+                  orgCount: 1,
+                  lastUpdatedAt: new Date("2026-04-29T01:33:37.698Z"),
+                },
+              ],
+            };
+          }
+          return {
+            rows: [
+              {
+                rowCount: 12,
+                minDate: null,
+                maxDate: null,
+                orgCount: 0,
+                lastUpdatedAt: new Date("2026-04-27T15:25:09.442Z"),
+              },
+            ],
+          };
+        }
+      }
+      vi.resetModules();
+      vi.doMock("pg", () => ({
+        default: {
+          Client: FakeClient,
+        },
+      }));
+      try {
+        const { listSandboxDataCatalogForDataSource: listCatalog } = await import(
+          "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs"
+        );
+        const catalog = await listCatalog(
+          {
+            dataSourceId: "ds_1",
+            dataSourceName: "本机 kingdee-analytics",
+            dataSourceType: "kingdee_analytics",
+            connection: {
+              host: "127.0.0.1",
+              port: 65432,
+              database: "kingdee_analytics",
+              user: "kb_local",
+            },
+          },
+          {
+            inputStartDate: "2025-05-06",
+            inputEndDate: "2026-05-06",
+            scopeMode: "all",
+          },
+        );
+
+        expect(catalog.datasets.find((entry) => entry.id === "sales_order")).toMatchObject({
+          rowCount: 0,
+          status: "empty",
+        });
+        expect(catalog.datasets.find((entry) => entry.id === "sales_outbound")).toMatchObject({
+          rowCount: 0,
+          status: "empty",
+        });
+        expect(catalog.recommendedInputPeriod).toEqual({
+          startDate: "2024-03-01",
+          endDate: "2024-04-29",
+          source: "sales_outbound",
+        });
+      } finally {
+        vi.doUnmock("pg");
+        vi.resetModules();
+      }
+    });
+  });
+
   describe("data source persistence", () => {
     it("creates and lists data source records", async () => {
       const { listDataSources, upsertDataSource } = await loadTenantPlatformDbModule();
@@ -437,6 +880,7 @@ describe("tenant platform database foundation", () => {
             id: member.id,
             orgScopeMode: "none",
             orgScopeCount: 0,
+            sandboxEnabled: 0,
           }),
         ]);
         expect(() =>
@@ -506,12 +950,14 @@ describe("tenant platform database foundation", () => {
           dataSourceId: firstSource.id,
           scopeMode: "custom",
           orgScopeCount: 2,
+          sandboxEnabled: true,
         });
         expect(listTenantMembers(db, tenant.id)).toEqual([
           expect.objectContaining({
             id: member.id,
             orgScopeMode: "custom",
             orgScopeCount: 2,
+            sandboxEnabled: 1,
           }),
         ]);
         expect(
@@ -533,6 +979,7 @@ describe("tenant platform database foundation", () => {
           userId: member.id,
           dataSourceId: firstSource.id,
           scopeMode: "all",
+          sandboxEnabled: true,
           createdByUserId: tenantAdmin?.id,
         });
         expect(
@@ -544,7 +991,16 @@ describe("tenant platform database foundation", () => {
         ).toMatchObject({
           scopeMode: "all",
           orgScopeCount: 0,
+          sandboxEnabled: true,
         });
+        expect(listTenantMembers(db, tenant.id)).toEqual([
+          expect.objectContaining({
+            id: member.id,
+            orgScopeMode: "all",
+            orgScopeCount: 0,
+            sandboxEnabled: 1,
+          }),
+        ]);
         expect(
           db
             .prepare(
@@ -554,6 +1010,17 @@ describe("tenant platform database foundation", () => {
             )
             .get(tenant.id, member.id, firstSource.id)?.count,
         ).toBe(0);
+        expect(
+          db
+            .prepare(
+              `SELECT sandbox_enabled AS sandboxEnabled
+               FROM tenant_member_source_policies
+               WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?`,
+            )
+            .get(tenant.id, member.id, firstSource.id),
+        ).toMatchObject({
+          sandboxEnabled: 1,
+        });
 
         setTenantMemberOrgScope(db, {
           tenantId: tenant.id,
@@ -608,12 +1075,14 @@ describe("tenant platform database foundation", () => {
         ).toMatchObject({
           scopeMode: "none",
           orgScopeCount: 0,
+          sandboxEnabled: false,
         });
         expect(listTenantMembers(db, tenant.id)).toEqual([
           expect.objectContaining({
             id: member.id,
             orgScopeMode: "none",
             orgScopeCount: 0,
+            sandboxEnabled: 0,
           }),
         ]);
         expect(() =>
@@ -624,6 +1093,110 @@ describe("tenant platform database foundation", () => {
         ).toThrowError("member_org_scope_empty");
       } finally {
         closeTenantPlatformDb(db);
+      }
+    });
+
+    it("stores sandbox enablement in member source policies and upgrades legacy tables", async () => {
+      const { getTenantMemberOrgScope, setTenantDataSourceBinding, setTenantMemberOrgScope, upsertDataSource } =
+        await loadTenantPlatformDbModule();
+      const sandbox = createTempSandbox();
+      const db = openTenantPlatformDb(sandbox.config);
+      try {
+        createBootstrapPlatformAdmin(db, {
+          username: "platform-root",
+          password: "secret",
+        });
+        const tenant = createTenantWithAdmin(db, {
+          code: "scope-sandbox-switch",
+          name: "租户 Scope Sandbox Switch",
+          adminUsername: "scope-sandbox-switch-admin",
+          adminPassword: "secret",
+          memberLimit: 3,
+          deploymentMode: "cloud",
+          licenseExpiresAt: null,
+          renewalCode: null,
+        });
+        const tenantAdmin = getUserByUsername(db, "scope-sandbox-switch-admin");
+        const member = createTenantMember(db, {
+          tenantId: tenant.id,
+          username: "scope-sandbox-switch-member",
+          password: "secret",
+        });
+        const source = upsertDataSource(db, {
+          code: "kd-scope-sandbox-switch",
+          name: "沙盒开关账套",
+          sourceType: "kingdee_analytics",
+          connection: { host: "db-scope-sandbox-switch.internal" },
+        });
+        setTenantDataSourceBinding(db, {
+          tenantId: tenant.id,
+          dataSourceId: source.id,
+          boundByUserId: tenantAdmin?.id,
+        });
+
+        db.exec("PRAGMA foreign_keys = OFF;");
+        try {
+          db.exec(
+            `ALTER TABLE tenant_member_source_policies RENAME TO tenant_member_source_policies_with_flag;
+             CREATE TABLE tenant_member_source_policies (
+               id TEXT PRIMARY KEY,
+               tenant_id TEXT NOT NULL,
+               user_id TEXT NOT NULL,
+               data_source_id TEXT NOT NULL,
+               scope_mode TEXT NOT NULL,
+               sandbox_enabled INTEGER NOT NULL DEFAULT 0,
+               created_by_user_id TEXT,
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL,
+               UNIQUE (tenant_id, user_id, data_source_id)
+             );
+             DROP TABLE tenant_member_source_policies_with_flag;`,
+          );
+        } finally {
+          db.exec("PRAGMA foreign_keys = ON;");
+        }
+        closeTenantPlatformDb(db);
+
+        const reopenedDb = openTenantPlatformDb(sandbox.config);
+        try {
+          setTenantMemberOrgScope(reopenedDb, {
+            tenantId: tenant.id,
+            userId: member.id,
+            dataSourceId: source.id,
+            scopeMode: "all",
+            sandboxEnabled: true,
+            createdByUserId: tenantAdmin?.id,
+          });
+          expect(
+            reopenedDb
+              .prepare(
+                `SELECT sandbox_enabled AS sandboxEnabled
+                 FROM tenant_member_source_policies
+                 WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?`,
+              )
+              .get(tenant.id, member.id, source.id),
+          ).toMatchObject({
+            sandboxEnabled: 1,
+          });
+          expect(
+            getTenantMemberOrgScope(reopenedDb, {
+              tenantId: tenant.id,
+              userId: member.id,
+              dataSourceId: source.id,
+            }),
+          ).toMatchObject({
+            scopeMode: "all",
+            sandboxEnabled: true,
+          });
+        } finally {
+          closeTenantPlatformDb(reopenedDb);
+        }
+      } finally {
+        try {
+          closeTenantPlatformDb(db);
+        } catch {
+          // The original db handle may already be closed after reopening flow.
+        }
       }
     });
 
@@ -857,8 +1430,26 @@ describe("tenant platform database foundation", () => {
                updated_at TEXT NOT NULL,
                UNIQUE (tenant_id, user_id, data_source_id)
              );
-             INSERT INTO tenant_member_source_policies
-             SELECT * FROM tenant_member_source_policies_with_fk;
+             INSERT INTO tenant_member_source_policies (
+               id,
+               tenant_id,
+               user_id,
+               data_source_id,
+               scope_mode,
+               created_by_user_id,
+               created_at,
+               updated_at
+             )
+             SELECT
+               id,
+               tenant_id,
+               user_id,
+               data_source_id,
+               scope_mode,
+               created_by_user_id,
+               created_at,
+               updated_at
+             FROM tenant_member_source_policies_with_fk;
              DROP TABLE tenant_member_source_policies_with_fk;
              ALTER TABLE tenant_member_org_scopes RENAME TO tenant_member_org_scopes_with_fk;
              CREATE TABLE tenant_member_org_scopes (
@@ -1986,6 +2577,1675 @@ describe("tenant platform database foundation", () => {
 
       expect(platformAdmin.role).toBe("platform_admin");
     });
+
+    it("returns the member sandbox data catalog with tenant binding and member org scope", async () => {
+      const sandbox = createTempSandbox();
+      const calls = [];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return [];
+          },
+          async validateOrganizationIds() {
+            return [];
+          },
+          async listSandboxDataCatalogForDataSource(binding, options) {
+            calls.push({ binding, options });
+            return {
+              dataSourceId: binding.dataSourceId,
+              dataSourceName: binding.dataSourceName,
+              inputStartDate: options.inputStartDate,
+              inputEndDate: options.inputEndDate,
+              scopeMode: options.scopeMode,
+              recommendedInputPeriod: {
+                startDate: "2026-01-11",
+                endDate: "2026-03-28",
+                source: "sales_order",
+              },
+              datasets: [
+                {
+                  id: "sales_order",
+                  label: "销售订单",
+                  description: "订单需求",
+                  defaultSelected: true,
+                  rowCount: 12,
+                  status: "available",
+                  periodMode: "range",
+                },
+              ],
+            };
+          },
+        },
+      });
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-sandbox-catalog",
+        name: "租户 Route Sandbox Catalog",
+        adminUsername: "route-sandbox-catalog-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-sandbox-catalog-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-sandbox-catalog-member",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const dataSource = upsertDataSource(db, {
+        code: "route-sandbox-run-status-source",
+        name: "沙盒账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        sandboxEnabled: true,
+        createdByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const sandboxDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+        "Sandbox",
+      );
+      fs.mkdirSync(sandboxDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sandboxDir, "采购预测.json"),
+        JSON.stringify({ summary: {}, recommendations: [] }),
+        "utf8",
+      );
+      const source = upsertDataSource(db, {
+        code: "kd-route-sandbox-catalog",
+        name: "沙盒目录账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.catalog.internal",
+          database: "kingdee_catalog",
+          password: "catalog-secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: platformAdmin?.id,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: source.id,
+        scopeMode: "custom",
+        createdByUserId: tenantAdmin?.id,
+        orgScopes: [
+          {
+            orgId: "1001",
+            orgNameSnapshot: "华东事业部",
+          },
+        ],
+      });
+      const token = issueSessionToken(
+        {
+          purpose: "member_sandbox",
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          derivedAgentId: assignment.derivedAgentId,
+          sandboxFileName: "采购预测.json",
+        },
+        config.sessionSecret,
+      );
+
+      const response = await requestTenantPlatformJson(
+        baseUrl,
+        `/member/sandboxes/data-catalog?token=${encodeURIComponent(token)}&inputStartDate=2026-01-01&inputEndDate=2026-04-30`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.payload.data).toMatchObject({
+        dataSourceId: source.id,
+        dataSourceName: "沙盒目录账套",
+        inputStartDate: "2026-01-01",
+        inputEndDate: "2026-04-30",
+        recommendedInputPeriod: {
+          startDate: "2026-01-11",
+          endDate: "2026-03-28",
+          source: "sales_order",
+        },
+        orgScope: {
+          mode: "custom",
+          count: 1,
+        },
+      });
+      expect(response.payload.data.datasets[0]).toMatchObject({
+        id: "sales_order",
+        rowCount: 12,
+      });
+      expect(calls).toEqual([
+        {
+          binding: expect.objectContaining({
+            tenantId: tenant.id,
+            dataSourceId: source.id,
+            connection: expect.objectContaining({
+              password: "catalog-secret",
+            }),
+          }),
+          options: expect.objectContaining({
+            inputStartDate: "2026-01-01",
+            inputEndDate: "2026-04-30",
+            scopeMode: "custom",
+            allowedOrgIds: ["1001"],
+          }),
+        },
+      ]);
+    });
+
+    it("returns the member sandbox material candidates with tenant binding and member org scope", async () => {
+      const sandbox = createTempSandbox();
+      const calls = [];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return [];
+          },
+          async validateOrganizationIds() {
+            return [];
+          },
+          async listSandboxDataCatalogForDataSource() {
+            return { datasets: [] };
+          },
+          async listSandboxMaterialCandidatesForDataSource(binding, options) {
+            calls.push({ binding, options });
+            return {
+              dataSourceId: binding.dataSourceId,
+              dataSourceName: binding.dataSourceName,
+              inputStartDate: options.inputStartDate,
+              inputEndDate: options.inputEndDate,
+              keyword: options.keyword,
+              items: [
+                {
+                  materialId: "M001",
+                  materialCode: "MAT-001",
+                  materialName: "原料 A",
+                },
+              ],
+            };
+          },
+        },
+      });
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-material-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-sandbox-materials",
+        name: "租户 Route Sandbox Materials",
+        adminUsername: "route-sandbox-materials-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-sandbox-materials-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-sandbox-materials-member",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const dataSource = upsertDataSource(db, {
+        code: "route-sandbox-run-result-source",
+        name: "沙盒账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        sandboxEnabled: true,
+        createdByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const sandboxDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+        "Sandbox",
+      );
+      fs.mkdirSync(sandboxDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sandboxDir, "采购预测.json"),
+        JSON.stringify({ summary: {}, recommendations: [] }),
+        "utf8",
+      );
+      const source = upsertDataSource(db, {
+        code: "kd-route-sandbox-materials",
+        name: "沙盒物料账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.material.internal",
+          database: "kingdee_catalog",
+          password: "material-secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: platformAdmin?.id,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: source.id,
+        scopeMode: "custom",
+        createdByUserId: tenantAdmin?.id,
+        orgScopes: [
+          {
+            orgId: "1001",
+            orgNameSnapshot: "华东事业部",
+          },
+        ],
+      });
+      const token = issueSessionToken(
+        {
+          purpose: "member_sandbox",
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          derivedAgentId: assignment.derivedAgentId,
+          sandboxFileName: "采购预测.json",
+        },
+        config.sessionSecret,
+      );
+
+      const response = await requestTenantPlatformJson(
+        baseUrl,
+        `/member/sandboxes/material-candidates?token=${encodeURIComponent(token)}&inputStartDate=2026-01-01&inputEndDate=2026-03-31&keyword=${encodeURIComponent("原料")}`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.payload.data).toMatchObject({
+        dataSourceId: source.id,
+        dataSourceName: "沙盒物料账套",
+        inputStartDate: "2026-01-01",
+        inputEndDate: "2026-03-31",
+        keyword: "原料",
+      });
+      expect(response.payload.data.items).toEqual([
+        {
+          materialId: "M001",
+          materialCode: "MAT-001",
+          materialName: "原料 A",
+        },
+      ]);
+      expect(calls).toEqual([
+        {
+          binding: expect.objectContaining({
+            tenantId: tenant.id,
+            dataSourceId: source.id,
+            connection: expect.objectContaining({
+              password: "material-secret",
+            }),
+          }),
+          options: {
+            allowedOrgIds: ["1001"],
+            inputStartDate: "2026-01-01",
+            inputEndDate: "2026-03-31",
+            keyword: "原料",
+          },
+        },
+      ]);
+    });
+
+    it("rejects member sandbox material candidates when sandbox access is disabled", async () => {
+      const sandbox = createTempSandbox();
+      const calls = [];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        dataSourceClient: {
+          async listOrganizationsForDataSource() {
+            return [];
+          },
+          async validateOrganizationIds() {
+            return [];
+          },
+          async listSandboxDataCatalogForDataSource() {
+            return { datasets: [] };
+          },
+          async listSandboxMaterialCandidatesForDataSource(binding, options) {
+            calls.push({ binding, options });
+            return {
+              dataSourceId: binding.dataSourceId,
+              dataSourceName: binding.dataSourceName,
+              items: [],
+            };
+          },
+        },
+      });
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-route-disabled-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-sandbox-disabled",
+        name: "租户 Route Sandbox Disabled",
+        adminUsername: "route-sandbox-disabled-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "route-sandbox-disabled-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-sandbox-disabled-member",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const dataSource = upsertDataSource(db, {
+        code: "route-sandbox-run-status-source",
+        name: "沙盒账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        sandboxEnabled: true,
+        createdByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const sandboxDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+        "Sandbox",
+      );
+      fs.mkdirSync(sandboxDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sandboxDir, "采购预测.json"),
+        JSON.stringify({ summary: {}, recommendations: [] }),
+        "utf8",
+      );
+      const source = upsertDataSource(db, {
+        code: "kd-route-sandbox-disabled",
+        name: "沙盒禁用账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.disabled.internal",
+          database: "kingdee_disabled",
+          password: "disabled-secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: platformAdmin?.id,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: source.id,
+        scopeMode: "all",
+        sandboxEnabled: false,
+        createdByUserId: tenantAdmin?.id,
+        orgScopes: [],
+      });
+      const token = issueSessionToken(
+        {
+          purpose: "member_sandbox",
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          derivedAgentId: assignment.derivedAgentId,
+          sandboxFileName: "采购预测.json",
+        },
+        config.sessionSecret,
+      );
+
+      const listResponse = await requestTenantPlatformJson(baseUrl, "/member/sandboxes", {
+        token: issueTenantPlatformTestToken(config, {
+          userId: member.id,
+          username: member.username,
+          role: "member",
+          tenantId: tenant.id,
+        }),
+      });
+      expect(listResponse.status).toBe(200);
+      expect(listResponse.payload.data).toEqual([]);
+
+      const response = await requestTenantPlatformJson(
+        baseUrl,
+        `/member/sandboxes/material-candidates?token=${encodeURIComponent(token)}&inputStartDate=2026-01-01&inputEndDate=2026-03-31`,
+      );
+
+      expect(response.status).toBe(409);
+      expect(response.payload.error).toBe("member_sandbox_disabled");
+      expect(calls).toEqual([]);
+    });
+
+    it("submits a member sandbox run and returns a workspace-backed run id", async () => {
+      const sandbox = createTempSandbox();
+      const submitted = [];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        async submitSandboxRun(context) {
+          submitted.push(context);
+          return {
+            runId: "run_demo_001",
+            status: "queued",
+            resultAvailable: false,
+            errorMessage: null,
+          };
+        },
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-sandbox-run",
+        name: "租户 Route Sandbox Run",
+        adminUsername: "route-sandbox-run-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-sandbox-run-member",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const dataSource = upsertDataSource(db, {
+        code: "route-sandbox-run-result-source",
+        name: "沙盒账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        sandboxEnabled: true,
+        createdByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const workspaceDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      const sandboxDir = path.join(workspaceDir, "Sandbox");
+      fs.mkdirSync(sandboxDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sandboxDir, "采购预测.json"),
+        JSON.stringify({ sandboxName: "采购预测", summary: {}, recommendations: [] }),
+        "utf8",
+      );
+      const source = upsertDataSource(db, {
+        code: "kd-route-sandbox-run",
+        name: "沙盒运行账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.run.internal",
+          database: "kingdee_catalog",
+          password: "run-secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: null,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: source.id,
+        scopeMode: "all",
+        createdByUserId: null,
+        orgScopes: [],
+      });
+      const token = issueSessionToken(
+        {
+          purpose: "member_sandbox",
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          derivedAgentId: assignment.derivedAgentId,
+          sandboxFileName: "采购预测.json",
+        },
+        config.sessionSecret,
+      );
+
+      const response = await requestTenantPlatformJson(baseUrl, "/member/sandboxes/run", {
+        method: "POST",
+        body: {
+          token,
+          question: "未来一个月哪些物料需要提前采购",
+          inputPeriod: {
+            startDate: "2026-01-01",
+            endDate: "2026-03-31",
+          },
+          targetPeriod: {
+            startDate: "2026-04-01",
+            endDate: "2026-05-31",
+          },
+          selectedDatasetIds: ["sales_order", "purchase_order"],
+          selectedMaterialIds: ["M001", "M002"],
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.payload.data).toMatchObject({
+        runId: "run_demo_001",
+        status: "queued",
+        resultAvailable: false,
+      });
+      expect(submitted).toHaveLength(1);
+      expect(submitted[0]).toMatchObject({
+        tokenPayload: {
+          tenantId: tenant.id,
+          userId: member.id,
+          derivedAgentId: assignment.derivedAgentId,
+        },
+        binding: expect.objectContaining({
+          tenantId: tenant.id,
+          dataSourceId: source.id,
+        }),
+        sandbox: expect.objectContaining({
+          sandboxFileName: "采购预测.json",
+          sandboxName: "采购预测",
+          derivedWorkspaceDir: workspaceDir,
+        }),
+        input: {
+          token,
+          question: "未来一个月哪些物料需要提前采购",
+          inputPeriod: {
+            startDate: "2026-01-01",
+            endDate: "2026-03-31",
+          },
+          targetPeriod: {
+            startDate: "2026-04-01",
+            endDate: "2026-05-31",
+          },
+          selectedDatasetIds: ["sales_order", "purchase_order"],
+          selectedMaterialIds: ["M001", "M002"],
+        },
+      });
+    });
+
+    it("rejects member sandbox runs when selectedMaterialIds is empty", async () => {
+      const sandbox = createTempSandbox();
+      const submitted = [];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        async submitSandboxRun(context) {
+          submitted.push(context);
+          return {
+            runId: "run_demo_001",
+            status: "queued",
+            resultAvailable: false,
+            errorMessage: null,
+          };
+        },
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-sandbox-run-empty-materials",
+        name: "租户 Route Sandbox Run Empty Materials",
+        adminUsername: "route-sandbox-run-empty-materials-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-sandbox-run-empty-materials-member",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const dataSource = upsertDataSource(db, {
+        code: "route-sandbox-run-status-source",
+        name: "沙盒账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        sandboxEnabled: true,
+        createdByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const workspaceDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      const sandboxDir = path.join(workspaceDir, "Sandbox");
+      fs.mkdirSync(sandboxDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sandboxDir, "采购预测.json"),
+        JSON.stringify({ sandboxName: "采购预测", summary: {}, recommendations: [] }),
+        "utf8",
+      );
+      const source = upsertDataSource(db, {
+        code: "kd-route-sandbox-run-empty-materials",
+        name: "沙盒运行账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "db.run.internal",
+          database: "kingdee_catalog",
+          password: "run-secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: source.id,
+        boundByUserId: null,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: source.id,
+        scopeMode: "all",
+        createdByUserId: null,
+        orgScopes: [],
+      });
+      const token = issueSessionToken(
+        {
+          purpose: "member_sandbox",
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          derivedAgentId: assignment.derivedAgentId,
+          sandboxFileName: "采购预测.json",
+        },
+        config.sessionSecret,
+      );
+
+      const response = await requestTenantPlatformJson(baseUrl, "/member/sandboxes/run", {
+        method: "POST",
+        body: {
+          token,
+          question: "未来一个月哪些物料需要提前采购",
+          inputPeriod: {
+            startDate: "2026-01-01",
+            endDate: "2026-03-31",
+          },
+          targetPeriod: {
+            startDate: "2026-04-01",
+            endDate: "2026-05-31",
+          },
+          selectedDatasetIds: ["sales_order"],
+          selectedMaterialIds: [],
+        },
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.payload.error).toBe("sandbox_material_selection_required");
+      expect(submitted).toEqual([]);
+    });
+
+    it("prefers python3 before python on linux sandbox runners", async () => {
+      const { getPythonExecutableCandidates } = await import(
+        "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/sandbox-runner.mjs"
+      );
+
+      expect(getPythonExecutableCandidates("", "linux")).toEqual(["python3", "python"]);
+      expect(getPythonExecutableCandidates("", "win32")).toEqual(["python", "python3"]);
+    });
+
+  it("fails sandbox runs gracefully when no python runtime is available", async () => {
+      const sandbox = createTempSandbox();
+      const { submitSandboxRunJob, getSandboxRunStatusJob } = await import(
+        "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/sandbox-runner.mjs"
+      );
+      const derivedWorkspaceDir = path.join(sandbox.config.configDir, "workspace-agents", "tenant-fallback");
+
+      await expect(
+        submitSandboxRunJob({
+          sandbox: {
+            derivedWorkspaceDir,
+            sandboxName: "采购预测",
+            agentName: "沙盒模拟助手",
+          },
+          binding: {
+            dataSourceId: "ds-1",
+            dataSourceName: "本地账套",
+            connection: {
+              host: "127.0.0.1",
+              database: "kingdee_analytics",
+              user: "kb_local",
+              password: "secret",
+            },
+          },
+          orgScope: {
+            scopeMode: "all",
+            orgScopes: [],
+          },
+          input: {
+            token: "token",
+            question: "未来一个月哪些物料需要提前采购",
+            inputPeriod: {
+              startDate: "2026-01-01",
+              endDate: "2026-03-31",
+            },
+            targetPeriod: {
+              startDate: "2026-06-01",
+              endDate: "2026-06-30",
+            },
+            selectedDatasetIds: ["sales_order"],
+          },
+          pythonExecutable: "definitely-missing-python-binary",
+        }),
+      ).rejects.toThrowError("sandbox_python_runtime_unavailable");
+
+      const runsDir = path.join(derivedWorkspaceDir, "Sandbox", "runs");
+      const runIds = fs.readdirSync(runsDir);
+      expect(runIds.length).toBe(1);
+      const runId = runIds[0];
+      const status = await getSandboxRunStatusJob({
+        sandbox: {
+          derivedWorkspaceDir,
+        },
+        runId,
+      });
+      expect(status).toMatchObject({
+        runId,
+        status: "failed",
+        resultAvailable: false,
+        errorMessage: "sandbox_python_runtime_unavailable",
+      });
+    });
+
+    it("reads sandbox run status by token and run id", async () => {
+      const sandbox = createTempSandbox();
+      const statusCalls = [];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        async getSandboxRunStatus(context) {
+          statusCalls.push(context);
+          return {
+            runId: context.runId,
+            status: "succeeded",
+            resultAvailable: true,
+            errorMessage: null,
+          };
+        },
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-sandbox-run-status",
+        name: "租户 Route Sandbox Run Status",
+        adminUsername: "route-sandbox-run-status-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-sandbox-run-status-member",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const dataSource = upsertDataSource(db, {
+        code: "route-sandbox-run-result-source",
+        name: "沙盒账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        sandboxEnabled: true,
+        createdByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const sandboxDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+        "Sandbox",
+      );
+      fs.mkdirSync(sandboxDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sandboxDir, "采购预测.json"),
+        JSON.stringify({ sandboxName: "采购预测", summary: {}, recommendations: [] }),
+        "utf8",
+      );
+      const token = issueSessionToken(
+        {
+          purpose: "member_sandbox",
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          derivedAgentId: assignment.derivedAgentId,
+          sandboxFileName: "采购预测.json",
+        },
+        config.sessionSecret,
+      );
+
+      const response = await requestTenantPlatformJson(
+        baseUrl,
+        `/member/sandboxes/runs/run_demo_001?token=${encodeURIComponent(token)}`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.payload.data).toMatchObject({
+        runId: "run_demo_001",
+        status: "succeeded",
+        resultAvailable: true,
+        errorMessage: null,
+      });
+      expect(statusCalls).toHaveLength(1);
+      expect(statusCalls[0]).toMatchObject({
+        runId: "run_demo_001",
+        tokenPayload: {
+          tenantId: tenant.id,
+          userId: member.id,
+        },
+      });
+    });
+
+    it("reads sandbox run result payload by token and run id", async () => {
+      const sandbox = createTempSandbox();
+      const resultCalls = [];
+      const { baseUrl, config, db } = await startTenantPlatformServer(sandbox, {
+        async getSandboxRunResult(context) {
+          resultCalls.push(context);
+          return {
+            sandboxName: "采购预测",
+            summary: {
+              forecastDemandQty: 188,
+              recommendedPurchaseQty: 144,
+              estimatedPurchaseCost: 512,
+              shortageRiskLevel: "medium",
+            },
+            recommendations: [
+              {
+                materialId: "M001",
+                materialName: "原料 A",
+                recommendedQty: 88,
+                estimatedCost: 440,
+              },
+            ],
+            report: {
+              headline: "live result headline",
+              bullets: ["结果来自 live run"],
+            },
+          };
+        },
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "route-sandbox-run-result",
+        name: "租户 Route Sandbox Run Result",
+        adminUsername: "route-sandbox-run-result-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "route-sandbox-run-result-member",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const dataSource = upsertDataSource(db, {
+        code: "route-sandbox-run-result-source",
+        name: "沙盒账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "secret",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        sandboxEnabled: true,
+        createdByUserId: null,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const sandboxDir = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+        "Sandbox",
+      );
+      fs.mkdirSync(sandboxDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sandboxDir, "采购预测.json"),
+        JSON.stringify({ sandboxName: "采购预测", summary: {}, recommendations: [] }),
+        "utf8",
+      );
+      const token = issueSessionToken(
+        {
+          purpose: "member_sandbox",
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          derivedAgentId: assignment.derivedAgentId,
+          sandboxFileName: "采购预测.json",
+        },
+        config.sessionSecret,
+      );
+
+      const response = await requestTenantPlatformJson(
+        baseUrl,
+        `/member/sandboxes/runs/run_demo_001/result?token=${encodeURIComponent(token)}`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.payload.data.summary.forecastDemandQty).toBe(188);
+      expect(response.payload.data.report.headline).toBe("live result headline");
+      expect(resultCalls).toHaveLength(1);
+      expect(resultCalls[0]).toMatchObject({
+        runId: "run_demo_001",
+        tokenPayload: {
+          tenantId: tenant.id,
+          userId: member.id,
+        },
+      });
+    });
+  });
+
+  it("writes source tenant code into sandbox runner input payload", async () => {
+    const { submitSandboxRunJob } = await import(
+      "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/sandbox-runner.mjs"
+    );
+    const sandbox = createTempSandbox();
+    const workspaceDir = path.join(sandbox.root, "workspace-agent");
+    fs.mkdirSync(workspaceDir, { recursive: true });
+
+    await expect(
+      submitSandboxRunJob({
+        sandbox: {
+          sandboxName: "真实金蝶采购预测验证",
+          agentName: "main",
+          derivedWorkspaceDir: workspaceDir,
+        },
+        binding: {
+          dataSourceId: "ds-1",
+          dataSourceName: "本机 kingdee-analytics",
+          sourceTenantCode: "demo-tenant",
+          connection: {
+            host: "host.docker.internal",
+            port: 65432,
+            database: "kingdee_analytics",
+            user: "kb_local",
+            password: "kb_local123!",
+          },
+        },
+        orgScope: {
+          scopeMode: "all",
+          orgScopes: [],
+        },
+        input: {
+          token: "sandbox-token",
+          question: "未来一个月哪些物料需要提前采购？",
+          inputPeriod: {
+            startDate: "2024-01-05",
+            endDate: "2024-06-05",
+          },
+          targetPeriod: {
+            startDate: "2026-06-01",
+            endDate: "2026-06-30",
+          },
+          selectedDatasetIds: ["sales_order"],
+          selectedMaterialIds: ["M001", "M002"],
+        },
+        pythonExecutable: "__missing_python__",
+      }),
+    ).rejects.toThrow("sandbox_python_runtime_unavailable");
+
+    const runRoot = path.join(workspaceDir, "Sandbox", "runs");
+    const [runId] = fs.readdirSync(runRoot);
+    const inputPayload = JSON.parse(
+      fs.readFileSync(path.join(runRoot, runId, "input.json"), "utf8"),
+    );
+    expect(inputPayload.dataSource).toMatchObject({
+      dataSourceId: "ds-1",
+      sourceTenantCode: "demo-tenant",
+      dataSourceName: "本机 kingdee-analytics",
+    });
+    expect(inputPayload.selectedMaterialIds).toEqual(["M001", "M002"]);
+  });
+
+  it("lists sandbox material candidates from the analytics data source", async () => {
+    vi.resetModules();
+    class FakeClient {
+      async connect() {}
+      async end() {}
+      async query(sql, params) {
+        if (String(sql).includes("FROM information_schema.columns")) {
+          return {
+            rows: [
+              { relationName: "sales_order_current", columnName: "bill_date", dataType: "date" },
+              { relationName: "sales_order_current", columnName: "sale_org_id", dataType: "text" },
+              { relationName: "sales_order_current", columnName: "material_id", dataType: "text" },
+              { relationName: "sales_order_current", columnName: "material_name", dataType: "text" },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "bill_date",
+                dataType: "date",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "sale_org_id",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "material_name",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_purchaseorder_current",
+                columnName: "bill_date",
+                dataType: "date",
+              },
+              {
+                relationName: "pur_purchaseorder_current",
+                columnName: "purchase_org_id",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_purchaseorder_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_receivebill_current",
+                columnName: "bill_date",
+                dataType: "date",
+              },
+              {
+                relationName: "pur_receivebill_current",
+                columnName: "purchase_org_id",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_receivebill_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "material_number",
+                dataType: "text",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "material_name",
+                dataType: "text",
+              },
+            ],
+          };
+        }
+        expect(String(sql)).toContain("sales_order_current");
+        expect(String(sql)).toContain("sales_delivery_notice_current");
+        expect(String(sql)).toContain("pur_purchaseorder_current");
+        expect(String(sql)).toContain("pur_receivebill_current");
+        expect(String(sql)).toContain("master_materials AS");
+        expect(String(sql)).toContain("FROM bd_material_current master");
+        expect(String(sql)).toContain("LEFT JOIN master_materials master");
+        expect(String(sql)).toContain('"sale_org_id" = ANY($1::text[])');
+        expect(String(sql)).toContain('"purchase_org_id" = ANY($1::text[])');
+        expect(String(sql)).toContain('"bill_date" >= $2::date');
+        expect(String(sql)).toContain('"bill_date" <= $3::date');
+        expect(String(sql)).toContain("ILIKE $4");
+        expect(params).toEqual([["1001"], "2026-01-01", "2026-03-31", "%原料%", 60]);
+        return {
+          rows: [
+            {
+              materialId: "M001",
+              materialCode: "MAT-001",
+              materialName: "原料 A",
+            },
+          ],
+        };
+      }
+    }
+
+    vi.doMock("pg", () => ({
+      default: {
+        Client: FakeClient,
+      },
+    }));
+
+    const { listSandboxMaterialCandidatesForDataSource } = await import(
+      "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs"
+    );
+    const result = await listSandboxMaterialCandidatesForDataSource(
+      {
+        sourceType: "kingdee_analytics",
+        dataSourceId: "ds-1",
+        dataSourceName: "分析账套",
+        connection: {
+          host: "db.material.internal",
+          database: "kingdee_catalog",
+          user: "kb_local",
+          password: "secret",
+        },
+      },
+      {
+        allowedOrgIds: ["1001"],
+        inputStartDate: "2026-01-01",
+        inputEndDate: "2026-03-31",
+        keyword: "原料",
+      },
+    );
+
+    expect(result).toEqual({
+      dataSourceId: "ds-1",
+      dataSourceName: "分析账套",
+      inputStartDate: "2026-01-01",
+      inputEndDate: "2026-03-31",
+      keyword: "原料",
+      items: [
+        {
+          materialId: "M001",
+          materialCode: "MAT-001",
+          materialName: "原料 A",
+        },
+      ],
+    });
+  });
+
+  it("lists sandbox material candidates when analytics tables expose document_json and material_number", async () => {
+    vi.resetModules();
+    class FakeClient {
+      async connect() {}
+      async end() {}
+      async query(sql, params) {
+        if (String(sql).includes("FROM information_schema.columns")) {
+          return {
+            rows: [
+              { relationName: "sales_order_current", columnName: "bill_date", dataType: "date" },
+              { relationName: "sales_order_current", columnName: "sale_org_id", dataType: "text" },
+              {
+                relationName: "sales_order_current",
+                columnName: "material_number",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_order_current",
+                columnName: "material_name",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "bill_date",
+                dataType: "date",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "sale_org_id",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "material_number",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "material_name",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_purchaseorder_current",
+                columnName: "document_json",
+                dataType: "jsonb",
+              },
+              {
+                relationName: "pur_receivebill_current",
+                columnName: "document_json",
+                dataType: "jsonb",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "source_object_id",
+                dataType: "text",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "document_json",
+                dataType: "jsonb",
+              },
+            ],
+          };
+        }
+        expect(String(sql)).toContain('base."material_number"');
+        expect(String(sql)).toContain('base."document_json" ->> \'FMaterialId\'');
+        expect(String(sql)).toContain('master."document_json" ->> \'FName\'');
+        expect(String(sql)).toContain('master."source_object_id"');
+        expect(params).toEqual([["1001"], "2026-01-01", "2026-03-31", "%纸杯%", 60]);
+        return {
+          rows: [
+            {
+              materialId: "3024662",
+              materialCode: "0001",
+              materialName: "加绒冬装工服XL",
+            },
+          ],
+        };
+      }
+    }
+
+    vi.doMock("pg", () => ({
+      default: {
+        Client: FakeClient,
+      },
+    }));
+
+    const { listSandboxMaterialCandidatesForDataSource } = await import(
+      "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs"
+    );
+    const result = await listSandboxMaterialCandidatesForDataSource(
+      {
+        sourceType: "kingdee_analytics",
+        dataSourceId: "ds-2",
+        dataSourceName: "真实账套",
+        connection: {
+          host: "db.material.internal",
+          database: "kingdee_catalog",
+          user: "kb_local",
+          password: "secret",
+        },
+      },
+      {
+        allowedOrgIds: ["1001"],
+        inputStartDate: "2026-01-01",
+        inputEndDate: "2026-03-31",
+        keyword: "纸杯",
+      },
+    );
+
+    expect(result).toEqual({
+      dataSourceId: "ds-2",
+      dataSourceName: "真实账套",
+      inputStartDate: "2026-01-01",
+      inputEndDate: "2026-03-31",
+      keyword: "纸杯",
+      items: [
+        {
+          materialId: "3024662",
+          materialCode: "0001",
+          materialName: "加绒冬装工服XL",
+        },
+      ],
+    });
+  });
+
+  it("deduplicates sandbox material candidates after joining material master rows", async () => {
+    vi.resetModules();
+    class FakeClient {
+      async connect() {}
+      async end() {}
+      async query(sql) {
+        if (String(sql).includes("FROM information_schema.columns")) {
+          return {
+            rows: [
+              { relationName: "sales_order_current", columnName: "bill_date", dataType: "date" },
+              { relationName: "sales_order_current", columnName: "sale_org_id", dataType: "text" },
+              { relationName: "sales_order_current", columnName: "material_id", dataType: "text" },
+              { relationName: "sales_order_current", columnName: "material_name", dataType: "text" },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "bill_date",
+                dataType: "date",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "sale_org_id",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "sales_delivery_notice_current",
+                columnName: "material_name",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_purchaseorder_current",
+                columnName: "bill_date",
+                dataType: "date",
+              },
+              {
+                relationName: "pur_purchaseorder_current",
+                columnName: "purchase_org_id",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_purchaseorder_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_receivebill_current",
+                columnName: "bill_date",
+                dataType: "date",
+              },
+              {
+                relationName: "pur_receivebill_current",
+                columnName: "purchase_org_id",
+                dataType: "text",
+              },
+              {
+                relationName: "pur_receivebill_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "material_id",
+                dataType: "text",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "material_number",
+                dataType: "text",
+              },
+              {
+                relationName: "bd_material_current",
+                columnName: "material_name",
+                dataType: "text",
+              },
+            ],
+          };
+        }
+        return {
+          rows: [
+            {
+              materialId: "10020095",
+              materialCode: "10020095",
+              materialName: "桂花乌龙",
+            },
+            {
+              materialId: "10020095",
+              materialCode: "10020095",
+              materialName: "桂花乌龙",
+            },
+            {
+              materialId: "10020096",
+              materialCode: "10020096",
+              materialName: "碧根果细碎（门店装）",
+            },
+          ],
+        };
+      }
+    }
+
+    vi.doMock("pg", () => ({
+      default: {
+        Client: FakeClient,
+      },
+    }));
+
+    const { listSandboxMaterialCandidatesForDataSource } = await import(
+      "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs"
+    );
+    const result = await listSandboxMaterialCandidatesForDataSource(
+      {
+        sourceType: "kingdee_analytics",
+        dataSourceId: "ds-3",
+        dataSourceName: "重复候选账套",
+        connection: {
+          host: "db.material.internal",
+          database: "kingdee_catalog",
+          user: "kb_local",
+          password: "secret",
+        },
+      },
+      {
+        allowedOrgIds: ["1001"],
+        inputStartDate: "2026-01-01",
+        inputEndDate: "2026-03-31",
+      },
+    );
+
+    expect(result.items).toEqual([
+      {
+        materialId: "10020095",
+        materialCode: "10020095",
+        materialName: "桂花乌龙",
+      },
+      {
+        materialId: "10020096",
+        materialCode: "10020096",
+        materialName: "碧根果细碎（门店装）",
+      },
+    ]);
   });
 
   it("creates a bootstrap platform admin and a tenant with an admin", () => {
@@ -2098,6 +4358,48 @@ describe("tenant platform database foundation", () => {
         "{\"type\":\"assistant\"}\n",
         "utf8",
       );
+      const baseAgentRuntimeDir = path.join(
+        sandbox.config.configDir,
+        "agents",
+        "finance",
+        "agent",
+      );
+      fs.mkdirSync(baseAgentRuntimeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(baseAgentRuntimeDir, "models.json"),
+        JSON.stringify(
+          {
+            providers: {
+              gpt: {
+                baseUrl: "https://api.cleannetworkspace.online/v1",
+                api: "openai-completions",
+                models: [{ id: "gpt-5.4", name: "gpt-5.4" }],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseAgentRuntimeDir, "auth-profiles.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            profiles: {
+              "gpt:default": {
+                type: "api_key",
+                provider: "gpt",
+                apiKey: "test-gpt-key",
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
 
       createBootstrapPlatformAdmin(db, {
         username: "platform-root",
@@ -2153,6 +4455,12 @@ describe("tenant platform database foundation", () => {
       expect(fs.readFileSync(path.join(derivedWorkspace, "MEMORY.md"), "utf8")).toContain(
         "母 Agent 记忆",
       );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "MEMORY.md"), "utf8")).toContain(
+        "零侵入采购查询提示",
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "MEMORY.md"), "utf8")).toContain(
+        "relation_name",
+      );
       expect(
         fs.readFileSync(path.join(derivedWorkspace, "memory", "tenant-policy.md"), "utf8"),
       ).toContain("成员首次分配后应继承");
@@ -2160,6 +4468,24 @@ describe("tenant platform database foundation", () => {
         "skills should be available",
       );
       expect(fs.existsSync(path.join(derivedWorkspace, "sessions", "old.jsonl"))).toBe(false);
+      const derivedAgentRuntimeDir = path.join(
+        sandbox.config.configDir,
+        "agents",
+        String(assignment.derivedAgentId),
+        "agent",
+      );
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "models.json"), "utf8"),
+      ).toContain("\"gpt-5.4\"");
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "models.json"), "utf8"),
+      ).not.toContain("\"glm-5\"");
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "auth-profiles.json"), "utf8"),
+      ).toContain("\"gpt:default\"");
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "auth-profiles.json"), "utf8"),
+      ).not.toContain("\"volcengine:default\"");
 
       const agents = listAssignedAgentsForUser(
         db,
@@ -2220,6 +4546,206 @@ describe("tenant platform database foundation", () => {
           .filter((item) => item.visualizationType === "html")
           .every((item) => item.visualizationFileName.endsWith("_index.html")),
       ).toBe(true);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("syncs tenant-bound data access into derived agent runtime without leaking secrets into workspace files", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "kingdee-analytics-ops", "scripts"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "kingdee-analytics-ops", "scripts", "_bridge_client.py"),
+        "# original bridge placeholder\n",
+        "utf8",
+      );
+      const baseAgentRuntimeDir = path.join(sandbox.config.configDir, "agents", "finance", "agent");
+      fs.mkdirSync(baseAgentRuntimeDir, { recursive: true });
+
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "tenant-sync",
+        name: "租户 Sync",
+        adminUsername: "tenant-sync-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "tenant-sync-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-sync",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      const derivedRuntimeDir = path.join(
+        sandbox.config.configDir,
+        "agents",
+        String(assignment.derivedAgentId),
+        "agent",
+      );
+      const runtimeAccessPath = path.join(derivedRuntimeDir, "tenant-data-access.json");
+      expect(fs.existsSync(runtimeAccessPath)).toBe(false);
+
+      const dataSource = upsertDataSource(db, {
+        code: "tenant-sync-source",
+        name: "绑定账套",
+        sourceType: "kingdee_analytics",
+        connection: {
+          host: "host.docker.internal",
+          port: 65432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "kb_local123!",
+        },
+      });
+      setTenantDataSourceBinding(db, {
+        tenantId: tenant.id,
+        dataSourceId: dataSource.id,
+        boundByUserId: platformAdmin?.id,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      expect(fs.existsSync(runtimeAccessPath)).toBe(false);
+
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "custom",
+        createdByUserId: tenantAdmin?.id,
+        orgScopes: [
+          {
+            orgId: "100050",
+            orgNameSnapshot: "国潮信息科技（东台）有限公司",
+          },
+          {
+            orgId: "100051",
+            orgNameSnapshot: "华东事业部",
+          },
+        ],
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      expect(fs.existsSync(runtimeAccessPath)).toBe(true);
+      const runtimeAccess = JSON.parse(fs.readFileSync(runtimeAccessPath, "utf8"));
+      expect(runtimeAccess).toMatchObject({
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        sourceType: "kingdee_analytics",
+        scopeMode: "custom",
+        allowedOrgIds: ["100050", "100051"],
+        connection: {
+          host: "host.docker.internal",
+          port: 65432,
+          database: "kingdee_analytics",
+          user: "kb_local",
+          password: "kb_local123!",
+        },
+      });
+
+      const patchedBridge = fs.readFileSync(
+        path.join(
+          derivedWorkspace,
+          "skills",
+          "kingdee-analytics-ops",
+          "scripts",
+          "_bridge_client.py",
+        ),
+        "utf8",
+      );
+      expect(patchedBridge).toContain("tenant-data-access.json");
+      expect(
+        fs.existsSync(
+          path.join(
+            derivedWorkspace,
+            "skills",
+            "kingdee-analytics-ops",
+            "scripts",
+            "tenant_local_pg_bridge.mjs",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        fs.existsSync(
+          path.join(
+            derivedWorkspace,
+            "skills",
+            "kingdee-analytics-ops",
+            "scripts",
+            "local_sync_engine.py",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "kingdee-analytics-ops", "SKILL.md"), "utf8"),
+      ).toContain("本地 fallback");
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "kingdee-analytics-ops", "SKILL.md"), "utf8"),
+      ).toContain("sync-supply-chain");
+
+      const workspaceJsonFiles = [];
+      const walk = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const nextPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            walk(nextPath);
+          } else if (entry.name.endsWith(".json")) {
+            workspaceJsonFiles.push(nextPath);
+          }
+        }
+      };
+      walk(derivedWorkspace);
+      expect(
+        workspaceJsonFiles.some((filePath) =>
+          fs.readFileSync(filePath, "utf8").includes("kb_local123!"),
+        ),
+      ).toBe(false);
+
+      setTenantMemberOrgScope(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        dataSourceId: dataSource.id,
+        scopeMode: "all",
+        createdByUserId: tenantAdmin?.id,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const updatedRuntimeAccess = JSON.parse(fs.readFileSync(runtimeAccessPath, "utf8"));
+      expect(updatedRuntimeAccess.scopeMode).toBe("all");
+      expect(updatedRuntimeAccess.allowedOrgIds).toBeNull();
     } finally {
       closeTenantPlatformDb(db);
     }
@@ -2489,6 +5015,88 @@ describe("tenant platform database foundation", () => {
         configDir: sandbox.config.configDir,
       });
       const derivedAgentId = String(assignment.derivedAgentId || "");
+      const derivedAgentRuntimeDir = path.join(
+        sandbox.config.configDir,
+        "agents",
+        derivedAgentId,
+        "agent",
+      );
+      fs.mkdirSync(derivedAgentRuntimeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(derivedAgentRuntimeDir, "models.json"),
+        JSON.stringify(
+          {
+            providers: {
+              zai: {
+                models: [{ id: "glm-5", name: "GLM-5" }],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(derivedAgentRuntimeDir, "auth-profiles.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            profiles: {
+              "volcengine:default": {
+                type: "api_key",
+                provider: "volcengine",
+                apiKey: "legacy-volc-key",
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      const baseAgentRuntimeDir = path.join(
+        sandbox.config.configDir,
+        "agents",
+        "finance",
+        "agent",
+      );
+      fs.mkdirSync(baseAgentRuntimeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(baseAgentRuntimeDir, "models.json"),
+        JSON.stringify(
+          {
+            providers: {
+              gpt: {
+                baseUrl: "https://api.cleannetworkspace.online/v1",
+                api: "openai-completions",
+                models: [{ id: "gpt-5.4", name: "gpt-5.4" }],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseAgentRuntimeDir, "auth-profiles.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            profiles: {
+              "gpt:default": {
+                type: "api_key",
+                provider: "gpt",
+                apiKey: "healed-gpt-key",
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
 
       writeExecApprovals(sandbox, {
         version: 1,
@@ -2547,6 +5155,18 @@ describe("tenant platform database foundation", () => {
       expect(
         derivedBucket.allowlist.map((entry) => entry.pattern).toSorted(),
       ).toEqual(["/usr/bin/cat", "/usr/bin/head", "=command:shared"].toSorted());
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "models.json"), "utf8"),
+      ).toContain("\"gpt-5.4\"");
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "models.json"), "utf8"),
+      ).not.toContain("\"glm-5\"");
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "auth-profiles.json"), "utf8"),
+      ).toContain("\"gpt:default\"");
+      expect(
+        fs.readFileSync(path.join(derivedAgentRuntimeDir, "auth-profiles.json"), "utf8"),
+      ).not.toContain("\"volcengine:default\"");
     } finally {
       closeTenantPlatformDb(db);
     }

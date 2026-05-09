@@ -48,7 +48,7 @@ describe("sandbox view public bootstrap", () => {
     const secondPass = injectSandboxViewPublicBootstrap(firstPass);
 
     expect(firstPass).toContain("data-openclaw-sandbox-view-bootstrap");
-    expect(firstPass).toContain("./assets/runtime/sandbox-view/preboot.js");
+    expect(firstPass).toContain("/assets/runtime/sandbox-view/preboot.js");
     expect(secondPass.match(/data-openclaw-sandbox-view-bootstrap/g)).toHaveLength(1);
   });
 });

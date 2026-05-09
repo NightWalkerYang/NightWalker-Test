@@ -356,6 +356,7 @@ describe("tenant surface", () => {
         userId: "member-1",
         dataSourceId: "ds-1",
         scopeMode: "none",
+        sandboxEnabled: false,
         orgScopeCount: 0,
         orgScopes: [],
       },
@@ -400,6 +401,7 @@ describe("tenant surface", () => {
             userId: body.userId,
             dataSourceId: "ds-1",
             scopeMode: body.scopeMode,
+            sandboxEnabled: Boolean(body.sandboxEnabled),
             orgScopeCount: nextOrgIds.length,
             orgScopes: state.orgs
               .filter((org) => nextOrgIds.includes(org.orgId))
@@ -414,6 +416,7 @@ describe("tenant surface", () => {
                   ...member,
                   orgScopeMode: body.scopeMode,
                   orgScopeCount: nextOrgIds.length,
+                  sandboxEnabled: body.sandboxEnabled ? 1 : 0,
                   boundDataSourceName: state.binding.dataSourceName,
                 }
               : member,
@@ -446,14 +449,22 @@ describe("tenant surface", () => {
     const noneRadio = document.querySelector("[data-tenant-member-org-scope-mode='none']");
     const customRadio = document.querySelector("[data-tenant-member-org-scope-mode='custom']");
     const allRadio = document.querySelector("[data-tenant-member-org-scope-mode='all']");
+    const sandboxCheckbox = document.querySelector("[data-tenant-member-sandbox-enabled]");
     expect(noneRadio).not.toBeNull();
     expect(customRadio).not.toBeNull();
     expect(allRadio).not.toBeNull();
+    expect(sandboxCheckbox).not.toBeNull();
     expect(noneRadio instanceof HTMLInputElement ? noneRadio.checked : false).toBe(true);
+    expect(sandboxCheckbox instanceof HTMLInputElement ? sandboxCheckbox.checked : true).toBe(false);
 
     if (customRadio instanceof HTMLInputElement) {
       customRadio.checked = true;
       customRadio.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    const refreshedSandboxCheckbox = document.querySelector("[data-tenant-member-sandbox-enabled]");
+    if (refreshedSandboxCheckbox instanceof HTMLInputElement) {
+      refreshedSandboxCheckbox.checked = true;
+      refreshedSandboxCheckbox.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
     }
     await flush();
 
@@ -521,6 +532,7 @@ describe("tenant surface", () => {
       {
         userId: "member-1",
         scopeMode: "custom",
+        sandboxEnabled: true,
         orgIds: ["1001"],
       },
     ]);
@@ -530,6 +542,9 @@ describe("tenant surface", () => {
     );
     expect(document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")?.textContent).toContain(
       "1 个组织",
+    );
+    expect(document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")?.textContent).toContain(
+      "已启用",
     );
   });
 
@@ -686,6 +701,7 @@ describe("tenant surface", () => {
       {
         userId: "member-1",
         scopeMode: "custom",
+        sandboxEnabled: false,
         orgIds: ["1002"],
       },
     ]);
@@ -839,6 +855,7 @@ describe("tenant surface", () => {
       {
         userId: "member-1",
         scopeMode: "custom",
+        sandboxEnabled: false,
         orgIds: ["1001"],
       },
     ]);

@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS tenant_member_source_policies (
   user_id TEXT NOT NULL,
   data_source_id TEXT NOT NULL,
   scope_mode TEXT NOT NULL,
+  sandbox_enabled INTEGER NOT NULL DEFAULT 0,
   created_by_user_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

@@ -19,6 +19,12 @@ const tenantPlatformRuntimeNodeModulesHostMount =
   "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules";
 const tenantPlatformRuntimeNodeModulesContainerPath =
   "/app/tools/openclaw-control-ui-echarts/node_modules";
+const tenantPlatformRuntimePythonHostMount =
+  "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages";
+const tenantPlatformRuntimePythonContainerPath =
+  "/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages";
+const sandboxSimulationStarterHostMount =
+  "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro";
 const tenantPlatformRuntimePackageSpecs = Object.freeze(["pg@8.20.0"]);
 const overridePath = path.join(repoRoot, "docker-compose.override.yml");
 const envFilePath = path.join(repoRoot, ".env");
@@ -139,8 +145,30 @@ export function buildTenantPlatformExtraDependencySpecs() {
   return [...tenantPlatformRuntimePackageSpecs];
 }
 
+export function buildTenantPlatformPythonRuntimeDockerArgs(
+  repoRootPath = repoRoot,
+  imageRef = "openclaw:local",
+) {
+  const normalizedRepoRoot = String(repoRootPath || repoRoot).replace(/\\/g, "/");
+  return [
+    "run",
+    "--rm",
+    "-u",
+    "0",
+    "-v",
+    `${normalizedRepoRoot}:/work`,
+    "-w",
+    "/work",
+    imageRef,
+    "sh",
+    "-lc",
+    "python3 -m pip --version >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip python3-venv build-essential); python3 -m pip install --break-system-packages --no-cache-dir --prefer-binary --target /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages -r /work/tools/openclaw-sandbox-simulation-starter/requirements.txt",
+  ];
+}
+
 function ensureTenantPlatformRuntimeDir() {
   fs.mkdirSync(tenantPlatformRuntimeDir, { recursive: true });
+  fs.mkdirSync(path.join(tenantPlatformRuntimeDir, "python-packages"), { recursive: true });
   fs.writeFileSync(
     path.join(tenantPlatformRuntimeDir, "package.json"),
     `${JSON.stringify(
@@ -192,6 +220,34 @@ function stageTenantPlatformRuntimeDependencies() {
   );
 }
 
+function stageTenantPlatformPythonRuntimeDependencies() {
+  ensureTenantPlatformRuntimeDir();
+  const pythonPackagesDir = path.join(tenantPlatformRuntimeDir, "python-packages");
+  fs.rmSync(pythonPackagesDir, { recursive: true, force: true });
+  fs.mkdirSync(pythonPackagesDir, { recursive: true });
+  const requirementsPath = path.join(
+    repoRoot,
+    "tools",
+    "openclaw-sandbox-simulation-starter",
+    "requirements.txt",
+  );
+  ensureFileExists(requirementsPath, "Sandbox simulation Python requirements");
+  const result = spawnSync(
+    dockerCommand,
+    buildTenantPlatformPythonRuntimeDockerArgs(repoRoot, process.env.OPENCLAW_IMAGE || "openclaw:local"),
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    },
+  );
+  if (result.error) {
+    throw new Error(`Failed to install tenant platform Python runtime dependencies: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error("Failed to install tenant platform Python runtime dependencies.");
+  }
+}
+
 export function buildOverrideContent(extraMounts) {
   const lines = [
     GENERATED_MARKER,
@@ -230,12 +286,15 @@ export function buildOverrideContent(extraMounts) {
     "      OPENCLAW_TENANT_PLATFORM_LICENSE_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PATH:-}",
     "      OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY:-}",
     "      OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH:-}",
+    "      PYTHONPATH: /app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages",
     "      TZ: ${OPENCLAW_TZ:-UTC}",
     "    volumes:",
     "      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw",
     "      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace:ro",
     "      - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro",
+    `      - ${sandboxSimulationStarterHostMount}`,
     `      - ${tenantPlatformRuntimeNodeModulesHostMount}:${tenantPlatformRuntimeNodeModulesContainerPath}:ro`,
+    `      - ${tenantPlatformRuntimePythonHostMount}:${tenantPlatformRuntimePythonContainerPath}:ro`,
     "    command:",
     "      [",
     "        \"node\",",
@@ -655,6 +714,7 @@ function runTargetedComposeUp() {
 function main() {
   buildCustomControlUi();
   stageTenantPlatformRuntimeDependencies();
+  stageTenantPlatformPythonRuntimeDependencies();
   const extraMounts = writeRootOverride();
   syncPortableBaselineConfig();
   syncGatewayControlUiRoot();

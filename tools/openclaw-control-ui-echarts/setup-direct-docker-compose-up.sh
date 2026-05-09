@@ -14,6 +14,8 @@ OFFLINE_BUNDLED_USERSCRIPT="$ROOT_DIR/tools/openclaw-echarts-userscript/openclaw
 TENANT_PLATFORM_RUNTIME_DIR="$TOOL_DIR/generated/tenant-platform-runtime"
 TENANT_PLATFORM_RUNTIME_NODE_MODULES_DIR="$TENANT_PLATFORM_RUNTIME_DIR/node_modules"
 TENANT_PLATFORM_RUNTIME_NODE_MODULES_MOUNT="./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules:/app/tools/openclaw-control-ui-echarts/node_modules:ro"
+TENANT_PLATFORM_RUNTIME_PYTHON_DIR="$TENANT_PLATFORM_RUNTIME_DIR/python-packages"
+TENANT_PLATFORM_RUNTIME_PYTHON_MOUNT="./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:ro"
 OVERRIDE_PATH="$ROOT_DIR/docker-compose.override.yml"
 ENV_FILE="$ROOT_DIR/.env"
 TENANT_PLATFORM_RUNTIME_EXTRA_PACKAGES=(
@@ -423,6 +425,37 @@ EOF
     fail "Failed to stage tenant platform runtime pg dependency."
 }
 
+build_tenant_platform_python_runtime_docker_args() {
+  local normalized_root
+  local image_ref
+  normalized_root="${ROOT_DIR//\\//}"
+  image_ref="${OPENCLAW_IMAGE:-openclaw:local}"
+
+  printf '%s\n' \
+    run \
+    --rm \
+    -u \
+    0 \
+    -v \
+    "$normalized_root:/work" \
+    -w \
+    /work \
+    "$image_ref" \
+    sh \
+    -lc \
+    "python3 -m pip --version >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip python3-venv build-essential); python3 -m pip install --break-system-packages --no-cache-dir --prefer-binary --target /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages -r /work/tools/openclaw-sandbox-simulation-starter/requirements.txt"
+}
+
+stage_tenant_platform_python_runtime_dependencies() {
+  rm -rf "$TENANT_PLATFORM_RUNTIME_PYTHON_DIR"
+  mkdir -p "$TENANT_PLATFORM_RUNTIME_PYTHON_DIR"
+  require_file "$ROOT_DIR/tools/openclaw-sandbox-simulation-starter/requirements.txt" "Sandbox simulation Python requirements"
+
+  local docker_args=()
+  mapfile -t docker_args < <(build_tenant_platform_python_runtime_docker_args)
+  "$DOCKER_BIN" "${docker_args[@]}"
+}
+
 write_override() {
   if [[ -f "$OVERRIDE_PATH" ]]; then
     if ! grep -Fq "$GENERATED_MARKER" "$OVERRIDE_PATH" && \
@@ -469,14 +502,17 @@ EOF
       OPENCLAW_TENANT_PLATFORM_LICENSE_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PATH:-}
       OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY:-}
       OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH:-}
+      PYTHONPATH: /app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace:ro
       - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro
+      - ./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro
 EOF
 
   printf '      - %s\n' "$TENANT_PLATFORM_RUNTIME_NODE_MODULES_MOUNT" >>"$OVERRIDE_PATH"
+  printf '      - %s\n' "$TENANT_PLATFORM_RUNTIME_PYTHON_MOUNT" >>"$OVERRIDE_PATH"
 
   cat >>"$OVERRIDE_PATH" <<'EOF'
     command:
@@ -525,6 +561,14 @@ EOF
   fi
 }
 
+run_gateway_config_via_compose() {
+  (
+    cd "$ROOT_DIR" || exit 1
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+      "$DOCKER_BIN" compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js "$@"
+  )
+}
+
 # Run config CLI against the gateway image directly so setup does not depend on
 # the long-lived openclaw-cli service sharing a running gateway namespace.
 sync_gateway_control_ui_root() {
@@ -536,11 +580,11 @@ sync_gateway_control_ui_root() {
     printf '%s\n' "WARN: docker compose is not available in repo root; skip syncing gateway.controlUi.root." >&2
     return 0
   fi
-  if cd "$ROOT_DIR" && "$DOCKER_BIN" compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.root /app/dist/control-ui >/dev/null 2>&1; then
+  if run_gateway_config_via_compose config set gateway.controlUi.root /app/dist/control-ui >/dev/null 2>&1; then
     printf '%s\n' "Synced gateway.controlUi.root=/app/dist/control-ui"
   else
     printf '%s\n' "WARN: failed to sync gateway.controlUi.root automatically; run this manually:" >&2
-    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.root /app/dist/control-ui" >&2
+    printf '%s\n' "  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.root /app/dist/control-ui" >&2
   fi
 }
 
@@ -559,17 +603,17 @@ sync_control_ui_allowed_origins() {
   local merged_json=""
   port="$(resolve_gateway_port)"
   current_allowed_json="$(
-    cd "$ROOT_DIR" && "$DOCKER_BIN" compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js \
+    run_gateway_config_via_compose \
       config get gateway.controlUi.allowedOrigins --json 2>/dev/null || true
   )"
   current_allowed_json="$(trim_whitespace "$current_allowed_json")"
   merged_json="$(merge_control_ui_allowed_origins_json "$port" "$current_allowed_json")"
 
-  if cd "$ROOT_DIR" && "$DOCKER_BIN" compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.allowedOrigins "$merged_json" --strict-json >/dev/null 2>&1; then
+  if run_gateway_config_via_compose config set gateway.controlUi.allowedOrigins "$merged_json" --strict-json >/dev/null 2>&1; then
     printf '%s\n' "Synced gateway.controlUi.allowedOrigins=$merged_json"
   else
     printf '%s\n' "WARN: failed to sync gateway.controlUi.allowedOrigins automatically; run this manually:" >&2
-    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.allowedOrigins '$merged_json' --strict-json" >&2
+    printf '%s\n' "  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.allowedOrigins '$merged_json' --strict-json" >&2
   fi
 }
 
@@ -583,11 +627,11 @@ sync_control_ui_host_header_origin_fallback_disabled() {
     return 0
   fi
 
-  if cd "$ROOT_DIR" && "$DOCKER_BIN" compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false --strict-json >/dev/null 2>&1; then
+  if run_gateway_config_via_compose config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false --strict-json >/dev/null 2>&1; then
     printf '%s\n' "Synced gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=false"
   else
     printf '%s\n' "WARN: failed to disable gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback automatically; run this manually:" >&2
-    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false --strict-json" >&2
+    printf '%s\n' "  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false --strict-json" >&2
   fi
 }
 
@@ -601,11 +645,11 @@ sync_control_ui_device_auth_bypass() {
     return 0
   fi
 
-  if cd "$ROOT_DIR" && "$DOCKER_BIN" compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyDisableDeviceAuth true --strict-json >/dev/null 2>&1; then
+  if run_gateway_config_via_compose config set gateway.controlUi.dangerouslyDisableDeviceAuth true --strict-json >/dev/null 2>&1; then
     printf '%s\n' "Synced gateway.controlUi.dangerouslyDisableDeviceAuth=true"
   else
     printf '%s\n' "WARN: failed to sync gateway.controlUi.dangerouslyDisableDeviceAuth automatically; run this manually:" >&2
-    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyDisableDeviceAuth true --strict-json" >&2
+    printf '%s\n' "  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.dangerouslyDisableDeviceAuth true --strict-json" >&2
   fi
 }
 
@@ -632,11 +676,11 @@ sync_portable_baseline_config() {
   batch_json="$(trim_whitespace "$batch_json")"
   [[ -n "$batch_json" ]] || return 0
 
-  if cd "$ROOT_DIR" && "$DOCKER_BIN" compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json "$batch_json" >/dev/null 2>&1; then
+  if run_gateway_config_via_compose config set --batch-json "$batch_json" >/dev/null 2>&1; then
     printf '%s\n' "Synced portable baseline config from openclaw.local.example.json5"
   else
     printf '%s\n' "WARN: failed to sync portable baseline config automatically; run this manually:" >&2
-    printf '%s\n' "  docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json '<portable batch JSON>'" >&2
+    printf '%s\n' "  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json '<portable batch JSON>'" >&2
   fi
 }
 
@@ -938,6 +982,7 @@ main() {
   create_login_route_entry "$OUTPUT_DIR/index.html"
   create_echarts_view_route_entry "$OUTPUT_DIR"
   stage_tenant_platform_runtime_dependencies
+  stage_tenant_platform_python_runtime_dependencies
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
   sync_portable_baseline_config

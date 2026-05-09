@@ -180,12 +180,53 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/branding.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/_bridge_client.py`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/SKILL.md`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/local_sync_engine.py`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/manage_analytics_db.py`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/tenant_local_pg_bridge.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/sandbox-runner.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
+
+### Tooling: Sandbox Simulation Starter
+
+- `tools/openclaw-sandbox-simulation-starter/README.md`
+- `tools/openclaw-sandbox-simulation-starter/requirements.txt`
+- `tools/openclaw-sandbox-simulation-starter/python/generate_sandbox_payload.py`
+- `tools/openclaw-sandbox-simulation-starter/python/run_sandbox_simulation.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/__init__.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/dataset.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/neo4j_projection.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/predict_runtime.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/procurement.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/refresh_features.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/sandbox_payload.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/training.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/__init__.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/db.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/errors.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/jwt_verify.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/logging.py`
+- `tools/openclaw-sandbox-simulation-starter/sql/01_schema_and_views.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/02_features.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/03_scenario_run.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/04_seed_templates.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/99_refresh.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/feature_material_monthly.sql`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_d1_views.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_d2_features.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_d3_scenario_tables.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_dataset.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_predict_runtime.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_procurement.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_run_sandbox_simulation.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_sandbox_payload.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_training.py`
 
 ### Static Pages
 

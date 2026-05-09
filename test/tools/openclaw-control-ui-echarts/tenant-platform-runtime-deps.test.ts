@@ -9,6 +9,7 @@ import {
 import {
   buildOverrideContent,
   buildTenantPlatformExtraDependencySpecs,
+  buildTenantPlatformPythonRuntimeDockerArgs,
 } from "../../../tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs";
 
 describe("tenant platform runtime deps", () => {
@@ -41,5 +42,35 @@ describe("tenant platform runtime deps", () => {
     expect(override).toContain(
       "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules:/app/tools/openclaw-control-ui-echarts/node_modules:ro",
     );
+    expect(override).toContain(
+      "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro",
+    );
+    expect(override).toContain(
+      "PYTHONPATH: /app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages",
+    );
+    expect(override).toContain(
+      "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:ro",
+    );
+  });
+
+  it("stages sandbox python deps through a linux python container", () => {
+    const args = buildTenantPlatformPythonRuntimeDockerArgs(
+      "E:/Code/work/open-claw",
+      "openclaw:local",
+    );
+    expect(args).toEqual([
+      "run",
+      "--rm",
+      "-u",
+      "0",
+      "-v",
+      "E:/Code/work/open-claw:/work",
+      "-w",
+      "/work",
+      "openclaw:local",
+      "sh",
+      "-lc",
+      "python3 -m pip --version >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip python3-venv build-essential); python3 -m pip install --break-system-packages --no-cache-dir --prefer-binary --target /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages -r /work/tools/openclaw-sandbox-simulation-starter/requirements.txt",
+    ]);
   });
 });

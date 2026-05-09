@@ -29,6 +29,26 @@ const DERIVED_AGENT_TEMPLATE_ENTRIES = [
   "skills",
 ];
 const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
+const DERIVED_AGENT_PATCH_ROOT = new URL("./derived-agent/", import.meta.url);
+const TENANT_DATA_ACCESS_RUNTIME_FILE = "tenant-data-access.json";
+const DERIVED_AGENT_ANALYTICS_MEMORY_HINT = [
+  "## 零侵入采购查询提示",
+  "- 当前 kingdee_analytics 库里的表级字典 analytics_table_dictionary 使用的是：",
+  "  - relation_name",
+  "  - relation_kind",
+  "  - object_code",
+  "  - storage_role",
+  "  - business_grain",
+  "  - description",
+  "- 不要假设它存在 table_name、subject_area、table_comment 这些列，查采购对象时先按现有字典字段检索。",
+  "- 采购域先优先检查：",
+  "  - analytics_table_dictionary",
+  "  - analytics_column_dictionary",
+  "  - sync_object_registry",
+  "  - 采购相关 *_current 表",
+  "- 如果用户要“采购订单”或“采购数据”，不要先猜 pur_order_current；先查真实存在的采购对象表名，例如 pur_purchaseorder_current、以及面向沙盒推演的 ods_purchase_order。",
+  "- 如果查表时报的是 SQL/表不存在错误，要把真实错误返回出来，不要把它误判成数据库凭据问题。",
+].join("\n");
 const ZERO_INTRUSIVE_MODEL_COST_FALLBACKS = {
   // OpenAI official GPT-5.4 pricing per 1M text tokens. Only used when the
   // runtime config exposes zero pricing and the session store has no positive
@@ -439,6 +459,7 @@ function ensureDataSourceSchemaCompatibility(db) {
        user_id TEXT NOT NULL,
        data_source_id TEXT NOT NULL,
        scope_mode TEXT NOT NULL,
+       sandbox_enabled INTEGER NOT NULL DEFAULT 0,
        created_by_user_id TEXT,
        created_at TEXT NOT NULL,
        updated_at TEXT NOT NULL,
@@ -449,6 +470,18 @@ function ensureDataSourceSchemaCompatibility(db) {
        FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
      );`,
   );
+  const tenantMemberSourcePolicyColumns = db
+    .prepare("PRAGMA table_info(tenant_member_source_policies)")
+    .all();
+  if (
+    !tenantMemberSourcePolicyColumns.some(
+      (column) => String(column?.name || "").trim() === "sandbox_enabled",
+    )
+  ) {
+    db.exec(
+      "ALTER TABLE tenant_member_source_policies ADD COLUMN sandbox_enabled INTEGER NOT NULL DEFAULT 0;",
+    );
+  }
   db.exec(
     `CREATE TABLE IF NOT EXISTS tenant_member_org_scopes (
        id TEXT PRIMARY KEY,
@@ -1382,6 +1415,252 @@ function syncDerivedAgentExecApprovals(params = {}) {
   return writeExecApprovalsFile(filePath, next);
 }
 
+function resolveAgentRuntimeDir(agentId, params = {}) {
+  const normalizedAgentId = String(agentId || "").trim();
+  if (!normalizedAgentId) {
+    return "";
+  }
+  return path.join(resolveConfigDir(params), "agents", normalizedAgentId, "agent");
+}
+
+function cloneJsonValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function resolveConfiguredModelProviders(params = {}) {
+  const configPayload = parseOpenClawConfig(resolveConfigPath(params));
+  const providers =
+    configPayload?.models?.providers &&
+    typeof configPayload.models.providers === "object" &&
+    !Array.isArray(configPayload.models.providers)
+      ? configPayload.models.providers
+      : null;
+  if (!providers || Object.keys(providers).length === 0) {
+    return null;
+  }
+  return cloneJsonValue(providers);
+}
+
+function buildDerivedAgentModelsPayload(params = {}) {
+  const providers = resolveConfiguredModelProviders(params);
+  if (!providers) {
+    return null;
+  }
+  return { providers };
+}
+
+function buildDerivedAgentAuthProfilesPayload(params = {}) {
+  const providers = resolveConfiguredModelProviders(params);
+  if (!providers) {
+    return null;
+  }
+  const profiles = {};
+  for (const [providerId, providerConfig] of Object.entries(providers)) {
+    const apiKey = String(providerConfig?.apiKey || "").trim();
+    if (!apiKey) {
+      continue;
+    }
+    profiles[`${providerId}:default`] = {
+      type: "api_key",
+      provider: providerId,
+      apiKey,
+      key: apiKey,
+    };
+  }
+  return {
+    version: 1,
+    profiles,
+  };
+}
+
+function writeJsonFileIfChanged(filePath, payload) {
+  const nextBuffer = Buffer.from(JSON.stringify(payload, null, 2), "utf8");
+  if (fs.existsSync(filePath)) {
+    const currentBuffer = fs.readFileSync(filePath);
+    if (Buffer.compare(currentBuffer, nextBuffer) === 0) {
+      return false;
+    }
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, nextBuffer);
+  return true;
+}
+
+function patchDerivedAgentWorkspaceFiles(params = {}) {
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!derivedAgentId) {
+    return false;
+  }
+  const configDir = resolveConfigDir(params);
+  const workspace = {
+    canonicalWorkspace: path.join(configDir, "workspace-agents", derivedAgentId),
+    runtimeWorkspace: path.join(configDir, `workspace-${derivedAgentId}`),
+  };
+  if (!fs.existsSync(workspace.canonicalWorkspace) && !fs.existsSync(workspace.runtimeWorkspace)) {
+    return false;
+  }
+  const patchRootPath = fileURLToPath(DERIVED_AGENT_PATCH_ROOT);
+  if (!fs.existsSync(patchRootPath)) {
+    return false;
+  }
+
+  let changed = false;
+  const skillPatchRoot = path.join(patchRootPath, "kingdee-analytics-ops");
+  if (!fs.existsSync(skillPatchRoot)) {
+    return false;
+  }
+
+  const workspaceSkillRoots = [
+    path.join(workspace.canonicalWorkspace, "skills", "kingdee-analytics-ops"),
+    path.join(workspace.runtimeWorkspace, "skills", "kingdee-analytics-ops"),
+  ];
+  changed = appendDerivedAgentMemoryHint(workspace.canonicalWorkspace) || changed;
+  changed = appendDerivedAgentMemoryHint(workspace.runtimeWorkspace) || changed;
+  for (const skillRoot of workspaceSkillRoots) {
+    if (!fs.existsSync(skillRoot)) {
+      continue;
+    }
+    const skillDocSourcePath = path.join(skillPatchRoot, "SKILL.md");
+    if (fs.existsSync(skillDocSourcePath)) {
+      const skillDocTargetPath = path.join(skillRoot, "SKILL.md");
+      const nextContent = fs.readFileSync(skillDocSourcePath);
+      const currentContent = fs.existsSync(skillDocTargetPath) ? fs.readFileSync(skillDocTargetPath) : null;
+      if (!currentContent || Buffer.compare(currentContent, nextContent) !== 0) {
+        fs.writeFileSync(skillDocTargetPath, nextContent);
+        changed = true;
+      }
+    }
+    for (const fileName of ["_bridge_client.py", "tenant_local_pg_bridge.mjs", "local_sync_engine.py", "manage_analytics_db.py"]) {
+      const sourcePath = path.join(skillPatchRoot, fileName);
+      if (!fs.existsSync(sourcePath)) {
+        continue;
+      }
+      const targetPath = path.join(skillRoot, "scripts", fileName);
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      const nextContent = fs.readFileSync(sourcePath);
+      const currentContent = fs.existsSync(targetPath) ? fs.readFileSync(targetPath) : null;
+      if (currentContent && Buffer.compare(currentContent, nextContent) === 0) {
+        continue;
+      }
+      fs.writeFileSync(targetPath, nextContent);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function buildTenantDataAccessRuntimePayload(db, params = {}) {
+  try {
+    const context = resolveMemberDataAccessContext(db, {
+      tenantId: params.tenantId,
+      userId: params.userId,
+    });
+    return {
+      version: 1,
+      tenantId: context.tenantId,
+      userId: context.userId,
+      dataSourceId: context.dataSourceId,
+      sourceType: context.sourceType,
+      connection: context.connection,
+      scopeMode: context.scopeMode,
+      allowedOrgIds: Array.isArray(context.allowedOrgIds) ? context.allowedOrgIds : null,
+      updatedAt: nowIso(),
+    };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      [
+        "tenant_data_source_unbound",
+        "member_org_scope_empty",
+        "data_source_not_found",
+        "member_not_found",
+      ].includes(error.message)
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function syncTenantDerivedAgentDataAccessRuntime(db, params = {}) {
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!derivedAgentId) {
+    return false;
+  }
+  const derivedAgentRuntimeDir = resolveAgentRuntimeDir(derivedAgentId, params);
+  if (!derivedAgentRuntimeDir) {
+    return false;
+  }
+  fs.mkdirSync(derivedAgentRuntimeDir, { recursive: true });
+  const targetPath = path.join(derivedAgentRuntimeDir, TENANT_DATA_ACCESS_RUNTIME_FILE);
+  const payload = buildTenantDataAccessRuntimePayload(db, params);
+  if (!payload) {
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { force: true });
+      return true;
+    }
+    return false;
+  }
+  return writeJsonFileIfChanged(targetPath, payload);
+}
+
+function syncTenantDerivedAgentContext(db, params = {}) {
+  const workspaceChanged = patchDerivedAgentWorkspaceFiles(params);
+  const runtimeChanged = syncTenantDerivedAgentDataAccessRuntime(db, params);
+  return workspaceChanged || runtimeChanged;
+}
+
+function syncDerivedAgentRuntimeFiles(params = {}) {
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!baseAgentId || !derivedAgentId || baseAgentId === derivedAgentId) {
+    return false;
+  }
+
+  const baseAgentRuntimeDir = resolveAgentRuntimeDir(baseAgentId, params);
+  const derivedAgentRuntimeDir = resolveAgentRuntimeDir(derivedAgentId, params);
+  if (!baseAgentRuntimeDir || !derivedAgentRuntimeDir || !fs.existsSync(baseAgentRuntimeDir)) {
+    return false;
+  }
+
+  let changed = false;
+  fs.mkdirSync(derivedAgentRuntimeDir, { recursive: true });
+  const configuredModelsPayload = buildDerivedAgentModelsPayload(params);
+  if (configuredModelsPayload) {
+    changed =
+      writeJsonFileIfChanged(
+        path.join(derivedAgentRuntimeDir, "models.json"),
+        configuredModelsPayload,
+      ) || changed;
+  }
+  const configuredAuthProfilesPayload = buildDerivedAgentAuthProfilesPayload(params);
+  if (configuredAuthProfilesPayload) {
+    changed =
+      writeJsonFileIfChanged(
+        path.join(derivedAgentRuntimeDir, "auth-profiles.json"),
+        configuredAuthProfilesPayload,
+      ) || changed;
+  }
+  if (configuredModelsPayload || configuredAuthProfilesPayload) {
+    return changed;
+  }
+  for (const fileName of ["models.json", "auth-profiles.json"]) {
+    const sourcePath = path.join(baseAgentRuntimeDir, fileName);
+    if (!fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const targetPath = path.join(derivedAgentRuntimeDir, fileName);
+    const nextContent = fs.readFileSync(sourcePath);
+    const currentContent = fs.existsSync(targetPath) ? fs.readFileSync(targetPath) : null;
+    if (currentContent && Buffer.compare(currentContent, nextContent) === 0) {
+      continue;
+    }
+    fs.writeFileSync(targetPath, nextContent);
+    changed = true;
+  }
+  return changed;
+}
+
 function cleanupDerivedAgentExecApprovals(entries, params = {}) {
   if (!Array.isArray(entries) || !entries.length) {
     return 0;
@@ -1527,6 +1806,20 @@ function copySeedEntry(source, target) {
   fs.copyFileSync(source, target);
 }
 
+function appendDerivedAgentMemoryHint(workspaceRoot) {
+  const memoryPath = path.join(workspaceRoot, "MEMORY.md");
+  if (!fs.existsSync(memoryPath)) {
+    return false;
+  }
+  const current = fs.readFileSync(memoryPath, "utf8");
+  if (current.includes("## 零侵入采购查询提示")) {
+    return false;
+  }
+  const next = `${current.replace(/\s*$/, "")}\n\n${DERIVED_AGENT_ANALYTICS_MEMORY_HINT}\n`;
+  fs.writeFileSync(memoryPath, next, "utf8");
+  return true;
+}
+
 function ensureDerivedWorkspaceAlias(aliasPath, targetPath) {
   try {
     if (fs.existsSync(aliasPath)) {
@@ -1567,6 +1860,7 @@ function ensureTenantDerivedWorkspace(params) {
       copySeedEntry(path.join(sourceWorkspace, entry), path.join(canonicalWorkspace, entry));
     }
   }
+  appendDerivedAgentMemoryHint(canonicalWorkspace);
 
   const metadataPath = path.join(canonicalWorkspace, DERIVED_AGENT_METADATA_FILE);
   if (!fs.existsSync(metadataPath)) {
@@ -1596,6 +1890,7 @@ function ensureTenantDerivedWorkspace(params) {
       copySeedEntry(path.join(canonicalWorkspace, entry), path.join(runtimeWorkspace, entry));
     }
   }
+  appendDerivedAgentMemoryHint(runtimeWorkspace);
 
   return {
     canonicalWorkspace,
@@ -2209,7 +2504,30 @@ export function setTenantDataSourceBinding(db, params = {}) {
         updatedAt: now,
       });
     }
-    return getTenantDataSourceBinding(db, tenantId);
+    const binding = getTenantDataSourceBinding(db, tenantId);
+    const derivedAssignments = db
+      .prepare(
+        `SELECT ua.derived_agent_id AS derivedAgentId,
+                ua.tenant_agent_id AS tenantAgentId,
+                ta.agent_id AS baseAgentId,
+                ua.user_id AS userId
+         FROM user_agent_assignments ua
+         JOIN tenant_agents ta ON ta.id = ua.tenant_agent_id
+         WHERE ua.tenant_id = ? AND ua.status = 'active'`,
+      )
+      .all(tenantId);
+    for (const assignment of derivedAssignments) {
+      syncTenantDerivedAgentContext(db, {
+        tenantId,
+        userId: assignment.userId,
+        tenantAgentId: assignment.tenantAgentId,
+        baseAgentId: assignment.baseAgentId,
+        derivedAgentId: assignment.derivedAgentId,
+        configPath: params.configPath,
+        configDir: params.configDir,
+      });
+    }
+    return binding;
   });
 }
 
@@ -2232,6 +2550,7 @@ export function getTenantMemberOrgScope(db, params = {}) {
           .prepare(
             `SELECT id,
                     scope_mode AS scopeMode,
+                    sandbox_enabled AS sandboxEnabled,
                     created_by_user_id AS createdByUserId,
                     created_at AS createdAt,
                     updated_at AS updatedAt
@@ -2273,6 +2592,7 @@ export function getTenantMemberOrgScope(db, params = {}) {
     userId,
     dataSourceId: resolvedDataSourceId || null,
     scopeMode,
+    sandboxEnabled: Number(policy?.sandboxEnabled || 0) > 0,
     orgScopeCount: scopeMode === "custom" ? orgScopes.length : 0,
     orgScopes,
     createdByUserId: policy?.createdByUserId ?? null,
@@ -2315,7 +2635,8 @@ export function setTenantMemberOrgScope(db, params = {}) {
     const now = nowIso();
     const existing = db
       .prepare(
-        `SELECT id
+        `SELECT id,
+                sandbox_enabled AS sandboxEnabled
          FROM tenant_member_source_policies
          WHERE tenant_id = @tenantId
            AND user_id = @userId
@@ -2326,16 +2647,24 @@ export function setTenantMemberOrgScope(db, params = {}) {
         userId,
         dataSourceId,
       });
+    const sandboxEnabled =
+      params.sandboxEnabled === true ||
+      params.sandboxEnabled === false ||
+      Number(params.sandboxEnabled) > 0
+        ? Number(params.sandboxEnabled) > 0 || params.sandboxEnabled === true
+        : Number(existing?.sandboxEnabled || 0) > 0 || !existing?.id;
     if (existing?.id) {
       db.prepare(
         `UPDATE tenant_member_source_policies
          SET scope_mode = @scopeMode,
+             sandbox_enabled = @sandboxEnabled,
              created_by_user_id = @createdByUserId,
              updated_at = @updatedAt
          WHERE id = @id`,
       ).run({
         id: existing.id,
         scopeMode,
+        sandboxEnabled: sandboxEnabled ? 1 : 0,
         createdByUserId: params.createdByUserId || null,
         updatedAt: now,
       });
@@ -2347,6 +2676,7 @@ export function setTenantMemberOrgScope(db, params = {}) {
            user_id,
            data_source_id,
            scope_mode,
+           sandbox_enabled,
            created_by_user_id,
            created_at,
            updated_at
@@ -2356,6 +2686,7 @@ export function setTenantMemberOrgScope(db, params = {}) {
            @userId,
            @dataSourceId,
            @scopeMode,
+           @sandboxEnabled,
            @createdByUserId,
            @createdAt,
            @updatedAt
@@ -2366,6 +2697,7 @@ export function setTenantMemberOrgScope(db, params = {}) {
         userId,
         dataSourceId,
         scopeMode,
+        sandboxEnabled: sandboxEnabled ? 1 : 0,
         createdByUserId: params.createdByUserId || null,
         createdAt: now,
         updatedAt: now,
@@ -2416,11 +2748,33 @@ export function setTenantMemberOrgScope(db, params = {}) {
       }
     }
 
-    return getTenantMemberOrgScope(db, {
+    const scope = getTenantMemberOrgScope(db, {
       tenantId,
       userId,
       dataSourceId,
     });
+    const derivedAssignments = db
+      .prepare(
+        `SELECT ua.derived_agent_id AS derivedAgentId,
+                ua.tenant_agent_id AS tenantAgentId,
+                ta.agent_id AS baseAgentId
+         FROM user_agent_assignments ua
+         JOIN tenant_agents ta ON ta.id = ua.tenant_agent_id
+         WHERE ua.tenant_id = ? AND ua.user_id = ? AND ua.status = 'active'`,
+      )
+      .all(tenantId, userId);
+    for (const assignment of derivedAssignments) {
+      syncTenantDerivedAgentContext(db, {
+        tenantId,
+        userId,
+        tenantAgentId: assignment.tenantAgentId,
+        baseAgentId: assignment.baseAgentId,
+        derivedAgentId: assignment.derivedAgentId,
+        configPath: params.configPath,
+        configDir: params.configDir,
+      });
+    }
+    return scope;
   });
 }
 
@@ -2899,6 +3253,7 @@ function getTenantMemberRow(db, tenantId, userId) {
               tm.role, tm.created_at AS createdAt,
               COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount,
               COALESCE(sp.scope_mode, 'none') AS orgScopeMode,
+              COALESCE(sp.sandbox_enabled, 0) AS sandboxEnabled,
               CASE
                 WHEN COALESCE(sp.scope_mode, 'none') = 'custom' THEN COUNT(DISTINCT os.org_id)
                 ELSE 0
@@ -2916,7 +3271,7 @@ function getTenantMemberRow(db, tenantId, userId) {
         AND os.user_id = u.id
         AND os.data_source_id = b.data_source_id
        WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted' AND u.id = ?
-       GROUP BY u.id, tm.role, tm.created_at, sp.scope_mode`,
+       GROUP BY u.id, tm.role, tm.created_at, sp.scope_mode, sp.sandbox_enabled`,
       )
       .get(tenantId, userId) ?? null
   );
@@ -2929,6 +3284,7 @@ export function listTenantMembers(db, tenantId) {
               tm.role, tm.created_at AS createdAt,
               COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount,
               COALESCE(sp.scope_mode, 'none') AS orgScopeMode,
+              COALESCE(sp.sandbox_enabled, 0) AS sandboxEnabled,
               CASE
                 WHEN COALESCE(sp.scope_mode, 'none') = 'custom' THEN COUNT(DISTINCT os.org_id)
                 ELSE 0
@@ -2946,7 +3302,7 @@ export function listTenantMembers(db, tenantId) {
         AND os.user_id = u.id
         AND os.data_source_id = b.data_source_id
        WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted'
-       GROUP BY u.id, tm.role, tm.created_at, sp.scope_mode
+       GROUP BY u.id, tm.role, tm.created_at, sp.scope_mode, sp.sandbox_enabled
        ORDER BY tm.created_at DESC`,
     )
     .all(tenantId);
@@ -3045,6 +3401,7 @@ export function deleteTenantMember(db, params) {
     throw new Error("user_id_required");
   }
 
+  ensureSchemaCompatibility(db);
   return runInTransaction(db, () => {
     const current = getTenantMemberRow(db, tenantId, userId);
     if (!current) {
@@ -3284,6 +3641,21 @@ function assignTenantAgentToUserCore(db, params) {
     configDir: params.configDir,
   });
   syncDerivedAgentExecApprovals({
+    baseAgentId: tenantAgent.baseAgentId,
+    derivedAgentId,
+    configPath: params.configPath,
+    configDir: params.configDir,
+  });
+  syncDerivedAgentRuntimeFiles({
+    baseAgentId: tenantAgent.baseAgentId,
+    derivedAgentId,
+    configPath: params.configPath,
+    configDir: params.configDir,
+  });
+  syncTenantDerivedAgentContext(db, {
+    tenantId: params.tenantId,
+    userId: params.userId,
+    tenantAgentId: params.tenantAgentId,
     baseAgentId: tenantAgent.baseAgentId,
     derivedAgentId,
     configPath: params.configPath,
@@ -3603,6 +3975,21 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
         configPath: params.configPath,
         configDir: params.configDir,
       });
+      syncDerivedAgentRuntimeFiles({
+        baseAgentId: row.baseAgentId,
+        derivedAgentId: resolvedAgentId,
+        configPath: params.configPath,
+        configDir: params.configDir,
+      });
+      syncTenantDerivedAgentContext(db, {
+        tenantId: row.tenantId,
+        userId: row.userId,
+        tenantAgentId: row.tenantAgentId,
+        baseAgentId: row.baseAgentId,
+        derivedAgentId: resolvedAgentId,
+        configPath: params.configPath,
+        configDir: params.configDir,
+      });
 
       const baseAgentId = String(row.baseAgentId || "").trim();
       const agentId = resolvedAgentId || baseAgentId;
@@ -3627,7 +4014,7 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
 }
 
 const WORKSPACE_VISUALIZATION_FILE_PATTERN = /_index(?:\.dashboard\.json|\.html)$/i;
-const WORKSPACE_SANDBOX_FILE_PATTERN = /_sandbox\.json$/i;
+const WORKSPACE_SANDBOX_FILE_PATTERN = /\.json$/i;
 
 function listWorkspaceVisualizationFiles(workspaceDir) {
   const normalizedWorkspaceDir = String(workspaceDir || "").trim();
@@ -3688,7 +4075,15 @@ function listWorkspaceSandboxFiles(workspaceDir) {
     }
     return fs
       .readdirSync(sandboxDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && WORKSPACE_SANDBOX_FILE_PATTERN.test(entry.name))
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          WORKSPACE_SANDBOX_FILE_PATTERN.test(entry.name) &&
+          !String(entry.name || "")
+            .trim()
+            .toLowerCase()
+            .startsWith("runs"),
+      )
       .map((entry) => entry.name)
       .toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"))
       .filter(Boolean);
@@ -3700,7 +4095,43 @@ function listWorkspaceSandboxFiles(workspaceDir) {
 function stripSandboxFileSuffix(fileName) {
   return String(fileName || "")
     .trim()
-    .replace(/_sandbox\.json$/i, "");
+    .replace(/_sandbox\.json$/i, "")
+    .replace(/\.json$/i, "");
+}
+
+function sanitizeSandboxRunId(runId) {
+  const normalized = String(runId || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(normalized)) {
+    throw new Error("sandbox_run_not_found");
+  }
+  return normalized;
+}
+
+export function resolveWorkspaceSandboxRunsDir(workspaceDir) {
+  return path.join(String(workspaceDir || "").trim(), "Sandbox", "runs");
+}
+
+export function resolveWorkspaceSandboxRunDir(workspaceDir, runId) {
+  return path.join(resolveWorkspaceSandboxRunsDir(workspaceDir), sanitizeSandboxRunId(runId));
+}
+
+export function readWorkspaceSandboxRunJson(workspaceDir, runId, fileName, fallback = null) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  const normalizedFileName = String(fileName || "").trim();
+  if (!normalizedWorkspaceDir || !normalizedFileName) {
+    return fallback;
+  }
+  try {
+    const runDir = resolveWorkspaceSandboxRunDir(normalizedWorkspaceDir, runId);
+    const filePath = path.join(runDir, normalizedFileName);
+    const relativePath = path.relative(runDir, filePath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return fallback;
+    }
+    return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
+  } catch {
+    return fallback;
+  }
 }
 
 function listTenantSandboxAgents(db, tenantId, configAgents = []) {

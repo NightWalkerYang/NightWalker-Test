@@ -32,139 +32,17 @@ const defaultPortableConfig = {
   models: {
     mode: "merge",
     providers: {
-      zai: {
-        baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      gpt: {
+        baseUrl: "https://api.cleannetworkspace.online/v1",
         api: "openai-completions",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0",
+        },
         models: [
           {
-            id: "glm-5",
-            name: "GLM-5",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 1,
-              output: 3.2,
-              cacheRead: 0.2,
-              cacheWrite: 0,
-            },
-            contextWindow: 202800,
-            maxTokens: 131100,
-          },
-          {
-            id: "glm-5-turbo",
-            name: "GLM-5 Turbo",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 1.2,
-              output: 4,
-              cacheRead: 0.24,
-              cacheWrite: 0,
-            },
-            contextWindow: 202800,
-            maxTokens: 131100,
-          },
-          {
-            id: "glm-4.7",
-            name: "GLM-4.7",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 0.6,
-              output: 2.2,
-              cacheRead: 0.11,
-              cacheWrite: 0,
-            },
-            contextWindow: 204800,
-            maxTokens: 131072,
-          },
-          {
-            id: "glm-4.7-flash",
-            name: "GLM-4.7 Flash",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 0.07,
-              output: 0.4,
-              cacheRead: 0,
-              cacheWrite: 0,
-            },
-            contextWindow: 200000,
-            maxTokens: 131072,
-          },
-          {
-            id: "glm-4.7-flashx",
-            name: "GLM-4.7 FlashX",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 0.06,
-              output: 0.4,
-              cacheRead: 0.01,
-              cacheWrite: 0,
-            },
-            contextWindow: 200000,
-            maxTokens: 128000,
-          },
-          {
-            id: "glm-4.6",
-            name: "GLM-4.6",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 0.6,
-              output: 2.2,
-              cacheRead: 0.11,
-              cacheWrite: 0,
-            },
-            contextWindow: 204800,
-            maxTokens: 131072,
-          },
-          {
-            id: "glm-4.6v",
-            name: "GLM-4.6V",
-            reasoning: true,
-            input: ["text", "image"],
-            cost: {
-              input: 0.3,
-              output: 0.9,
-              cacheRead: 0,
-              cacheWrite: 0,
-            },
-            contextWindow: 128000,
-            maxTokens: 32768,
-          },
-          {
-            id: "glm-4.5",
-            name: "GLM-4.5",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 0.6,
-              output: 2.2,
-              cacheRead: 0.11,
-              cacheWrite: 0,
-            },
-            contextWindow: 131072,
-            maxTokens: 98304,
-          },
-          {
-            id: "glm-4.5-air",
-            name: "GLM-4.5 Air",
-            reasoning: true,
-            input: ["text"],
-            cost: {
-              input: 0.2,
-              output: 1.1,
-              cacheRead: 0.03,
-              cacheWrite: 0,
-            },
-            contextWindow: 131072,
-            maxTokens: 98304,
-          },
-          {
-            id: "glm-4.5-flash",
-            name: "GLM-4.5 Flash",
+            id: "gpt-5.4",
+            name: "gpt-5.4",
             reasoning: true,
             input: ["text"],
             cost: {
@@ -173,22 +51,39 @@ const defaultPortableConfig = {
               cacheRead: 0,
               cacheWrite: 0,
             },
-            contextWindow: 131072,
-            maxTokens: 98304,
+            contextWindow: 200000,
+            maxTokens: 8192,
+            api: "openai-completions",
           },
           {
-            id: "glm-4.5v",
-            name: "GLM-4.5V",
-            reasoning: true,
-            input: ["text", "image"],
+            id: "gpt-5.4-mini",
+            name: "gpt-5.4-mini",
+            reasoning: false,
+            input: ["text"],
             cost: {
-              input: 0.6,
-              output: 1.8,
+              input: 0,
+              output: 0,
               cacheRead: 0,
               cacheWrite: 0,
             },
-            contextWindow: 64000,
-            maxTokens: 16384,
+            contextWindow: 200000,
+            maxTokens: 8192,
+            api: "openai-completions",
+          },
+          {
+            id: "gpt-5.3-codex",
+            name: "gpt-5.3-codex",
+            reasoning: false,
+            input: ["text"],
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            contextWindow: 200000,
+            maxTokens: 8192,
+            api: "openai-completions",
           },
         ],
       },
@@ -224,13 +119,12 @@ const defaultPortableConfig = {
   agents: {
     defaults: {
       model: {
-        primary: "zai/glm-5",
-        fallbacks: ["volcengine-plan/ark-code-latest"],
+        primary: "gpt/gpt-5.4",
+        fallbacks: ["gpt/gpt-5.4-mini", "gpt/gpt-5.3-codex"],
       },
       models: {
-        "volcengine-plan/ark-code-latest": {},
-        "zai/glm-5": {
-          alias: "GLM",
+        "gpt/gpt-5.4": {
+          alias: "GPT-5.4",
         },
       },
       compaction: {
@@ -540,16 +434,20 @@ export function buildPortableConfigBatch(source = {}) {
       value: example.models.mode,
     },
     {
-      path: "models.providers.zai.baseUrl",
-      value: example.models.providers.zai.baseUrl,
+      path: "models.providers.gpt.baseUrl",
+      value: example.models.providers.gpt.baseUrl,
     },
     {
-      path: "models.providers.zai.api",
-      value: example.models.providers.zai.api,
+      path: "models.providers.gpt.api",
+      value: example.models.providers.gpt.api,
     },
     {
-      path: "models.providers.zai.models",
-      value: example.models.providers.zai.models,
+      path: "models.providers.gpt.models",
+      value: example.models.providers.gpt.models,
+    },
+    {
+      path: "models.providers.gpt.headers",
+      value: example.models.providers.gpt.headers,
     },
     {
       path: "tools.profile",
@@ -604,8 +502,8 @@ export function buildPortableConfigBatch(source = {}) {
       value: example.agents.defaults.model.fallbacks,
     },
     {
-      path: "agents.defaults.models.zai/glm-5.alias",
-      value: example.agents.defaults.models["zai/glm-5"]?.alias,
+      path: "agents.defaults.models.gpt/gpt-5.4.alias",
+      value: example.agents.defaults.models["gpt/gpt-5.4"]?.alias,
     },
   ];
 }

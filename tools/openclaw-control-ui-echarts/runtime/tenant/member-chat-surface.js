@@ -37,6 +37,9 @@ const CHAT_FAILSAFE_SESSION_KEY = "__ocMemberChatFailsafeSessionKey";
 const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
 const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
 const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
+const MEMBER_PINNED_MODEL_VALUE = "gpt/gpt-5.4";
+const MEMBER_PINNED_MODEL_ID = "gpt-5.4";
+const MEMBER_PINNED_MODEL_PROVIDER = "gpt";
 
 function isMemberChatRoute(pathname = window.location.pathname, href = window.location.href) {
   const normalizedPath = String(pathname || "/").trim() || "/";
@@ -259,6 +262,198 @@ function extractNormalizedMessageText(value) {
 
 function isSilentReplyText(value) {
   return SILENT_REPLY_PATTERN.test(String(value ?? ""));
+}
+
+function isPinnedMemberModelValue(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return (
+    normalized === MEMBER_PINNED_MODEL_VALUE ||
+    normalized === MEMBER_PINNED_MODEL_ID ||
+    normalized === `${MEMBER_PINNED_MODEL_PROVIDER}/${MEMBER_PINNED_MODEL_ID}`
+  );
+}
+
+function normalizeMemberChatSessionRow(sessionRow) {
+  if (!sessionRow || typeof sessionRow !== "object") {
+    return sessionRow;
+  }
+  const normalized = { ...sessionRow };
+  if (!String(normalized.model || "").trim() || !isPinnedMemberModelValue(normalized.model)) {
+    normalized.model = MEMBER_PINNED_MODEL_ID;
+  }
+  if (
+    !String(normalized.modelProvider || normalized.providerOverride || "").trim() ||
+    String(normalized.modelProvider || normalized.providerOverride || "")
+      .trim()
+      .toLowerCase() !== MEMBER_PINNED_MODEL_PROVIDER
+  ) {
+    normalized.modelProvider = MEMBER_PINNED_MODEL_PROVIDER;
+    normalized.providerOverride = MEMBER_PINNED_MODEL_PROVIDER;
+  }
+  return normalized;
+}
+
+function normalizeMemberChatSessionsListResult(result) {
+  if (!result || typeof result !== "object") {
+    return result;
+  }
+  const sessions = Array.isArray(result.sessions) ? result.sessions : [];
+  return {
+    ...result,
+    defaults: {
+      ...(result.defaults && typeof result.defaults === "object" ? result.defaults : {}),
+      model: MEMBER_PINNED_MODEL_ID,
+      modelProvider: MEMBER_PINNED_MODEL_PROVIDER,
+    },
+    sessions: sessions.map((row) => normalizeMemberChatSessionRow(row)),
+  };
+}
+
+function normalizeMemberHistoryMessage(message) {
+  if (!message || typeof message !== "object") {
+    return message;
+  }
+  if (isAssistantSilentReply(message)) {
+    return null;
+  }
+  return message;
+}
+
+function normalizeMemberChatHistoryResult(result) {
+  if (!result || typeof result !== "object") {
+    return result;
+  }
+  const messages = Array.isArray(result.messages) ? result.messages : [];
+  return {
+    ...result,
+    messages: messages
+      .map((message) => normalizeMemberHistoryMessage(message))
+      .filter((message) => message && typeof message === "object"),
+  };
+}
+
+function normalizeMemberSessionsPatchResult(result) {
+  if (!result || typeof result !== "object") {
+    return result;
+  }
+  return {
+    ...result,
+    resolved: {
+      ...(result.resolved && typeof result.resolved === "object" ? result.resolved : {}),
+      model: MEMBER_PINNED_MODEL_ID,
+      modelProvider: MEMBER_PINNED_MODEL_PROVIDER,
+    },
+  };
+}
+
+function setPinnedMemberChatModelOverride(app, sessionKey, override) {
+  if (!(app instanceof HTMLElement) || !sessionKey) {
+    return;
+  }
+  const existing =
+    app?.chatModelOverrides && typeof app.chatModelOverrides === "object"
+      ? app.chatModelOverrides
+      : {};
+  const next = { ...existing };
+  if (override) {
+    next[sessionKey] = override;
+  } else {
+    delete next[sessionKey];
+  }
+  app.chatModelOverrides = next;
+  app.requestUpdate?.();
+}
+
+async function ensurePinnedMemberChatModel(app, sessionKey) {
+  if (!(app instanceof HTMLElement) || !sessionKey || !app.client || typeof app.client.request !== "function") {
+    return;
+  }
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey) {
+    return;
+  }
+  const pinnedFor = app.__ocMemberPinnedModelFor;
+  if (pinnedFor && pinnedFor === normalizedSessionKey) {
+    return;
+  }
+  const pendingPromise = app.__ocMemberPinnedModelPendingPromise;
+  const pendingFor = app.__ocMemberPinnedModelPendingFor;
+  if (pendingFor && pendingFor === normalizedSessionKey) {
+    return pendingPromise;
+  }
+  app.__ocMemberPinnedModelPendingFor = normalizedSessionKey;
+  const previousOverride = app?.chatModelOverrides?.[normalizedSessionKey] ?? null;
+  setPinnedMemberChatModelOverride(app, normalizedSessionKey, {
+    kind: "qualified",
+    value: MEMBER_PINNED_MODEL_VALUE,
+  });
+  const pending = (async () => {
+    await app.client.request("sessions.patch", {
+      key: normalizedSessionKey,
+      model: MEMBER_PINNED_MODEL_VALUE,
+    });
+    app.__ocMemberPinnedModelFor = normalizedSessionKey;
+  })().catch((error) => {
+    setPinnedMemberChatModelOverride(app, normalizedSessionKey, previousOverride);
+    throw error;
+  }).finally(() => {
+    if (app.__ocMemberPinnedModelPendingFor === normalizedSessionKey) {
+      app.__ocMemberPinnedModelPendingFor = "";
+    }
+    if (app.__ocMemberPinnedModelPendingPromise === pending) {
+      app.__ocMemberPinnedModelPendingPromise = null;
+    }
+  });
+  app.__ocMemberPinnedModelPendingPromise = pending;
+  return pending;
+}
+
+function syncPinnedMemberChatAppState(app, sessionKey) {
+  if (!(app instanceof HTMLElement)) {
+    return;
+  }
+  let changed = false;
+  if (Array.isArray(app.chatModelCatalog)) {
+    const hasPinnedOnly =
+      app.chatModelCatalog.length === 1 &&
+      String(app.chatModelCatalog[0]?.provider || "")
+        .trim()
+        .toLowerCase() === MEMBER_PINNED_MODEL_PROVIDER &&
+      String(app.chatModelCatalog[0]?.id || "")
+        .trim()
+        .toLowerCase() === MEMBER_PINNED_MODEL_ID;
+    if (!hasPinnedOnly) {
+      app.chatModelCatalog = [
+        {
+          id: MEMBER_PINNED_MODEL_ID,
+          name: "gpt-5.4",
+          provider: MEMBER_PINNED_MODEL_PROVIDER,
+        },
+      ];
+      changed = true;
+    }
+  }
+  if (app.sessionsResult && typeof app.sessionsResult === "object") {
+    const normalized = normalizeMemberChatSessionsListResult(app.sessionsResult);
+    if (normalized !== app.sessionsResult) {
+      app.sessionsResult = normalized;
+      changed = true;
+    }
+  }
+  const currentOverride = app?.chatModelOverrides?.[sessionKey];
+  const currentValue = String(currentOverride?.value || "").trim().toLowerCase();
+  if (currentValue !== MEMBER_PINNED_MODEL_VALUE) {
+    setPinnedMemberChatModelOverride(app, sessionKey, {
+      kind: "qualified",
+      value: MEMBER_PINNED_MODEL_VALUE,
+    });
+    changed = true;
+  }
+  if (changed) {
+    app.requestUpdate?.();
+  }
 }
 
 function isAssistantSilentReply(message) {
@@ -779,6 +974,9 @@ function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
   if (fromQuery) {
     return fromQuery;
   }
+  if (!url.searchParams.has("session")) {
+    return createTenantMemberSessionKey(session, selectedAgent).toLowerCase();
+  }
   for (const candidate of [
     app?.sessionKey,
     app?.settings?.lastActiveSessionKey,
@@ -825,15 +1023,17 @@ async function loadMemberSessions(app, selectedAgent, session) {
     registeredSessions.map((r) => [String(r.openclawSessionKey).trim().toLowerCase(), r]),
   );
 
+  let gatewaySessionsResult = null;
   let rows = [];
   try {
-    rows = normalizeSessionRows(
-      await awaitWithTimeout(
-        app.client.request("sessions.list", {}),
-        MEMBER_SESSION_LIST_TIMEOUT_MS,
-        "gateway.sessions.list",
-      ),
+    gatewaySessionsResult = await awaitWithTimeout(
+      app.client.request("sessions.list", {}),
+      MEMBER_SESSION_LIST_TIMEOUT_MS,
+      "gateway.sessions.list",
     );
+    const normalizedSessionsResult = normalizeMemberChatSessionsListResult(gatewaySessionsResult);
+    app.sessionsResult = normalizedSessionsResult;
+    rows = normalizeSessionRows(normalizedSessionsResult);
   } catch (error) {
     console.error("Failed to list gateway sessions for member chat", error);
   }
@@ -1258,8 +1458,9 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           app.__ocPinnedSessionHydratingKey = "";
         }
         if (app.__ocPinnedSessionKey === targetKey) {
-          const msgs = Array.isArray(res?.messages) ? res.messages : [];
-          app.chatMessages = msgs.filter((message) => !isAssistantSilentReply(message));
+          const normalizedHistory = normalizeMemberChatHistoryResult(res);
+          const msgs = Array.isArray(normalizedHistory?.messages) ? normalizedHistory.messages : [];
+          app.chatMessages = msgs;
           app.chatThinkingLevel = res?.thinkingLevel ?? null;
           app.chatRunId = null;
           app.chatStream = null;
@@ -1300,6 +1501,41 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
   if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
     const originalRequest = app.client.request.bind(app.client);
     app.client.request = async (method, params) => {
+      if (method === "models.list") {
+        const result = await originalRequest(method, params);
+        return {
+          ...(result && typeof result === "object" ? result : {}),
+          models: [
+            {
+              id: MEMBER_PINNED_MODEL_ID,
+              name: "gpt-5.4",
+              provider: MEMBER_PINNED_MODEL_PROVIDER,
+            },
+          ],
+        };
+      }
+      if (method === "sessions.list") {
+        const result = await originalRequest(method, params);
+        return normalizeMemberChatSessionsListResult(result);
+      }
+      if (method === "chat.history") {
+        const result = await originalRequest(method, params);
+        return normalizeMemberChatHistoryResult(result);
+      }
+      if (method === "sessions.patch") {
+        const nextParams =
+          params && typeof params === "object"
+            ? {
+                ...params,
+                model: MEMBER_PINNED_MODEL_VALUE,
+              }
+            : {
+                key: app.__ocPinnedSessionKey || app.sessionKey,
+                model: MEMBER_PINNED_MODEL_VALUE,
+              };
+        const result = await originalRequest(method, nextParams);
+        return normalizeMemberSessionsPatchResult(result);
+      }
       const activeSessionKey =
         method === "chat.send"
           ? String(
@@ -1312,6 +1548,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
               .toLowerCase()
           : "";
       if (method === "chat.send") {
+        await ensurePinnedMemberChatModel(app, activeSessionKey).catch(() => {});
         const session = readTenantSession();
         const agent = readSelectedTenantAgent();
         const isLocal = session?.session?.edition === "local";
@@ -1345,6 +1582,8 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
     };
     app.__openclawClientPatched = true;
   }
+  syncPinnedMemberChatAppState(app, sessionKey);
+  void ensurePinnedMemberChatModel(app, sessionKey).catch(() => {});
 }
 
 function syncRouteForSession(selectedAgent, sessionKey, { replace = true } = {}) {
