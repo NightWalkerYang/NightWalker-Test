@@ -19,6 +19,7 @@ describe("select adapter", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     document.head.innerHTML = "";
+    window.localStorage.clear();
     insertPromptIntoChatBox.mockClear();
     sendPromptToChat.mockClear();
   });
@@ -229,6 +230,74 @@ describe("select adapter", () => {
 
     sendButton?.click();
     await flushAsyncWork();
+    expect(sendPromptToChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the completed state after a refresh-like rerender", async () => {
+    const { createSelectAdapter } = await import(
+      "../../../tools/openclaw-control-ui-echarts/runtime/select/adapter.js"
+    );
+    const adapter = createSelectAdapter({
+      vendorBaseUrl: new URL("https://hailstone.cn:18789/assets/vendor/"),
+    });
+
+    const source = String.raw`{
+  title: "下一步怎么做？",
+  options: [
+    { value: "theme-red", label: "把界面优化成红色", prompt: "把界面优化成红色。" },
+    { value: "theme-blue", label: "把界面优化成蓝色", prompt: "把界面优化成蓝色。" }
+  ]
+}`;
+
+    const wrapper = document.createElement("pre");
+    wrapper.innerHTML = `<span class="code-block-lang">single-select</span><code class="language-single-select"></code>`;
+    wrapper.querySelector("code")!.textContent = source;
+    const host = document.createElement("div");
+    const app = document.createElement("openclaw-app") as HTMLElement & { sessionKey?: string };
+    app.sessionKey = "session-1";
+    app.append(host);
+    document.body.append(app, wrapper);
+
+    await adapter.renderContent({
+      source,
+      wrapper,
+      host,
+      context: { json5: (await import("json5")).default },
+      renderHostScaffold(currentHost) {
+        const surface = document.createElement("div");
+        currentHost.append(surface);
+        return surface;
+      },
+    });
+
+    const radio = host.querySelector<HTMLInputElement>('[data-oc-select-input="theme-red"]');
+    radio!.checked = true;
+    radio!.dispatchEvent(new Event("change", { bubbles: true }));
+    const sendButton = host.querySelector<HTMLButtonElement>('[data-oc-select-action="send"]');
+    sendButton?.click();
+    await flushAsyncWork();
+    expect(host.querySelector('[data-oc-select-state="completed"]')).not.toBeNull();
+
+    host.innerHTML = "";
+    await adapter.renderContent({
+      source,
+      wrapper,
+      host,
+      context: { json5: (await import("json5")).default },
+      renderHostScaffold(currentHost) {
+        const surface = document.createElement("div");
+        currentHost.append(surface);
+        return surface;
+      },
+    });
+
+    const restoredButton = host.querySelector<HTMLButtonElement>('[data-oc-select-action="send"]');
+    const restoredRadio = host.querySelector<HTMLInputElement>('[data-oc-select-input="theme-red"]');
+    expect(host.querySelector('[data-oc-select-state="completed"]')).not.toBeNull();
+    expect(restoredButton?.disabled).toBe(true);
+    expect(restoredButton?.textContent).toBe("已完成");
+    expect(restoredRadio?.checked).toBe(true);
+    expect(restoredRadio?.disabled).toBe(true);
     expect(sendPromptToChat).toHaveBeenCalledTimes(1);
   });
 });

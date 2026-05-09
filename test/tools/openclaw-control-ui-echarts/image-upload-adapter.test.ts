@@ -39,6 +39,7 @@ describe("image-upload adapter", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     document.head.innerHTML = "";
+    window.localStorage.clear();
     insertPromptIntoChatBox.mockClear();
     sendPromptToChat.mockClear();
     uploadMemberImageAsset.mockClear();
@@ -173,5 +174,90 @@ describe("image-upload adapter", () => {
     await flushAsyncWork();
     expect(sendPromptToChat).toHaveBeenCalledTimes(1);
     expect(uploadMemberImageAsset).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores the completed state after a refresh-like rerender", async () => {
+    const { createImageUploadAdapter } =
+      await import("../../../tools/openclaw-control-ui-echarts/runtime/image-upload/adapter.js");
+    const adapter = createImageUploadAdapter({
+      vendorBaseUrl: new URL("https://hailstone.cn:18789/assets/vendor/"),
+    });
+
+    const source = String.raw`{
+  title: "上传官网素材",
+  targetDir: "Echarts/assets",
+  submitLabel: "素材已上传，继续生成页面",
+  successPrompt: "素材已上传：{{uploadedList}}。请继续修改页面，并优先使用 ./assets 下的相对路径。",
+  slots: [
+    { id: "logo", label: "Logo", path: "logo.png", required: true }
+  ]
+}`;
+
+    const wrapper = document.createElement("pre");
+    wrapper.innerHTML = `<span class="code-block-lang">image-upload</span><code class="language-image-upload"></code>`;
+    wrapper.querySelector("code")!.textContent = source;
+    const host = document.createElement("div");
+    const app = document.createElement("openclaw-app") as HTMLElement & { sessionKey?: string };
+    app.sessionKey = "session-1";
+    app.append(host);
+    document.body.append(app, wrapper);
+
+    await adapter.renderContent({
+      source,
+      wrapper,
+      context: { json5: (await import("json5")).default },
+      renderHostScaffold(currentHost) {
+        const surface = document.createElement("div");
+        currentHost.append(surface);
+        return surface;
+      },
+      host,
+    });
+
+    const fileInput = host.querySelector<HTMLInputElement>('[data-oc-image-upload-input="logo"]');
+    const logoFile = new File(["abc"], "logo.png", { type: "image/png" });
+    Object.defineProperty(fileInput!, "files", {
+      configurable: true,
+      value: [logoFile],
+    });
+    fileInput!.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushAsyncWork();
+
+    const submitButton = host.querySelector<HTMLButtonElement>(
+      '[data-oc-image-upload-action="submit"]',
+    );
+    submitButton?.click();
+    await flushAsyncWork();
+    expect(host.querySelector('[data-oc-image-upload-state="completed"]')).not.toBeNull();
+
+    host.innerHTML = "";
+    await adapter.renderContent({
+      source,
+      wrapper,
+      context: { json5: (await import("json5")).default },
+      renderHostScaffold(currentHost) {
+        const surface = document.createElement("div");
+        currentHost.append(surface);
+        return surface;
+      },
+      host,
+    });
+
+    const restoredSubmitButton = host.querySelector<HTMLButtonElement>(
+      '[data-oc-image-upload-action="submit"]',
+    );
+    const restoredInsertButton = host.querySelector<HTMLButtonElement>(
+      '[data-oc-image-upload-action="insert"]',
+    );
+    const restoredTrigger = host.querySelector<HTMLButtonElement>(
+      '[data-oc-image-upload-trigger="logo"]',
+    );
+    expect(host.querySelector('[data-oc-image-upload-state="completed"]')).not.toBeNull();
+    expect(restoredSubmitButton?.disabled).toBe(true);
+    expect(restoredSubmitButton?.textContent).toBe("已完成");
+    expect(restoredInsertButton?.disabled).toBe(true);
+    expect(restoredTrigger?.disabled).toBe(true);
+    expect(host.textContent || "").toContain("已上传并继续，本卡片已锁定。");
+    expect(sendPromptToChat).toHaveBeenCalledTimes(1);
   });
 });

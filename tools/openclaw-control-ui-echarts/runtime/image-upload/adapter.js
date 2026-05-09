@@ -9,6 +9,7 @@ import {
 } from "./parser.js";
 import { getImageUploadStyles } from "./styles.js";
 import { UI_TEXT } from "./ui-text.js";
+import { readPersistedFencedCardState, writePersistedFencedCardState } from "../framework/shared.js";
 
 function getInteractionStateName(state) {
   if (state.completed) {
@@ -405,10 +406,16 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
         return null;
       }
 
+      const persistenceIdentity = {
+        wrapper,
+        adapterId: "image-upload",
+        source,
+      };
+      const persistedState = readPersistedFencedCardState(persistenceIdentity);
       const uploadedById = new Map();
       const interactionState = {
         submitting: false,
-        completed: false,
+        completed: persistedState?.completed === true,
       };
       const stateById = new Map(
         payload.slots.map((slot) => [
@@ -613,6 +620,9 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
           const sent = await sendPromptToChat(promptText);
           if (sent) {
             interactionState.completed = true;
+            writePersistedFencedCardState(persistenceIdentity, {
+              completed: true,
+            });
           }
           return sent;
         } finally {

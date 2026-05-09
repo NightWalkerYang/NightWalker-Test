@@ -1,6 +1,10 @@
 import { sendPromptToChat } from "../framework/chat-composer.js";
 import { createJson5Loader } from "../file/libraries.js";
-import { normalizeText } from "../framework/shared.js";
+import {
+  normalizeText,
+  readPersistedFencedCardState,
+  writePersistedFencedCardState,
+} from "../framework/shared.js";
 import { getSelectStyles } from "./styles.js";
 import {
   detectSelectMode,
@@ -242,8 +246,14 @@ function createFallbackPrompt(mode, source) {
     : "请根据这段单选配置继续推进，并自行补全缺失字段。";
 }
 
-function renderFallbackCard(cardEl, source, mode, detail) {
+function renderFallbackCard(cardEl, wrapper, source, mode, detail) {
   const fallbackPrompt = createFallbackPrompt(mode, source);
+  const persistenceIdentity = {
+    wrapper,
+    adapterId: "select",
+    source,
+  };
+  const persistedState = readPersistedFencedCardState(persistenceIdentity);
   const shell = createSelectCard({
     kind: mode,
     title: "选项配置暂未完整解析",
@@ -262,7 +272,7 @@ function renderFallbackCard(cardEl, source, mode, detail) {
   `;
   const state = {
     submitting: false,
-    completed: false,
+    completed: persistedState?.completed === true,
   };
   const syncUi = () => {
     const status = getInteractionStateName(state);
@@ -292,6 +302,9 @@ function renderFallbackCard(cardEl, source, mode, detail) {
       const sent = await sendPromptToChat(fallbackPrompt);
       if (sent) {
         state.completed = true;
+        writePersistedFencedCardState(persistenceIdentity, {
+          completed: true,
+        });
       }
     } finally {
       state.submitting = false;
@@ -336,10 +349,16 @@ export function createSelectAdapter({ vendorBaseUrl }) {
       cardEl.classList.add("oc-select-renderer");
 
       if (!payload) {
-        renderFallbackCard(cardEl, source, mode, parseErrorDetail);
+        renderFallbackCard(cardEl, wrapper, source, mode, parseErrorDetail);
         return null;
       }
 
+      const persistenceIdentity = {
+        wrapper,
+        adapterId: "select",
+        source,
+      };
+      const persistedState = readPersistedFencedCardState(persistenceIdentity);
       const shell = createSelectCard(payload);
       const groupName = `oc-select-${payload.kind}-${Math.random().toString(36).slice(2, 10)}`;
       const inputEntries = payload.options.map((option, index) =>
@@ -351,14 +370,16 @@ export function createSelectAdapter({ vendorBaseUrl }) {
       const optionsByValue = new Map(payload.options.map((option) => [option.value, option]));
       const state = {
         selectedValues: new Set(
-          payload.kind === "single"
-            ? payload.defaultValue
-              ? [payload.defaultValue]
-              : []
-            : payload.defaultValues,
+          Array.isArray(persistedState?.selectedValues) && persistedState.selectedValues.length > 0
+            ? persistedState.selectedValues
+            : payload.kind === "single"
+              ? payload.defaultValue
+                ? [payload.defaultValue]
+                : []
+              : payload.defaultValues,
         ),
         submitting: false,
-        completed: false,
+        completed: persistedState?.completed === true,
       };
 
       const syncUi = () => {
@@ -425,6 +446,10 @@ export function createSelectAdapter({ vendorBaseUrl }) {
           const sent = await sendPromptToChat(promptText);
           if (sent) {
             state.completed = true;
+            writePersistedFencedCardState(persistenceIdentity, {
+              completed: true,
+              selectedValues: [...state.selectedValues],
+            });
           }
           return sent;
         } finally {
