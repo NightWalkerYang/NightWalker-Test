@@ -1240,6 +1240,11 @@ async function maybeLoadOlderMemberHistory(controller, event = null) {
     const page = await createTenantApiClient().getMemberSessionHistoryPage(sessionKey, {
       limit: MEMBER_CHAT_HISTORY_PAGE_SIZE,
       cursor,
+      authSource: {
+        hello: controller.app?.hello ?? null,
+        settings: controller.app?.settings ?? null,
+        password: typeof controller.app?.password === "string" ? controller.app.password : null,
+      },
     });
     const activeController = window._ocMemberChatSurfaceController;
     if (!activeController || activeController !== controller) {

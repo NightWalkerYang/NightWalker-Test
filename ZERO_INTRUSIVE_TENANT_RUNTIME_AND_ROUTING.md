@@ -110,10 +110,11 @@
 
 - 首屏仍只加载最近一页会话消息
 - 首屏继续复用原生网关 `chat.history`
-- 当用户把聊天滚动到顶部时，零侵入层再走同源 HTTP `/sessions/:sessionKey/history`
+- 当用户把聊天滚动到顶部时，零侵入层再走同源 gateway HTTP `/sessions/:sessionKey/history`
 - 返回的更早页会 prepend 到当前 `app.chatMessages`
 - 旧页加载必须按 `__openclaw.seq` 去重，并保持当前滚动锚点，不能把视口强制跳到底部或跳回顶部
 - 这条链路不额外弹“还有更多历史”之类的 UI 提示
+- 这条旧页分页请求不能误走 tenant sidecar `/tenant-platform-api/v1/...`，否则线上只会得到 `404`
 
 ## draft route lock
 
