@@ -52,6 +52,35 @@
 
 否则原生聊天壳会先按 `/chat` 启动，最终表现为白屏聊天页或错误的聊天会话恢复。
 
+## `/echarts-view` 公共页资源基准规则
+
+当前 `/echarts-view` 公共可视化页不是直接整页跳转到工作区 HTML 文件，而是：
+
+- sidecar 解析成员可访问的可视化 HTML
+- 把可执行脚本、模块图、样式、工作区资源链接重写到同源 `workspace-agent-downloads`
+- 浏览器端再把返回的 HTML 填进 iframe `srcdoc`
+
+这条链路里浏览器端必须继续消费 sidecar 返回的：
+
+- `baseHref`
+
+并把它注入 iframe 文档的 `<base href="...">`。
+
+原因：
+
+- 很多 AI 生成的可视化 HTML 仍会保留相对资源，例如：
+  - `./assets/logo.png`
+  - `./assets/hero.jpg`
+  - `./styles/theme.css`
+- 如果 `srcdoc` 文档里没有正确的 `<base>`，这些相对路径会按 `/echarts-view/` 自身解析
+- 最终浏览器就会去请求错误地址并稳定报 `404`
+
+实现约束：
+
+- `baseHref` 必须保持 same-origin，并指向当前成员派生工作区的 `workspace-agent-downloads/.../Echarts/`
+- 已经被 sidecar 改写成绝对 same-origin 路径的资源保持原样，不应二次改坏
+- 如果源 HTML 已经自带 `<base href>`, 浏览器端应以 sidecar 返回的 `baseHref` 覆盖它，避免旧 HTML 把资源重新指回错误目录
+
 ## preboot 真实职责
 
 当前成员聊天路由修正已经前移到原生 Control UI 主 bundle 之前：

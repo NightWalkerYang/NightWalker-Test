@@ -66,13 +66,42 @@ describe("public echarts view surface", () => {
     expect(document.title).toBe("销售数据可视化");
     const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
     expect(frame).not.toBeNull();
-    expect(frame?.getAttribute("srcdoc")).not.toContain("<base href=");
+    expect(frame?.getAttribute("srcdoc")).toContain(
+      '<base href="/workspace-agent-downloads/tenant-agent-1/Echarts/" />',
+    );
     expect(frame?.getAttribute("srcdoc")).toContain(
       '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/chart.png" alt="chart">',
     );
     expect(frame?.getAttribute("srcdoc")).toContain('<main id="viz">');
     expect(document.body.textContent).not.toContain("native content");
     expect(document.body.textContent).not.toContain("可视化展示");
+  });
+
+  it("injects the workspace base href so relative visualization assets keep loading", async () => {
+    const baseHref = "/workspace-agent-downloads/tenant-agent-1/Echarts/";
+    window.history.replaceState({}, "", "/echarts-view/?token=member-visualization-token");
+    stubVisualizationResolve(
+      `<!doctype html>
+       <html>
+         <head>
+           <title>苏博泰克官网简版</title>
+         </head>
+         <body>
+           <header class="brand">
+             <img src="./assets/logo.png" alt="logo">
+           </header>
+         </body>
+       </html>`,
+      baseHref,
+    );
+
+    await bootEchartsViewSurface();
+    await Promise.resolve();
+
+    const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
+    const srcdoc = frame?.getAttribute("srcdoc") || "";
+    expect(srcdoc).toContain('<base href="/workspace-agent-downloads/tenant-agent-1/Echarts/" />');
+    expect(srcdoc).toContain('<img src="./assets/logo.png" alt="logo">');
   });
 
   it("falls back to the stored token when the public route opens without a query token", async () => {

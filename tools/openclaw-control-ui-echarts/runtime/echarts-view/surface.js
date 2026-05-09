@@ -16,6 +16,46 @@ function readDocumentTitle(html) {
   return match[1].replace(/<[^>]*>/g, "").trim();
 }
 
+function escapeHtmlAttribute(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function normalizeVisualizationBaseHref(baseHref) {
+  const normalized = String(baseHref || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  try {
+    const resolved = new URL(normalized, window.location.origin);
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return "";
+  }
+}
+
+function injectBaseHrefIntoHtmlDocument(html, baseHref) {
+  const normalizedBaseHref = normalizeVisualizationBaseHref(baseHref);
+  if (!normalizedBaseHref) {
+    return String(html || "");
+  }
+  const baseTag = `<base href="${escapeHtmlAttribute(normalizedBaseHref)}" />`;
+  const htmlText = String(html || "");
+  if (/<base\b[^>]*href\s*=/i.test(htmlText)) {
+    return htmlText.replace(/<base\b[^>]*href\s*=\s*(["'])[^"']*\1[^>]*>/i, baseTag);
+  }
+  if (/<head\b[^>]*>/i.test(htmlText)) {
+    return htmlText.replace(/<head\b[^>]*>/i, (match) => `${match}\n${baseTag}`);
+  }
+  if (/<html\b[^>]*>/i.test(htmlText)) {
+    return htmlText.replace(/<html\b[^>]*>/i, (match) => `${match}\n<head>${baseTag}</head>`);
+  }
+  return `<!doctype html><html><head>${baseTag}</head><body>${htmlText}</body></html>`;
+}
+
 function clearVisualizationHost() {
   document.documentElement.style.background = "#fff";
   document.documentElement.style.margin = "0";
@@ -66,11 +106,12 @@ async function loadVisualizationDocument(token) {
   }
   return {
     html,
+    baseHref: normalizeVisualizationBaseHref(result?.baseHref),
     title: readDocumentTitle(html),
   };
 }
 
-function createVisualizationFrame(html) {
+function createVisualizationFrame(html, baseHref = "") {
   const frame = document.createElement("iframe");
   frame.id = VISUALIZATION_FRAME_ID;
   frame.title = "可视化展示";
@@ -81,7 +122,7 @@ function createVisualizationFrame(html) {
   frame.style.width = "100%";
   frame.style.height = "100%";
   frame.style.minHeight = "100vh";
-  frame.srcdoc = String(html || "");
+  frame.srcdoc = injectBaseHrefIntoHtmlDocument(html, baseHref);
   return frame;
 }
 
@@ -263,7 +304,10 @@ export async function bootEchartsViewSurface() {
     if (visualizationDocument.title) {
       document.title = visualizationDocument.title;
     }
-    const frame = createVisualizationFrame(visualizationDocument.html);
+    const frame = createVisualizationFrame(
+      visualizationDocument.html,
+      visualizationDocument.baseHref,
+    );
     installEchartsViewFrameNavigationBridge(frame);
     document.body.append(frame);
     return visualizationDocument;
