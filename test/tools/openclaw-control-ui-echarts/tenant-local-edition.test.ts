@@ -1633,12 +1633,7 @@ describe("tenant platform local edition", () => {
     expect(uploadPayload?.data?.uploadedItems?.[0]?.workspacePath).toBe("Echarts/assets/logo.png");
     expect(uploadPayload?.data?.uploadedItems?.[0]?.relativePath).toBe("./assets/logo.png");
 
-    const uploadedPath = path.join(
-      derivedWorkspaceDir,
-      "Echarts",
-      "assets",
-      "logo.png",
-    );
+    const uploadedPath = path.join(derivedWorkspaceDir, "Echarts", "assets", "logo.png");
     expect(fs.existsSync(uploadedPath)).toBe(true);
     expect(fs.readFileSync(uploadedPath)).toEqual(Buffer.from([1, 2, 3]));
 
@@ -1660,6 +1655,166 @@ describe("tenant platform local edition", () => {
     const blockedPayload = await blockedResponse.json();
     expect(blockedResponse.status).toBe(400);
     expect(String(blockedPayload?.error || "")).toContain("workspace_path");
+  });
+
+  it("loads older member session history from the tenant sidecar endpoint", async () => {
+    const sandbox = createSandbox();
+    const { baseUrl, db } = await startSandboxServer(sandbox);
+
+    const setup = await requestJson(baseUrl, "/setup/local-tenant-admin", {
+      method: "POST",
+      body: { username: "local-admin", password: "secret" },
+    });
+    const tenantAdminToken = setup.payload.data.token;
+    const tenantId = setup.payload.data.session.tenantId;
+
+    await requestJson(baseUrl, "/platform/local-license/import", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        licenseText: JSON.stringify(
+          signLicense(sandbox.privateKey, {
+            licenseId: "local-license-history",
+            expiresAt: "2099-06-01T00:00:00.000Z",
+          }),
+        ),
+      },
+    });
+
+    const createdMember = await requestJson(baseUrl, "/tenant/admin/members", {
+      method: "POST",
+      token: tenantAdminToken,
+      body: {
+        username: "history-member",
+        password: "secret",
+      },
+    });
+    expect(createdMember.status).toBe(200);
+
+    const tenantAgentId = upsertTenantAgent(db, {
+      tenantId,
+      agentId: "subotech-finance",
+      description: "财务分析",
+      rateMultiplier: 1,
+      balancePoints: 10,
+      status: "active",
+    });
+    const assignment = assignTenantAgentToUser(db, {
+      tenantId,
+      userId: createdMember.payload.data.id,
+      tenantAgentId,
+      configPath: sandbox.config.configPath,
+      configDir: sandbox.config.configDir,
+    });
+
+    const memberLogin = await requestJson(baseUrl, "/login", {
+      method: "POST",
+      body: {
+        username: "history-member",
+        password: "secret",
+      },
+    });
+    expect(memberLogin.status).toBe(200);
+    const memberToken = memberLogin.payload.data.token;
+
+    const openclawSessionKey =
+      "agent:subotech-finance:tenant:local:tenant-agent:tenant-agent-1:user:history-member:chat:latest";
+    const registerSession = await requestJson(baseUrl, "/member/sessions", {
+      method: "POST",
+      token: memberToken,
+      body: {
+        tenantAgentId,
+        openclawSessionKey,
+        title: "历史会话",
+      },
+    });
+    expect(registerSession.status).toBe(200);
+
+    const sessionsDir = path.join(
+      sandbox.config.configDir,
+      "agents",
+      String(assignment.derivedAgentId),
+      "sessions",
+    );
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    const transcriptSessionId = "11111111-1111-4111-8111-111111111111";
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify(
+        {
+          [openclawSessionKey]: {
+            sessionId: transcriptSessionId,
+            sessionFile: `${transcriptSessionId}.jsonl`,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, `${transcriptSessionId}.jsonl`),
+      [
+        JSON.stringify({
+          id: "m1",
+          parentId: null,
+          message: {
+            role: "user",
+            content: "我想给苏博泰克公司做一个官网，你可以上网...",
+          },
+        }),
+        JSON.stringify({
+          id: "m2",
+          parentId: "m1",
+          message: {
+            role: "assistant",
+            content: "可以，先确认目标受众。",
+          },
+        }),
+        JSON.stringify({
+          id: "m3",
+          parentId: "m2",
+          message: {
+            role: "user",
+            content: "现在我们开始上传素材吧",
+          },
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const latestPage = await requestJson(
+      baseUrl,
+      `/member/sessions/history?openclawSessionKey=${encodeURIComponent(openclawSessionKey)}&limit=2`,
+      {
+        token: memberToken,
+      },
+    );
+    expect(latestPage.status).toBe(200);
+    expect(latestPage.payload.data).toMatchObject({
+      sessionKey: openclawSessionKey,
+      hasMore: true,
+      nextCursor: "2",
+      totalMessages: 3,
+    });
+    expect(latestPage.payload.data.messages.map((message) => message.__openclaw?.seq)).toEqual([
+      2, 3,
+    ]);
+
+    const olderPage = await requestJson(
+      baseUrl,
+      `/member/sessions/history?openclawSessionKey=${encodeURIComponent(openclawSessionKey)}&limit=2&cursor=seq%3A2`,
+      {
+        token: memberToken,
+      },
+    );
+    expect(olderPage.status).toBe(200);
+    expect(olderPage.payload.data.hasMore).toBe(false);
+    expect(olderPage.payload.data.messages).toHaveLength(1);
+    expect(olderPage.payload.data.messages[0]?.__openclaw?.seq).toBe(1);
+    expect(olderPage.payload.data.messages[0]?.content).toBe(
+      "我想给苏博泰克公司做一个官网，你可以上网...",
+    );
   });
 });
 

@@ -27,27 +27,6 @@ function delay(ms) {
   });
 }
 
-function sanitizeHeaderToken(value) {
-  const normalized = String(value ?? "").trim();
-  if (!normalized || /[\r\n]/.test(normalized)) {
-    return "";
-  }
-  return normalized;
-}
-
-function resolveControlUiBearerCandidates(source = {}) {
-  const seen = new Set();
-  const candidates = [];
-  for (const raw of [source.hello?.auth?.deviceToken, source.settings?.token, source.password]) {
-    const normalized = sanitizeHeaderToken(raw);
-    if (normalized && !seen.has(normalized)) {
-      seen.add(normalized);
-      candidates.push(normalized);
-    }
-  }
-  return candidates;
-}
-
 function shouldRetryTransportError(error) {
   const message = String(error?.message || error || "")
     .trim()
@@ -166,57 +145,6 @@ async function requestMultipart(path, options = {}) {
       }
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError || "request_failed"));
-}
-
-async function requestGatewayJson(path, options = {}) {
-  const headers = {
-    accept: "application/json",
-    ...options.headers,
-  };
-  const basePath =
-    typeof window.__OPENCLAW_CONTROL_UI_BASE_PATH__ === "string"
-      ? window.__OPENCLAW_CONTROL_UI_BASE_PATH__.trim()
-      : "";
-  const gatewayPath = `${basePath}${path}`;
-  const authCandidates = resolveControlUiBearerCandidates(options.authSource || {});
-  const attempts = authCandidates.length > 0 ? authCandidates : [""];
-  let lastError = null;
-
-  for (const token of attempts) {
-    const attemptHeaders = { ...headers };
-    if (token) {
-      attemptHeaders.authorization = `Bearer ${token}`;
-    }
-    try {
-      const response = await fetch(gatewayPath, {
-        method: options.method || "GET",
-        cache: options.cache,
-        headers: attemptHeaders,
-      });
-      let payload = null;
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
-      }
-      if (response.ok) {
-        return payload;
-      }
-      lastError = new Error(payload?.error?.message || payload?.error || `HTTP ${response.status}`);
-      if (response.status !== 401 && response.status !== 403) {
-        throw lastError;
-      }
-    } catch (error) {
-      lastError = error;
-      if (!shouldRetryTransportError(error)) {
-        if (token || authCandidates.length <= 1) {
-          throw error;
-        }
-      }
-    }
-  }
-
   throw lastError instanceof Error ? lastError : new Error(String(lastError || "request_failed"));
 }
 
@@ -506,22 +434,19 @@ export function createTenantApiClient() {
     listMemberSessions(tenantAgentId) {
       return requestJson(withQuery("/member/sessions", { tenantAgentId }));
     },
-    getMemberSessionHistoryPage(sessionKey, { limit = 200, cursor = "", authSource = null } = {}) {
+    getMemberSessionHistoryPage(sessionKey, { limit = 200, cursor = "" } = {}) {
       const normalizedSessionKey = String(sessionKey || "").trim();
       if (!normalizedSessionKey) {
         throw new Error("session_key_required");
       }
-      return requestGatewayJson(
-        withQuery(`/sessions/${encodeURIComponent(normalizedSessionKey)}/history`, {
+      return requestJson(
+        withQuery("/member/sessions/history", {
+          openclawSessionKey: normalizedSessionKey,
           limit,
           cursor,
         }),
         {
           cache: "no-store",
-          authSource:
-            authSource && typeof authSource === "object"
-              ? authSource
-              : { hello: null, settings: null, password: null },
         },
       );
     },

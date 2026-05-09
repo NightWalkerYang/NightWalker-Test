@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import * as parse5 from "parse5";
 import {
   buildAllinpayLaunchHtml,
@@ -14,6 +15,12 @@ import {
 } from "./allinpay.mjs";
 import { issueSessionToken, readSessionToken, verifyPassword } from "./auth.mjs";
 import {
+  readBrandingLogoAsset,
+  readBrandingState,
+  restoreBrandingState,
+  saveBrandingState,
+} from "./branding.mjs";
+import {
   createBootstrapLocalTenantAdmin,
   assignTenantAgentToUser,
   createPlatformUpdateLog,
@@ -23,34 +30,34 @@ import {
   deleteTenantMember,
   deletePlatformUpdateLog,
   createTenantMember,
-    createTenantPaymentOrder,
-    createTenantWithAdmin,
-    clearTenantDataSourceBinding,
-    confirmTenantPaymentOrderPaid,
-    deactivateSyncSchedule,
-    getBootstrapStatus,
-    getDataSourceById,
-    getManagedNodeLeaseState,
-    getManagedNodeSyncCheckpoint,
-    getTenantPaymentOrderById,
-    getTenantContextForUser,
-    getTenantDataSourceBinding,
-    getUserByUsername,
-    assignTenantAgentsToUser,
-    listAssignedAgentsForUser,
-    listAssignedAgentVisualizationsForUser,
-    listActiveSyncSchedules,
-    listDataSources,
-    listManagedNodes,
-    listPlatformUpdateLogs,
-    listTenants,
-    listTenantAgents,
-    listTenantDataSourceBindings,
-    listTenantMembers,
-    listTenantSyncSchedules,
-    listTenantUsageStats,
-    listTenantUsageRecords,
-    listTenantPaymentOrdersPage,
+  createTenantPaymentOrder,
+  createTenantWithAdmin,
+  clearTenantDataSourceBinding,
+  confirmTenantPaymentOrderPaid,
+  deactivateSyncSchedule,
+  getBootstrapStatus,
+  getDataSourceById,
+  getManagedNodeLeaseState,
+  getManagedNodeSyncCheckpoint,
+  getTenantPaymentOrderById,
+  getTenantContextForUser,
+  getTenantDataSourceBinding,
+  getUserByUsername,
+  assignTenantAgentsToUser,
+  listAssignedAgentsForUser,
+  listAssignedAgentVisualizationsForUser,
+  listActiveSyncSchedules,
+  listDataSources,
+  listManagedNodes,
+  listPlatformUpdateLogs,
+  listTenants,
+  listTenantAgents,
+  listTenantDataSourceBindings,
+  listTenantMembers,
+  listTenantSyncSchedules,
+  listTenantUsageStats,
+  listTenantUsageRecords,
+  listTenantPaymentOrdersPage,
   listTenantModelUsageEntriesPage,
   listTenantWalletFlowEntriesPage,
   getTenantOverview,
@@ -58,17 +65,17 @@ import {
   logAudit,
   readOpenClawAgentCatalog,
   registerTenantAgentSession,
-    revokePlatformTenantAgents,
-    revokeTenantAgentAssignments,
-    syncTenantUsageRecords,
-    bindTenantDataSource,
-    updatePlatformUpdateLog,
-    updateSyncScheduleRunResult,
-    upsertManagedNode,
-    upsertDataSource,
-    upsertSyncSchedule,
-    registerManagedNodeHeartbeat,
-    updateTenantPaymentOrderStatus,
+  revokePlatformTenantAgents,
+  revokeTenantAgentAssignments,
+  syncTenantUsageRecords,
+  bindTenantDataSource,
+  updatePlatformUpdateLog,
+  updateSyncScheduleRunResult,
+  upsertManagedNode,
+  upsertDataSource,
+  upsertSyncSchedule,
+  registerManagedNodeHeartbeat,
+  updateTenantPaymentOrderStatus,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
@@ -77,12 +84,6 @@ import {
   hideTenantAgentSession,
   listTenantAgentSessions,
 } from "./db.mjs";
-import {
-  readBrandingLogoAsset,
-  readBrandingState,
-  restoreBrandingState,
-  saveBrandingState,
-} from "./branding.mjs";
 import { applyLocalRenewalCode, importLocalLicense, readLocalLicenseState } from "./license.mjs";
 
 function sendJson(request, response, statusCode, payload) {
@@ -264,7 +265,13 @@ function buildNodeAccessState(deps, localLicenseState) {
   };
 }
 
-function buildSessionPayload(user, tenantContext, config, localLicenseState, managedNodeLeaseState = null) {
+function buildSessionPayload(
+  user,
+  tenantContext,
+  config,
+  localLicenseState,
+  managedNodeLeaseState = null,
+) {
   const readonly =
     config.nodeRole === "managed-node"
       ? Boolean(managedNodeLeaseState?.readonly)
@@ -363,11 +370,12 @@ function readManagedNodeRequestAuth(request, body = null) {
   const bodyNodeId = body && typeof body === "object" ? body.nodeId : "";
   const bodyNodeSecret = body && typeof body === "object" ? body.nodeSecret : "";
   return {
-    nodeId:
-      String(request.headers["x-openclaw-managed-node-id"] || bodyNodeId || "")
-        .trim()
-        .toLowerCase(),
-    nodeSecret: String(request.headers["x-openclaw-managed-node-secret"] || bodyNodeSecret || "").trim(),
+    nodeId: String(request.headers["x-openclaw-managed-node-id"] || bodyNodeId || "")
+      .trim()
+      .toLowerCase(),
+    nodeSecret: String(
+      request.headers["x-openclaw-managed-node-secret"] || bodyNodeSecret || "",
+    ).trim(),
   };
 }
 
@@ -418,7 +426,9 @@ function buildTenantPaymentLaunchRelativeHref(order, session, deps) {
 
 function buildTenantPaymentLaunchAbsoluteHref(order, session, deps) {
   const relativeHref = buildTenantPaymentLaunchRelativeHref(order, session, deps);
-  const publicBaseUrl = String(deps.config?.publicBaseUrl || "").trim().replace(/\/+$/, "");
+  const publicBaseUrl = String(deps.config?.publicBaseUrl || "")
+    .trim()
+    .replace(/\/+$/, "");
   if (!publicBaseUrl) {
     return "";
   }
@@ -491,6 +501,407 @@ function normalizePath(basePath, pathname) {
   return pathname.slice(basePath.length) || "/";
 }
 
+const MEMBER_SESSION_HISTORY_PAGE_TAIL_FACTOR = 20;
+const MEMBER_SESSION_HISTORY_PAGE_TAIL_PADDING = 20;
+const MEMBER_SESSION_HISTORY_MAX_PARSE_LINE_BYTES = 256 * 1024;
+const MEMBER_SESSION_HISTORY_METADATA_PREFIX_CHARS = 64 * 1024;
+const MEMBER_SESSION_HISTORY_OVERSIZED_PLACEHOLDER = "[chat.history omitted: message too large]";
+
+function resolveMemberSessionStorePath(configDir, agentId) {
+  const normalizedConfigDir = String(configDir || "").trim();
+  const normalizedAgentId = String(agentId || "").trim();
+  if (!normalizedConfigDir || !normalizedAgentId) {
+    return "";
+  }
+  return path.join(normalizedConfigDir, "agents", normalizedAgentId, "sessions", "sessions.json");
+}
+
+function readMemberSessionStoreEntry(configDir, transcriptContext) {
+  const storePath = resolveMemberSessionStorePath(configDir, transcriptContext?.derivedAgentId);
+  if (!storePath) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(fs.readFileSync(storePath, "utf8"));
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return null;
+    }
+    const sessionKey = String(transcriptContext?.openclawSessionKey || "")
+      .trim()
+      .toLowerCase();
+    if (!sessionKey) {
+      return null;
+    }
+    const direct = payload[transcriptContext.openclawSessionKey];
+    if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+      return direct;
+    }
+    for (const [key, value] of Object.entries(payload)) {
+      if (
+        String(key || "")
+          .trim()
+          .toLowerCase() === sessionKey &&
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      ) {
+        return value;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function resolveMemberSessionTranscriptCandidates(configDir, transcriptContext) {
+  const storePath = resolveMemberSessionStorePath(configDir, transcriptContext?.derivedAgentId);
+  const storeDir = storePath ? path.dirname(storePath) : "";
+  const candidates = [];
+  const seen = new Set();
+  const pushCandidate = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) {
+      return;
+    }
+    const resolved = path.resolve(normalized);
+    if (seen.has(resolved)) {
+      return;
+    }
+    seen.add(resolved);
+    candidates.push(resolved);
+  };
+  const sessionEntry = readMemberSessionStoreEntry(configDir, transcriptContext);
+  const sessionFile = String(sessionEntry?.sessionFile || "").trim();
+  const sessionId =
+    String(sessionEntry?.sessionId || transcriptContext?.openclawSessionId || "").trim() || "";
+  if (storeDir && sessionId) {
+    pushCandidate(path.join(storeDir, `${sessionId}.jsonl`));
+  }
+  if (storeDir && sessionFile) {
+    pushCandidate(path.isAbsolute(sessionFile) ? sessionFile : path.join(storeDir, sessionFile));
+  }
+  return candidates;
+}
+
+function findExistingMemberSessionTranscriptPath(configDir, transcriptContext) {
+  const candidates = resolveMemberSessionTranscriptCandidates(configDir, transcriptContext);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+function extractHistoryJsonStringFieldPrefix(prefix, field) {
+  const match = new RegExp(`"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`).exec(prefix);
+  if (!match) {
+    return undefined;
+  }
+  try {
+    const decoded = JSON.parse(`"${match[1]}"`);
+    return typeof decoded === "string" && decoded.trim() ? decoded.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractHistoryJsonNullableStringFieldPrefix(prefix, field) {
+  if (new RegExp(`"${field}"\\s*:\\s*null`).test(prefix)) {
+    return null;
+  }
+  return extractHistoryJsonStringFieldPrefix(prefix, field);
+}
+
+function buildOversizedMemberSessionTranscriptRecord(line) {
+  const prefix = line.slice(0, MEMBER_SESSION_HISTORY_METADATA_PREFIX_CHARS);
+  const id = extractHistoryJsonStringFieldPrefix(prefix, "id");
+  const parentId = extractHistoryJsonNullableStringFieldPrefix(prefix, "parentId");
+  const type = extractHistoryJsonStringFieldPrefix(prefix, "type");
+  const role = extractHistoryJsonStringFieldPrefix(prefix, "role") || "assistant";
+  return {
+    ...(id ? { id } : {}),
+    ...(parentId !== undefined ? { parentId } : {}),
+    record: {
+      ...(type ? { type } : {}),
+      ...(id ? { id } : {}),
+      ...(parentId !== undefined ? { parentId } : {}),
+      message: {
+        role,
+        content: [{ type: "text", text: MEMBER_SESSION_HISTORY_OVERSIZED_PLACEHOLDER }],
+        __openclaw: { truncated: true, reason: "oversized" },
+      },
+    },
+  };
+}
+
+function parseMemberSessionTranscriptRecord(line) {
+  if (Buffer.byteLength(line, "utf8") > MEMBER_SESSION_HISTORY_MAX_PARSE_LINE_BYTES) {
+    return buildOversizedMemberSessionTranscriptRecord(line);
+  }
+  try {
+    const parsed = JSON.parse(line);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    const id = typeof parsed.id === "string" && parsed.id.trim() ? parsed.id.trim() : undefined;
+    const hasParentId = Object.prototype.hasOwnProperty.call(parsed, "parentId");
+    const parentId =
+      parsed.parentId === null
+        ? null
+        : typeof parsed.parentId === "string" && parsed.parentId.trim()
+          ? parsed.parentId.trim()
+          : undefined;
+    return {
+      ...(id ? { id } : {}),
+      ...(hasParentId ? { parentId } : {}),
+      record: parsed,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function memberSessionRecordHasTreeLink(entry) {
+  return (
+    entry?.record?.type !== "session" &&
+    typeof entry?.id === "string" &&
+    Object.prototype.hasOwnProperty.call(entry.record || {}, "parentId")
+  );
+}
+
+function selectBoundedActiveMemberSessionTranscriptRecords(entries) {
+  const byId = new Map();
+  let leafId = undefined;
+  for (const entry of entries) {
+    if (memberSessionRecordHasTreeLink(entry) && entry.id) {
+      byId.set(entry.id, entry);
+      leafId = entry.id;
+    }
+  }
+  if (!leafId) {
+    return entries;
+  }
+  const selected = [];
+  const seen = new Set();
+  let currentId = leafId;
+  while (currentId) {
+    if (seen.has(currentId)) {
+      return [];
+    }
+    seen.add(currentId);
+    const entry = byId.get(currentId);
+    if (!entry) {
+      break;
+    }
+    selected.push(entry);
+    currentId = entry.parentId ?? undefined;
+  }
+  return selected.toReversed();
+}
+
+function selectActiveMemberSessionTranscriptRecords(records) {
+  return records.some((entry) => memberSessionRecordHasTreeLink(entry))
+    ? selectBoundedActiveMemberSessionTranscriptRecords(records)
+    : records;
+}
+
+function attachMemberSessionTranscriptMeta(message, meta) {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return message;
+  }
+  const existing =
+    message.__openclaw &&
+    typeof message.__openclaw === "object" &&
+    !Array.isArray(message.__openclaw)
+      ? message.__openclaw
+      : {};
+  return {
+    ...message,
+    __openclaw: {
+      ...existing,
+      ...meta,
+    },
+  };
+}
+
+function memberSessionParsedRecordToMessage(record, seq) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    return null;
+  }
+  if (record.message) {
+    return attachMemberSessionTranscriptMeta(record.message, {
+      ...(typeof record.id === "string" ? { id: record.id } : {}),
+      seq,
+    });
+  }
+  if (record.type === "compaction") {
+    const parsedTimestamp =
+      typeof record.timestamp === "string" ? Date.parse(record.timestamp) : Number.NaN;
+    return {
+      role: "system",
+      content: [{ type: "text", text: "Compaction" }],
+      timestamp: Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now(),
+      __openclaw: {
+        kind: "compaction",
+        id: typeof record.id === "string" ? record.id : undefined,
+        seq,
+      },
+    };
+  }
+  return null;
+}
+
+function memberSessionTranscriptRecordsToMessages(records) {
+  const messages = [];
+  let messageSeq = 0;
+  for (const entry of records) {
+    const message = memberSessionParsedRecordToMessage(entry.record, messageSeq + 1);
+    if (message) {
+      messageSeq += 1;
+      messages.push(message);
+    }
+  }
+  return messages;
+}
+
+function visitMemberSessionTranscriptLines(filePath, visit) {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const decoder = new StringDecoder("utf8");
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let carry = "";
+    while (true) {
+      const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead <= 0) {
+        break;
+      }
+      const text = carry + decoder.write(buffer.subarray(0, bytesRead));
+      const lines = text.split(/\r?\n/);
+      carry = lines.pop() ?? "";
+      for (const line of lines) {
+        visit(line);
+      }
+    }
+    const tail = carry + decoder.end();
+    if (tail) {
+      visit(tail);
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function readMemberSessionTranscriptMessages(configDir, transcriptContext) {
+  const transcriptPath = findExistingMemberSessionTranscriptPath(configDir, transcriptContext);
+  if (!transcriptPath) {
+    return [];
+  }
+  const records = [];
+  try {
+    visitMemberSessionTranscriptLines(transcriptPath, (line) => {
+      if (!String(line || "").trim()) {
+        return;
+      }
+      const parsed = parseMemberSessionTranscriptRecord(line);
+      if (parsed && parsed.record?.type !== "session") {
+        records.push(parsed);
+      }
+    });
+  } catch {
+    return [];
+  }
+  return memberSessionTranscriptRecordsToMessages(
+    selectActiveMemberSessionTranscriptRecords(records),
+  );
+}
+
+function readMemberSessionHistoryMessageSeq(message, fallbackIndex = 0) {
+  const raw =
+    message?.__openclaw?.seq ??
+    message?.seq ??
+    message?.sequence ??
+    message?.messageSequence ??
+    null;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return fallbackIndex > 0 ? fallbackIndex : null;
+}
+
+function resolveMemberSessionHistoryCursorSeq(cursor) {
+  const normalized = String(cursor || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  const raw = normalized.startsWith("seq:") ? normalized.slice(4) : normalized;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function paginateMemberSessionHistoryMessages(messages, limit, cursor) {
+  const cursorSeq = resolveMemberSessionHistoryCursorSeq(cursor);
+  let endExclusive = messages.length;
+  if (typeof cursorSeq === "number") {
+    const matchedIndex = messages.findIndex((message, index) => {
+      const seq = readMemberSessionHistoryMessageSeq(message, index + 1);
+      return typeof seq === "number" && seq >= cursorSeq;
+    });
+    if (matchedIndex >= 0) {
+      endExclusive = matchedIndex;
+    }
+  }
+  const boundedLimit =
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 200;
+  const start = Math.max(0, endExclusive - boundedLimit);
+  const pageMessages = messages.slice(start, endExclusive);
+  const firstSeq =
+    pageMessages.length > 0 ? readMemberSessionHistoryMessageSeq(pageMessages[0], start + 1) : null;
+  return {
+    messages: pageMessages,
+    items: pageMessages,
+    hasMore: start > 0,
+    ...(start > 0 && typeof firstSeq === "number" ? { nextCursor: String(firstSeq) } : {}),
+  };
+}
+
+function resolveTenantMemberSessionTranscriptContext(db, userId, openclawSessionKey) {
+  return (
+    db
+      .prepare(
+        `SELECT tas.id AS sessionId,
+                tas.tenant_id AS tenantId,
+                tas.user_id AS userId,
+                tas.tenant_agent_id AS tenantAgentId,
+                tas.openclaw_session_key AS openclawSessionKey,
+                tas.openclaw_session_id AS openclawSessionId,
+                ua.derived_agent_id AS derivedAgentId,
+                ua.derived_workspace_dir AS derivedWorkspaceDir
+         FROM tenant_agent_sessions tas
+         JOIN user_agent_assignments ua
+           ON ua.tenant_id = tas.tenant_id
+          AND ua.user_id = tas.user_id
+          AND ua.tenant_agent_id = tas.tenant_agent_id
+         JOIN tenant_memberships tm
+           ON tm.tenant_id = tas.tenant_id
+          AND tm.user_id = tas.user_id
+         WHERE tas.user_id = @userId
+           AND tas.openclaw_session_key = @openclawSessionKey
+           AND ua.status = 'active'
+           AND tm.status = 'active'
+           AND tm.role = 'member'
+         ORDER BY CASE WHEN tas.hidden_at IS NULL THEN 0 ELSE 1 END,
+                  tas.updated_at DESC,
+                  ua.created_at DESC
+         LIMIT 1`,
+      )
+      .get({
+        userId,
+        openclawSessionKey,
+      }) || null
+  );
+}
+
 function readTenantId(value) {
   return String(value || "").trim();
 }
@@ -523,11 +934,7 @@ function readVisualizationToken(value) {
   return String(value || "").trim();
 }
 
-const IMAGE_UPLOAD_ALLOWED_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-]);
+const IMAGE_UPLOAD_ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const IMAGE_UPLOAD_ALLOWED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 
 function isAbsoluteOrUnsafeUploadPath(value) {
@@ -722,7 +1129,11 @@ function createVisualizationAssetSubdir(visualizationFileName) {
 }
 
 function isAbsoluteOrSpecialHref(value) {
-  return /^(?:[a-zA-Z][a-zA-Z\d+\-.]*:|\/\/|\/)/.test(value) || value.startsWith("#") || value.startsWith("?");
+  return (
+    /^(?:[a-zA-Z][a-zA-Z\d+\-.]*:|\/\/|\/)/.test(value) ||
+    value.startsWith("#") ||
+    value.startsWith("?")
+  );
 }
 
 function buildWorkspaceAssetHref(workspaceBaseHref, relativePath) {
@@ -741,10 +1152,7 @@ function buildWorkspaceAssetHref(workspaceBaseHref, relativePath) {
 
 function isPathInsideRoot(targetPath, rootPath) {
   const relativePath = path.relative(rootPath, targetPath);
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
-  );
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
 function normalizeVisualizationRelativePath(resourcePath) {
@@ -780,8 +1188,12 @@ function needsVisualizationResourceAlias(resourcePath) {
 }
 
 function shouldForceVisualizationResourceAlias(nodeName, attributeName) {
-  const normalizedNodeName = String(nodeName || "").trim().toLowerCase();
-  const normalizedAttributeName = String(attributeName || "").trim().toLowerCase();
+  const normalizedNodeName = String(nodeName || "")
+    .trim()
+    .toLowerCase();
+  const normalizedAttributeName = String(attributeName || "")
+    .trim()
+    .toLowerCase();
   return normalizedNodeName === "script" && normalizedAttributeName === "src";
 }
 
@@ -936,7 +1348,9 @@ function isVisualizationNavigationHref(resourceHref, context) {
 }
 
 function upsertNodeAttribute(node, attributeName, attributeValue) {
-  const normalizedAttributeName = String(attributeName || "").trim().toLowerCase();
+  const normalizedAttributeName = String(attributeName || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedAttributeName) {
     return;
   }
@@ -960,11 +1374,15 @@ function upsertNodeAttribute(node, attributeName, attributeValue) {
 }
 
 function findFirstHtmlElement(node, tagName) {
-  const normalizedTagName = String(tagName || "").trim().toLowerCase();
+  const normalizedTagName = String(tagName || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedTagName || !node || typeof node !== "object") {
     return null;
   }
-  const currentTagName = String(node?.tagName || "").trim().toLowerCase();
+  const currentTagName = String(node?.tagName || "")
+    .trim()
+    .toLowerCase();
   if (currentTagName === normalizedTagName) {
     return node;
   }
@@ -988,9 +1406,7 @@ function findFirstHtmlElement(node, tagName) {
 
 function appendVisualizationGeneratedScript(document, scriptHref) {
   const targetNode =
-    findFirstHtmlElement(document, "body") ||
-    findFirstHtmlElement(document, "html") ||
-    document;
+    findFirstHtmlElement(document, "body") || findFirstHtmlElement(document, "html") || document;
   if (!Array.isArray(targetNode?.childNodes)) {
     targetNode.childNodes = [];
   }
@@ -1064,7 +1480,11 @@ function rewriteVisualizationCssContent(cssContent, context) {
     /url\(\s*(["']?)([^"')]+)\1\s*\)/g,
     (match, quote, url) => {
       const normalizedUrl = String(url || "").trim();
-      if (!normalizedUrl || isAbsoluteOrSpecialHref(normalizedUrl) || normalizedUrl.startsWith("data:")) {
+      if (
+        !normalizedUrl ||
+        isAbsoluteOrSpecialHref(normalizedUrl) ||
+        normalizedUrl.startsWith("data:")
+      ) {
         return match;
       }
       const resolvedHref = resolveVisualizationResourceHref(normalizedUrl, context);
@@ -1075,7 +1495,11 @@ function rewriteVisualizationCssContent(cssContent, context) {
     /(@import\s+(?:url\(\s*)?)(['"])([^'"]+)\2(\s*\)?)/g,
     (match, prefix, quote, url, suffix) => {
       const normalizedUrl = String(url || "").trim();
-      if (!normalizedUrl || isAbsoluteOrSpecialHref(normalizedUrl) || normalizedUrl.startsWith("data:")) {
+      if (
+        !normalizedUrl ||
+        isAbsoluteOrSpecialHref(normalizedUrl) ||
+        normalizedUrl.startsWith("data:")
+      ) {
         return match;
       }
       return `${prefix}${quote}${resolveVisualizationResourceHref(normalizedUrl, context)}${quote}${suffix}`;
@@ -1178,19 +1602,22 @@ export function rewriteVisualizationHtml(
     if (!Array.isArray(node?.attrs) || node.attrs.length === 0) {
       return;
     }
-    const nodeName = String(node?.nodeName || "").trim().toLowerCase();
+    const nodeName = String(node?.nodeName || "")
+      .trim()
+      .toLowerCase();
     const nextAttrs = [];
     let shouldTargetTop = false;
     for (const attr of node.attrs) {
       const rawAttributeName = String(attr?.name || "").trim();
-      const attributeName = String(attr?.name || "").trim().toLowerCase();
+      const attributeName = String(attr?.name || "")
+        .trim()
+        .toLowerCase();
       if (attributeName.startsWith("on") && attributeName.length > 2) {
         const handlerCode = rewriteVisualizationScriptContent(attr.value, context).trim();
         if (!handlerCode) {
           continue;
         }
-        const markerAttributeName =
-          `${ECHARTS_VIEW_INLINE_HANDLER_MARKER_PREFIX}-${inlineHandlerBindings.length + 1}`;
+        const markerAttributeName = `${ECHARTS_VIEW_INLINE_HANDLER_MARKER_PREFIX}-${inlineHandlerBindings.length + 1}`;
         inlineHandlerBindings.push({
           eventName: attributeName.slice(2),
           handlerCode,
@@ -1216,13 +1643,9 @@ export function rewriteVisualizationHtml(
         continue;
       }
       const originalValue = String(attr?.value || "");
-      nextAttribute.value = resolveVisualizationResourceHref(
-        originalValue,
-        context,
-        {
-          forceAlias: shouldForceVisualizationResourceAlias(nodeName, attributeName),
-        },
-      );
+      nextAttribute.value = resolveVisualizationResourceHref(originalValue, context, {
+        forceAlias: shouldForceVisualizationResourceAlias(nodeName, attributeName),
+      });
       if (
         nodeName === "a" &&
         attributeName === "href" &&
@@ -1307,8 +1730,7 @@ export function rewriteVisualizationHtml(
       .update(inlineHandlerScriptContent, "utf8")
       .digest("hex")
       .slice(0, 12);
-    const inlineHandlerScriptFileName =
-      `${ECHARTS_VIEW_INLINE_HANDLER_PREFIX}-${inlineHandlerScriptHash}.js`;
+    const inlineHandlerScriptFileName = `${ECHARTS_VIEW_INLINE_HANDLER_PREFIX}-${inlineHandlerScriptHash}.js`;
     fs.mkdirSync(context.generatedPathRoot, { recursive: true });
     fs.writeFileSync(
       path.join(context.generatedPathRoot, inlineHandlerScriptFileName),
@@ -1435,7 +1857,10 @@ export function createTenantPlatformRouter(deps) {
 
     if (request.method === "POST" && relativePath === "/setup/platform-admin") {
       if (deps.config.nodeRole !== "control-plane") {
-        sendJson(request, response, 400, { ok: false, error: "platform_admin_setup_not_supported" });
+        sendJson(request, response, 400, {
+          ok: false,
+          error: "platform_admin_setup_not_supported",
+        });
         return;
       }
       if (deps.config.edition === "local") {
@@ -1448,7 +1873,13 @@ export function createTenantPlatformRouter(deps) {
           username: String(body.username || "").trim(),
           password: String(body.password || ""),
         });
-        const session = buildSessionPayload(user, null, deps.config, localLicense, nodeAccessState.lease);
+        const session = buildSessionPayload(
+          user,
+          null,
+          deps.config,
+          localLicense,
+          nodeAccessState.lease,
+        );
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -2859,7 +3290,9 @@ export function createTenantPlatformRouter(deps) {
           ok: true,
           data: {
             ...dashboard,
-            orders: dashboard.orders.map((order) => decorateTenantPaymentOrder(order, session, deps)),
+            orders: dashboard.orders.map((order) =>
+              decorateTenantPaymentOrder(order, session, deps),
+            ),
             tenantAgents,
             payment: buildTenantPaymentConfigSummary(deps),
           },
@@ -2880,7 +3313,8 @@ export function createTenantPlatformRouter(deps) {
       }
       try {
         const page = Number.parseInt(String(url.searchParams.get("page") || "1"), 10) || 1;
-        const pageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
+        const pageSize =
+          Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
         const search = String(url.searchParams.get("search") || "").trim();
         const result = listTenantPaymentOrdersPage(deps.db, {
           tenantId: session.tenantId,
@@ -3049,23 +3483,22 @@ export function createTenantPlatformRouter(deps) {
           latestProviderStatus: mapped.providerStatus,
           lastQueriedAt: new Date().toISOString(),
         };
-        const settled =
-          mapped.paid
-            ? confirmTenantPaymentOrderPaid(deps.db, {
-                tenantId: session.tenantId,
-                orderId,
-                providerOrderId: mapped.providerOrderId,
-                providerPayload,
-                note: `allinpay_query:${orderId}`,
-                actorUserId: session.userId,
-              }).order
-            : updateTenantPaymentOrderStatus(deps.db, {
-                tenantId: session.tenantId,
-                orderId,
-                status: mapped.orderStatus,
-                providerOrderId: mapped.providerOrderId,
-                providerPayload,
-              });
+        const settled = mapped.paid
+          ? confirmTenantPaymentOrderPaid(deps.db, {
+              tenantId: session.tenantId,
+              orderId,
+              providerOrderId: mapped.providerOrderId,
+              providerPayload,
+              note: `allinpay_query:${orderId}`,
+              actorUserId: session.userId,
+            }).order
+          : updateTenantPaymentOrderStatus(deps.db, {
+              tenantId: session.tenantId,
+              orderId,
+              status: mapped.orderStatus,
+              providerOrderId: mapped.providerOrderId,
+              providerPayload,
+            });
         sendJson(request, response, 200, {
           ok: true,
           data: {
@@ -3089,7 +3522,8 @@ export function createTenantPlatformRouter(deps) {
       }
       try {
         const page = Number.parseInt(String(url.searchParams.get("page") || "1"), 10) || 1;
-        const pageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
+        const pageSize =
+          Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
         const search = String(url.searchParams.get("search") || "").trim();
         const result = listTenantModelUsageEntriesPage(
           deps.db,
@@ -3121,7 +3555,8 @@ export function createTenantPlatformRouter(deps) {
       }
       try {
         const page = Number.parseInt(String(url.searchParams.get("page") || "1"), 10) || 1;
-        const pageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
+        const pageSize =
+          Number.parseInt(String(url.searchParams.get("pageSize") || "20"), 10) || 20;
         const search = String(url.searchParams.get("search") || "").trim();
         const result = listTenantWalletFlowEntriesPage(
           deps.db,
@@ -3360,7 +3795,10 @@ export function createTenantPlatformRouter(deps) {
           },
           deps.config.sessionSecret,
         );
-        visualizationHrefMap.set(item.visualizationFileName, buildEchartsViewHref(tokenForVisualization));
+        visualizationHrefMap.set(
+          item.visualizationFileName,
+          buildEchartsViewHref(tokenForVisualization),
+        );
       }
       const match = visualizations.find(
         (item) =>
@@ -3425,6 +3863,61 @@ export function createTenantPlatformRouter(deps) {
       sendJson(request, response, 200, {
         ok: true,
         data: listTenantAgentSessions(deps.db, { userId: session.userId, tenantAgentId }),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/sessions/history") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const openclawSessionKey = String(url.searchParams.get("openclawSessionKey") || "").trim();
+      if (!openclawSessionKey) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: "openclaw_session_key_required",
+        });
+        return;
+      }
+      const transcriptContext = resolveTenantMemberSessionTranscriptContext(
+        deps.db,
+        session.userId,
+        openclawSessionKey,
+      );
+      if (!transcriptContext?.derivedAgentId) {
+        sendJson(request, response, 404, {
+          ok: false,
+          error: "member_session_not_found",
+        });
+        return;
+      }
+      const limit = Number.parseInt(String(url.searchParams.get("limit") || "200"), 10) || 200;
+      const cursor = String(url.searchParams.get("cursor") || "").trim();
+      const allMessages = readMemberSessionTranscriptMessages(
+        deps.config.configDir,
+        transcriptContext,
+      );
+      const paginated = paginateMemberSessionHistoryMessages(allMessages, limit, cursor);
+      if (
+        !cursor &&
+        allMessages.length > paginated.messages.length &&
+        paginated.messages.length > 0
+      ) {
+        const firstSeq = readMemberSessionHistoryMessageSeq(paginated.messages[0], 1);
+        paginated.hasMore = true;
+        if (typeof firstSeq === "number") {
+          paginated.nextCursor = String(firstSeq);
+        }
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: {
+          sessionKey: openclawSessionKey,
+          openclawSessionKey,
+          totalMessages: allMessages.length,
+          ...paginated,
+        },
       });
       return;
     }

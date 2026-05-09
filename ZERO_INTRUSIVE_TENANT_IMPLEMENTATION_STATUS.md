@@ -149,7 +149,7 @@
 - 删除确认
 - 标题回填
 - 草稿切换清理
-- 首屏最近页加载 + 顶部滚动触发更早页 HTTP history prepend
+- 首屏最近页加载 + 顶部滚动触发 sidecar 成员历史分页 prepend
 
 ## 9. 租户 sidecar 与 SQLite 底座已落地
 

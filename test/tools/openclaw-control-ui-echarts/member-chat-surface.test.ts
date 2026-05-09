@@ -146,39 +146,32 @@ function installTenantApiFetchStub({ sessions = [], agents = [], historyPageHand
         total: Array.isArray(body.records) ? body.records.length : 0,
       });
     }
-    const historyMatch = url.match(/\/sessions\/([^/]+)\/history(?:\?|$)/);
-    if (historyMatch && method === "GET") {
+    if (url.includes("/member/sessions/history?") && method === "GET") {
       const parsedUrl = new URL(url, "https://tenant.local");
-      const sessionKey = decodeURIComponent(historyMatch[1] || "");
+      const sessionKey = parsedUrl.searchParams.get("openclawSessionKey") || "";
       const cursor = parsedUrl.searchParams.get("cursor") || "";
       const limit = parsedUrl.searchParams.get("limit") || "";
-      const authHeader =
-        options.headers?.authorization ||
-        options.headers?.Authorization ||
-        options.headers?.AUTHORIZATION ||
-        "";
       state.historyPageCalls.push({
         sessionKey,
         cursor,
         limit,
-        authHeader: String(authHeader || ""),
       });
       if (typeof historyPageHandler === "function") {
-        const body = await historyPageHandler({ sessionKey, cursor, limit, url, authHeader });
+        const body = await historyPageHandler({ sessionKey, cursor, limit, url });
         return {
           ok: true,
-          json: async () => body,
+          json: async () => ({
+            ok: true,
+            data: body,
+          }),
         };
       }
-      return {
-        ok: true,
-        json: async () => ({
-          sessionKey,
-          messages: [],
-          hasMore: false,
-          nextCursor: "",
-        }),
-      };
+      return okJson({
+        sessionKey,
+        messages: [],
+        hasMore: false,
+        nextCursor: "",
+      });
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
@@ -583,7 +576,6 @@ describe("member chat surface", () => {
       <nav class="sidebar-nav"></nav>
     `;
     const app = createAppStub({
-      hello: { auth: { deviceToken: "gateway-device-token" } },
       request: async (method) => {
         if (method === "sessions.list") {
           return {
@@ -634,7 +626,6 @@ describe("member chat surface", () => {
       sessionKey: latestSessionKey,
       cursor: "seq:3",
       limit: "200",
-      authHeader: "Bearer gateway-device-token",
     });
     expect(app.chatMessages.map((message) => message?.__openclaw?.seq)).toEqual([1, 2, 3, 4]);
     expect(thread.scrollTop).toBe(200);
@@ -909,7 +900,6 @@ describe("member chat surface", () => {
       <nav class="sidebar-nav"></nav>
     `;
     const app = createAppStub({
-      settings: { token: "gateway-settings-token" },
       request: async (method) => {
         if (method === "sessions.list") {
           return {
@@ -950,7 +940,6 @@ describe("member chat surface", () => {
 
     expect(apiState.historyPageCalls).toHaveLength(1);
     expect(apiState.historyPageCalls[0]?.cursor).toBe("seq:3");
-    expect(apiState.historyPageCalls[0]?.authHeader).toBe("Bearer gateway-settings-token");
     expect(app.chatMessages.map((message) => message?.__openclaw?.seq)).toEqual([1, 3]);
   });
 
