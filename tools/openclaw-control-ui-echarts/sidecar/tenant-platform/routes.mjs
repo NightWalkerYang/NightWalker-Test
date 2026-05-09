@@ -829,23 +829,42 @@ function readMemberSessionHistoryMessageSeq(message, fallbackIndex = 0) {
   return fallbackIndex > 0 ? fallbackIndex : null;
 }
 
-function resolveMemberSessionHistoryCursorSeq(cursor) {
+function readMemberSessionHistoryMessageId(message) {
+  const raw =
+    message?.__openclaw?.id ?? message?.id ?? message?.messageId ?? message?.message_id ?? "";
+  const normalized = String(raw || "").trim();
+  return normalized || null;
+}
+
+function resolveMemberSessionHistoryCursor(cursor) {
   const normalized = String(cursor || "").trim();
   if (!normalized) {
     return null;
   }
+  if (normalized.startsWith("id:")) {
+    const id = normalized.slice(3).trim();
+    return id ? { type: "id", value: id } : null;
+  }
   const raw = normalized.startsWith("seq:") ? normalized.slice(4) : normalized;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  return Number.isFinite(parsed) && parsed > 0 ? { type: "seq", value: parsed } : null;
 }
 
 function paginateMemberSessionHistoryMessages(messages, limit, cursor) {
-  const cursorSeq = resolveMemberSessionHistoryCursorSeq(cursor);
+  const resolvedCursor = resolveMemberSessionHistoryCursor(cursor);
   let endExclusive = messages.length;
-  if (typeof cursorSeq === "number") {
+  if (resolvedCursor?.type === "id") {
+    const matchedIndex = messages.findIndex((message) => {
+      const messageId = readMemberSessionHistoryMessageId(message);
+      return messageId === resolvedCursor.value;
+    });
+    if (matchedIndex >= 0) {
+      endExclusive = matchedIndex;
+    }
+  } else if (resolvedCursor?.type === "seq") {
     const matchedIndex = messages.findIndex((message, index) => {
       const seq = readMemberSessionHistoryMessageSeq(message, index + 1);
-      return typeof seq === "number" && seq >= cursorSeq;
+      return typeof seq === "number" && seq >= resolvedCursor.value;
     });
     if (matchedIndex >= 0) {
       endExclusive = matchedIndex;
@@ -1119,10 +1138,10 @@ function writeNodeText(node, textContent) {
   ];
 }
 
-function createVisualizationAssetSubdir(visualizationFileName) {
+function createVisualizationAssetSubdir(visualizationIdentity) {
   const digest = crypto
     .createHash("sha256")
-    .update(String(visualizationFileName || ""), "utf8")
+    .update(String(visualizationIdentity || ""), "utf8")
     .digest("hex")
     .slice(0, 12);
   return `${ECHARTS_VIEW_INLINE_SCRIPT_DIR}-${digest}`;
@@ -1200,11 +1219,11 @@ function shouldForceVisualizationResourceAlias(nodeName, attributeName) {
 function createVisualizationRewriteContext(
   workspaceBaseHref,
   generatedScriptDir,
-  visualizationFileName,
+  visualizationIdentity,
   visualizationHrefMap = new Map(),
   resourceBaseDir = "",
 ) {
-  const generatedSubdir = createVisualizationAssetSubdir(visualizationFileName);
+  const generatedSubdir = createVisualizationAssetSubdir(visualizationIdentity);
   return {
     generatedSubdir,
     generatedPathRoot: path.join(generatedScriptDir, generatedSubdir),
@@ -1318,13 +1337,13 @@ function resolveVisualizationResourceHref(resourceHref, context, options = {}) {
   }
   const { path: hrefPath, suffix } = splitHrefSuffix(normalizedHref);
   const resolvedResourcePath = resolveVisualizationRelativeResourcePath(hrefPath, context);
-  const targetFileName = path.posix.basename(resolvedResourcePath || hrefPath);
+  const normalizedTargetPath = normalizeVisualizationRelativePath(resolvedResourcePath || hrefPath);
   if (
-    targetFileName.toLowerCase().endsWith(".html") &&
+    normalizedTargetPath.toLowerCase().endsWith(".html") &&
     context.visualizationHrefMap instanceof Map &&
-    context.visualizationHrefMap.has(targetFileName)
+    context.visualizationHrefMap.has(normalizedTargetPath)
   ) {
-    return `${context.visualizationHrefMap.get(targetFileName)}${suffix}`;
+    return `${context.visualizationHrefMap.get(normalizedTargetPath)}${suffix}`;
   }
   if (options.forceAlias || needsVisualizationResourceAlias(resolvedResourcePath || hrefPath)) {
     return materializeVisualizationResourceAlias(normalizedHref, context);
@@ -1337,13 +1356,13 @@ function isVisualizationNavigationHref(resourceHref, context) {
   if (!normalizedHref || isAbsoluteOrSpecialHref(normalizedHref)) {
     return false;
   }
-  const targetFileName = path.posix.basename(
+  const targetPath = normalizeVisualizationRelativePath(
     resolveVisualizationRelativeResourcePath(normalizedHref, context) || normalizedHref,
   );
   return (
-    targetFileName.toLowerCase().endsWith(".html") &&
+    targetPath.toLowerCase().endsWith(".html") &&
     context.visualizationHrefMap instanceof Map &&
-    context.visualizationHrefMap.has(targetFileName)
+    context.visualizationHrefMap.has(targetPath)
   );
 }
 
@@ -1585,15 +1604,16 @@ export function rewriteVisualizationHtml(
   html,
   workspaceBaseHref,
   generatedScriptDir,
-  visualizationFileName,
+  visualizationIdentity,
   visualizationHrefMap = new Map(),
 ) {
   const document = parse5.parse(String(html || ""));
   const context = createVisualizationRewriteContext(
     workspaceBaseHref,
     generatedScriptDir,
-    visualizationFileName,
+    visualizationIdentity,
     visualizationHrefMap,
+    path.posix.dirname(normalizeVisualizationRelativePath(visualizationIdentity)),
   );
   let inlineScriptIndex = 0;
   const inlineHandlerBindings = [];
@@ -1765,6 +1785,34 @@ function buildWorkspaceAgentDownloadBaseHref(derivedAgentId) {
   ]);
 }
 
+function buildWorkspaceVisualizationDownloadHref(derivedAgentId, visualizationRelativePath) {
+  const normalizedRelativePath = normalizeVisualizationRelativePath(visualizationRelativePath);
+  if (!normalizedRelativePath) {
+    return buildWorkspaceAgentDownloadBaseHref(derivedAgentId);
+  }
+  return buildWorkspaceAgentDownloadHref([
+    "workspace-agent-downloads",
+    derivedAgentId,
+    "Echarts",
+    ...normalizedRelativePath.split("/"),
+  ]);
+}
+
+function normalizeVisualizationTokenRelativePath(value) {
+  const normalized = normalizeVisualizationRelativePath(value);
+  if (
+    !normalized ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    path.posix.isAbsolute(normalized) ||
+    !/_index\.html$/i.test(normalized)
+  ) {
+    return "";
+  }
+  return normalized;
+}
+
 function readMemberVisualizationTokenPayload(token, secret) {
   const payload = readSessionToken(token, secret);
   if (!payload || typeof payload !== "object") {
@@ -1776,15 +1824,18 @@ function readMemberVisualizationTokenPayload(token, secret) {
   const tenantId = String(payload.tenantId || "").trim();
   const userId = String(payload.userId || "").trim();
   const derivedAgentId = String(payload.derivedAgentId || "").trim();
-  const visualizationFileName = String(payload.visualizationFileName || "").trim();
-  if (!tenantId || !userId || !derivedAgentId || !visualizationFileName) {
+  const visualizationRelativePath = normalizeVisualizationTokenRelativePath(
+    String(payload.visualizationRelativePath || payload.visualizationFileName || "").trim(),
+  );
+  if (!tenantId || !userId || !derivedAgentId || !visualizationRelativePath) {
     return null;
   }
   return {
     tenantId,
     userId,
     derivedAgentId,
-    visualizationFileName,
+    visualizationRelativePath,
+    visualizationFileName: path.posix.basename(visualizationRelativePath),
   };
 }
 
@@ -3733,6 +3784,7 @@ export function createTenantPlatformRouter(deps) {
             tenantId: item.tenantId,
             userId: item.userId,
             derivedAgentId: item.derivedAgentId,
+            visualizationRelativePath: item.visualizationRelativePath,
             visualizationFileName: item.visualizationFileName,
           },
           deps.config.sessionSecret,
@@ -3741,11 +3793,12 @@ export function createTenantPlatformRouter(deps) {
           ? `${item.visualizationName} · ${item.agentName}`
           : item.visualizationName;
         return {
-          id: `${item.derivedAgentId}:${item.visualizationFileName}`,
+          id: `${item.derivedAgentId}:${item.visualizationRelativePath}`,
           agentId: item.derivedAgentId,
           baseAgentId: item.baseAgentId,
           agentName: item.agentName,
           visualizationFileName: item.visualizationFileName,
+          visualizationRelativePath: item.visualizationRelativePath,
           visualizationName: item.visualizationName,
           title,
           token,
@@ -3791,19 +3844,20 @@ export function createTenantPlatformRouter(deps) {
             tenantId: payload.tenantId,
             userId: payload.userId,
             derivedAgentId: item.derivedAgentId,
+            visualizationRelativePath: item.visualizationRelativePath,
             visualizationFileName: item.visualizationFileName,
           },
           deps.config.sessionSecret,
         );
         visualizationHrefMap.set(
-          item.visualizationFileName,
+          item.visualizationRelativePath,
           buildEchartsViewHref(tokenForVisualization),
         );
       }
       const match = visualizations.find(
         (item) =>
           item.derivedAgentId === payload.derivedAgentId &&
-          item.visualizationFileName === payload.visualizationFileName,
+          item.visualizationRelativePath === payload.visualizationRelativePath,
       );
       if (!match) {
         sendJson(request, response, 404, { ok: false, error: "visualization_not_found" });
@@ -3814,7 +3868,11 @@ export function createTenantPlatformRouter(deps) {
         sendJson(request, response, 404, { ok: false, error: "visualization_not_found" });
         return;
       }
-      const visualizationPath = path.join(workspaceRoot, "Echarts", match.visualizationFileName);
+      const visualizationPath = path.join(
+        workspaceRoot,
+        "Echarts",
+        match.visualizationRelativePath,
+      );
       try {
         const html = fs.readFileSync(visualizationPath, "utf8");
         const workspaceBaseHref = buildWorkspaceAgentDownloadBaseHref(match.derivedAgentId);
@@ -3822,7 +3880,7 @@ export function createTenantPlatformRouter(deps) {
           html,
           workspaceBaseHref,
           path.join(workspaceRoot, "Echarts"),
-          match.visualizationFileName,
+          match.visualizationRelativePath,
           visualizationHrefMap,
         );
         sendJson(request, response, 200, {
@@ -3830,12 +3888,10 @@ export function createTenantPlatformRouter(deps) {
           data: {
             html: generatedScriptHtml,
             baseHref: workspaceBaseHref,
-            href: buildWorkspaceAgentDownloadHref([
-              "workspace-agent-downloads",
+            href: buildWorkspaceVisualizationDownloadHref(
               match.derivedAgentId,
-              "Echarts",
-              match.visualizationFileName,
-            ]),
+              match.visualizationRelativePath,
+            ),
             visualizationName: match.visualizationName,
             agentName: match.agentName,
             agentId: match.derivedAgentId,

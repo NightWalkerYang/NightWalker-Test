@@ -151,6 +151,12 @@
 - 草稿切换清理
 - 首屏最近页加载 + 顶部滚动触发 sidecar 成员历史分页 prepend
 
+当前真实补充约束：
+
+- 首屏仍复用原生 `chat.history`
+- 但成员旧页分页不能把首屏返回消息里的 `__openclaw.seq` 当成全量 transcript 全局序号
+- 当前真实实现已经改成：旧页游标优先使用首屏最老可见消息的 transcript `id`，sidecar 再按这个 `id` 在派生 Agent transcript 里定位并回拉更早页
+
 ## 9. 租户 sidecar 与 SQLite 底座已落地
 
 当前真实状态：

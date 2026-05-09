@@ -5251,6 +5251,26 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
     });
 }
 
+function normalizeWorkspaceVisualizationRelativePath(relativePath) {
+  const normalized = path.posix
+    .normalize(
+      String(relativePath || "")
+        .trim()
+        .replace(/\\/g, "/"),
+    )
+    .replace(/^(\.\/)+/, "");
+  if (
+    !normalized ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    path.posix.isAbsolute(normalized)
+  ) {
+    return "";
+  }
+  return normalized;
+}
+
 function listWorkspaceVisualizationFiles(workspaceDir) {
   const normalizedWorkspaceDir = String(workspaceDir || "").trim();
   if (!normalizedWorkspaceDir) {
@@ -5261,12 +5281,36 @@ function listWorkspaceVisualizationFiles(workspaceDir) {
     if (!fs.existsSync(echartsDir) || !fs.statSync(echartsDir).isDirectory()) {
       return [];
     }
-    return fs
-      .readdirSync(echartsDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /_index\.html$/i.test(entry.name))
-      .map((entry) => entry.name)
-      .toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"))
-      .filter(Boolean);
+    const files = [];
+    const pendingDirs = [{ absoluteDir: echartsDir, relativeDir: "" }];
+    while (pendingDirs.length > 0) {
+      const current = pendingDirs.pop();
+      if (!current) {
+        continue;
+      }
+      const entries = fs
+        .readdirSync(current.absoluteDir, { withFileTypes: true })
+        .toSorted((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
+      for (const entry of entries) {
+        const relativePath = normalizeWorkspaceVisualizationRelativePath(
+          current.relativeDir ? path.posix.join(current.relativeDir, entry.name) : entry.name,
+        );
+        if (!relativePath) {
+          continue;
+        }
+        if (entry.isDirectory()) {
+          pendingDirs.push({
+            absoluteDir: path.join(current.absoluteDir, entry.name),
+            relativeDir: relativePath,
+          });
+          continue;
+        }
+        if (entry.isFile() && /_index\.html$/i.test(entry.name)) {
+          files.push(relativePath);
+        }
+      }
+    }
+    return files.toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"));
   } catch {
     return [];
   }
@@ -5280,12 +5324,15 @@ function stripVisualizationIndexSuffix(fileName) {
 
 export function listAssignedAgentVisualizationsForUser(db, params, configAgents = []) {
   return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) =>
-    listWorkspaceVisualizationFiles(agent.derivedWorkspaceDir).map((visualizationFileName) => ({
-      ...agent,
-      visualizationFileName,
-      visualizationName: stripVisualizationIndexSuffix(visualizationFileName),
-      visualizationRelativePath: path.posix.join("Echarts", visualizationFileName),
-    })),
+    listWorkspaceVisualizationFiles(agent.derivedWorkspaceDir).map((visualizationRelativePath) => {
+      const visualizationFileName = path.posix.basename(visualizationRelativePath);
+      return {
+        ...agent,
+        visualizationFileName,
+        visualizationName: stripVisualizationIndexSuffix(visualizationRelativePath),
+        visualizationRelativePath,
+      };
+    }),
   );
 }
 

@@ -1030,6 +1030,21 @@ function readFirstLoadedMessageSeq(messages) {
   return null;
 }
 
+function readFirstLoadedMessageId(messages) {
+  if (!Array.isArray(messages)) {
+    return "";
+  }
+  for (const message of messages) {
+    const messageId = String(
+      message?.__openclaw?.id ?? message?.id ?? message?.messageId ?? message?.message_id ?? "",
+    ).trim();
+    if (messageId) {
+      return messageId;
+    }
+  }
+  return "";
+}
+
 function mergeOlderMemberHistory(existingMessages, olderMessages) {
   const existing = Array.isArray(existingMessages) ? existingMessages : [];
   const incoming = Array.isArray(olderMessages) ? olderMessages : [];
@@ -1041,13 +1056,15 @@ function mergeOlderMemberHistory(existingMessages, olderMessages) {
   const seenFallback = new Set();
   const merged = [];
   const collectKey = (message) => {
+    const messageId = String(
+      message?.__openclaw?.id ?? message?.id ?? message?.messageId ?? message?.message_id ?? "",
+    ).trim();
+    if (messageId) {
+      return `id:${messageId}`;
+    }
     const seq = normalizeMessageSeq(message);
     if (Number.isFinite(seq)) {
       return `seq:${seq}`;
-    }
-    const messageId = String(message?.id || message?.messageId || message?.message_id || "").trim();
-    if (messageId) {
-      return `id:${messageId}`;
     }
     try {
       return `json:${JSON.stringify(message)}`;
@@ -1059,21 +1076,26 @@ function mergeOlderMemberHistory(existingMessages, olderMessages) {
     if (isAssistantSilentReply(message)) {
       continue;
     }
-    const seq = normalizeMessageSeq(message);
-    if (Number.isFinite(seq)) {
-      if (seenSeq.has(seq)) {
-        continue;
-      }
-      seenSeq.add(seq);
-      merged.push(message);
-      continue;
-    }
     const fallbackKey = collectKey(message);
     if (fallbackKey && seenFallback.has(fallbackKey)) {
       continue;
     }
     if (fallbackKey) {
       seenFallback.add(fallbackKey);
+    }
+    const seq = normalizeMessageSeq(message);
+    if (fallbackKey.startsWith("id:")) {
+      if (Number.isFinite(seq)) {
+        seenSeq.add(seq);
+      }
+      merged.push(message);
+      continue;
+    }
+    if (Number.isFinite(seq)) {
+      if (seenSeq.has(seq)) {
+        continue;
+      }
+      seenSeq.add(seq);
     }
     merged.push(message);
   }
@@ -1088,6 +1110,7 @@ function buildHistoryPaginationState(sessionKey) {
     checkedOlder: false,
     loadingOlder: false,
     oldestSeq: null,
+    oldestMessageId: "",
     loadedCursors: new Set(),
   };
 }
@@ -1121,6 +1144,7 @@ function ensureMemberHistoryPaginationState(app, sessionKey) {
 function updateMemberHistoryPaginationFromMessages(app, sessionKey, messages, patch = {}) {
   const state = ensureMemberHistoryPaginationState(app, sessionKey);
   state.oldestSeq = readFirstLoadedMessageSeq(messages);
+  state.oldestMessageId = readFirstLoadedMessageId(messages);
   if (Object.prototype.hasOwnProperty.call(patch, "hasMore")) {
     state.hasMore = patch.hasMore === true;
   }
@@ -1140,6 +1164,10 @@ function resolveMemberHistoryCursor(state) {
   const normalizedCursor = String(state?.nextCursor || "").trim();
   if (normalizedCursor) {
     return normalizedCursor;
+  }
+  const oldestMessageId = String(state?.oldestMessageId || "").trim();
+  if (oldestMessageId) {
+    return `id:${oldestMessageId}`;
   }
   const oldestSeq = Number(state?.oldestSeq);
   if (Number.isFinite(oldestSeq) && oldestSeq > 0) {

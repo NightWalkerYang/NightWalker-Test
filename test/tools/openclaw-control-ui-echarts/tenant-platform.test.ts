@@ -335,9 +335,13 @@ describe("tenant platform database foundation", () => {
         String(assignment.derivedAgentId),
         "Echarts",
       );
-      fs.mkdirSync(visualizationDir, { recursive: true });
+      fs.mkdirSync(path.join(visualizationDir, "sales"), { recursive: true });
       fs.writeFileSync(path.join(visualizationDir, "销售数据可视化_index.html"), "<html></html>");
       fs.writeFileSync(path.join(visualizationDir, "折线图_index.html"), "<html></html>");
+      fs.writeFileSync(
+        path.join(visualizationDir, "sales", "区域销售数据_index.html"),
+        "<html></html>",
+      );
       fs.writeFileSync(path.join(visualizationDir, "notes.txt"), "ignored");
 
       const visualizations = listAssignedAgentVisualizationsForUser(
@@ -350,11 +354,16 @@ describe("tenant platform database foundation", () => {
         },
         catalog,
       );
-      expect(visualizations).toHaveLength(2);
+      expect(visualizations).toHaveLength(3);
       expect(visualizations.map((item) => item.visualizationName).toSorted()).toEqual([
+        "sales/区域销售数据",
         "折线图",
         "销售数据可视化",
       ]);
+      expect(
+        visualizations.find((item) => item.visualizationName === "sales/区域销售数据")
+          ?.visualizationRelativePath,
+      ).toBe("sales/区域销售数据_index.html");
       expect(
         visualizations.every(
           (item) =>

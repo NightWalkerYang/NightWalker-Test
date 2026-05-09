@@ -532,23 +532,33 @@ describe("member chat surface", () => {
     const latestSessionKey =
       "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
     const apiState = installTenantApiFetchStub({
-      historyPageHandler: async ({ cursor }) => ({
-        messages: [
-          {
-            role: "user",
-            content: "更早的需求",
-            __openclaw: { seq: 1 },
-          },
-          {
-            role: "assistant",
-            content: "更早的回复",
-            __openclaw: { seq: 2 },
-          },
-        ],
-        hasMore: false,
-        nextCursor: "",
-        echoCursor: cursor,
-      }),
+      historyPageHandler: async ({ cursor }) => {
+        if (cursor === "id:m3") {
+          return {
+            messages: [
+              {
+                role: "user",
+                content: "我想给苏博泰克公司做一个官网，你可以上网...",
+                __openclaw: { id: "m1", seq: 1 },
+              },
+              {
+                role: "assistant",
+                content: "可以，先确认目标受众。",
+                __openclaw: { id: "m2", seq: 2 },
+              },
+            ],
+            hasMore: false,
+            nextCursor: "",
+            echoCursor: cursor,
+          };
+        }
+        return {
+          messages: [],
+          hasMore: false,
+          nextCursor: "",
+          echoCursor: cursor,
+        };
+      },
     });
     writeTenantSession({
       token: "member-token",
@@ -594,12 +604,12 @@ describe("member chat surface", () => {
               {
                 role: "user",
                 content: "现在我们开始上传素材吧",
-                __openclaw: { seq: 3 },
+                __openclaw: { id: "m3", seq: 1 },
               },
               {
                 role: "assistant",
                 content: "好的",
-                __openclaw: { seq: 4 },
+                __openclaw: { id: "m4", seq: 2 },
               },
             ],
           };
@@ -614,7 +624,7 @@ describe("member chat surface", () => {
     await flush();
     await flush();
 
-    expect(app.chatMessages.map((message) => message?.__openclaw?.seq)).toEqual([3, 4]);
+    expect(app.chatMessages.map((message) => message?.__openclaw?.id)).toEqual(["m3", "m4"]);
 
     thread.scrollTop = 0;
     thread.dispatchEvent(new Event("scroll"));
@@ -624,10 +634,15 @@ describe("member chat surface", () => {
     expect(apiState.historyPageCalls).toHaveLength(1);
     expect(apiState.historyPageCalls[0]).toMatchObject({
       sessionKey: latestSessionKey,
-      cursor: "seq:3",
+      cursor: "id:m3",
       limit: "200",
     });
-    expect(app.chatMessages.map((message) => message?.__openclaw?.seq)).toEqual([1, 2, 3, 4]);
+    expect(app.chatMessages.map((message) => message?.__openclaw?.id)).toEqual([
+      "m1",
+      "m2",
+      "m3",
+      "m4",
+    ]);
     expect(thread.scrollTop).toBe(200);
   });
 
@@ -640,12 +655,12 @@ describe("member chat surface", () => {
           {
             role: "user",
             content: "重复的较早消息",
-            __openclaw: { seq: 2 },
+            __openclaw: { id: "m2", seq: 2 },
           },
           {
             role: "assistant",
             content: "真正新增的较早回复",
-            __openclaw: { seq: 3 },
+            __openclaw: { id: "m3", seq: 3 },
           },
         ],
         hasMore: false,
@@ -696,12 +711,12 @@ describe("member chat surface", () => {
               {
                 role: "user",
                 content: "已加载的用户消息",
-                __openclaw: { seq: 2 },
+                __openclaw: { id: "m2", seq: 1 },
               },
               {
                 role: "assistant",
                 content: "已加载的助手消息",
-                __openclaw: { seq: 4 },
+                __openclaw: { id: "m4", seq: 2 },
               },
             ],
           };
@@ -721,7 +736,7 @@ describe("member chat surface", () => {
     await flush();
     await flush();
 
-    expect(app.chatMessages.map((message) => message?.__openclaw?.seq)).toEqual([2, 3, 4]);
+    expect(app.chatMessages.map((message) => message?.__openclaw?.id)).toEqual(["m2", "m3", "m4"]);
     expect(apiState.historyPageCalls).toHaveLength(1);
 
     thread.scrollTop = 0;
@@ -867,7 +882,7 @@ describe("member chat surface", () => {
           {
             role: "user",
             content: "更早的第一页",
-            __openclaw: { seq: 1 },
+            __openclaw: { id: "m1", seq: 1 },
           },
         ],
         hasMore: false,
@@ -918,7 +933,7 @@ describe("member chat surface", () => {
               {
                 role: "assistant",
                 content: "当前首屏消息",
-                __openclaw: { seq: 3 },
+                __openclaw: { id: "m3", seq: 1 },
               },
             ],
           };
@@ -939,8 +954,8 @@ describe("member chat surface", () => {
     await flush();
 
     expect(apiState.historyPageCalls).toHaveLength(1);
-    expect(apiState.historyPageCalls[0]?.cursor).toBe("seq:3");
-    expect(app.chatMessages.map((message) => message?.__openclaw?.seq)).toEqual([1, 3]);
+    expect(apiState.historyPageCalls[0]?.cursor).toBe("id:m3");
+    expect(app.chatMessages.map((message) => message?.__openclaw?.id)).toEqual(["m1", "m3"]);
   });
 
   it("creates a new member session and shows it in the sidebar list", async () => {

@@ -585,7 +585,7 @@ describe("tenant platform local edition", () => {
     expect(memberAgents.payload.data).toHaveLength(2);
   });
 
-  it("lists current member visualizations and externalizes inline scripts into workspace assets", async () => {
+  it("lists nested member visualizations and externalizes inline scripts into workspace assets", async () => {
     const sandbox = createSandbox();
     const { baseUrl, db } = await startSandboxServer(sandbox);
 
@@ -641,24 +641,27 @@ describe("tenant platform local edition", () => {
       String(assignment.derivedAgentId),
       "Echarts",
     );
-    fs.mkdirSync(visualizationDir, { recursive: true });
+    const salesVisualizationDir = path.join(visualizationDir, "sales");
+    const treasuryVisualizationDir = path.join(visualizationDir, "treasury");
+    fs.mkdirSync(salesVisualizationDir, { recursive: true });
+    fs.mkdirSync(treasuryVisualizationDir, { recursive: true });
     fs.writeFileSync(
-      path.join(visualizationDir, "销售数据可视化_index.html"),
+      path.join(salesVisualizationDir, "销售数据可视化_index.html"),
       [
         "<!doctype html>",
         "<html>",
         "  <head>",
         "    <title>销售数据</title>",
         '    <script src="/assets/vendor/echarts.min.js"></script>',
-        '    <script src="financial_data.js"></script>',
+        '    <script src="./financial_data.js"></script>',
         "  </head>",
         "  <body>",
-        '    <a href="资金大屏可视化_index.html">切换到资金大屏</a>',
-        "    <button onclick=\"window.location.href='资金大屏可视化_index.html'\">按钮跳转</button>",
+        '    <a href="../treasury/资金大屏可视化_index.html">切换到资金大屏</a>',
+        "    <button onclick=\"window.location.href='../treasury/资金大屏可视化_index.html'\">按钮跳转</button>",
         '    <main id="viz"></main>',
         "    <script>",
         "      async function loadData() {",
-        "        const response = await fetch('dashboard_data.json');",
+        "        const response = await fetch('./dashboard_data.json');",
         "        const data = await response.json();",
         "        document.getElementById('viz').textContent = data.summary.total_assets;",
         "      }",
@@ -670,7 +673,7 @@ describe("tenant platform local edition", () => {
       "utf8",
     );
     fs.writeFileSync(
-      path.join(visualizationDir, "资金大屏可视化_index.html"),
+      path.join(treasuryVisualizationDir, "资金大屏可视化_index.html"),
       [
         "<!doctype html>",
         "<html>",
@@ -682,6 +685,20 @@ describe("tenant platform local edition", () => {
         "  </body>",
         "</html>",
       ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(salesVisualizationDir, "financial_data.js"),
+      "window.__sales = true;",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(salesVisualizationDir, "dashboard_data.json"),
+      JSON.stringify({
+        summary: {
+          total_assets: "1000000",
+        },
+      }),
       "utf8",
     );
 
@@ -699,13 +716,14 @@ describe("tenant platform local edition", () => {
     });
     expect(listResponse.status).toBe(200);
     expect(listResponse.payload.data.map((item) => item.visualizationName).toSorted()).toEqual([
-      "资金大屏可视化",
-      "销售数据可视化",
+      "sales/销售数据可视化",
+      "treasury/资金大屏可视化",
     ]);
     const salesVisualization = listResponse.payload.data.find(
-      (item) => item.visualizationName === "销售数据可视化",
+      (item) => item.visualizationName === "sales/销售数据可视化",
     );
     expect(salesVisualization).toBeDefined();
+    expect(salesVisualization?.visualizationRelativePath).toBe("sales/销售数据可视化_index.html");
     expect(salesVisualization?.href).toMatch(/^\/echarts-view\/\?token=/);
     expect(salesVisualization?.href).not.toMatch(/^https?:\/\//);
 
@@ -714,7 +732,7 @@ describe("tenant platform local edition", () => {
       `/member/visualizations/resolve?token=${encodeURIComponent(String(salesVisualization?.token || ""))}`,
     );
     expect(resolveResponse.status).toBe(200);
-    expect(resolveResponse.payload.data.visualizationName).toBe("销售数据可视化");
+    expect(resolveResponse.payload.data.visualizationName).toBe("sales/销售数据可视化");
     expect(resolveResponse.payload.data.href).toMatch(
       new RegExp(
         `^/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/`,
@@ -725,19 +743,18 @@ describe("tenant platform local edition", () => {
     expect(resolveResponse.payload.data.baseHref).toMatch(/^\/workspace-agent-downloads\//);
     expect(resolveResponse.payload.data.baseHref).not.toMatch(/^https?:\/\//);
     expect(resolveResponse.payload.data.html).toContain("/echarts-view/?token=");
-    expect(resolveResponse.payload.data.html).not.toContain('href="资金大屏可视化_index.html"');
+    expect(resolveResponse.payload.data.html).not.toContain(
+      'href="../treasury/资金大屏可视化_index.html"',
+    );
     expect(resolveResponse.payload.data.html).toContain('target="_top"');
     expect(resolveResponse.payload.data.html).not.toContain("onclick=");
     expect(resolveResponse.payload.data.html).toContain("data-openclaw-inline-handler-1");
-    expect(resolveResponse.payload.data.html).toContain(
-      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/financial_data.js`,
-    );
     expect(resolveResponse.payload.data.html).toContain("__openclaw_echarts_view__");
-    expect(resolveResponse.payload.data.html).not.toContain("fetch('dashboard_data.json')");
-    expect(resolveResponse.payload.data.html).not.toContain('src="financial_data.js"');
+    expect(resolveResponse.payload.data.html).not.toContain("fetch('./dashboard_data.json')");
+    expect(resolveResponse.payload.data.html).not.toContain('src="./financial_data.js"');
 
     const generatedScriptMatch = resolveResponse.payload.data.html.match(
-      /<script\b[^>]*src="([^"]*\/workspace-agent-downloads\/[^"]*__openclaw_echarts_view__-[^"]+)"[^>]*><\/script>/i,
+      /<script\b[^>]*src="([^"]*\/workspace-agent-downloads\/[^"]*__openclaw_echarts_view__-[^"]*inline-script-[^"]+\.js)"[^>]*><\/script>/i,
     );
     expect(generatedScriptMatch).not.toBeNull();
     const generatedScriptHref = generatedScriptMatch?.[1] || "";
@@ -753,7 +770,7 @@ describe("tenant platform local edition", () => {
     expect(fs.existsSync(generatedScriptPath)).toBe(true);
     const generatedScriptContent = fs.readFileSync(generatedScriptPath, "utf8");
     expect(generatedScriptContent).toContain(
-      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/dashboard_data.json`,
+      `/workspace-agent-downloads/${encodeURIComponent(String(assignment.derivedAgentId))}/Echarts/sales/dashboard_data.json`,
     );
     expect(generatedScriptContent).toContain("document.getElementById('viz').textContent");
 
@@ -1800,10 +1817,14 @@ describe("tenant platform local edition", () => {
     expect(latestPage.payload.data.messages.map((message) => message.__openclaw?.seq)).toEqual([
       2, 3,
     ]);
+    expect(latestPage.payload.data.messages.map((message) => message.__openclaw?.id)).toEqual([
+      "m2",
+      "m3",
+    ]);
 
     const olderPage = await requestJson(
       baseUrl,
-      `/member/sessions/history?openclawSessionKey=${encodeURIComponent(openclawSessionKey)}&limit=2&cursor=seq%3A2`,
+      `/member/sessions/history?openclawSessionKey=${encodeURIComponent(openclawSessionKey)}&limit=2&cursor=id%3Am2`,
       {
         token: memberToken,
       },
