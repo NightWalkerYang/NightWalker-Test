@@ -1905,11 +1905,15 @@ function resolveMemberChatShell() {
 
 async function resolveSelectedAgentForMemberChat(session, href = window.location.href) {
   const selectedAgent = readSelectedTenantAgent(href);
-  if (hasResolvedSelectedTenantAgent(selectedAgent)) {
-    return selectedAgent;
-  }
   const tenantAgentId = String(selectedAgent?.id || "").trim();
   if (!tenantAgentId || session?.session?.role !== "member") {
+    return selectedAgent;
+  }
+  const routeSessionKey = new URL(href, document.baseURI).searchParams.get("session")?.trim() || "";
+  const shouldRefreshSelectedAgent =
+    !hasResolvedSelectedTenantAgent(selectedAgent) ||
+    (routeSessionKey && !isTenantMemberSessionKey(routeSessionKey, session, selectedAgent));
+  if (!shouldRefreshSelectedAgent) {
     return selectedAgent;
   }
   try {

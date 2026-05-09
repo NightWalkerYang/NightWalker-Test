@@ -35,6 +35,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/vendor/README.md`
 - `tools/openclaw-control-ui-echarts/vendor/echarts.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/echarts-gl.min.js`
+- `tools/openclaw-control-ui-echarts/vendor/g6/g6.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/json5.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/gsap.min.js`
 - `tools/openclaw-control-ui-echarts/vendor/pixi.min.js`
@@ -140,6 +141,14 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/echarts-view/preboot.js`
 
+### Runtime: Public Sandbox View
+
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/bootstrap.js`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/context.js`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/preboot.js`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/surface.css`
+- `tools/openclaw-control-ui-echarts/runtime/sandbox-view/surface.js`
+
 ### Runtime: Lufeng Public Route
 
 - `tools/openclaw-control-ui-echarts/runtime/lufeng/bootstrap.js`
@@ -194,16 +203,24 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 ### Sidecar: Tenant Platform
 
+- `tools/openclaw-control-ui-echarts/TENANT_DATA_SOURCE_OWNERSHIP.md`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/config.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/billing-rates.json5`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/branding.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/SKILL.md`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/_bridge_client.py`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/local_sync_engine.py`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/manage_analytics_db.py`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/derived-agent/kingdee-analytics-ops/tenant_local_pg_bridge.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/exec-approval-auto-approve.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/license.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/managed-node-sync.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs`
+- `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/sandbox-runner.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/server.mjs`
 - `tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
 
@@ -242,10 +259,13 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-branding.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/sandbox-view-bootstrap.test.ts`
+- `test/tools/openclaw-control-ui-echarts/sandbox-view-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-usage-stats-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-overview-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-platform-auto-approve.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-platform-runtime-deps.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-access-guard.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/select-adapter.test.ts`
@@ -269,6 +289,49 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - `tools/openclaw-control-ui-echarts/generated/control-ui/`
 - `.artifacts/` (local validation or design export outputs)
 - `docker-compose.override.yml`
+
+## Zero-Intrusive Docs And Task Notes
+
+- `docs/superpowers/plans/2026-04-28-tenant-data-source-org-scope-implementation.md`
+- `docs/superpowers/specs/2026-04-28-sandbox-v1-tenant-data-source-org-scope-design.md`
+- `sandbox-v1-tasks/_runtime-notes/d1-source-columns.md`
+- `sandbox-v1-tasks/_runtime-notes/d2-paired-issue.md`
+
+## Zero-Intrusive Sandbox Starter
+
+- `tools/openclaw-sandbox-simulation-starter/README.md`
+- `tools/openclaw-sandbox-simulation-starter/requirements.txt`
+- `tools/openclaw-sandbox-simulation-starter/python/generate_sandbox_payload.py`
+- `tools/openclaw-sandbox-simulation-starter/python/run_sandbox_simulation.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/__init__.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/__init__.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/db.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/errors.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/jwt_verify.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/_common/logging.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/dataset.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/neo4j_projection.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/predict_runtime.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/procurement.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/refresh_features.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/sandbox_payload.py`
+- `tools/openclaw-sandbox-simulation-starter/python/sandbox_simulation/training.py`
+- `tools/openclaw-sandbox-simulation-starter/python/train_lightgbm.py`
+- `tools/openclaw-sandbox-simulation-starter/sql/01_schema_and_views.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/02_features.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/03_scenario_run.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/04_seed_templates.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/99_refresh.sql`
+- `tools/openclaw-sandbox-simulation-starter/sql/feature_material_monthly.sql`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_d1_views.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_d2_features.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_d3_scenario_tables.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_dataset.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_predict_runtime.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_procurement.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_run_sandbox_simulation.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_sandbox_payload.py`
+- `tools/openclaw-sandbox-simulation-starter/tests/test_training.py`
 
 ## Current Capabilities
 

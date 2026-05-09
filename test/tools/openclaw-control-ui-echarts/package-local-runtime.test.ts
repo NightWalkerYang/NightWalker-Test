@@ -92,6 +92,7 @@ describe("package local runtime", () => {
       `jimp@${resolveInstalledPackageVersion(nodeModulesRoot, "jimp")}`,
       `@jimp/utils@${resolveInstalledPackageVersion(nodeModulesRoot, "@jimp/utils")}`,
       `p-queue@${resolveInstalledPackageVersion(nodeModulesRoot, "p-queue")}`,
+      "pg@8.20.0",
     ]);
   });
 
@@ -171,8 +172,10 @@ describe("package local runtime", () => {
     expect(indexHtml).toContain(`${expectedRuntimeBasePath}/branding/auto-token-preboot.js`);
     expect(indexHtml).toContain(`${expectedRuntimeBasePath}/lufeng/preboot.js`);
     expect(indexHtml).toContain(`${expectedRuntimeBasePath}/echarts-view/preboot.js`);
+    expect(indexHtml).toContain(`${expectedRuntimeBasePath}/sandbox-view/preboot.js`);
     expect(indexHtml).toContain(expectedRendererRelativePath);
     expect(indexHtml).toContain("data-openclaw-tenant-preboot");
+    expect(indexHtml).toContain("data-openclaw-sandbox-view-bootstrap");
     expect(indexHtml.indexOf("data-openclaw-echarts-view-bootstrap")).toBeLessThan(
       indexHtml.indexOf("data-openclaw-lufeng-bootstrap"),
     );

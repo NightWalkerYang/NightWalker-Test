@@ -78,6 +78,17 @@ describe("tenant surface", () => {
             },
           };
         }
+        if (url.endsWith("/tenant/admin/data-source-binding")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: null,
+              };
+            },
+          };
+        }
         throw new Error(`unexpected request: ${url}`);
       }),
     );
@@ -99,6 +110,755 @@ describe("tenant surface", () => {
     expect(surfaceRoot?.querySelector("[data-tenant-open-assign]")).toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-feedback]")).toBeNull();
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")).toBeNull();
+  });
+
+  it("renders 组织范围 state from the current tenant binding instead of stale member metadata", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      binding: {
+        tenantId: "tenant-1",
+        dataSourceId: "ds-1",
+        dataSourceName: "金蝶云星空",
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/tenant/admin/data-source-binding")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: state.binding,
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-none",
+                    username: "none",
+                    status: "active",
+                    assignedAgentCount: 0,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                    orgScopeMode: "none",
+                    orgScopeCount: 0,
+                    boundDataSourceName: "",
+                  },
+                  {
+                    id: "member-all",
+                    username: "all",
+                    status: "active",
+                    assignedAgentCount: 0,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                    orgScopeMode: "all",
+                    orgScopeCount: 0,
+                    boundDataSourceName: "",
+                  },
+                  {
+                    id: "member-custom",
+                    username: "custom",
+                    status: "active",
+                    assignedAgentCount: 0,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                    orgScopeMode: "custom",
+                    orgScopeCount: 2,
+                    boundDataSourceName: "",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    const headerCells = Array.from(surfaceRoot?.querySelectorAll("thead th") ?? []).map((cell) =>
+      cell.textContent?.trim(),
+    );
+    expect(headerCells).toContain("组织范围");
+    expect(surfaceRoot?.textContent).toContain("未分配");
+    expect(surfaceRoot?.textContent).toContain("全部组织");
+    expect(surfaceRoot?.textContent).toContain("2 个组织");
+    expect(surfaceRoot?.textContent).not.toContain("未绑定数据源");
+
+    const noneButton = surfaceRoot?.querySelector(
+      "[data-tenant-open-member-org-scope='member-none']",
+    );
+    expect(noneButton?.textContent).toContain("选择组织范围");
+    expect(noneButton?.hasAttribute("disabled")).toBe(false);
+
+    const allButton = surfaceRoot?.querySelector("[data-tenant-open-member-org-scope='member-all']");
+    expect(allButton?.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("shows 未绑定数据源 when the tenant has no current data source binding", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/tenant/admin/data-source-binding")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: null,
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 0,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                    orgScopeMode: "all",
+                    orgScopeCount: 0,
+                    boundDataSourceName: "过期数据源名称",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const memberRow = document
+      .querySelector("[data-tenant-open-member-org-scope='member-1']")
+      ?.closest("tr");
+    expect(memberRow?.textContent).toContain("未绑定数据源");
+    expect(
+      document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
+  });
+
+  it("supports 组织范围 modal loading, mode switching, validation, select-all, and summary refresh", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 2,
+          createdAt: "2026-04-03T08:00:00.000Z",
+          orgScopeMode: "none",
+          orgScopeCount: 0,
+          boundDataSourceName: "金蝶云星空",
+        },
+      ],
+      binding: {
+        tenantId: "tenant-1",
+        dataSourceId: "ds-1",
+        dataSourceName: "金蝶云星空",
+      },
+      orgs: [
+        {
+          orgId: "1001",
+          orgNumber: "ORG-1001",
+          orgName: "华东事业部",
+        },
+        {
+          orgId: "1002",
+          orgNumber: "ORG-1002",
+          orgName: "华南事业部",
+        },
+      ],
+      memberScope: {
+        userId: "member-1",
+        dataSourceId: "ds-1",
+        scopeMode: "none",
+        sandboxEnabled: false,
+        orgScopeCount: 0,
+        orgScopes: [],
+      },
+      requests: [],
+      saveCalls: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        state.requests.push(`${method} ${url}`);
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return okJson(state.members);
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding") && method === "GET") {
+          return okJson(state.binding);
+        }
+        if (url.endsWith("/tenant/admin/orgs") && method === "GET") {
+          return okJson(state.orgs);
+        }
+        if (url.includes("/tenant/admin/member-org-scope?") && method === "GET") {
+          return okJson(state.memberScope);
+        }
+        if (url.endsWith("/tenant/admin/member-org-scope") && method === "POST") {
+          state.saveCalls.push(body);
+          const nextOrgIds = Array.isArray(body.orgIds) ? body.orgIds : [];
+          state.memberScope = {
+            userId: body.userId,
+            dataSourceId: "ds-1",
+            scopeMode: body.scopeMode,
+            sandboxEnabled: Boolean(body.sandboxEnabled),
+            orgScopeCount: nextOrgIds.length,
+            orgScopes: state.orgs
+              .filter((org) => nextOrgIds.includes(org.orgId))
+              .map((org) => ({
+                orgId: org.orgId,
+                orgNameSnapshot: org.orgName,
+              })),
+          };
+          state.members = state.members.map((member) =>
+            member.id === body.userId
+              ? {
+                  ...member,
+                  orgScopeMode: body.scopeMode,
+                  orgScopeCount: nextOrgIds.length,
+                  sandboxEnabled: body.sandboxEnabled ? 1 : 0,
+                  boundDataSourceName: state.binding.dataSourceName,
+                }
+              : member,
+          );
+          return okJson(state.memberScope);
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const openButton = document.querySelector("[data-tenant-open-member-org-scope='member-1']");
+    expect(openButton?.textContent).toContain("选择组织范围");
+    openButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    const orgScopeDialog = document.querySelector("[data-tenant-member-org-scope-dialog]");
+    expect(orgScopeDialog?.open).toBe(true);
+    expect(state.requests).toEqual(
+      expect.arrayContaining([
+        "GET /tenant-platform-api/v1/tenant/admin/data-source-binding",
+        "GET /tenant-platform-api/v1/tenant/admin/orgs",
+        "GET /tenant-platform-api/v1/tenant/admin/member-org-scope?userId=member-1",
+      ]),
+    );
+
+    const noneRadio = document.querySelector("[data-tenant-member-org-scope-mode='none']");
+    const customRadio = document.querySelector("[data-tenant-member-org-scope-mode='custom']");
+    const allRadio = document.querySelector("[data-tenant-member-org-scope-mode='all']");
+    const sandboxCheckbox = document.querySelector("[data-tenant-member-sandbox-enabled]");
+    expect(noneRadio).not.toBeNull();
+    expect(customRadio).not.toBeNull();
+    expect(allRadio).not.toBeNull();
+    expect(sandboxCheckbox).not.toBeNull();
+    expect(noneRadio instanceof HTMLInputElement ? noneRadio.checked : false).toBe(true);
+    expect(sandboxCheckbox instanceof HTMLInputElement ? sandboxCheckbox.checked : true).toBe(false);
+
+    if (customRadio instanceof HTMLInputElement) {
+      customRadio.checked = true;
+      customRadio.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    const refreshedSandboxCheckbox = document.querySelector("[data-tenant-member-sandbox-enabled]");
+    if (refreshedSandboxCheckbox instanceof HTMLInputElement) {
+      refreshedSandboxCheckbox.checked = true;
+      refreshedSandboxCheckbox.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    expect(
+      document.querySelector("[data-tenant-member-org-scope-org='1001']"),
+    ).not.toBeNull();
+    expect(
+      document.querySelector("[data-tenant-member-org-scope-org='1002']"),
+    ).not.toBeNull();
+
+    const initialOrgScopeForm = document.querySelector("[data-tenant-member-org-scope-form]");
+    initialOrgScopeForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(state.saveCalls).toEqual([]);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "请至少选择 1 个组织。",
+    );
+
+    const selectAll = document.querySelector("[data-tenant-member-org-scope-select-all]");
+    expect(selectAll).not.toBeNull();
+    if (selectAll instanceof HTMLInputElement) {
+      selectAll.checked = true;
+      selectAll.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const orgOne = document.querySelector("[data-tenant-member-org-scope-org='1001']");
+    const orgTwo = document.querySelector("[data-tenant-member-org-scope-org='1002']");
+    expect(orgOne instanceof HTMLInputElement ? orgOne.checked : false).toBe(true);
+    expect(orgTwo instanceof HTMLInputElement ? orgTwo.checked : false).toBe(true);
+
+    const refreshedAllRadio = document.querySelector("[data-tenant-member-org-scope-mode='all']");
+    if (refreshedAllRadio instanceof HTMLInputElement) {
+      refreshedAllRadio.checked = true;
+      refreshedAllRadio.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+    expect(document.querySelector("[data-tenant-member-org-scope-org='1001']")).toBeNull();
+
+    const refreshedCustomRadio = document.querySelector(
+      "[data-tenant-member-org-scope-mode='custom']",
+    );
+    if (refreshedCustomRadio instanceof HTMLInputElement) {
+      refreshedCustomRadio.checked = true;
+      refreshedCustomRadio.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const customOrgOne = document.querySelector("[data-tenant-member-org-scope-org='1001']");
+    const customOrgTwo = document.querySelector("[data-tenant-member-org-scope-org='1002']");
+    expect(customOrgOne).not.toBeNull();
+    if (customOrgTwo instanceof HTMLInputElement) {
+      customOrgTwo.checked = false;
+      customOrgTwo.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const finalOrgScopeForm = document.querySelector("[data-tenant-member-org-scope-form]");
+    finalOrgScopeForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.saveCalls).toEqual([
+      {
+        userId: "member-1",
+        scopeMode: "custom",
+        sandboxEnabled: true,
+        orgIds: ["1001"],
+      },
+    ]);
+    expect(document.querySelector("[data-tenant-member-org-scope-dialog]")?.open).toBe(false);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "组织范围已更新。",
+    );
+    expect(document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")?.textContent).toContain(
+      "1 个组织",
+    );
+    expect(document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")?.textContent).toContain(
+      "已启用",
+    );
+  });
+
+  it("filters custom org scope choices by search text and scopes select-all to visible organizations", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 2,
+          createdAt: "2026-04-03T08:00:00.000Z",
+          orgScopeMode: "none",
+          orgScopeCount: 0,
+          boundDataSourceName: "金蝶云星空",
+        },
+      ],
+      binding: {
+        tenantId: "tenant-1",
+        dataSourceId: "ds-1",
+        dataSourceName: "金蝶云星空",
+      },
+      orgs: [
+        {
+          orgId: "1001",
+          orgNumber: "ORG-1001",
+          orgName: "华东事业部",
+        },
+        {
+          orgId: "1002",
+          orgNumber: "ORG-1002",
+          orgName: "华南事业部",
+        },
+        {
+          orgId: "2001",
+          orgNumber: "FIN-2001",
+          orgName: "财务共享中心",
+        },
+      ],
+      memberScope: {
+        userId: "member-1",
+        dataSourceId: "ds-1",
+        scopeMode: "none",
+        orgScopeCount: 0,
+        orgScopes: [],
+      },
+      saveCalls: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return okJson(state.members);
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding") && method === "GET") {
+          return okJson(state.binding);
+        }
+        if (url.endsWith("/tenant/admin/orgs") && method === "GET") {
+          return okJson(state.orgs);
+        }
+        if (url.includes("/tenant/admin/member-org-scope?") && method === "GET") {
+          return okJson(state.memberScope);
+        }
+        if (url.endsWith("/tenant/admin/member-org-scope") && method === "POST") {
+          state.saveCalls.push(body);
+          return okJson({
+            userId: body.userId,
+            dataSourceId: "ds-1",
+            scopeMode: body.scopeMode,
+            orgScopeCount: Array.isArray(body.orgIds) ? body.orgIds.length : 0,
+            orgScopes: state.orgs
+              .filter((org) => Array.isArray(body.orgIds) && body.orgIds.includes(org.orgId))
+              .map((org) => ({
+                orgId: org.orgId,
+                orgNameSnapshot: org.orgName,
+              })),
+          });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    document
+      .querySelector("[data-tenant-open-member-org-scope='member-1']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    const customRadio = document.querySelector("[data-tenant-member-org-scope-mode='custom']");
+    if (customRadio instanceof HTMLInputElement) {
+      customRadio.checked = true;
+      customRadio.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const searchInput = document.querySelector("[data-tenant-member-org-scope-search]");
+    expect(searchInput).not.toBeNull();
+    if (searchInput instanceof HTMLInputElement) {
+      searchInput.value = "1002";
+      searchInput.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    expect(document.querySelector("[data-tenant-member-org-scope-org='1001']")).toBeNull();
+    expect(document.querySelector("[data-tenant-member-org-scope-org='2001']")).toBeNull();
+    expect(
+      document.querySelector("[data-tenant-member-org-scope-org='1002']"),
+    ).not.toBeNull();
+
+    const selectAll = document.querySelector("[data-tenant-member-org-scope-select-all]");
+    if (selectAll instanceof HTMLInputElement) {
+      selectAll.checked = true;
+      selectAll.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    const orgScopeForm = document.querySelector("[data-tenant-member-org-scope-form]");
+    orgScopeForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.saveCalls).toEqual([
+      {
+        userId: "member-1",
+        scopeMode: "custom",
+        sandboxEnabled: false,
+        orgIds: ["1002"],
+      },
+    ]);
+  });
+
+  it("drops hidden org ids that are no longer present in the current organization list", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 2,
+          createdAt: "2026-04-03T08:00:00.000Z",
+          orgScopeMode: "custom",
+          orgScopeCount: 2,
+          boundDataSourceName: "金蝶云星空",
+        },
+      ],
+      binding: {
+        tenantId: "tenant-1",
+        dataSourceId: "ds-1",
+        dataSourceName: "金蝶云星空",
+      },
+      orgs: [
+        {
+          orgId: "1001",
+          orgNumber: "ORG-1001",
+          orgName: "华东事业部",
+        },
+        {
+          orgId: "1002",
+          orgNumber: "ORG-1002",
+          orgName: "华南事业部",
+        },
+      ],
+      memberScope: {
+        userId: "member-1",
+        dataSourceId: "ds-1",
+        scopeMode: "custom",
+        orgScopeCount: 2,
+        orgScopes: [
+          {
+            orgId: "1001",
+            orgNameSnapshot: "华东事业部",
+          },
+          {
+            orgId: "9999",
+            orgNameSnapshot: "已删除组织",
+          },
+        ],
+      },
+      saveCalls: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return okJson(state.members);
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding") && method === "GET") {
+          return okJson(state.binding);
+        }
+        if (url.endsWith("/tenant/admin/orgs") && method === "GET") {
+          return okJson(state.orgs);
+        }
+        if (url.includes("/tenant/admin/member-org-scope?") && method === "GET") {
+          return okJson(state.memberScope);
+        }
+        if (url.endsWith("/tenant/admin/member-org-scope") && method === "POST") {
+          state.saveCalls.push(body);
+          state.memberScope = {
+            userId: body.userId,
+            dataSourceId: "ds-1",
+            scopeMode: body.scopeMode,
+            orgScopeCount: Array.isArray(body.orgIds) ? body.orgIds.length : 0,
+            orgScopes: state.orgs
+              .filter((org) => Array.isArray(body.orgIds) && body.orgIds.includes(org.orgId))
+              .map((org) => ({
+                orgId: org.orgId,
+                orgNameSnapshot: org.orgName,
+              })),
+          };
+          state.members = state.members.map((member) =>
+            member.id === body.userId
+              ? {
+                  ...member,
+                  orgScopeMode: body.scopeMode,
+                  orgScopeCount: Array.isArray(body.orgIds) ? body.orgIds.length : 0,
+                }
+              : member,
+          );
+          return okJson(state.memberScope);
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    document
+      .querySelector("[data-tenant-open-member-org-scope='member-1']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    const visibleOrg = document.querySelector("[data-tenant-member-org-scope-org='1001']");
+    const otherVisibleOrg = document.querySelector("[data-tenant-member-org-scope-org='1002']");
+    expect(visibleOrg instanceof HTMLInputElement ? visibleOrg.checked : false).toBe(true);
+    expect(otherVisibleOrg instanceof HTMLInputElement ? otherVisibleOrg.checked : false).toBe(
+      false,
+    );
+    expect(document.querySelector("[data-tenant-member-org-scope-org='9999']")).toBeNull();
+
+    document
+      .querySelector("[data-tenant-member-org-scope-form]")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.saveCalls).toEqual([
+      {
+        userId: "member-1",
+        scopeMode: "custom",
+        sandboxEnabled: false,
+        orgIds: ["1001"],
+      },
+    ]);
   });
 
   it("updates member password and status from the members list actions", async () => {
@@ -155,6 +915,9 @@ describe("tenant surface", () => {
               balancePoints: 100,
             },
           ]);
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding") && method === "GET") {
+          return okJson(null);
         }
         if (url.endsWith("/tenant/admin/members/password") && method === "POST") {
           state.passwordUpdates.push(body);
@@ -234,6 +997,120 @@ describe("tenant surface", () => {
     );
   });
 
+  it("keeps the member status toggle disabled across re-renders while an update is in flight", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const state = {
+      members: [
+        {
+          id: "member-1",
+          username: "alice",
+          status: "active",
+          assignedAgentCount: 2,
+          createdAt: "2026-04-03T08:00:00.000Z",
+        },
+      ],
+      statusUpdates: [],
+    };
+    let resolveStatusRequest;
+    const okJson = (data) => ({
+      ok: true,
+      async json() {
+        return {
+          ok: true,
+          data,
+        };
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        if (url.includes("/tenant/admin/members") && method === "GET") {
+          return Promise.resolve(okJson(state.members));
+        }
+        if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
+          return Promise.resolve(okJson([]));
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding") && method === "GET") {
+          return Promise.resolve(okJson(null));
+        }
+        if (url.endsWith("/tenant/admin/members/status") && method === "POST") {
+          state.statusUpdates.push(body);
+          return new Promise((resolve) => {
+            resolveStatusRequest = () => {
+              const member = state.members.find((item) => item.id === body.userId);
+              if (member) {
+                member.status = body.status;
+              }
+              resolve(okJson(member ?? null));
+            };
+          });
+        }
+        if (url.endsWith("/tenant/admin/members/password") && method === "POST") {
+          return Promise.resolve(okJson({ id: "member-1", username: "alice", status: "active" }));
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const initialToggle = document.querySelector("[data-tenant-member-status-toggle='member-1']");
+    expect(initialToggle).not.toBeNull();
+    if (initialToggle instanceof HTMLInputElement) {
+      initialToggle.checked = false;
+      initialToggle.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+
+    let pendingToggle = document.querySelector("[data-tenant-member-status-toggle='member-1']");
+    expect(pendingToggle instanceof HTMLInputElement ? pendingToggle.disabled : false).toBe(true);
+    expect(pendingToggle instanceof HTMLInputElement ? pendingToggle.checked : true).toBe(false);
+
+    document
+      .querySelector("[data-tenant-open-member-password='member-1']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    pendingToggle = document.querySelector("[data-tenant-member-status-toggle='member-1']");
+    expect(pendingToggle instanceof HTMLInputElement ? pendingToggle.disabled : false).toBe(true);
+
+    if (pendingToggle instanceof HTMLInputElement) {
+      pendingToggle.checked = true;
+      pendingToggle.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    }
+    await flush();
+    expect(state.statusUpdates).toEqual([
+      {
+        userId: "member-1",
+        status: "inactive",
+      },
+    ]);
+
+    resolveStatusRequest?.();
+    await flush();
+    await flush();
+
+    const finalToggle = document.querySelector("[data-tenant-member-status-toggle='member-1']");
+    expect(finalToggle instanceof HTMLInputElement ? finalToggle.disabled : true).toBe(false);
+    expect(finalToggle instanceof HTMLInputElement ? finalToggle.checked : true).toBe(false);
+  });
+
   it("deletes a tenant member from the members list and refreshes the table", async () => {
     writeTenantSession({
       token: "tenant-token",
@@ -280,6 +1157,9 @@ describe("tenant surface", () => {
         }
         if (url.includes("/tenant/admin/tenant-agents") && method === "GET") {
           return okJson([]);
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding") && method === "GET") {
+          return okJson(null);
         }
         if (url.endsWith("/tenant/admin/members/delete") && method === "POST") {
           state.deleteCalls.push(body);
@@ -829,6 +1709,79 @@ describe("tenant surface", () => {
     expect(surfaceRoot?.textContent).toContain("165");
     expect(surfaceRoot?.textContent).toContain("0.2");
     expect(surfaceRoot?.textContent).toContain("2026/04/13");
+  });
+
+  it("mounts a fallback tenant shell when the native content area is unavailable", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-members&session=main");
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/tenant/admin/data-source-binding")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  tenantId: "tenant-1",
+                  dataSourceId: "ds-1",
+                  dataSourceName: "主账套",
+                },
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 0,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                    orgScopeMode: "custom",
+                    orgScopeCount: 2,
+                    boundDataSourceName: "主账套",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const fallbackShell = document.querySelector("[data-oc-tenant-surface-fallback]");
+    expect(fallbackShell).not.toBeNull();
+    expect(fallbackShell?.classList.contains("content")).toBe(true);
+    expect(document.body.getAttribute("data-oc-tenant-surface-active")).toBe("fallback");
+    expect(document.querySelector("[data-oc-tenant-surface-root]")?.textContent).toContain("alice");
   });
 
   it("mounts the native tenant owned-agents view and opens the detail dialog", async () => {

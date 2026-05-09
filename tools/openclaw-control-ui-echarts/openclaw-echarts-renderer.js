@@ -12,6 +12,8 @@ import { createImageUploadAdapter } from "./runtime/image-upload/adapter.js";
 import { bootKnowledgeGraphEntry } from "./runtime/knowledge-graph/entry.js";
 import { createSelectAdapter } from "./runtime/select/adapter.js";
 import { bootLufengSurface } from "./runtime/lufeng/surface.js";
+import { isSandboxViewPublicPath } from "./runtime/sandbox-view/context.js";
+import { bootSandboxViewSurface } from "./runtime/sandbox-view/surface.js";
 import { bootTenantAuthSurface } from "./runtime/tenant/auth-surface.js";
 import { bootTenantEntry } from "./runtime/tenant/entry.js";
 import { bootMemberChatSurface } from "./runtime/tenant/member-chat-surface.js";
@@ -48,6 +50,10 @@ function boot() {
     bootEchartsViewSurface();
     return;
   }
+  if (isSandboxViewPublicPath(window.location.pathname)) {
+    bootSandboxViewSurface();
+    return;
+  }
   bootBrandReplacer();
   bootBrandPanel();
   bootChatAmbientBackground();
@@ -60,6 +66,7 @@ function boot() {
   bootTenantSurface();
   bootMemberSurface();
   bootMemberChatSurface();
+  bootSandboxViewSurface();
   bootTenantEntry();
   bootLufengSurface();
   runtime.boot();

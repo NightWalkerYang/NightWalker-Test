@@ -49,6 +49,62 @@ CREATE TABLE IF NOT EXISTS tenant_wallets (
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS data_sources (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  connection_json TEXT NOT NULL,
+  source_dbid TEXT,
+  source_tenant_code TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tenant_data_source_bindings (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL UNIQUE,
+  data_source_id TEXT NOT NULL UNIQUE,
+  bound_by_user_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (bound_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS tenant_member_source_policies (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  data_source_id TEXT NOT NULL,
+  scope_mode TEXT NOT NULL,
+  sandbox_enabled INTEGER NOT NULL DEFAULT 0,
+  created_by_user_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, user_id, data_source_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS tenant_member_org_scopes (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  data_source_id TEXT NOT NULL,
+  org_id TEXT NOT NULL,
+  org_name_snapshot TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (tenant_id, user_id, data_source_id, org_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS tenant_agents (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,

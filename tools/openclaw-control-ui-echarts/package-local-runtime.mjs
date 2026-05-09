@@ -21,6 +21,7 @@ const localRuntimeExtraPackages = [
   "@jimp/utils",
   "p-queue",
 ];
+const localRuntimePinnedPackageSpecs = ["pg@8.20.0"];
 
 function usage() {
   process.stdout.write(
@@ -120,10 +121,13 @@ export function resolveInstalledPackageVersion(nodeModulesRoot, packageName) {
 }
 
 export function buildRuntimeExtraDependencySpecs(nodeModulesRoot) {
-  return localRuntimeExtraPackages.map((packageName) => {
-    const version = resolveInstalledPackageVersion(nodeModulesRoot, packageName);
-    return `${packageName}@${version}`;
-  });
+  return [
+    ...localRuntimeExtraPackages.map((packageName) => {
+      const version = resolveInstalledPackageVersion(nodeModulesRoot, packageName);
+      return `${packageName}@${version}`;
+    }),
+    ...localRuntimePinnedPackageSpecs,
+  ];
 }
 
 function runCommand(command, args, options = {}) {
@@ -359,6 +363,7 @@ function verifyRuntimePackage(outputDir, packageRoot) {
     path.join(runtimeDir, "node_modules", "jimp", "package.json"),
     path.join(runtimeDir, "node_modules", "@jimp", "utils", "package.json"),
     path.join(runtimeDir, "node_modules", "p-queue", "package.json"),
+    path.join(runtimeDir, "node_modules", "pg", "package.json"),
     path.join(runtimeDir, "node_modules", "file-type", "core.js"),
   ];
   for (const requiredFile of requiredFiles) {

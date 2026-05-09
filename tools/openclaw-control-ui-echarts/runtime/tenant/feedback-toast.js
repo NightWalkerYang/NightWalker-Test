@@ -93,12 +93,20 @@ export function showTransientFeedbackToast(root, message, isError = false) {
   if (toastTimer) {
     window.clearTimeout(toastTimer);
   }
-  toastTimer = window.setTimeout(() => {
-    const toast = doc.body?.querySelector(TOAST_SELECTOR);
-    toast?.remove();
-    if (toastRoot.childElementCount === 0) {
-      toastRoot.remove();
+  const timerId = window.setTimeout(() => {
+    if (toastTimer !== timerId) {
+      return;
+    }
+    const activeRoot = doc.body?.querySelector(`[${TOAST_ROOT_ATTR}]`);
+    if (!(activeRoot instanceof HTMLElement)) {
+      toastTimer = 0;
+      return;
+    }
+    activeRoot.querySelector(TOAST_SELECTOR)?.remove();
+    if (activeRoot.childElementCount === 0) {
+      activeRoot.remove();
     }
     toastTimer = 0;
   }, 1200);
+  toastTimer = timerId;
 }

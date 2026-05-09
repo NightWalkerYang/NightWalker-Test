@@ -126,6 +126,19 @@
 
 第一阶段只做控制面，不碰 OpenClaw 核心源码。
 
+当前已经落地并进入零侵入主线的扩展范围还包括：
+
+- 平台管理员原生壳内入口新增 `创建数据源`，支持平台级数据源创建、编辑、租户绑定
+- 租户管理员成员管理新增“组织范围 / 沙盒模拟”控制，成员权限以租户绑定数据源为前提
+- 成员侧新增 sandbox 公开路由与 sandbox 列表入口，使用独立 `sandbox-view` 公共页加载运行结果
+- direct-docker / package-local-runtime 已同步引入 sandbox 运行时依赖与 Python starter 挂载契约
+- 构建链现在同时校验 fingerprinted `sandbox-view/preboot.js`、`sandbox-view/index.html` 与 build manifest marker
+
+这些能力仍然遵守零侵入边界：
+
+- 平台数据源、成员组织范围、sandbox 运行状态都落在 `tools/openclaw-control-ui-echarts/**` 的 runtime/sidecar/doc/test 层
+- 不修改 OpenClaw 核心 `src/`、`ui/`、`apps/`、`extensions/` 既有源码
+
 ### 第一阶段要完成
 
 - 平台管理员登录与平台管理页

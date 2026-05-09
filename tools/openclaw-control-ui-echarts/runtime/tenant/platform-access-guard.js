@@ -1,5 +1,6 @@
 import { isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
+import { isSandboxViewPublicPath } from "../sandbox-view/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import { navigateTenantRoute } from "./route-sync.js";
 import {
@@ -71,7 +72,11 @@ export function resolvePlatformAccessDecision({
   if (isTenantLoginView(view)) {
     return "skip";
   }
-  if (isLufengPublicPath(pathname) || isEchartsViewPublicPath(pathname)) {
+  if (
+    isLufengPublicPath(pathname) ||
+    isEchartsViewPublicPath(pathname) ||
+    isSandboxViewPublicPath(pathname)
+  ) {
     return "skip";
   }
   if (!isNativeControlUiPath(pathname)) {
@@ -158,6 +163,7 @@ export async function bootPlatformAccessGuard() {
   }
   if (
     isLufengPublicPath(window.location.pathname) ||
+    isSandboxViewPublicPath(window.location.pathname) ||
     !isNativeControlUiPath(window.location.pathname)
   ) {
     return;

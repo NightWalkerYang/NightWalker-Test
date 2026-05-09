@@ -21,6 +21,27 @@ async function flush() {
   await Promise.resolve();
 }
 
+async function bootPlatformTenantManagement(fetchImpl, sessionOverrides = {}, view = "platform-tenants") {
+  writeTenantSession({
+    token: "platform-token",
+    session: {
+      role: "platform_admin",
+      username: "platform-root",
+      ...sessionOverrides,
+    },
+  });
+  window.history.replaceState({}, "", `/?ocTenantView=${view}`);
+  document.body.innerHTML = `
+    <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+    <div class="content">
+      <div class="native-placeholder">native content</div>
+    </div>
+  `;
+  vi.stubGlobal("fetch", vi.fn(fetchImpl));
+  await bootPlatformSurface();
+  await flush();
+}
+
 describe("platform surface", () => {
   it("mounts the native single-entry platform management view into the content area", async () => {
     writeTenantSession({
@@ -499,6 +520,9 @@ describe("platform surface", () => {
     await bootPlatformSurface();
     await flush();
 
+    const agentTable = document.querySelector(".oc-platform-agent-table");
+    expect(agentTable).not.toBeNull();
+
     const assignButton = document.querySelector("[data-platform-open-assign='tenant-1']");
     expect(assignButton?.textContent).toContain("分配Agent");
     assignButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -776,6 +800,513 @@ describe("platform surface", () => {
     expect(document.querySelector("[data-platform-open-revoke='tenant-1']")?.disabled).toBe(true);
   });
 
+  it("renders a 数据源 column and saves tenant 数据源 binding with current binding details", async () => {
+    const state = {
+      tenants: [
+        {
+          id: "tenant-1",
+          code: "alpha",
+          name: "租户 Alpha",
+          deploymentMode: "cloud",
+          memberCount: 2,
+          walletBalance: 8,
+          agentCount: 1,
+          memberLimit: 10,
+          licenseExpiresAt: null,
+          status: "active",
+          dataSourceName: "主账套",
+        },
+        {
+          id: "tenant-2",
+          code: "beta",
+          name: "租户 Beta",
+          deploymentMode: "cloud",
+          memberCount: 1,
+          walletBalance: 3,
+          agentCount: 0,
+          memberLimit: 5,
+          licenseExpiresAt: null,
+          status: "active",
+          dataSourceName: null,
+        },
+      ],
+      dataSources: [
+        {
+          id: "ds-1",
+          code: "kd-main",
+          name: "主账套",
+          sourceType: "kingdee_analytics",
+          status: "active",
+          connection: {
+            host: "db.main.internal",
+            port: 5432,
+            database: "kingdee_main",
+          },
+          sourceDbid: "db-main",
+          sourceTenantCode: "tenant-main",
+        },
+        {
+          id: "ds-2",
+          code: "kd-backup",
+          name: "备用账套",
+          sourceType: "kingdee_analytics",
+          status: "active",
+          connection: {
+            host: "db.backup.internal",
+            port: 5432,
+            database: "kingdee_backup",
+          },
+          sourceDbid: "db-backup",
+          sourceTenantCode: "tenant-backup",
+        },
+        {
+          id: "ds-3",
+          code: "kd-paused",
+          name: "停用账套",
+          sourceType: "kingdee_analytics",
+          status: "inactive",
+          connection: {
+            host: "db.paused.internal",
+            port: 5432,
+            database: "kingdee_paused",
+          },
+          sourceDbid: "db-paused",
+          sourceTenantCode: "tenant-paused",
+        },
+      ],
+      bindingByTenantId: {
+        "tenant-1": {
+          tenantId: "tenant-1",
+          dataSourceId: "ds-1",
+          dataSourceName: "主账套",
+          dataSourceType: "kingdee_analytics",
+          sourceDbid: "db-main",
+          sourceTenantCode: "tenant-main",
+        },
+      } as Record<string, Record<string, unknown> | null>,
+      bindingCalls: [] as Array<Record<string, unknown>>,
+    };
+    await bootPlatformTenantManagement(async (input, options = {}) => {
+      const url = String(input);
+      const method = String(options.method || "GET").toUpperCase();
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+      const okJson = (data: unknown) => ({
+        ok: true,
+        async json() {
+          return {
+            ok: true,
+            data,
+          };
+        },
+      });
+      if (url.includes("/platform/tenants") && method === "GET") {
+        return okJson(state.tenants);
+      }
+      if (url.includes("/platform/catalog-agents") && method === "GET") {
+        return okJson([]);
+      }
+      if (url.includes("/platform/data-sources") && method === "GET") {
+        return okJson(state.dataSources);
+      }
+      if (url.includes("/platform/tenant-data-source-binding") && method === "GET") {
+        const parsed = new URL(url, window.location.href);
+        const tenantId = parsed.searchParams.get("tenantId") || "";
+        return okJson(state.bindingByTenantId[tenantId] ?? null);
+      }
+      if (url.endsWith("/platform/tenant-data-source-binding") && method === "POST") {
+        state.bindingCalls.push(body);
+        const dataSource = state.dataSources.find((item) => item.id === body.dataSourceId) || null;
+        state.bindingByTenantId[String(body.tenantId || "")] = dataSource
+          ? {
+              tenantId: body.tenantId,
+              dataSourceId: dataSource.id,
+              dataSourceName: dataSource.name,
+              dataSourceType: dataSource.sourceType,
+              sourceDbid: dataSource.sourceDbid,
+              sourceTenantCode: dataSource.sourceTenantCode,
+            }
+          : null;
+        const tenant = state.tenants.find((item) => item.id === body.tenantId);
+        if (tenant) {
+          tenant.dataSourceName = dataSource?.name ?? null;
+        }
+        return okJson(state.bindingByTenantId[String(body.tenantId || "")]);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const table = document.querySelector(".oc-platform-tenant-table");
+    expect(table).not.toBeNull();
+    expect(table?.textContent).toContain("数据源");
+    expect(table?.textContent).toContain("主账套");
+    expect(table?.textContent).toContain("未绑定");
+
+    const bindButton = document.querySelector(
+      "[data-platform-open-data-source-binding='tenant-1']",
+    );
+    expect(bindButton?.textContent).toContain("绑定数据源");
+
+    bindButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    const bindingDialog = document.querySelector("[data-platform-binding-dialog]");
+    expect(bindingDialog?.open).toBe(true);
+    expect(
+      bindingDialog?.querySelector("input[disabled]") instanceof HTMLInputElement
+        ? (bindingDialog?.querySelector("input[disabled]") as HTMLInputElement).value
+        : "",
+    ).toBe("租户 Alpha");
+    expect(
+      bindingDialog?.querySelectorAll("input[disabled]")[1] instanceof HTMLInputElement
+        ? (bindingDialog?.querySelectorAll("input[disabled]")[1] as HTMLInputElement).value
+        : "",
+    ).toBe("主账套");
+    expect(bindingDialog?.textContent).toContain("更换绑定后会清空该租户成员已配置的组织权限范围");
+
+    const bindingSelect = bindingDialog?.querySelector("[data-platform-binding-select]");
+    expect(bindingSelect instanceof HTMLSelectElement).toBe(true);
+    expect(bindingSelect?.querySelector("option[value='ds-1']")).not.toBeNull();
+    expect(bindingSelect?.querySelector("option[value='ds-2']")).not.toBeNull();
+    expect(bindingSelect?.querySelector("option[value='ds-3']")).toBeNull();
+
+    if (bindingSelect instanceof HTMLSelectElement) {
+      bindingSelect.value = "ds-2";
+    }
+    const bindingForm = document.querySelector("[data-platform-binding-form]");
+    bindingForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.bindingCalls).toEqual([
+      {
+        tenantId: "tenant-1",
+        dataSourceId: "ds-2",
+      },
+    ]);
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "已为租户“租户 Alpha”绑定数据源“备用账套”。",
+    );
+    expect(document.querySelector(".data-table")?.textContent).toContain("备用账套");
+  });
+
+  it("mounts the 创建数据源 view and creates a 数据源 with direct tenant binding", async () => {
+    const state = {
+      tenants: [
+        {
+          id: "tenant-1",
+          code: "alpha",
+          name: "租户 Alpha",
+          deploymentMode: "cloud",
+          memberCount: 2,
+          walletBalance: 8,
+          agentCount: 1,
+          memberLimit: 10,
+          licenseExpiresAt: null,
+          status: "active",
+          dataSourceId: null,
+          dataSourceName: null,
+        },
+      ],
+      dataSources: [] as Array<Record<string, unknown>>,
+      createCalls: [] as Array<Record<string, unknown>>,
+      bindingCalls: [] as Array<Record<string, unknown>>,
+    };
+    await bootPlatformTenantManagement(async (input, options = {}) => {
+      const url = String(input);
+      const method = String(options.method || "GET").toUpperCase();
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+      const okJson = (data: unknown) => ({
+        ok: true,
+        async json() {
+          return {
+            ok: true,
+            data,
+          };
+        },
+      });
+      if (url.includes("/platform/tenants") && method === "GET") {
+        return okJson(state.tenants);
+      }
+      if (url.includes("/platform/catalog-agents") && method === "GET") {
+        return okJson([]);
+      }
+      if (url.includes("/platform/data-sources") && method === "GET") {
+        return okJson(state.dataSources);
+      }
+      if (url.endsWith("/platform/data-sources") && method === "POST") {
+        state.createCalls.push(body);
+        const created = {
+          id: "ds-created",
+          ...body,
+        };
+        state.dataSources = [created];
+        return okJson(created);
+      }
+      if (url.endsWith("/platform/tenant-data-source-binding") && method === "POST") {
+        state.bindingCalls.push(body);
+        const dataSource = state.dataSources.find((item) => item.id === body.dataSourceId) || null;
+        state.tenants = state.tenants.map((tenant) =>
+          tenant.id === body.tenantId
+            ? {
+                ...tenant,
+                dataSourceId: body.dataSourceId,
+                dataSourceName: dataSource?.name ?? null,
+              }
+            : tenant,
+        );
+        return okJson({
+          tenantId: body.tenantId,
+          dataSourceId: body.dataSourceId,
+          dataSourceName: dataSource?.name ?? null,
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    }, {}, "platform-data-sources");
+
+    const page = document.querySelector(".oc-platform-data-source-page");
+    const toolbarButton = document.querySelector("[data-platform-open-data-source-create]");
+    const dialog = document.querySelector("[data-platform-data-source-dialog]");
+    expect(page?.textContent).toContain("共 0 个数据源，启用 0 个");
+    expect(page?.textContent).toContain("暂无数据源");
+    expect(toolbarButton?.textContent).toContain("创建数据源");
+    expect(dialog).toBeNull();
+
+    toolbarButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const openedDialog = document.querySelector("[data-platform-data-source-dialog]");
+    expect(openedDialog instanceof HTMLDialogElement).toBe(true);
+    expect((openedDialog as HTMLDialogElement | null)?.open).toBe(true);
+
+    const form = document.querySelector("[data-platform-data-source-form]");
+    const tenantSelect = document.querySelector("[data-platform-data-source-tenant]");
+    const codeInput = document.querySelector("[data-platform-data-source-code]");
+    const nameInput = document.querySelector("[data-platform-data-source-name]");
+    const dbidInput = document.querySelector("[data-platform-data-source-dbid]");
+    const tenantCodeInput = document.querySelector("[data-platform-data-source-tenant-code]");
+    const hostInput = document.querySelector("[data-platform-data-source-host]");
+    const portInput = document.querySelector("[data-platform-data-source-port]");
+    const databaseInput = document.querySelector("[data-platform-data-source-database]");
+    const userInput = document.querySelector("[data-platform-data-source-user]");
+    const passwordInput = document.querySelector("[data-platform-data-source-password]");
+    expect(tenantSelect instanceof HTMLSelectElement).toBe(true);
+    expect(codeInput instanceof HTMLInputElement).toBe(true);
+    expect(nameInput instanceof HTMLInputElement).toBe(true);
+    expect(hostInput instanceof HTMLInputElement).toBe(true);
+    expect(userInput instanceof HTMLInputElement).toBe(true);
+    expect(passwordInput instanceof HTMLInputElement).toBe(true);
+
+    if (tenantSelect instanceof HTMLSelectElement) {
+      tenantSelect.value = "tenant-1";
+    }
+    if (codeInput instanceof HTMLInputElement) {
+      codeInput.value = "kd-new";
+    }
+    if (nameInput instanceof HTMLInputElement) {
+      nameInput.value = "新账套";
+    }
+    if (dbidInput instanceof HTMLInputElement) {
+      dbidInput.value = "db-new";
+    }
+    if (tenantCodeInput instanceof HTMLInputElement) {
+      tenantCodeInput.value = "tenant-new";
+    }
+    if (hostInput instanceof HTMLInputElement) {
+      hostInput.value = "db.new.internal";
+    }
+    if (portInput instanceof HTMLInputElement) {
+      portInput.value = "5432";
+    }
+    if (databaseInput instanceof HTMLInputElement) {
+      databaseInput.value = "kingdee_new";
+    }
+    if (userInput instanceof HTMLInputElement) {
+      userInput.value = "kb_local";
+    }
+    if (passwordInput instanceof HTMLInputElement) {
+      passwordInput.value = "kb_local123!";
+    }
+    form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.createCalls).toEqual([
+      {
+        code: "kd-new",
+        name: "新账套",
+        sourceType: "kingdee_analytics",
+        status: "active",
+        sourceDbid: "db-new",
+        sourceTenantCode: "tenant-new",
+        connection: {
+          host: "db.new.internal",
+          port: 5432,
+          database: "kingdee_new",
+          user: "kb_local",
+          password: "kb_local123!",
+        },
+      },
+    ]);
+    expect(state.bindingCalls).toEqual([
+      {
+        tenantId: "tenant-1",
+        dataSourceId: "ds-created",
+      },
+    ]);
+    expect(document.querySelector("[data-platform-data-source-dialog]")).toBeNull();
+    expect(document.querySelector(".data-table")?.textContent).toContain("新账套");
+    expect(document.querySelector(".data-table")?.textContent).toContain("租户 Alpha");
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "已创建数据源并绑定到租户“租户 Alpha”。",
+    );
+  });
+
+  it("updates an existing 数据源 through the 创建数据源 view", async () => {
+    const state = {
+      tenants: [
+        {
+          id: "tenant-1",
+          code: "alpha",
+          name: "租户 Alpha",
+          deploymentMode: "cloud",
+          memberCount: 2,
+          walletBalance: 8,
+          agentCount: 1,
+          memberLimit: 10,
+          licenseExpiresAt: null,
+          status: "active",
+          dataSourceId: "ds-1",
+          dataSourceName: "历史账套",
+        },
+      ],
+      dataSources: [
+        {
+          id: "ds-1",
+          code: "kd-history",
+          name: "历史账套",
+          sourceType: "kingdee_analytics",
+          status: "active",
+          connection: {
+            host: "db.history.internal",
+            port: 5432,
+            database: "kingdee_history",
+            user: "kb_history",
+          },
+          connectionPasswordStored: true,
+          sourceDbid: "db-history",
+          sourceTenantCode: "tenant-history",
+        },
+      ],
+      updateCalls: [] as Array<Record<string, unknown>>,
+    };
+    await bootPlatformTenantManagement(async (input, options = {}) => {
+      const url = String(input);
+      const method = String(options.method || "GET").toUpperCase();
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+      const okJson = (data: unknown) => ({
+        ok: true,
+        async json() {
+          return {
+            ok: true,
+            data,
+          };
+        },
+      });
+      if (url.includes("/platform/tenants") && method === "GET") {
+        return okJson(state.tenants);
+      }
+      if (url.includes("/platform/catalog-agents") && method === "GET") {
+        return okJson([]);
+      }
+      if (url.includes("/platform/data-sources") && method === "GET") {
+        return okJson(state.dataSources);
+      }
+      if (url.endsWith("/platform/data-sources") && method === "PUT") {
+        state.updateCalls.push(body);
+        state.dataSources = state.dataSources.map((item) =>
+          item.id === body.id
+            ? {
+                ...item,
+                ...body,
+              }
+            : item,
+        );
+        return okJson(state.dataSources[0]);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    }, {}, "platform-data-sources");
+
+    const editButton = document.querySelector("[data-platform-edit-data-source='ds-1']");
+    expect(editButton?.textContent).toContain("编辑");
+
+    editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const dialog = document.querySelector("[data-platform-data-source-dialog]");
+    expect(dialog instanceof HTMLDialogElement).toBe(true);
+    expect((dialog as HTMLDialogElement | null)?.open).toBe(true);
+
+    const tenantSelect = document.querySelector("[data-platform-data-source-tenant]");
+    const nameInput = document.querySelector("[data-platform-data-source-name]");
+    const statusSelect = document.querySelector("[data-platform-data-source-status]");
+    const userInput = document.querySelector("[data-platform-data-source-user]");
+    const passwordInput = document.querySelector("[data-platform-data-source-password]");
+    expect(tenantSelect instanceof HTMLSelectElement).toBe(true);
+    expect(nameInput instanceof HTMLInputElement).toBe(true);
+    expect(statusSelect instanceof HTMLSelectElement).toBe(true);
+    expect(userInput instanceof HTMLInputElement).toBe(true);
+    expect(passwordInput instanceof HTMLInputElement).toBe(true);
+
+    if (tenantSelect instanceof HTMLSelectElement) {
+      expect(tenantSelect.value).toBe("tenant-1");
+      expect(tenantSelect.querySelector("option[value='tenant-1']")).not.toBeNull();
+      expect(tenantSelect.querySelector("option[value='tenant-2']")).toBeNull();
+    }
+    if (userInput instanceof HTMLInputElement) {
+      expect(userInput.value).toBe("kb_history");
+    }
+    if (passwordInput instanceof HTMLInputElement) {
+      expect(passwordInput.value).toBe("");
+      expect(passwordInput.placeholder).toContain("保留当前密码");
+    }
+
+    if (nameInput instanceof HTMLInputElement) {
+      nameInput.value = "历史账套（停用）";
+    }
+    if (statusSelect instanceof HTMLSelectElement) {
+      statusSelect.value = "inactive";
+    }
+
+    const form = document.querySelector("[data-platform-data-source-form]");
+    form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(state.updateCalls).toEqual([
+      {
+        id: "ds-1",
+        code: "kd-history",
+        name: "历史账套（停用）",
+        sourceType: "kingdee_analytics",
+        status: "inactive",
+        sourceDbid: "db-history",
+        sourceTenantCode: "tenant-history",
+        connection: {
+          host: "db.history.internal",
+          port: 5432,
+          database: "kingdee_history",
+          user: "kb_history",
+        },
+      },
+    ]);
+    expect(document.querySelector("[data-platform-data-source-dialog]")).toBeNull();
+    expect(document.querySelector(".data-table")?.textContent).toContain("历史账套（停用）");
+    expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
+      "数据源已更新。",
+    );
+  });
+
   it("keeps the management search input focused while filtering", async () => {
     writeTenantSession({
       token: "platform-token",
@@ -1017,5 +1548,71 @@ describe("platform surface", () => {
 
     expect(document.querySelector("[data-oc-platform-surface-root]")).toBeNull();
     expect(document.querySelector(".content")?.getAttribute("data-oc-platform-surface-active")).toBeNull();
+  });
+
+  it("mounts a fallback management shell when the native content area is unavailable", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=platform-tenants&session=main");
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/platform/tenants")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-1",
+                    code: "alpha",
+                    name: "租户 Alpha",
+                    deploymentMode: "cloud",
+                    memberCount: 2,
+                    walletBalance: 8,
+                    agentCount: 1,
+                    memberLimit: 10,
+                    licenseExpiresAt: null,
+                    status: "active",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (
+          url.includes("/platform/catalog-agents") ||
+          url.includes("/platform/tenant-members") ||
+          url.includes("/platform/tenant-agents")
+        ) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootPlatformSurface();
+    await flush();
+
+    const fallbackShell = document.querySelector("[data-oc-platform-surface-fallback]");
+    expect(fallbackShell).not.toBeNull();
+    expect(fallbackShell?.classList.contains("content")).toBe(true);
+    expect(document.body.getAttribute("data-oc-platform-surface-active")).toBe("fallback");
+    expect(document.querySelector("[data-oc-platform-surface-root]")?.textContent).toContain(
+      "租户 Alpha",
+    );
   });
 });

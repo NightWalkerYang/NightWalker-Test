@@ -14,6 +14,7 @@ export const PLATFORM_TENANTS_VIEW = "platform-tenants";
 // without breaking the whole zero-intrusive module graph during incremental upgrades.
 export const PLATFORM_TENANT_MANAGEMENT_VIEW = PLATFORM_TENANTS_VIEW;
 export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
+export const PLATFORM_DATA_SOURCES_VIEW = "platform-data-sources";
 export const PLATFORM_NODE_MANAGEMENT_VIEW = "platform-nodes";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
@@ -31,6 +32,7 @@ export const PLATFORM_LOGIN_ROUTE = LOGIN_ROUTE;
 export const TENANT_LOGIN_ROUTE = LOGIN_ROUTE;
 export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_TENANTS_VIEW}`;
 export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
+export const PLATFORM_DATA_SOURCES_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_DATA_SOURCES_VIEW}`;
 export const PLATFORM_NODE_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_NODE_MANAGEMENT_VIEW}`;
 export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
 export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
@@ -91,6 +93,7 @@ export function readSessionForCurrentView() {
     view === PLATFORM_LOGIN_VIEW ||
     view === PLATFORM_TENANTS_VIEW ||
     view === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
+    view === PLATFORM_DATA_SOURCES_VIEW ||
     view === PLATFORM_NODE_MANAGEMENT_VIEW
   ) {
     return readPlatformSession();
@@ -141,10 +144,16 @@ function normalizeTenantApiBaseOverride(value) {
   try {
     const url = new URL(normalized, document.baseURI);
     // Older proxy-fronted builds could persist a direct sidecar base such as
-    // http://host:18801/tenant-platform-api/v1. Keep healing that stale state
-    // so browsers stop retrying a CSP-blocked cross-port path on 172-style
-    // deployments and fall back to the working same-origin proxy route.
-    if (url.port === "18801" && /^\/tenant-platform-api\/v1(?:\/.*)?$/i.test(url.pathname)) {
+    // http://host:18801 or http://host:18801/tenant-platform-api/v1. Keep healing
+    // that stale state so browsers stop retrying a CSP-blocked cross-port path
+    // on proxy-fronted deployments and fall back to the working same-origin
+    // proxy route.
+    if (
+      url.port === "18801" &&
+      (!url.pathname ||
+        url.pathname === "/" ||
+        /^\/tenant-platform-api\/v1(?:\/.*)?$/i.test(url.pathname))
+    ) {
       return "";
     }
   } catch {
@@ -252,6 +261,12 @@ export function readSelectedTenantAgent(locationHref = window.location.href) {
   }
   if (stored?.id === tenantAgentId) {
     return stored;
+  }
+  if (stored && typeof stored === "object") {
+    return {
+      ...stored,
+      id: tenantAgentId,
+    };
   }
   return { id: tenantAgentId };
 }

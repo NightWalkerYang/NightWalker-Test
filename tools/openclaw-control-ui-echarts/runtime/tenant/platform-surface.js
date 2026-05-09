@@ -1,6 +1,7 @@
 import { mountPlatformConsolePage } from "./platform-console-page.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
+  PLATFORM_DATA_SOURCES_VIEW,
   PLATFORM_NODE_MANAGEMENT_VIEW,
   PLATFORM_TENANTS_VIEW,
   readPlatformSession,
@@ -15,10 +16,12 @@ const ROOT_ATTR = "data-oc-platform-surface-root";
 const STYLE_ATTR = "data-oc-platform-surface-style";
 const ACTIVE_ATTR = "data-oc-platform-surface-active";
 const SECTION_ATTR = "data-oc-platform-section";
+const FALLBACK_ATTR = "data-oc-platform-surface-fallback";
 function isPlatformManagementView(view) {
   return (
     view === PLATFORM_TENANTS_VIEW ||
     view === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
+    view === PLATFORM_DATA_SOURCES_VIEW ||
     view === PLATFORM_NODE_MANAGEMENT_VIEW
   );
 }
@@ -35,6 +38,9 @@ function isPlatformManagementRoute() {
 function sectionForView(view) {
   if (view === PLATFORM_AGENT_ASSIGNMENT_VIEW) {
     return "agent-allocation";
+  }
+  if (view === PLATFORM_DATA_SOURCES_VIEW) {
+    return "data-sources";
   }
   if (view === PLATFORM_NODE_MANAGEMENT_VIEW) {
     return "nodes";
@@ -75,22 +81,64 @@ function renderShell(root, section) {
   `;
 }
 
-async function mountCurrentSurface(content) {
-  if (!isPlatformManagementRoute()) {
+function isFallbackContent(content) {
+  return content instanceof HTMLElement && content.hasAttribute(FALLBACK_ATTR);
+}
+
+function ensureFallbackContent() {
+  if (!(document.querySelector("openclaw-app") instanceof HTMLElement)) {
+    return null;
+  }
+  let content = document.querySelector(`[${FALLBACK_ATTR}]`);
+  if (content instanceof HTMLElement) {
+    return content;
+  }
+  content = document.createElement("main");
+  content.className = "content oc-platform-surface-fallback";
+  content.setAttribute(FALLBACK_ATTR, "true");
+  document.body.append(content);
+  return content;
+}
+
+function removeFallbackContent() {
+  document.querySelector(`[${FALLBACK_ATTR}]`)?.remove();
+}
+
+function clearMountedSurface(content) {
+  if (content instanceof HTMLElement && !isFallbackContent(content)) {
     content.removeAttribute(ACTIVE_ATTR);
     content.querySelector(`[${ROOT_ATTR}]`)?.remove();
-    document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+  }
+  removeFallbackContent();
+  document.body.removeAttribute(ACTIVE_ATTR);
+  document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+}
+
+async function mountCurrentSurface(content) {
+  if (!isPlatformManagementRoute()) {
+    clearMountedSurface(content);
     return null;
   }
 
   const session = readPlatformSession();
   if (session?.session?.role !== "platform_admin") {
+    clearMountedSurface(content);
     return null;
   }
 
+  const host = content instanceof HTMLElement ? content : ensureFallbackContent();
+  if (!(host instanceof HTMLElement)) {
+    return null;
+  }
   ensureStyle();
-  content.setAttribute(ACTIVE_ATTR, "true");
-  const root = ensureRoot(content);
+  if (isFallbackContent(host)) {
+    document.body.setAttribute(ACTIVE_ATTR, "fallback");
+  } else {
+    removeFallbackContent();
+    document.body.removeAttribute(ACTIVE_ATTR);
+    host.setAttribute(ACTIVE_ATTR, "true");
+  }
+  const root = ensureRoot(host);
   const view = readTenantView();
   const section = sectionForView(view);
   if (root.getAttribute(SECTION_ATTR) !== section) {
@@ -111,9 +159,6 @@ export async function bootPlatformSurface() {
       scope instanceof Element && scope.matches(".content")
         ? scope
         : document.querySelector(".content");
-    if (!(content instanceof HTMLElement)) {
-      return null;
-    }
     return mountCurrentSurface(content);
   };
 

@@ -2,6 +2,7 @@ import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/con
 import { writeEchartsViewToken } from "../echarts-view/context.js";
 import { findSidebar, findSidebarUtilityGroup, findTopbarSearch } from "../framework/dom-compat.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
+import { SANDBOX_VIEW_ROUTE, isSandboxViewPublicPath, writeSandboxViewToken } from "../sandbox-view/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
   bootTenantRouteSync,
@@ -13,6 +14,8 @@ import {
   LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
+  PLATFORM_DATA_SOURCES_ROUTE,
+  PLATFORM_DATA_SOURCES_VIEW,
   PLATFORM_NODE_MANAGEMENT_ROUTE,
   PLATFORM_NODE_MANAGEMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
@@ -55,6 +58,7 @@ const AGENT_SECTION_CLASS = "oc-tenant-agent-section";
 const STATS_SECTION_CLASS = "oc-tenant-stats-section";
 const WALLET_SECTION_CLASS = "oc-tenant-wallet-section";
 const MEMBER_VISUALIZATION_SECTION_CLASS = "oc-member-visualization-section";
+const MEMBER_SANDBOX_SECTION_CLASS = "oc-member-sandbox-section";
 const NAV_SECTION_CLASSES = [
   MANAGEMENT_SECTION_CLASS,
   AGENT_SECTION_CLASS,
@@ -83,6 +87,10 @@ const MEMBER_VISUALIZATION_IN_FLIGHT_KEY = "__ocMemberVisualizationInFlight";
 const MEMBER_VISUALIZATION_PENDING_SYNC_KEY = "__ocMemberVisualizationPendingSync";
 const MEMBER_VISUALIZATION_POLL_INTERVAL_MS = 5000;
 const MEMBER_VISUALIZATION_POLL_TIMER_KEY = "__openclawMemberVisualizationPollTimer";
+const MEMBER_SANDBOX_CACHE = new Map();
+const MEMBER_SANDBOX_SIGNATURE_ATTR = "data-oc-member-sandbox-signature";
+const MEMBER_SANDBOX_POLL_INTERVAL_MS = 5000;
+const MEMBER_SANDBOX_POLL_TIMER_KEY = "__openclawMemberSandboxPollTimer";
 const TENANT_WALLET_BALANCE_CACHE = {
   sessionToken: "",
   balanceText: "",
@@ -103,6 +111,11 @@ const ICONS = {
   agentAllocation: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M7.8 5.2a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2Zm8.4 0a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2ZM7.8 13.6a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2Zm8.4 1h-4.4v-1.8h4.4Zm-6.2-5.2h4.4v1.8H10Zm2 7.8h4.2v1.8H12Z"></path>
+    </svg>
+  `,
+  dataSources: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 6.5C4 4.6 7.6 3 12 3s8 1.6 8 3.5S16.4 10 12 10 4 8.4 4 6.5Zm0 5.5v5c0 1.9 3.6 3.5 8 3.5s8-1.6 8-3.5v-5c-1.8 1.6-4.9 2.5-8 2.5S5.8 13.6 4 12Zm0-2.6v1.1c0 1.9 3.6 3.5 8 3.5s8-1.6 8-3.5V9.4c-1.8 1.6-4.9 2.6-8 2.6S5.8 11 4 9.4Z"></path>
     </svg>
   `,
   tenant: `
@@ -213,6 +226,14 @@ function getSectionConfigForSession(session) {
               text: "节点管理",
               icon: ICONS.tenants,
               activeView: PLATFORM_NODE_MANAGEMENT_VIEW,
+            },
+            {
+              className: "oc-platform-data-source-link",
+              href: PLATFORM_DATA_SOURCES_ROUTE,
+              title: "创建数据源",
+              text: "创建数据源",
+              icon: ICONS.dataSources,
+              activeView: PLATFORM_DATA_SOURCES_VIEW,
             },
           ],
         },
@@ -374,6 +395,17 @@ function buildMemberVisualizationLinks(visualizations) {
   }));
 }
 
+function buildMemberSandboxLinks(sandboxes) {
+  return sandboxes.map((item) => ({
+    className: "oc-member-sandbox-link",
+    href: item.href,
+    title: item.title || item.sandboxName || "",
+    text: item.sandboxName || item.title || item.sandboxFileName || "",
+    icon: ICONS.dashboard,
+    activePath: SANDBOX_VIEW_ROUTE,
+  }));
+}
+
 function openPublicRoute(destination) {
   if (!(destination instanceof URL)) {
     return false;
@@ -387,6 +419,14 @@ function openPublicRoute(destination) {
     return true;
   }
   if (isLufengPublicPath(destination.pathname)) {
+    window.location.assign(destination.href);
+    return true;
+  }
+  if (isSandboxViewPublicPath(destination.pathname)) {
+    const token = destination.searchParams.get("token")?.trim() || "";
+    if (token) {
+      writeSandboxViewToken(token);
+    }
     window.location.assign(destination.href);
     return true;
   }
@@ -607,6 +647,137 @@ function syncAllMemberVisualizationSections(root = document) {
   }
 }
 
+function getMemberSandboxSignature(sandboxes) {
+  return sandboxes
+    .map((item) => [item.id, item.href, item.sandboxName, item.agentName].join("|"))
+    .join(";;");
+}
+
+function readMemberSandboxSessionKey(session) {
+  return String(session?.token || "").trim();
+}
+
+function loadMemberSandboxes(session) {
+  const sessionKey = readMemberSandboxSessionKey(session);
+  if (!sessionKey) {
+    return Promise.resolve([]);
+  }
+  if (!MEMBER_SANDBOX_CACHE.has(sessionKey)) {
+    let promise;
+    promise = createTenantApiClient()
+      .listMemberSandboxes()
+      .then((items) => (Array.isArray(items) ? items : []))
+      .catch((error) => {
+        MEMBER_SANDBOX_CACHE.delete(sessionKey);
+        throw error;
+      })
+      .finally(() => {
+        if (MEMBER_SANDBOX_CACHE.get(sessionKey) === promise) {
+          MEMBER_SANDBOX_CACHE.delete(sessionKey);
+        }
+      });
+    MEMBER_SANDBOX_CACHE.set(sessionKey, promise);
+  }
+  return MEMBER_SANDBOX_CACHE.get(sessionKey);
+}
+
+function insertSandboxSection(container, section) {
+  const visualizationSection = container.querySelector(
+    `:scope > .${MEMBER_VISUALIZATION_SECTION_CLASS}`,
+  );
+  if (visualizationSection instanceof HTMLElement) {
+    visualizationSection.insertAdjacentElement("afterend", section);
+    return;
+  }
+  insertVisualizationSection(container, section);
+}
+
+function listDirectMemberSandboxSections(container) {
+  if (!(container instanceof HTMLElement)) {
+    return [];
+  }
+  return [...container.querySelectorAll(`:scope > .${MEMBER_SANDBOX_SECTION_CLASS}`)].filter(
+    (section) => section instanceof HTMLElement,
+  );
+}
+
+async function syncMemberSandboxSection(container) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+  const session = readSessionForCurrentView();
+  const role = String(session?.session?.role || "");
+  const existingSections = listDirectMemberSandboxSections(container);
+  if (role !== "member") {
+    for (const section of existingSections) {
+      section.remove();
+    }
+    return;
+  }
+
+  const sessionKey = readMemberSandboxSessionKey(session);
+  if (!sessionKey) {
+    for (const section of existingSections) {
+      section.remove();
+    }
+    return;
+  }
+
+  let sandboxes = [];
+  try {
+    sandboxes = await loadMemberSandboxes(session);
+  } catch {
+    sandboxes = [];
+  }
+
+  const latestSession = readSessionForCurrentView();
+  if (
+    readMemberSandboxSessionKey(latestSession) !== sessionKey ||
+    String(latestSession?.session?.role || "") !== "member"
+  ) {
+    return;
+  }
+
+  if (!Array.isArray(sandboxes) || sandboxes.length === 0) {
+    for (const section of listDirectMemberSandboxSections(container)) {
+      section.remove();
+    }
+    return;
+  }
+
+  const links = buildMemberSandboxLinks(sandboxes);
+  const signature = getMemberSandboxSignature(sandboxes);
+  const latestExistingSections = listDirectMemberSandboxSections(container);
+  const latestExisting = latestExistingSections[0] ?? null;
+  for (const duplicateSection of latestExistingSections.slice(1)) {
+    duplicateSection.remove();
+  }
+  if (
+    latestExisting instanceof HTMLElement &&
+    latestExisting.getAttribute("data-oc-management-role") === role &&
+    latestExisting.getAttribute(MEMBER_SANDBOX_SIGNATURE_ATTR) === signature
+  ) {
+    updateManagementSectionState(latestExisting);
+    return;
+  }
+
+  latestExisting?.remove();
+  const section = createNavSection(session, {
+    className: MEMBER_SANDBOX_SECTION_CLASS,
+    label: "沙盒模拟",
+    links,
+  });
+  section.setAttribute(MEMBER_SANDBOX_SIGNATURE_ATTR, signature);
+  insertSandboxSection(container, section);
+}
+
+function syncAllMemberSandboxSections(root = document) {
+  const scope = root instanceof Element || root instanceof Document ? root : document;
+  for (const container of listTenantSidebarRoots(scope)) {
+    void syncMemberSandboxSection(container);
+  }
+}
+
 function clearMemberVisualizationPolling() {
   const timerId = window[MEMBER_VISUALIZATION_POLL_TIMER_KEY];
   if (typeof timerId === "number" && Number.isFinite(timerId)) {
@@ -641,6 +812,43 @@ function ensureMemberVisualizationPolling() {
   window[MEMBER_VISUALIZATION_POLL_TIMER_KEY] = window.setInterval(
     pollMemberVisualizationSections,
     MEMBER_VISUALIZATION_POLL_INTERVAL_MS,
+  );
+}
+
+function clearMemberSandboxPolling() {
+  const timerId = window[MEMBER_SANDBOX_POLL_TIMER_KEY];
+  if (typeof timerId === "number" && Number.isFinite(timerId)) {
+    window.clearInterval(timerId);
+  }
+  delete window[MEMBER_SANDBOX_POLL_TIMER_KEY];
+}
+
+function pollMemberSandboxSections() {
+  if (document.visibilityState === "hidden") {
+    return;
+  }
+  const session = readSessionForCurrentView();
+  const role = String(session?.session?.role || "");
+  if (role !== "member" || isTenantAuthViewActive()) {
+    clearMemberSandboxPolling();
+    return;
+  }
+  syncAllMemberSandboxSections(document);
+}
+
+function ensureMemberSandboxPolling() {
+  const session = readSessionForCurrentView();
+  const role = String(session?.session?.role || "");
+  if (role !== "member" || isTenantAuthViewActive()) {
+    clearMemberSandboxPolling();
+    return;
+  }
+  if (typeof window[MEMBER_SANDBOX_POLL_TIMER_KEY] === "number") {
+    return;
+  }
+  window[MEMBER_SANDBOX_POLL_TIMER_KEY] = window.setInterval(
+    pollMemberSandboxSections,
+    MEMBER_SANDBOX_POLL_INTERVAL_MS,
   );
 }
 
@@ -697,6 +905,7 @@ function isManagementViewActive() {
     activeView === PLATFORM_TENANT_MANAGEMENT_VIEW ||
     activeView === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
     activeView === PLATFORM_NODE_MANAGEMENT_VIEW ||
+    activeView === PLATFORM_DATA_SOURCES_VIEW ||
     activeView === TENANT_MEMBERS_VIEW ||
     activeView === TENANT_AGENT_ASSIGNMENT_VIEW ||
     activeView === TENANT_OWNED_AGENTS_VIEW ||
@@ -705,6 +914,7 @@ function isManagementViewActive() {
     activeView === TENANT_WALLET_VIEW ||
     activeView === TENANT_WALLET_ORDERS_VIEW ||
     activeView === TENANT_WALLET_LEDGER_VIEW ||
+    activeView === TENANT_WALLET_FLOW_VIEW ||
     activeView === TENANT_AGENT_SELECTOR_VIEW
   );
 }
@@ -1190,6 +1400,27 @@ function clearPlatformTopbarMeta() {
   }
 }
 
+export function resolveCanonicalTenantLoopbackHref(locationHref = window.location.href) {
+  const currentHref = String(locationHref || "").trim();
+  if (!currentHref) {
+    return "";
+  }
+  const url = new URL(currentHref, document.baseURI);
+  if (url.hostname !== "localhost") {
+    return "";
+  }
+  if (!readTenantView(currentHref)) {
+    return "";
+  }
+  const normalizedPath = normalizePathname(url.pathname);
+  const sessionKey = url.searchParams.get("session")?.trim() || "";
+  if (!sessionKey || (normalizedPath !== "/chat" && normalizedPath !== "/login")) {
+    return "";
+  }
+  url.hostname = "127.0.0.1";
+  return url.href;
+}
+
 function syncTenantRoleContext(role) {
   if (role === "platform_admin" || role === "tenant_admin" || role === "member") {
     document.documentElement.setAttribute(TENANT_ROLE_CONTEXT_ATTR, role);
@@ -1292,6 +1523,11 @@ export function bootTenantEntry() {
   if (isLufengPublicPath() || isEchartsViewPublicPath()) {
     return;
   }
+  const canonicalTenantHref = resolveCanonicalTenantLoopbackHref();
+  if (canonicalTenantHref) {
+    window.location.replace(canonicalTenantHref);
+    return;
+  }
   window.__openclawTenantEntryBooted = true;
   bootTenantRouteSync();
   ensureTopbarLogoutHandler();
@@ -1304,6 +1540,7 @@ export function bootTenantEntry() {
     const scope = root instanceof Element || root instanceof Document ? root : document;
     syncTenantRoleContext(role);
     ensureMemberVisualizationPolling();
+    ensureMemberSandboxPolling();
     if (isTenantAuthViewActive()) {
       clearPlatformTopbarMeta();
     } else if (role === "platform_admin" || role === "tenant_admin" || role === "member") {
@@ -1321,6 +1558,7 @@ export function bootTenantEntry() {
         syncSidebarNavForRole(container, role);
         if (role === "member") {
           void syncMemberVisualizationSection(container);
+          void syncMemberSandboxSection(container);
         }
       }
     }
@@ -1367,7 +1605,10 @@ export function bootTenantEntry() {
           const relevantRoot =
             node.closest?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
             findTenantSidebarUtility(node) ||
-            findTenantTopbarSearch(node);
+            findTenantTopbarSearch(node) ||
+            node.querySelector?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
+            node.querySelector?.(".sidebar-utility-group, .sidebar-shell__footer, footer") ||
+            node.querySelector?.(".topbar-search, [role='search'], button[aria-label*='搜索' i]");
           if (relevantRoot instanceof Element) {
             scheduleScan(document);
             return;
@@ -1392,6 +1633,8 @@ export function resetTenantEntryForTests() {
   tenantEntryObserver = null;
   clearMemberVisualizationPolling();
   MEMBER_VISUALIZATION_CACHE.clear();
+  clearMemberSandboxPolling();
+  MEMBER_SANDBOX_CACHE.clear();
   resetTenantWalletBalanceCache();
   if (tenantEntryTopbarLogoutHandler) {
     document.removeEventListener("click", tenantEntryTopbarLogoutHandler);

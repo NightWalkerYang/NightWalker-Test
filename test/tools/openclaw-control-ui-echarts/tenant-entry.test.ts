@@ -233,13 +233,15 @@ describe("zero-intrusive tenant entry", () => {
     );
 
     const items = managementSection?.querySelectorAll(".nav-item") ?? [];
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
     expect(items[0]?.textContent).toContain("租户管理");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=platform-tenants");
     expect(items[1]?.textContent).toContain("Agent 分配");
     expect(items[1]?.getAttribute("href")).toContain("ocTenantView=platform-agent-assignment");
     expect(items[2]?.textContent).toContain("节点管理");
     expect(items[2]?.getAttribute("href")).toContain("ocTenantView=platform-nodes");
+    expect(items[3]?.textContent).toContain("创建数据源");
+    expect(items[3]?.getAttribute("href")).toContain("ocTenantView=platform-data-sources");
 
     const chatGroup = document.querySelector('[data-native-group="chat"]');
     expect(managementSection?.nextElementSibling).toBe(chatGroup);

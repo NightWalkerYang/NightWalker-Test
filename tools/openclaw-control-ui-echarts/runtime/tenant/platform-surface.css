@@ -2,6 +2,47 @@
   display: none !important;
 }
 
+body[data-oc-platform-surface-active="fallback"] > openclaw-app {
+  display: none !important;
+}
+
+.oc-platform-surface-fallback {
+  width: min(1440px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  box-sizing: border-box;
+}
+
+.oc-platform-surface-fallback .data-table-container {
+  overflow-x: auto;
+}
+
+.oc-platform-surface-fallback .oc-platform-tenant-table th:last-child,
+.oc-platform-surface-fallback .oc-platform-tenant-table td:last-child,
+.oc-platform-surface-fallback .oc-platform-agent-table th:last-child,
+.oc-platform-surface-fallback .oc-platform-agent-table td:last-child,
+.oc-platform-surface-fallback .oc-platform-data-source-table th:last-child,
+.oc-platform-surface-fallback .oc-platform-data-source-table td:last-child {
+  display: table-cell;
+  position: sticky;
+  right: 0;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg) 8%);
+}
+
+.oc-platform-surface-fallback .oc-platform-tenant-table th:last-child,
+.oc-platform-surface-fallback .oc-platform-agent-table th:last-child,
+.oc-platform-surface-fallback .oc-platform-data-source-table th:last-child {
+  z-index: 2;
+  box-shadow: -14px 0 18px color-mix(in srgb, var(--bg) 24%, transparent);
+}
+
+.oc-platform-surface-fallback .oc-platform-tenant-table td:last-child,
+.oc-platform-surface-fallback .oc-platform-agent-table td:last-child,
+.oc-platform-surface-fallback .oc-platform-data-source-table td:last-child {
+  z-index: 1;
+  box-shadow: -14px 0 18px color-mix(in srgb, var(--bg) 18%, transparent);
+}
+
 .oc-platform-surface-root {
   display: block;
 }
@@ -9,6 +50,16 @@
 .oc-platform-list-view {
   display: grid;
   gap: 16px;
+}
+
+.oc-platform-data-source-page {
+  display: grid;
+  gap: 12px;
+}
+
+.oc-platform-data-source-page__summary {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .oc-tenant-feedback-toast-root {

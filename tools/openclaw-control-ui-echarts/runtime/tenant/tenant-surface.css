@@ -2,6 +2,17 @@
   display: none !important;
 }
 
+body[data-oc-tenant-surface-active="fallback"] > openclaw-app {
+  display: none !important;
+}
+
+.oc-tenant-surface-fallback {
+  width: min(1440px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  box-sizing: border-box;
+}
+
 .oc-tenant-surface-root {
   display: block;
 }
@@ -399,6 +410,11 @@
   flex-wrap: wrap;
 }
 
+.oc-tenant-inline-search {
+  flex: 1 1 240px;
+  min-width: min(280px, 100%);
+}
+
 .oc-tenant-revoke-assignment-toolbar__select-all {
   display: inline-flex;
   align-items: center;
@@ -520,6 +536,10 @@
 
   .oc-tenant-revoke-assignment-toolbar {
     align-items: stretch;
+  }
+
+  .oc-tenant-inline-search {
+    min-width: 0;
   }
 
   .oc-tenant-revoke-assignment-toolbar__summary {

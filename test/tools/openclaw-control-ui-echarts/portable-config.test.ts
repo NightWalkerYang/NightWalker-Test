@@ -50,10 +50,14 @@ describe("portable config", () => {
       models: {
         mode: "merge",
         providers: {
-          zai: {
-            baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+          gpt: {
+            baseUrl: "https://api.cleannetworkspace.online/v1",
             api: "openai-completions",
-            models: [{ id: "glm-5" }],
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0",
+            },
+            models: [{ id: "gpt-5.4" }],
             apiKey: "secret",
             nested: {
               token: "secret",
@@ -102,13 +106,12 @@ describe("portable config", () => {
       agents: {
         defaults: {
           model: {
-            primary: "zai/glm-5",
-            fallbacks: ["volcengine-plan/ark-code-latest"],
+            primary: "gpt/gpt-5.4",
+            fallbacks: ["gpt/gpt-5.4-mini", "gpt/gpt-5.3-codex"],
           },
           models: {
-            "volcengine-plan/ark-code-latest": {},
-            "zai/glm-5": {
-              alias: "GLM",
+            "gpt/gpt-5.4": {
+              alias: "GPT-5.4",
             },
             "foo/bar": {
               alias: "Foo",
@@ -152,10 +155,14 @@ describe("portable config", () => {
       models: {
         mode: "merge",
         providers: {
-          zai: {
-            baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+          gpt: {
+            baseUrl: "https://api.cleannetworkspace.online/v1",
             api: "openai-completions",
-            models: [{ id: "glm-5" }],
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0",
+            },
+            models: [{ id: "gpt-5.4" }],
             nested: {},
           },
           custom: {
@@ -196,13 +203,12 @@ describe("portable config", () => {
       agents: {
         defaults: {
           model: {
-            primary: "zai/glm-5",
-            fallbacks: ["volcengine-plan/ark-code-latest"],
+            primary: "gpt/gpt-5.4",
+            fallbacks: ["gpt/gpt-5.4-mini", "gpt/gpt-5.3-codex"],
           },
           models: {
-            "volcengine-plan/ark-code-latest": {},
-            "zai/glm-5": {
-              alias: "GLM",
+            "gpt/gpt-5.4": {
+              alias: "GPT-5.4",
             },
             "foo/bar": {
               alias: "Foo",
@@ -242,10 +248,14 @@ describe("portable config", () => {
       models: {
         mode: "merge",
         providers: {
-          zai: {
-            baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+          gpt: {
+            baseUrl: "https://api.cleannetworkspace.online/v1",
             api: "openai-completions",
-            models: [{ id: "glm-5" }],
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0",
+            },
+            models: [{ id: "gpt-5.4" }],
           },
         },
       },
@@ -283,12 +293,12 @@ describe("portable config", () => {
       agents: {
         defaults: {
           model: {
-            primary: "zai/glm-5",
-            fallbacks: ["volcengine-plan/ark-code-latest"],
+            primary: "gpt/gpt-5.4",
+            fallbacks: ["gpt/gpt-5.4-mini", "gpt/gpt-5.3-codex"],
           },
           models: {
-            "zai/glm-5": {
-              alias: "GLM",
+            "gpt/gpt-5.4": {
+              alias: "GPT-5.4",
             },
           },
           compaction: {
@@ -315,9 +325,10 @@ describe("portable config", () => {
       "gateway.tailscale.resetOnExit",
       "gateway.nodes.denyCommands",
       "models.mode",
-      "models.providers.zai.baseUrl",
-      "models.providers.zai.api",
-      "models.providers.zai.models",
+      "models.providers.gpt.baseUrl",
+      "models.providers.gpt.api",
+      "models.providers.gpt.models",
+      "models.providers.gpt.headers",
       "tools.profile",
       "tools.exec.security",
       "tools.exec.host",
@@ -332,7 +343,7 @@ describe("portable config", () => {
       "hooks.internal.entries.tenant-member-bootstrap-filter.enabled",
       "agents.defaults.model.primary",
       "agents.defaults.model.fallbacks",
-      "agents.defaults.models.zai/glm-5.alias",
+      "agents.defaults.models.gpt/gpt-5.4.alias",
     ]);
     expect(paths).not.toContain("gateway.controlUi.root");
     expect(paths).not.toContain("auth.profiles");
@@ -340,8 +351,8 @@ describe("portable config", () => {
     expect(paths).not.toContain("meta.lastTouchedAt");
     expect(paths).not.toContain("agents.list");
     expect(paths).not.toContain("tools.exec.pathPrepend");
-    expect(batch.find((entry) => entry.path === "models.providers.zai.models")?.value).toEqual([
-      { id: "glm-5" },
+    expect(batch.find((entry) => entry.path === "models.providers.gpt.models")?.value).toEqual([
+      { id: "gpt-5.4" },
     ]);
   });
 });

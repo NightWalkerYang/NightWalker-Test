@@ -16,6 +16,17 @@ const tenantMemberBootstrapHookPath = path.join(
 );
 const portableConfigScriptPath = path.join(here, "local-runtime", "portable-config.mjs");
 const portableConfigSourcePath = path.join(here, "local-runtime", "openclaw.local.example.json5");
+const tenantPlatformRuntimeNodeModulesHostMount =
+  "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules";
+const tenantPlatformRuntimeNodeModulesContainerPath =
+  "/app/tools/openclaw-control-ui-echarts/node_modules";
+const tenantPlatformRuntimePythonHostMount =
+  "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages";
+const tenantPlatformRuntimePythonContainerPath =
+  "/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages";
+const sandboxSimulationStarterMount =
+  "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro";
+const tenantPlatformRuntimePackageSpecs = Object.freeze(["pg@8.20.0"]);
 const overridePath = path.join(repoRoot, "docker-compose.override.yml");
 const envFilePath = path.join(repoRoot, ".env");
 const dockerCommand = process.platform === "win32" ? "docker.exe" : "docker";
@@ -30,6 +41,13 @@ const COMPOSE_UP_SERVICES = [
   "openclaw-tenant-platform",
   "openclaw-gateway-proxy",
 ];
+const isDirectRun = (() => {
+  const entryArg = process.argv[1];
+  if (!entryArg) {
+    return false;
+  }
+  return path.resolve(entryArg) === fileURLToPath(import.meta.url);
+})();
 
 function isTruthyEnvValue(value) {
   return ["1", "true", "yes", "on"].includes(
@@ -279,7 +297,32 @@ function dockerComposeAvailable() {
   return result.status === 0;
 }
 
-function buildOverrideContent(extraMounts) {
+export function buildTenantPlatformExtraDependencySpecs() {
+  return [...tenantPlatformRuntimePackageSpecs];
+}
+
+export function buildTenantPlatformPythonRuntimeDockerArgs(
+  repoRootPath = repoRoot,
+  imageRef = "openclaw:local",
+) {
+  const normalizedRepoRoot = String(repoRootPath || repoRoot).replace(/\\/g, "/");
+  return [
+    "run",
+    "--rm",
+    "-u",
+    "0",
+    "-v",
+    `${normalizedRepoRoot}:/work`,
+    "-w",
+    "/work",
+    imageRef,
+    "sh",
+    "-lc",
+    "python3 -m pip --version >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip python3-venv build-essential); python3 -m pip install --break-system-packages --no-cache-dir --prefer-binary --target /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages -r /work/tools/openclaw-sandbox-simulation-starter/requirements.txt",
+  ];
+}
+
+export function buildOverrideContent(extraMounts) {
   const lines = [
     GENERATED_MARKER,
     "services:",
@@ -317,6 +360,10 @@ function buildOverrideContent(extraMounts) {
     "      OPENCLAW_TENANT_PLATFORM_GATEWAY_URL: ${OPENCLAW_TENANT_PLATFORM_GATEWAY_URL:-ws://openclaw-gateway:18789}",
     "      OPENCLAW_TENANT_PLATFORM_PUBLIC_BASE_URL: ${OPENCLAW_TENANT_PLATFORM_PUBLIC_BASE_URL:-}",
     "      OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE: ${OPENCLAW_TENANT_PLATFORM_EXEC_AUTO_APPROVE:-1}",
+    "      OPENCLAW_TENANT_PLATFORM_ANALYTICS_PG_DSN: ${OPENCLAW_TENANT_PLATFORM_ANALYTICS_PG_DSN:-}",
+    "      OPENCLAW_TENANT_PLATFORM_ANALYTICS_DBID: ${OPENCLAW_TENANT_PLATFORM_ANALYTICS_DBID:-}",
+    "      OPENCLAW_TENANT_PLATFORM_ANALYTICS_TENANT_CODE: ${OPENCLAW_TENANT_PLATFORM_ANALYTICS_TENANT_CODE:-}",
+    "      OPENCLAW_TENANT_PLATFORM_ANALYTICS_ENV_FILE: ${OPENCLAW_TENANT_PLATFORM_ANALYTICS_ENV_FILE:-}",
     "      OPENCLAW_TENANT_PLATFORM_LICENSE_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PATH:-}",
     "      OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY:-}",
     "      OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH: ${OPENCLAW_TENANT_PLATFORM_LICENSE_PUBLIC_KEY_PATH:-}",
@@ -335,11 +382,15 @@ function buildOverrideContent(extraMounts) {
     "      OPENCLAW_TENANT_PAYMENT_ALLINPAY_QUERY_URL: ${OPENCLAW_TENANT_PAYMENT_ALLINPAY_QUERY_URL:-}",
     "      OPENCLAW_TENANT_PAYMENT_ALLINPAY_VERSION: ${OPENCLAW_TENANT_PAYMENT_ALLINPAY_VERSION:-}",
     "      OPENCLAW_TENANT_PAYMENT_ALLINPAY_SIGN_TYPE: ${OPENCLAW_TENANT_PAYMENT_ALLINPAY_SIGN_TYPE:-}",
+    `      PYTHONPATH: ${tenantPlatformRuntimePythonContainerPath}`,
     "      TZ: ${OPENCLAW_TZ:-UTC}",
     "    volumes:",
     "      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw",
     "      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace:ro",
     "      - ./tools/openclaw-control-ui-echarts/sidecar:/app/tools/openclaw-control-ui-echarts/sidecar:ro",
+    `      - ${tenantPlatformRuntimeNodeModulesHostMount}:${tenantPlatformRuntimeNodeModulesContainerPath}:ro`,
+    `      - ${tenantPlatformRuntimePythonHostMount}:${tenantPlatformRuntimePythonContainerPath}:ro`,
+    `      - ${sandboxSimulationStarterMount}`,
     "    command:",
     "      [",
     '        "node",',
@@ -1028,10 +1079,12 @@ function main() {
   );
 }
 
-try {
-  main();
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`${message}\n`);
-  process.exit(1);
+if (isDirectRun) {
+  try {
+    main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exit(1);
+  }
 }

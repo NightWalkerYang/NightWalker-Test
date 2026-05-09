@@ -2,6 +2,7 @@ import { createTenantApiClient } from "./api-client.js";
 import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
+  PLATFORM_DATA_SOURCES_VIEW,
   PLATFORM_LOGIN_ROUTE,
   PLATFORM_NODE_MANAGEMENT_VIEW,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
@@ -22,6 +23,9 @@ function escapeHtml(value) {
 function currentSectionHref(section) {
   if (section === "agent-allocation") {
     return `./?ocTenantView=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
+  }
+  if (section === "data-sources") {
+    return `./?ocTenantView=${PLATFORM_DATA_SOURCES_VIEW}`;
   }
   if (section === "nodes") {
     return `./?ocTenantView=${PLATFORM_NODE_MANAGEMENT_VIEW}`;
@@ -159,6 +163,79 @@ function createAssignTenantAgentDialogState() {
   };
 }
 
+function readDataSourceConnection(source) {
+  const raw = source?.connection ?? source?.connectionJson ?? source?.connection_json ?? null;
+  if (!raw) {
+    return {};
+  }
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof raw === "object" ? raw : {};
+}
+
+function createDataSourceDraft(source = null, boundTenantId = "") {
+  const connection = readDataSourceConnection(source);
+  return {
+    id: String(source?.id || "").trim(),
+    code: String(source?.code || "").trim(),
+    name: String(source?.name || "").trim(),
+    sourceType: "kingdee_analytics",
+    status: String(source?.status || "").trim() || "active",
+    sourceDbid: String(source?.sourceDbid ?? source?.source_dbid ?? "").trim(),
+    sourceTenantCode: String(
+      source?.sourceTenantCode ?? source?.source_tenant_code ?? "",
+    ).trim(),
+    connectionHost: String(connection?.host || "").trim(),
+    connectionPort:
+      connection?.port === null || connection?.port === undefined
+        ? "5432"
+        : String(connection.port).trim(),
+    connectionDatabase: String(connection?.database || "").trim(),
+    connectionUser: String(connection?.user || "").trim(),
+    connectionPassword:
+      typeof connection?.password === "string"
+        ? connection.password
+        : connection?.password === null || connection?.password === undefined
+          ? ""
+          : String(connection.password),
+    connectionPasswordStored: Boolean(source?.connectionPasswordStored),
+    boundTenantId: String(boundTenantId || "").trim(),
+  };
+}
+
+function createDataSourceCatalogDialogState() {
+  return {
+    open: false,
+    loading: false,
+    busy: false,
+    error: "",
+    requestToken: 0,
+    dataSources: [],
+    draft: createDataSourceDraft(),
+  };
+}
+
+function createTenantDataSourceBindingDialogState() {
+  return {
+    open: false,
+    loading: false,
+    busy: false,
+    error: "",
+    requestToken: 0,
+    tenantId: "",
+    tenantName: "",
+    currentBinding: null,
+    dataSources: [],
+    selectedDataSourceId: "",
+  };
+}
+
 function getAssignTenantAgentDialog(controller) {
   if (
     !(controller?.assignTenantAgentDialog && typeof controller.assignTenantAgentDialog === "object")
@@ -178,6 +255,30 @@ function getRevokeTenantAgentDialog(controller) {
     controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
   }
   return controller.revokeTenantAgentDialog;
+}
+
+function getDataSourceCatalogDialog(controller) {
+  if (
+    !(
+      controller?.dataSourceCatalogDialog &&
+      typeof controller.dataSourceCatalogDialog === "object"
+    )
+  ) {
+    controller.dataSourceCatalogDialog = createDataSourceCatalogDialogState();
+  }
+  return controller.dataSourceCatalogDialog;
+}
+
+function getTenantDataSourceBindingDialog(controller) {
+  if (
+    !(
+      controller?.tenantDataSourceBindingDialog &&
+      typeof controller.tenantDataSourceBindingDialog === "object"
+    )
+  ) {
+    controller.tenantDataSourceBindingDialog = createTenantDataSourceBindingDialogState();
+  }
+  return controller.tenantDataSourceBindingDialog;
 }
 
 function createNodeDialogState() {
@@ -211,6 +312,161 @@ function createDataSourceDialogState() {
     k3cloudProfileJson: "",
     editing: false,
     error: "",
+  };
+}
+
+function getActiveDataSources(dataSources) {
+  if (!Array.isArray(dataSources)) {
+    return [];
+  }
+  return dataSources.filter((source) => {
+    const sourceId = String(source?.id || "").trim();
+    return Boolean(sourceId) && String(source?.status || "active").trim() === "active";
+  });
+}
+
+function getDataSourceDisplayName(source) {
+  for (const candidate of [source?.name, source?.code, source?.id]) {
+    const value = String(candidate || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "未命名数据源";
+}
+
+function getTenantDisplayName(tenant) {
+  for (const candidate of [tenant?.name, tenant?.code, tenant?.id]) {
+    const value = String(candidate || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "未绑定";
+}
+
+function tenantByDataSourceId(controller, dataSourceId) {
+  const normalizedDataSourceId = String(dataSourceId || "").trim();
+  if (!normalizedDataSourceId || !Array.isArray(controller?.tenants)) {
+    return null;
+  }
+  return (
+    controller.tenants.find((tenant) => {
+      const tenantSourceId = String(tenant?.dataSourceId || "").trim();
+      if (tenantSourceId) {
+        return tenantSourceId === normalizedDataSourceId;
+      }
+      return String(tenant?.dataSourceName || "").trim() === String(
+        dataSourceById(controller.dataSources, normalizedDataSourceId)?.name || "",
+      ).trim();
+    }) ?? null
+  );
+}
+
+function listUnboundTenants(controller) {
+  if (!Array.isArray(controller?.tenants)) {
+    return [];
+  }
+  return controller.tenants.filter((tenant) => !String(tenant?.dataSourceId || "").trim());
+}
+
+function resolveDefaultBoundTenantId(controller, dataSourceId = "") {
+  const boundTenant = tenantByDataSourceId(controller, dataSourceId);
+  if (boundTenant?.id) {
+    return String(boundTenant.id || "").trim();
+  }
+  return String(listUnboundTenants(controller)[0]?.id || "").trim();
+}
+
+function syncDataSourceDraftTenant(controller) {
+  const dialog = getDataSourceCatalogDialog(controller);
+  const currentDraft = dialog.draft || createDataSourceDraft();
+  const boundTenantId = resolveDefaultBoundTenantId(controller, currentDraft.id);
+  const selectedTenantId = String(currentDraft.boundTenantId || "").trim();
+  if (boundTenantId) {
+    dialog.draft = {
+      ...currentDraft,
+      boundTenantId,
+    };
+    return;
+  }
+  if (
+    selectedTenantId &&
+    controller.tenants.some(
+      (tenant) =>
+        String(tenant?.id || "").trim() === selectedTenantId &&
+        !String(tenant?.dataSourceId || "").trim(),
+    )
+  ) {
+    return;
+  }
+  dialog.draft = {
+    ...currentDraft,
+    boundTenantId: "",
+  };
+}
+
+function listSelectableTenantsForDraft(controller, draft) {
+  const boundTenant = draft?.id ? tenantByDataSourceId(controller, draft.id) : null;
+  if (boundTenant) {
+    return [boundTenant];
+  }
+  return listUnboundTenants(controller);
+}
+
+function describePlatformDataSourceError(errorMessage) {
+  switch (String(errorMessage || "").trim()) {
+    case "data_source_already_bound":
+      return "该数据源已经绑定到其他平台租户。";
+    case "tenant_data_source_rebind_locked":
+      return "已绑定的数据源归属不能在这里改动，请继续使用租户管理里的“绑定数据源”。";
+    default:
+      return String(errorMessage || "").trim();
+  }
+}
+
+function getBindingSourceSummary(binding) {
+  if (!binding || typeof binding !== "object") {
+    return "未绑定";
+  }
+  const parts = [];
+  if (binding.sourceDbid) {
+    parts.push(`账套 ID：${String(binding.sourceDbid)}`);
+  }
+  if (binding.sourceTenantCode) {
+    parts.push(`租户编码：${String(binding.sourceTenantCode)}`);
+  }
+  if (binding.dataSourceType) {
+    parts.push(`类型：${String(binding.dataSourceType)}`);
+  }
+  return parts.length ? parts.join(" · ") : "已绑定，但暂无补充信息";
+}
+
+function buildDataSourcePayloadFromDraft(draft) {
+  const port = Number.parseInt(String(draft.connectionPort || "").trim(), 10);
+  const connection = {
+    host: String(draft.connectionHost || "").trim(),
+    database: String(draft.connectionDatabase || "").trim(),
+  };
+  const user = String(draft.connectionUser || "").trim();
+  if (Number.isFinite(port) && port > 0) {
+    connection.port = port;
+  }
+  if (user) {
+    connection.user = user;
+  }
+  if (typeof draft.connectionPassword === "string" && draft.connectionPassword !== "") {
+    connection.password = draft.connectionPassword;
+  }
+  return {
+    id: String(draft.id || "").trim() || undefined,
+    code: String(draft.code || "").trim(),
+    name: String(draft.name || "").trim(),
+    sourceType: "kingdee_analytics",
+    status: String(draft.status || "").trim() || "active",
+    sourceDbid: String(draft.sourceDbid || "").trim() || null,
+    sourceTenantCode: String(draft.sourceTenantCode || "").trim() || null,
+    connection,
   };
 }
 
@@ -367,11 +623,13 @@ function ensureController(root, session, apiClient) {
     searchBySection: {
       tenants: "",
       "agent-allocation": "",
+      "data-sources": "",
       nodes: "",
     },
     pageBySection: {
       tenants: 1,
       "agent-allocation": 1,
+      "data-sources": 1,
       nodes: 1,
     },
     tenants: [],
@@ -393,6 +651,8 @@ function ensureController(root, session, apiClient) {
     dataSources: [],
     tenantDataSourceBindings: [],
     syncSchedules: [],
+    dataSourceCatalogDialog: createDataSourceCatalogDialogState(),
+    tenantDataSourceBindingDialog: createTenantDataSourceBindingDialogState(),
     assignTenantAgentDialog: createAssignTenantAgentDialogState(),
     dataSourceDialog: createDataSourceDialogState(),
     nodeDialog: createNodeDialogState(),
@@ -432,6 +692,12 @@ function ensureController(root, session, apiClient) {
     }
     if (event.target.matches("[data-platform-local-license-dialog]")) {
       controller.dialogs.localLicenseOpen = false;
+    }
+    if (event.target.matches("[data-platform-data-source-dialog]")) {
+      controller.dataSourceCatalogDialog = createDataSourceCatalogDialogState();
+    }
+    if (event.target.matches("[data-platform-binding-dialog]")) {
+      controller.tenantDataSourceBindingDialog = createTenantDataSourceBindingDialogState();
     }
     if (event.target.matches("[data-platform-node-dialog]")) {
       controller.dialogs.nodeOpen = false;
@@ -485,6 +751,29 @@ function filterTenants(controller) {
   );
 }
 
+function filterDataSources(controller) {
+  const query = getSearchValue(controller).trim().toLowerCase();
+  const dialog = getDataSourceCatalogDialog(controller);
+  if (!query) {
+    return dialog.dataSources;
+  }
+  return dialog.dataSources.filter((source) => {
+    const boundTenant = tenantByDataSourceId(controller, source?.id);
+    return [
+      source?.name,
+      source?.code,
+      source?.status,
+      source?.sourceType,
+      source?.sourceDbid,
+      source?.sourceTenantCode,
+      boundTenant?.name,
+      boundTenant?.code,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
+}
+
 function filterNodes(controller) {
   const query = getSearchValue(controller).trim().toLowerCase();
   if (!query) {
@@ -511,16 +800,20 @@ function paginate(items, page) {
 
 function renderToolbar(controller) {
   const isTenantSection = controller.section === "tenants";
+  const isDataSourceSection = controller.section === "data-sources";
   const isNodeSection = controller.section === "nodes";
   const localEdition = isLocalEdition(controller);
+  const placeholder = isDataSourceSection
+    ? "搜索数据源名称、编码或归属租户"
+    : isNodeSection
+      ? "搜索节点名称或标识"
+      : "搜索租户名称或编码";
   return `
     <div class="data-table-toolbar oc-platform-table-toolbar">
       <label class="data-table-search">
         <input
           type="search"
-          placeholder="${
-            isNodeSection ? "搜索节点名称或标识" : isTenantSection ? "搜索租户名称或编码" : "搜索租户名称或编码"
-          }"
+          placeholder="${placeholder}"
           value="${escapeHtml(getSearchValue(controller))}"
           data-platform-search
         />
@@ -528,6 +821,11 @@ function renderToolbar(controller) {
       ${
         isTenantSection
           ? `<button class="btn primary" type="button" data-platform-open-create>创建租户</button>`
+          : ""
+      }
+      ${
+        isDataSourceSection
+          ? `<button class="btn primary" type="button" data-platform-open-data-source-create>创建数据源</button>`
           : ""
       }
       ${
@@ -548,7 +846,7 @@ function renderTenantManagementTable(controller, rows) {
   const localEdition = isLocalEdition(controller);
   return `
     <div class="data-table-container">
-      <table class="data-table">
+      <table class="data-table oc-platform-tenant-table">
         <thead>
           <tr>
             <th>租户名称</th>
@@ -576,7 +874,7 @@ function renderTenantManagementTable(controller, rows) {
                         <td><span class="data-table-badge data-table-badge--${tenant.status === "active" ? "direct" : "unknown"}">${escapeHtml(tenant.status)}</span></td>
                         <td>${formatNumber(tenant.memberCount)}</td>
                         <td>${formatNumber(tenant.memberLimit)}</td>
-                        <td>${escapeHtml(String(binding?.dataSourceName || "未绑定").trim() || "未绑定")}</td>
+                        <td>${escapeHtml(String(tenant.dataSourceName || binding?.dataSourceName || "未绑定").trim() || "未绑定")}</td>
                         ${
                           localEdition
                             ? ""
@@ -590,7 +888,7 @@ function renderTenantManagementTable(controller, rows) {
                         <td>
                           <div class="oc-platform-table-actions">
                             <button class="btn" type="button" data-platform-open-member-limit="${escapeHtml(tenant.id)}">人数调整</button>
-                            <button class="btn" type="button" data-platform-bind-data-source="${escapeHtml(tenant.id)}">数据源绑定</button>
+                            <button class="btn" type="button" data-platform-open-data-source-binding="${escapeHtml(tenant.id)}">绑定数据源</button>
                             ${
                               localEdition
                                 ? ""
@@ -666,7 +964,7 @@ function renderAgentAssignmentTable(controller, rows) {
   const localEdition = isLocalEdition(controller);
   return `
     <div class="data-table-container">
-      <table class="data-table">
+      <table class="data-table oc-platform-agent-table">
         <thead>
           <tr>
             <th>租户名称</th>
@@ -788,94 +1086,239 @@ function bindingByTenantId(controller, tenantId) {
   );
 }
 
-function renderDataSourceOverview(controller) {
-  const dataSources = Array.isArray(controller.dataSources) ? controller.dataSources : [];
-  const syncSchedules = Array.isArray(controller.syncSchedules) ? controller.syncSchedules : [];
+function renderDataSourceManagementTable(controller, rows) {
+  const dialog = getDataSourceCatalogDialog(controller);
+  const activeCount = getActiveDataSources(dialog.dataSources).length;
+  const emptyState =
+    dialog.dataSources.length && getSearchValue(controller).trim()
+      ? "当前筛选条件下没有数据源"
+      : "暂无数据源";
   return `
-    <section class="oc-platform-summary-cards" style="margin-bottom:16px;display:grid;gap:16px;">
-      <div class="data-table-container" style="padding:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-          <div>
-            <h3 style="margin:0 0 6px 0;">数据源管理</h3>
-            <p style="margin:0;color:var(--oc-text-subtle, #666);">维护租户级 PostgreSQL 连接与 K3Cloud 登录档案。</p>
-          </div>
-          <button class="btn primary" type="button" data-platform-open-data-source>新增数据源</button>
-        </div>
-        <div style="margin-top:16px;overflow:auto;">
-          <table class="data-table">
+    <section class="oc-platform-data-source-page">
+      <div class="oc-platform-data-source-page__summary">
+        共 ${formatNumber(dialog.dataSources.length)} 个数据源，启用 ${formatNumber(activeCount)} 个
+      </div>
+      <div class="data-table-container">
+          <table class="data-table oc-platform-data-source-table">
             <thead>
               <tr>
-                <th>名称</th>
+                <th>数据源名称</th>
+                <th>数据源编码</th>
+                <th>归属租户</th>
                 <th>状态</th>
-                <th>已绑定租户</th>
-                <th>K3Cloud</th>
-                <th>增量计划</th>
+                <th>连接摘要</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
               ${
-                dataSources.length
-                  ? dataSources
-                      .map((item) => {
-                        const boundCount = controller.tenantDataSourceBindings.filter(
-                          (binding) => binding.dataSourceId === item.id,
-                        ).length;
-                        const scheduleCount = syncSchedules.filter(
-                          (schedule) => schedule.dataSourceId === item.id,
-                        ).length;
+                rows.length
+                  ? rows
+                      .map((source) => {
+                        const connection = readDataSourceConnection(source);
+                        const connectionParts = [];
+                        const ownerTenant = tenantByDataSourceId(controller, source?.id);
+                        if (source.sourceDbid) {
+                          connectionParts.push(`账套 ID：${source.sourceDbid}`);
+                        }
+                        if (source.sourceTenantCode) {
+                          connectionParts.push(`上游租户编码：${source.sourceTenantCode}`);
+                        }
+                        if (connection.host) {
+                          connectionParts.push(`主机：${connection.host}`);
+                        }
+                        if (connection.database) {
+                          connectionParts.push(`库：${connection.database}`);
+                        }
                         return `
                           <tr>
-                            <td>${escapeHtml(item.name)}</td>
-                            <td>${escapeHtml(item.status || "active")}</td>
-                            <td>${formatNumber(boundCount)}</td>
-                            <td>${item.k3cloudProfileJson ? "已配置" : "未配置"}</td>
-                            <td>${formatNumber(scheduleCount)}</td>
-                            <td><button class="btn" type="button" data-platform-edit-data-source="${escapeHtml(item.id)}">编辑</button></td>
+                            <td>
+                              <div class="oc-platform-revoke-agent__name">${escapeHtml(
+                                getDataSourceDisplayName(source),
+                              )}</div>
+                              <div class="oc-platform-revoke-agent__meta">${escapeHtml(
+                                source.sourceType || "kingdee_analytics",
+                              )}</div>
+                            </td>
+                            <td>${escapeHtml(source.code || "-")}</td>
+                            <td>${escapeHtml(getTenantDisplayName(ownerTenant))}</td>
+                            <td><span class="data-table-badge data-table-badge--${source.status === "active" ? "direct" : "unknown"}">${escapeHtml(source.status || "unknown")}</span></td>
+                            <td>${escapeHtml(connectionParts.join(" · ") || "未配置连接摘要")}</td>
+                            <td><button class="btn" type="button" data-platform-edit-data-source="${escapeHtml(source.id)}" ${dialog.busy ? "disabled" : ""}>编辑</button></td>
                           </tr>
                         `;
                       })
                       .join("")
-                  : `<tr><td colspan="6" class="oc-platform-table-empty">暂无数据源</td></tr>`
+                  : `<tr><td colspan="6" class="oc-platform-table-empty">${escapeHtml(emptyState)}</td></tr>`
               }
             </tbody>
           </table>
-        </div>
       </div>
     </section>
   `;
 }
 
-function renderDataSourceDialog(controller) {
-  const dialog = controller.dataSourceDialog || createDataSourceDialogState();
+function renderDataSourceCatalogDialog(controller) {
+  const dialog = getDataSourceCatalogDialog(controller);
+  if (!dialog.open) {
+    return "";
+  }
+  const draft = dialog.draft || createDataSourceDraft();
+  const boundTenant = tenantByDataSourceId(controller, draft.id);
+  const selectableTenants = listSelectableTenantsForDraft(controller, draft);
+  const selectedTenantId =
+    String(boundTenant?.id || "").trim() ||
+    String(draft.boundTenantId || "").trim() ||
+    resolveDefaultBoundTenantId(controller, draft.id);
   return `
-    <dialog class="oc-platform-modal" data-platform-data-source-dialog>
-      <div class="oc-platform-modal__panel">
+    <dialog class="oc-platform-modal oc-platform-modal--wide" data-platform-data-source-dialog>
+      <div class="oc-platform-modal__panel oc-platform-modal__panel--wide">
         <header class="oc-platform-modal__header">
-          <h3 class="oc-platform-modal__title">${dialog.editing ? "编辑数据源" : "新增数据源"}</h3>
+          <h3 class="oc-platform-modal__title">${draft.id ? "编辑数据源" : "创建数据源"}</h3>
           <button class="btn" type="button" data-platform-close-dialog="data-source">关闭</button>
         </header>
         <div class="oc-platform-modal__body">
+          <div class="callout info">
+            一套数据源只归属一个平台租户。创建后会立即绑定到所选租户，租户下的成员共享这套数据源，成员级别只再控制组织范围。
+          </div>
+          ${
+            boundTenant
+              ? `<div class="oc-platform-revoke-agent__meta">当前已归属平台租户：${escapeHtml(
+                  getTenantDisplayName(boundTenant),
+                )}。若要切换归属，请继续使用租户管理里的“绑定数据源”。</div>`
+              : ""
+          }
+          ${
+            !boundTenant && !selectableTenants.length
+              ? `<div class="callout danger">当前没有可绑定的空闲平台租户，请先在租户管理里确认租户与数据源占用情况。</div>`
+              : ""
+          }
+          ${dialog.error ? `<div class="callout info">${escapeHtml(dialog.error)}</div>` : ""}
           <form class="oc-platform-modal__form" data-platform-data-source-form>
-            <input type="hidden" name="id" value="${escapeHtml(dialog.id)}" />
-            <label class="field"><span>名称</span><input name="name" type="text" value="${escapeHtml(dialog.name)}" required /></label>
+            <input type="hidden" name="id" value="${escapeHtml(draft.id)}" />
             <label class="field">
-              <span>状态</span>
-              <select name="status">
-                <option value="active" ${dialog.status === "active" ? "selected" : ""}>active</option>
-                <option value="inactive" ${dialog.status === "inactive" ? "selected" : ""}>inactive</option>
+              <span>平台租户</span>
+              <select
+                name="tenantId"
+                data-platform-data-source-tenant
+                ${dialog.loading || dialog.busy || !selectableTenants.length ? "disabled" : ""}
+                required
+              >
+                <option value="">请选择平台租户</option>
+                ${selectableTenants
+                  .map(
+                    (tenant) => `
+                      <option value="${escapeHtml(tenant.id)}" ${selectedTenantId === String(tenant.id || "") ? "selected" : ""}>
+                        ${escapeHtml(getTenantDisplayName(tenant))}
+                      </option>
+                    `,
+                  )
+                  .join("")}
               </select>
             </label>
+            <label class="field"><span>数据源编码</span><input name="code" type="text" value="${escapeHtml(draft.code)}" data-platform-data-source-code ${dialog.busy ? "disabled" : ""} required /></label>
+            <label class="field"><span>数据源名称</span><input name="name" type="text" value="${escapeHtml(draft.name)}" data-platform-data-source-name ${dialog.busy ? "disabled" : ""} required /></label>
             <label class="field">
-              <span>PostgreSQL 连接 JSON</span>
-              <textarea name="connectionJson" rows="8" placeholder='{"analyticsPgDsn":"postgresql:///db?host=/var/run/postgresql"}'>${escapeHtml(dialog.connectionJson)}</textarea>
+              <span>状态</span>
+              <select name="status" data-platform-data-source-status ${dialog.busy ? "disabled" : ""}>
+                <option value="active" ${draft.status === "active" ? "selected" : ""}>active</option>
+                <option value="inactive" ${draft.status === "inactive" ? "selected" : ""}>inactive</option>
+              </select>
             </label>
+            <label class="field"><span>账套 ID</span><input name="sourceDbid" type="text" value="${escapeHtml(draft.sourceDbid)}" data-platform-data-source-dbid ${dialog.busy ? "disabled" : ""} /></label>
+            <label class="field"><span>上游租户编码（可选）</span><input name="sourceTenantCode" type="text" value="${escapeHtml(draft.sourceTenantCode)}" data-platform-data-source-tenant-code ${dialog.busy ? "disabled" : ""} /></label>
+            <label class="field"><span>连接主机</span><input name="connectionHost" type="text" value="${escapeHtml(draft.connectionHost)}" data-platform-data-source-host ${dialog.busy ? "disabled" : ""} required /></label>
+            <label class="field"><span>连接端口</span><input name="connectionPort" type="number" min="1" value="${escapeHtml(draft.connectionPort)}" data-platform-data-source-port ${dialog.busy ? "disabled" : ""} /></label>
+            <label class="field"><span>数据库名称</span><input name="connectionDatabase" type="text" value="${escapeHtml(draft.connectionDatabase)}" data-platform-data-source-database ${dialog.busy ? "disabled" : ""} required /></label>
+            <label class="field"><span>连接用户名</span><input name="connectionUser" type="text" value="${escapeHtml(draft.connectionUser)}" data-platform-data-source-user ${dialog.busy ? "disabled" : ""} /></label>
             <label class="field">
-              <span>K3Cloud 档案 JSON</span>
-              <textarea name="k3cloudProfileJson" rows="12" placeholder='{"base_url":"http://.../k3cloud/","login_path":"Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginByAppSecret.common.kdsvc"}'>${escapeHtml(dialog.k3cloudProfileJson)}</textarea>
+              <span>连接密码</span>
+              <input
+                name="connectionPassword"
+                type="password"
+                value=""
+                placeholder="${escapeHtml(draft.id && draft.connectionPasswordStored ? "留空则保留当前密码" : "")}"
+                autocomplete="new-password"
+                data-platform-data-source-password
+                ${dialog.busy ? "disabled" : ""}
+              />
             </label>
             <div class="oc-platform-modal__actions">
-              <button class="btn primary" type="submit">${dialog.editing ? "保存" : "创建"}</button>
+              <button class="btn" type="button" data-platform-close-dialog="data-source">取消</button>
+              <button class="btn primary" type="submit" ${dialog.loading || dialog.busy || !selectableTenants.length ? "disabled" : ""}>${draft.id ? "保存数据源" : "创建数据源"}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderTenantDataSourceBindingDialog(controller) {
+  const dialog = getTenantDataSourceBindingDialog(controller);
+  if (!dialog.open) {
+    return "";
+  }
+  const activeDataSources = getActiveDataSources(dialog.dataSources);
+  const statusMarkup = dialog.loading
+    ? `<div class="callout info">正在加载当前绑定和可用数据源...</div>`
+    : dialog.error
+      ? `<div class="callout info">${escapeHtml(dialog.error)}</div>`
+      : "";
+  const selectedDataSourceId =
+    dialog.selectedDataSourceId ||
+    (activeDataSources.length === 1 ? String(activeDataSources[0].id || "") : "");
+  return `
+    <dialog class="oc-platform-modal" data-platform-binding-dialog>
+      <div class="oc-platform-modal__panel">
+        <header class="oc-platform-modal__header">
+          <h3 class="oc-platform-modal__title">绑定数据源</h3>
+          <button class="btn" type="button" data-platform-close-dialog="binding">关闭</button>
+        </header>
+        <div class="oc-platform-modal__body">
+          <form class="oc-platform-modal__form" data-platform-binding-form>
+            <input type="hidden" name="tenantId" value="${escapeHtml(dialog.tenantId)}" />
+            <label class="field">
+              <span>目标租户</span>
+              <input type="text" value="${escapeHtml(dialog.tenantName || dialog.tenantId)}" disabled />
+            </label>
+            <label class="field">
+              <span>当前绑定</span>
+              <input type="text" value="${escapeHtml(dialog.currentBinding?.dataSourceName || "未绑定")}" disabled />
+            </label>
+            <div class="oc-platform-revoke-agent__meta">${escapeHtml(getBindingSourceSummary(dialog.currentBinding))}</div>
+            <label class="field">
+              <span>可用数据源</span>
+              <select
+                name="dataSourceId"
+                data-platform-binding-select
+                ${dialog.loading || dialog.busy || !activeDataSources.length ? "disabled" : ""}
+                required
+              >
+                <option value="">请选择数据源</option>
+                ${activeDataSources
+                  .map(
+                    (source) => `
+                      <option value="${escapeHtml(source.id)}" ${selectedDataSourceId === String(source.id || "") ? "selected" : ""}>
+                        ${escapeHtml(getDataSourceDisplayName(source))}
+                      </option>
+                    `,
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <div class="callout danger">
+              更换绑定后会清空该租户成员已配置的组织权限范围，并将成员权限重置为无权限，请确认后再保存。
+            </div>
+            ${statusMarkup}
+            ${
+              !dialog.loading && !activeDataSources.length
+                ? `<div class="callout info">当前没有可绑定的启用数据源，请先到“创建数据源”页面中创建或启用数据源。</div>`
+                : ""
+            }
+            <div class="oc-platform-modal__actions">
+              <button class="btn" type="button" data-platform-close-dialog="binding">取消</button>
+              <button class="btn primary" type="submit" ${dialog.loading || dialog.busy || !selectedDataSourceId ? "disabled" : ""}>保存绑定</button>
             </div>
           </form>
         </div>
@@ -1510,19 +1953,18 @@ function syncRevokeTenantAgentSelectionState(root, controller) {
 
 function render(root, controller) {
   const focusState = captureRenderFocusState(root);
-  const isNodeSection = controller.section === "nodes";
   if (controller.section === "agent-allocation") {
     pruneAssignTenantAgentSelection(controller);
     pruneRevokeTenantAgentSelection(controller);
   }
-  const filtered = isNodeSection ? filterNodes(controller) : filterTenants(controller);
+  const filtered =
+    controller.section === "data-sources"
+      ? filterDataSources(controller)
+      : controller.section === "nodes"
+        ? filterNodes(controller)
+        : filterTenants(controller);
   const pagination = paginate(filtered, getPageValue(controller));
   setPageValue(controller, pagination.page);
-  const contentMarkup = isNodeSection
-    ? renderNodeManagementTable(pagination.items)
-    : controller.section === "agent-allocation"
-      ? renderAgentAssignmentTable(controller, pagination.items)
-      : renderTenantManagementTable(controller, pagination.items);
 
   root.setAttribute(BODY_SECTION_ATTR, controller.section);
   root.dataset.ocPlatformEmbedded = "true";
@@ -1530,11 +1972,20 @@ function render(root, controller) {
     <section class="oc-platform-list-view">
       ${renderToolbar(controller)}
       <div class="data-table-wrapper">
-        ${controller.section === "tenants" ? renderDataSourceOverview(controller) : ""}
-        ${contentMarkup}
+        ${
+          controller.section === "data-sources"
+            ? renderDataSourceManagementTable(controller, pagination.items)
+            : controller.section === "nodes"
+              ? renderNodeManagementTable(pagination.items)
+              : controller.section === "agent-allocation"
+                ? renderAgentAssignmentTable(controller, pagination.items)
+                : renderTenantManagementTable(controller, pagination.items)
+        }
         ${renderPagination(controller, pagination)}
       </div>
     </section>
+    ${renderDataSourceCatalogDialog(controller)}
+    ${renderTenantDataSourceBindingDialog(controller)}
     ${renderCreateDialog(controller)}
     ${renderMemberLimitDialog(controller)}
     ${renderAssignDialog(controller)}
@@ -1542,7 +1993,6 @@ function render(root, controller) {
     ${renderRevokeTenantAgentDialog(controller)}
     ${renderRevokeTenantAgentConfirmDialog(controller)}
     ${renderLocalLicenseDialog(controller)}
-    ${renderDataSourceDialog(controller)}
     ${renderNodeDialog(controller)}
     ${renderBindNodeDialog(controller)}
   `;
@@ -1568,8 +2018,11 @@ function render(root, controller) {
   if (controller.dialogs.localLicenseOpen) {
     openDialog(root.querySelector("[data-platform-local-license-dialog]"));
   }
-  if (controller.dialogs.dataSourceOpen) {
+  if (controller.dataSourceCatalogDialog?.open) {
     openDialog(root.querySelector("[data-platform-data-source-dialog]"));
+  }
+  if (controller.tenantDataSourceBindingDialog?.open) {
+    openDialog(root.querySelector("[data-platform-binding-dialog]"));
   }
   if (controller.dialogs.nodeOpen) {
     openDialog(root.querySelector("[data-platform-node-dialog]"));
@@ -1585,25 +2038,28 @@ function render(root, controller) {
 }
 
 async function refresh(root, controller) {
-  const includeNodes = !isLocalEdition(controller);
-  const [tenants, catalogAgents, nodes, localLicense, dataSources, tenantDataSourceBindings, syncSchedules] = await Promise.all([
+  const includeNodes = controller.section === "nodes" && !isLocalEdition(controller);
+  const includeDataSources = controller.section === "data-sources";
+  const [tenants, catalogAgents, nodes, localLicense, dataSources] = await Promise.all([
     controller.apiClient.listPlatformTenants(),
     controller.apiClient.listPlatformCatalogAgents(),
     includeNodes ? controller.apiClient.listPlatformNodes() : Promise.resolve([]),
     isLocalEdition(controller) ? controller.apiClient.getLocalLicense() : Promise.resolve(null),
-    controller.apiClient.listPlatformDataSources(),
-    controller.apiClient.listPlatformTenantDataSourceBindings(),
-    controller.apiClient.listPlatformSyncSchedules(),
+    includeDataSources ? controller.apiClient.listPlatformDataSources() : Promise.resolve(null),
   ]);
   controller.tenants = tenants;
   controller.catalogAgents = catalogAgents;
-  controller.nodes = Array.isArray(nodes) ? nodes : [];
+  if (includeNodes || controller.section === "nodes") {
+    controller.nodes = Array.isArray(nodes) ? nodes : [];
+  }
   controller.localLicense = localLicense;
-  controller.dataSources = Array.isArray(dataSources) ? dataSources : [];
-  controller.tenantDataSourceBindings = Array.isArray(tenantDataSourceBindings)
-    ? tenantDataSourceBindings
-    : [];
-  controller.syncSchedules = Array.isArray(syncSchedules) ? syncSchedules : [];
+  if (includeDataSources) {
+    controller.dataSources = Array.isArray(dataSources) ? dataSources : [];
+    const dialog = getDataSourceCatalogDialog(controller);
+    dialog.dataSources = controller.dataSources.slice();
+    dialog.loading = false;
+    syncDataSourceDraftTenant(controller);
+  }
   if (controller.assignTenantAgentDialog?.open) {
     controller.assignTenantAgentDialog.agents = Array.isArray(catalogAgents)
       ? catalogAgents.slice()
@@ -1926,10 +2382,80 @@ function openBindNodeDialog(root, controller, tenantId) {
   render(root, controller);
 }
 
+function dataSourceById(dataSources, dataSourceId) {
+  if (!Array.isArray(dataSources)) {
+    return null;
+  }
+  return (
+    dataSources.find((source) => String(source?.id || "").trim() === String(dataSourceId || "").trim()) ??
+    null
+  );
+}
+
+async function openTenantDataSourceBindingDialog(root, controller, tenantId) {
+  const tenant = tenantById(controller, tenantId);
+  if (!tenant) {
+    return;
+  }
+
+  controller.activeTenant = tenant;
+  const previousToken = Number(controller.tenantDataSourceBindingDialog?.requestToken || 0);
+  controller.tenantDataSourceBindingDialog = {
+    ...createTenantDataSourceBindingDialogState(),
+    open: true,
+    loading: true,
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+    requestToken: previousToken + 1,
+  };
+  render(root, controller);
+
+  const requestToken = controller.tenantDataSourceBindingDialog.requestToken;
+  try {
+    const [dataSources, currentBinding] = await Promise.all([
+      controller.apiClient.listPlatformDataSources(),
+      controller.apiClient.getTenantDataSourceBinding(tenant.id),
+    ]);
+    const currentDialog = controller.tenantDataSourceBindingDialog;
+    if (
+      !currentDialog?.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    currentDialog.dataSources = Array.isArray(dataSources) ? dataSources : [];
+    currentDialog.currentBinding = currentBinding ?? null;
+    const activeDataSources = getActiveDataSources(currentDialog.dataSources);
+    const activeIds = new Set(activeDataSources.map((source) => String(source.id || "").trim()));
+    const currentBindingId = String(currentBinding?.dataSourceId || "").trim();
+    currentDialog.selectedDataSourceId = activeIds.has(currentBindingId)
+      ? currentBindingId
+      : String(activeDataSources[0]?.id || "");
+    currentDialog.loading = false;
+    currentDialog.error = "";
+    render(root, controller);
+  } catch (error) {
+    const currentDialog = controller.tenantDataSourceBindingDialog;
+    if (
+      !currentDialog?.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    currentDialog.loading = false;
+    currentDialog.error = error instanceof Error ? error.message : String(error);
+    render(root, controller);
+    setFeedback(root, currentDialog.error, true);
+  }
+}
+
 function updateSectionLinkState(section) {
   const sectionByHref = new Map([
     [currentSectionHref("tenants"), "tenants"],
     [currentSectionHref("agent-allocation"), "agent-allocation"],
+    [currentSectionHref("data-sources"), "data-sources"],
     [currentSectionHref("nodes"), "nodes"],
   ]);
   for (const [href, targetSection] of sectionByHref.entries()) {
@@ -1961,9 +2487,12 @@ async function handleClick(root, controller, event) {
     return;
   }
 
-  if (target.closest("[data-platform-open-data-source]")) {
-    controller.dialogs.dataSourceOpen = true;
-    controller.dataSourceDialog = createDataSourceDialogState();
+  if (target.closest("[data-platform-open-data-source-create]")) {
+    const dialog = getDataSourceCatalogDialog(controller);
+    dialog.open = true;
+    dialog.busy = false;
+    dialog.error = "";
+    dialog.draft = createDataSourceDraft(null, resolveDefaultBoundTenantId(controller));
     render(root, controller);
     return;
   }
@@ -1971,25 +2500,19 @@ async function handleClick(root, controller, event) {
   const editDataSourceTrigger = target.closest("[data-platform-edit-data-source]");
   if (editDataSourceTrigger instanceof HTMLElement) {
     const dataSourceId = editDataSourceTrigger.dataset.platformEditDataSource || "";
-    const current = (Array.isArray(controller.dataSources) ? controller.dataSources : []).find(
-      (item) => item.id === dataSourceId,
-    );
+    const current = dataSourceById(controller.dataSources, dataSourceId);
     if (!current) {
       setFeedback(root, "未找到数据源。", true);
       return;
     }
-    controller.dialogs.dataSourceOpen = true;
-    controller.dataSourceDialog = {
-      id: current.id,
-      name: current.name || "",
-      status: current.status || "active",
-      connectionJson: current.connectionJson ? JSON.stringify(current.connectionJson, null, 2) : "",
-      k3cloudProfileJson: current.k3cloudProfileJson
-        ? JSON.stringify(current.k3cloudProfileJson, null, 2)
-        : "",
-      editing: true,
-      error: "",
-    };
+    const dialog = getDataSourceCatalogDialog(controller);
+    dialog.open = true;
+    dialog.busy = false;
+    dialog.error = "";
+    dialog.draft = createDataSourceDraft(
+      current,
+      resolveDefaultBoundTenantId(controller, editDataSourceTrigger.dataset.platformEditDataSource),
+    );
     render(root, controller);
     return;
   }
@@ -2029,9 +2552,12 @@ async function handleClick(root, controller, event) {
       controller.dialogs.localLicenseOpen = false;
       closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
     }
+    if (dialogKind === "binding") {
+      controller.tenantDataSourceBindingDialog = createTenantDataSourceBindingDialogState();
+      closeDialog(root.querySelector("[data-platform-binding-dialog]"));
+    }
     if (dialogKind === "data-source") {
-      controller.dialogs.dataSourceOpen = false;
-      controller.dataSourceDialog = createDataSourceDialogState();
+      controller.dataSourceCatalogDialog = createDataSourceCatalogDialogState();
       closeDialog(root.querySelector("[data-platform-data-source-dialog]"));
     }
     if (dialogKind === "node") {
@@ -2083,40 +2609,13 @@ async function handleClick(root, controller, event) {
     return;
   }
 
-  const bindDataSourceTrigger = target.closest("[data-platform-bind-data-source]");
-  if (bindDataSourceTrigger instanceof HTMLElement) {
-    const tenantId = bindDataSourceTrigger.dataset.platformBindDataSource || "";
-    const tenant = tenantById(controller, tenantId);
-    if (!tenant) {
-      setFeedback(root, "未找到租户信息。", true);
-      return;
-    }
-    const dataSources = Array.isArray(controller.dataSources) ? controller.dataSources : [];
-    if (!dataSources.length) {
-      setFeedback(root, "请先创建数据源。", true);
-      return;
-    }
-    const binding = bindingByTenantId(controller, tenantId);
-    const options = dataSources.map((item) => `${item.id}:${item.name}`).join("\n");
-    const nextValue = window.prompt(
-      `为租户“${tenant.name}”绑定数据源。\n输入数据源ID，留空不变。\n可选项：\n${options}`,
-      binding?.dataSourceId || "",
+  const bindingTrigger = target.closest("[data-platform-open-data-source-binding]");
+  if (bindingTrigger instanceof HTMLElement) {
+    await openTenantDataSourceBindingDialog(
+      root,
+      controller,
+      bindingTrigger.dataset.platformOpenDataSourceBinding || "",
     );
-    if (nextValue === null) {
-      return;
-    }
-    const dataSourceId = String(nextValue || "").trim();
-    if (!dataSourceId) {
-      setFeedback(root, "已取消。", true);
-      return;
-    }
-    try {
-      await controller.apiClient.bindPlatformTenantDataSource({ tenantId, dataSourceId });
-      await refresh(root, controller);
-      setFeedback(root, `租户“${tenant.name}”的数据源绑定已更新。`);
-    } catch (error) {
-      setFeedback(root, error instanceof Error ? error.message : String(error), true);
-    }
     return;
   }
 
@@ -2235,27 +2734,149 @@ async function handleSubmit(root, controller, event) {
 
   if (target.matches("[data-platform-data-source-form]")) {
     event.preventDefault();
-    try {
-      const formData = new FormData(target);
-      const payload = {
-        id: String(formData.get("id") || "").trim() || undefined,
+    const dialog = getDataSourceCatalogDialog(controller);
+    if (dialog.loading || dialog.busy) {
+      return;
+    }
+    const formData = new FormData(target);
+    const tenantId = String(formData.get("tenantId") || "").trim();
+    const submittedPasswordValue = formData.get("connectionPassword");
+    const submittedPassword =
+      typeof submittedPasswordValue === "string"
+        ? submittedPasswordValue
+        : submittedPasswordValue === null
+          ? ""
+          : String(submittedPasswordValue);
+    dialog.draft = createDataSourceDraft(
+      {
+        id: String(formData.get("id") || "").trim(),
+        code: String(formData.get("code") || "").trim(),
         name: String(formData.get("name") || "").trim(),
-        status: String(formData.get("status") || "active").trim(),
-        connectionJson: String(formData.get("connectionJson") || "").trim()
-          ? JSON.parse(String(formData.get("connectionJson") || "").trim())
-          : null,
-        k3cloudProfileJson: String(formData.get("k3cloudProfileJson") || "").trim()
-          ? JSON.parse(String(formData.get("k3cloudProfileJson") || "").trim())
-          : null,
-      };
-      await controller.apiClient.savePlatformDataSource(payload);
-      controller.dialogs.dataSourceOpen = false;
-      controller.dataSourceDialog = createDataSourceDialogState();
+        status: String(formData.get("status") || "").trim() || "active",
+        sourceDbid: String(formData.get("sourceDbid") || "").trim(),
+        sourceTenantCode: String(formData.get("sourceTenantCode") || "").trim(),
+        connection: {
+          host: String(formData.get("connectionHost") || "").trim(),
+          port: String(formData.get("connectionPort") || "").trim(),
+          database: String(formData.get("connectionDatabase") || "").trim(),
+          user: String(formData.get("connectionUser") || "").trim(),
+          password: submittedPassword,
+        },
+      },
+      tenantId,
+    );
+    const isUpdate = Boolean(dialog.draft.id);
+    const currentBoundTenant = tenantByDataSourceId(controller, dialog.draft.id);
+    if (!tenantId) {
+      dialog.error = "请选择平台租户。";
+      render(root, controller);
+      setFeedback(root, dialog.error, true);
+      return;
+    }
+    if (
+      isUpdate &&
+      currentBoundTenant?.id &&
+      String(currentBoundTenant.id || "").trim() !== tenantId
+    ) {
+      dialog.error = describePlatformDataSourceError("tenant_data_source_rebind_locked");
+      render(root, controller);
+      setFeedback(root, dialog.error, true);
+      return;
+    }
+    dialog.busy = true;
+    dialog.error = "";
+    render(root, controller);
+    try {
+      const payload = buildDataSourcePayloadFromDraft(dialog.draft);
+      const saved = isUpdate
+        ? await controller.apiClient.updateDataSource(payload)
+        : await controller.apiClient.createDataSource(payload);
+      const savedDataSourceId = String(saved?.id || dialog.draft.id || "").trim();
+      if (!savedDataSourceId) {
+        throw new Error("data_source_not_found");
+      }
+      if (!isUpdate || !currentBoundTenant?.id) {
+        await controller.apiClient.setTenantDataSourceBinding({
+          tenantId,
+          dataSourceId: savedDataSourceId,
+        });
+      }
+      controller.dataSourceCatalogDialog = createDataSourceCatalogDialogState();
       await refresh(root, controller);
-      closeDialog(root.querySelector("[data-platform-data-source-dialog]"));
-      setFeedback(root, payload.id ? "数据源已更新。" : "数据源已创建。");
+      if (!isUpdate) {
+        setFeedback(
+          root,
+          `已创建数据源并绑定到租户“${getTenantDisplayName(tenantById(controller, tenantId))}”。`,
+        );
+      } else if (!currentBoundTenant?.id) {
+        setFeedback(
+          root,
+          `数据源已更新，并已绑定到租户“${getTenantDisplayName(tenantById(controller, tenantId))}”。`,
+        );
+      } else {
+        setFeedback(root, "数据源已更新。");
+      }
     } catch (error) {
-      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+      const errorMessage = describePlatformDataSourceError(
+        error instanceof Error ? error.message : String(error),
+      );
+      dialog.busy = false;
+      dialog.loading = false;
+      dialog.error = errorMessage;
+      render(root, controller);
+      setFeedback(root, errorMessage, true);
+    }
+    return;
+  }
+
+  if (target.matches("[data-platform-binding-form]")) {
+    event.preventDefault();
+    const dialog = getTenantDataSourceBindingDialog(controller);
+    if (!dialog.open || dialog.loading || dialog.busy) {
+      return;
+    }
+    const formData = new FormData(target);
+    const dataSourceId = String(
+      formData.get("dataSourceId") || dialog.selectedDataSourceId || "",
+    ).trim();
+    if (!dataSourceId) {
+      dialog.error = "请选择数据源。";
+      render(root, controller);
+      setFeedback(root, dialog.error, true);
+      return;
+    }
+    dialog.selectedDataSourceId = dataSourceId;
+    const selectedSource = dataSourceById(dialog.dataSources, dataSourceId);
+    const tenantLabel = dialog.tenantName || dialog.tenantId || "该租户";
+    const sourceLabel = getDataSourceDisplayName(selectedSource);
+    const requestToken = Number(dialog.requestToken || 0);
+    dialog.busy = true;
+    dialog.error = "";
+    render(root, controller);
+    try {
+      await controller.apiClient.setTenantDataSourceBinding({
+        tenantId: dialog.tenantId,
+        dataSourceId,
+      });
+      controller.tenantDataSourceBindingDialog = createTenantDataSourceBindingDialogState();
+      await refresh(root, controller);
+      setFeedback(root, `已为租户“${tenantLabel}”绑定数据源“${sourceLabel}”。`);
+    } catch (error) {
+      const errorMessage = describePlatformDataSourceError(
+        error instanceof Error ? error.message : String(error),
+      );
+      const currentDialog = controller.tenantDataSourceBindingDialog;
+      if (
+        currentDialog?.open &&
+        currentDialog.requestToken === requestToken &&
+        currentDialog.tenantId === dialog.tenantId
+      ) {
+        currentDialog.busy = false;
+        currentDialog.loading = false;
+        currentDialog.error = errorMessage;
+      }
+      render(root, controller);
+      setFeedback(root, errorMessage, true);
     }
     return;
   }

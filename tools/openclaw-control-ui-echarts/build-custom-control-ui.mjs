@@ -9,6 +9,7 @@ import { injectAutoGatewayTokenBootstrap } from "./runtime/branding/auto-token.j
 import { getBrandFaviconDataUrl } from "./runtime/branding/favicon.js";
 import { injectEchartsViewPublicBootstrap } from "./runtime/echarts-view/bootstrap.js";
 import { injectLufengPublicBootstrap } from "./runtime/lufeng/bootstrap.js";
+import { injectSandboxViewPublicBootstrap } from "./runtime/sandbox-view/bootstrap.js";
 
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
@@ -21,6 +22,7 @@ const BOOTSTRAP_MARKERS = {
   autoToken: "data-openclaw-auto-token-bootstrap",
   lufeng: "data-openclaw-lufeng-bootstrap",
   echartsView: "data-openclaw-echarts-view-bootstrap",
+  sandboxView: "data-openclaw-sandbox-view-bootstrap",
 };
 const TENANT_PREBOOT_PATTERN = /^\s*<script[^>]*data-openclaw-tenant-preboot[^>]*><\/script>\s*$/gm;
 const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
@@ -488,6 +490,10 @@ function assertCriticalInjectionAndSmoke({
       expectedSrc: `${expectedRuntimeBasePath}/echarts-view/preboot.js`,
     },
     {
+      marker: BOOTSTRAP_MARKERS.sandboxView,
+      expectedSrc: `${expectedRuntimeBasePath}/sandbox-view/preboot.js`,
+    },
+    {
       marker: BOOTSTRAP_MARKERS.tenantPreboot,
       expectedSrc: `${expectedRuntimeBasePath}/tenant/preboot.js`,
     },
@@ -555,9 +561,11 @@ function assertCriticalInjectionAndSmoke({
   const loginIndexPath = path.join(outputDir, "login", "index.html");
   const loginHtmlPath = path.join(outputDir, "login.html");
   const echartsViewIndexPath = path.join(outputDir, "echarts-view", "index.html");
+  const sandboxViewIndexPath = path.join(outputDir, "sandbox-view", "index.html");
   ensureOutputFileExists(loginIndexPath, "login/index.html");
   ensureOutputFileExists(loginHtmlPath, "login.html");
   ensureOutputFileExists(echartsViewIndexPath, "echarts-view/index.html");
+  ensureOutputFileExists(sandboxViewIndexPath, "sandbox-view/index.html");
 
   const loginIndexHtml = fs.readFileSync(loginIndexPath, "utf8");
   const loginHtml = fs.readFileSync(loginHtmlPath, "utf8");
@@ -569,6 +577,12 @@ function assertCriticalInjectionAndSmoke({
   if (!echartsViewIndexHtml.includes(expectedRendererAbsolutePath)) {
     throw new Error(
       `output smoke failed: echarts-view entry is missing renderer '${expectedRendererAbsolutePath}'`,
+    );
+  }
+  const sandboxViewIndexHtml = fs.readFileSync(sandboxViewIndexPath, "utf8");
+  if (!sandboxViewIndexHtml.includes(expectedRendererAbsolutePath)) {
+    throw new Error(
+      `output smoke failed: sandbox-view entry is missing renderer '${expectedRendererAbsolutePath}'`,
     );
   }
 
@@ -656,6 +670,14 @@ function writeEchartsViewRouteEntry(outputDir, rendererScriptSrc) {
   writeTextIntoOutput(
     buildEchartsViewEntryHtmlWithRendererSrc(rendererScriptSrc),
     echartsViewIndexPath,
+  );
+}
+
+function writeSandboxViewRouteEntry(outputDir, rendererScriptSrc) {
+  const sandboxViewIndexPath = path.join(outputDir, "sandbox-view", "index.html");
+  writeTextIntoOutput(
+    buildEchartsViewEntryHtmlWithRendererSrc(rendererScriptSrc),
+    sandboxViewIndexPath,
   );
 }
 
@@ -752,9 +774,12 @@ function main() {
     injectAutoGatewayTokenBootstrap(
       injectLufengPublicBootstrap(
         injectTenantPreboot(
-          injectEchartsViewPublicBootstrap(outputIndex, {
-            runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath,
-          }),
+          injectSandboxViewPublicBootstrap(
+            injectEchartsViewPublicBootstrap(outputIndex, {
+              runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath,
+            }),
+            { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
+          ),
           { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
         ),
         autoGatewayToken,
@@ -771,6 +796,7 @@ function main() {
   fs.writeFileSync(outputIndexPath, indexWithFingerprintedRuntime, "utf8");
   writeLoginRouteAliases(outputDir, buildLoginEntryHtml(indexWithFingerprintedRuntime));
   writeEchartsViewRouteEntry(outputDir, fingerprintPaths.rendererAssetAbsolutePath);
+  writeSandboxViewRouteEntry(outputDir, fingerprintPaths.rendererAssetAbsolutePath);
   rewriteKnowledgeGraphEntry(
     outputDir,
     fingerprintPaths.runtimeAssetBaseRelativePath,
@@ -838,6 +864,7 @@ function main() {
     checks: {
       verifiedMarkers: [
         BOOTSTRAP_MARKERS.echartsView,
+        BOOTSTRAP_MARKERS.sandboxView,
         BOOTSTRAP_MARKERS.tenantPreboot,
         BOOTSTRAP_MARKERS.lufeng,
         BOOTSTRAP_MARKERS.autoToken,
