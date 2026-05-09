@@ -1,7 +1,5 @@
 import path from "node:path";
-
 import { describe, expect, it } from "vitest";
-
 import {
   buildRuntimeExtraDependencySpecs,
   resolveInstalledPackageVersion,
@@ -50,6 +48,10 @@ describe("tenant platform runtime deps", () => {
     );
     expect(override).toContain(
       "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:ro",
+    );
+    expect(override).toContain("${OPENCLAW_WORKSPACE_DIR}:/srv/workspace-downloads:ro");
+    expect(override).toContain(
+      "${OPENCLAW_CONFIG_DIR}/workspace-agents:/srv/workspace-agent-downloads:ro",
     );
   });
 

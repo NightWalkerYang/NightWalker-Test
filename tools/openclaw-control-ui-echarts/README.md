@@ -188,8 +188,8 @@ That script:
 1. rebuilds `tools/openclaw-control-ui-echarts/generated/control-ui`
 2. writes a root-level `docker-compose.override.yml`
 3. mounts the generated UI directly to `/app/dist/control-ui` inside `openclaw-gateway`
-4. mounts `${OPENCLAW_WORKSPACE_DIR}` read-only into `/app/dist/control-ui/workspace-downloads` so fenced `file` cards can download workspace files through the same origin
-5. mounts `${OPENCLAW_CONFIG_DIR}/workspace-agents` read-only into `/app/dist/control-ui/workspace-agent-downloads` so refreshed public visualization pages can still load their rewritten same-origin JS/CSS assets
+4. mounts `${OPENCLAW_WORKSPACE_DIR}` read-only into `/app/dist/control-ui/workspace-downloads` and into the front proxy at `/srv/workspace-downloads`, so fenced `file` cards can download workspace files through the same origin even when the proxy fronts the gateway
+5. mounts `${OPENCLAW_CONFIG_DIR}/workspace-agents` read-only into `/app/dist/control-ui/workspace-agent-downloads` and into the front proxy at `/srv/workspace-agent-downloads`, so refreshed public visualization pages can still load rewritten same-origin JS/CSS/image assets without depending on gateway static-route support
 6. mounts `docs/reference/templates` to `/app/docs/reference/templates` so agent workspace bootstrap files are available even when an image is missing those docs assets
 7. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
 8. runs `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy` so the new bind mounts are actually applied instead of leaving the old gateway/proxy containers running
