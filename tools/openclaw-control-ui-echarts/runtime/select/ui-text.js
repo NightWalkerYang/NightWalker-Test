@@ -1,7 +1,8 @@
 export const UI_TEXT = Object.freeze({
   badge: "选项",
-  actionInsert: "发送至聊天框",
   actionSend: "按所选继续",
+  actionSending: "继续中...",
+  actionCompleted: "已完成",
   summaryLoading: "选项生成中",
   summarySuccessSingle: "单选项已生成",
   summarySuccessMulti: "多选项已生成",
@@ -13,9 +14,12 @@ export const UI_TEXT = Object.freeze({
   modeSingle: "单选",
   modeMulti: "多选",
   countSelected: "已选 {count} 项",
+  countCompleted: "已完成",
   hintSingle: "请选择 1 项后继续。",
   hintMultiMin: "请至少选择 {min} 项。",
   hintMultiMax: "最多选择 {max} 项。",
   hintMultiRange: "请在 {min} - {max} 项之间选择。",
+  hintSubmitting: "正在按所选继续，请稍候。",
+  hintCompleted: "已按所选继续，本卡片已锁定。",
   multiPromptLead: "请按以下已选项继续：",
 });

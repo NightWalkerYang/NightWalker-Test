@@ -46,6 +46,31 @@ export function getSelectStyles() {
       box-shadow:
         inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
         0 16px 36px color-mix(in srgb, var(--bg, #020617) 8%, transparent);
+      transition:
+        border-color 180ms ease,
+        background 180ms ease,
+        box-shadow 180ms ease,
+        opacity 180ms ease;
+    }
+
+    .oc-select-card.is-submitting {
+      opacity: 0.84;
+    }
+
+    .oc-select-card.is-complete {
+      border-color: color-mix(in srgb, #22c55e 34%, var(--border, rgba(148, 163, 184, 0.22)) 66%);
+      background:
+        radial-gradient(circle at top right, color-mix(in srgb, #22c55e 10%, transparent), transparent 42%),
+        linear-gradient(180deg, color-mix(in srgb, var(--panel, #0f172a) 92%, transparent), color-mix(in srgb, var(--bg-elevated, #111827) 94%, transparent));
+      box-shadow:
+        inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
+        0 18px 36px color-mix(in srgb, #22c55e 10%, transparent);
+    }
+
+    .oc-select-card.is-complete .oc-select-card__count {
+      border-color: color-mix(in srgb, #22c55e 26%, transparent);
+      background: color-mix(in srgb, #22c55e 12%, transparent);
+      color: color-mix(in srgb, #22c55e 84%, white 8%);
     }
 
     .oc-select-card__header {
@@ -130,6 +155,14 @@ export function getSelectStyles() {
       transform: translateY(-1px);
     }
 
+    .oc-select-card.is-submitting .oc-select-card__option:hover,
+    .oc-select-card.is-complete .oc-select-card__option:hover {
+      border-color: color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.22)) 72%, transparent);
+      background: color-mix(in srgb, var(--panel, var(--card)) 88%, transparent);
+      box-shadow: none;
+      transform: none;
+    }
+
     .oc-select-card__option.is-selected {
       border-color: color-mix(in srgb, var(--accent) 44%, var(--border) 56%);
       background: color-mix(in srgb, var(--accent) 12%, var(--panel, var(--card)) 88%);
@@ -188,6 +221,11 @@ export function getSelectStyles() {
       color: color-mix(in srgb, currentColor 70%, transparent);
     }
 
+    .oc-select-card.is-complete .oc-select-card__hint {
+      color: color-mix(in srgb, #22c55e 78%, currentColor 22%);
+      font-weight: 600;
+    }
+
     .oc-select-card__actions {
       display: flex;
       align-items: center;
@@ -243,6 +281,13 @@ export function getSelectStyles() {
 
     .oc-select-card__button--primary:hover:not(:disabled) {
       box-shadow: 0 18px 34px color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+
+    .oc-select-card.is-complete .oc-select-card__button--primary {
+      border-color: color-mix(in srgb, #22c55e 24%, transparent);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, #22c55e 84%, white 8%), color-mix(in srgb, #16a34a 88%, black 4%));
+      box-shadow: 0 16px 30px color-mix(in srgb, #22c55e 16%, transparent);
     }
 
     @media (max-width: 720px) {

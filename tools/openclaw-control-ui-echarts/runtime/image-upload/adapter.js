@@ -10,6 +10,16 @@ import {
 import { getImageUploadStyles } from "./styles.js";
 import { UI_TEXT } from "./ui-text.js";
 
+function getInteractionStateName(state) {
+  if (state.completed) {
+    return "completed";
+  }
+  if (state.submitting) {
+    return "submitting";
+  }
+  return "idle";
+}
+
 function normalizeFileExtension(name) {
   const match = String(name || "")
     .toLowerCase()
@@ -139,11 +149,15 @@ function createStatusBadge(slot, state) {
   return badge;
 }
 
-function createSlotCard(slot, stateById) {
+function createSlotCard(slot, stateById, interactionState) {
   const state = stateById.get(slot.id);
   const node = document.createElement("section");
   node.className = "oc-image-upload-card__slot";
   node.setAttribute("data-oc-image-upload-slot", slot.id);
+  const locked = Boolean(interactionState?.submitting || interactionState?.completed);
+  if (locked) {
+    node.classList.add("is-locked");
+  }
 
   const head = document.createElement("div");
   head.className = "oc-image-upload-card__slot-head";
@@ -163,6 +177,7 @@ function createSlotCard(slot, stateById) {
   uploadBox.className = "oc-image-upload-card__slot-upload-box";
   uploadBox.setAttribute("data-oc-image-upload-trigger", slot.id);
   uploadBox.setAttribute("aria-label", `${slot.label}${slot.required ? " 必填" : ""}`);
+  uploadBox.disabled = locked;
   const uploadPlus = document.createElement("span");
   uploadPlus.className = "oc-image-upload-card__slot-upload-plus";
   uploadPlus.textContent = "+";
@@ -191,6 +206,7 @@ function createSlotCard(slot, stateById) {
   input.setAttribute("aria-label", `${slot.label}${slot.required ? " 必填" : ""}`);
   input.tabIndex = -1;
   input.accept = slot.accept.join(",");
+  input.disabled = locked;
 
   const error = document.createElement("div");
   error.className = "oc-image-upload-card__slot-error";
@@ -215,7 +231,11 @@ function createUploadCard(payload) {
   title.className = "oc-image-upload-card__title";
   title.textContent = payload.title;
 
-  header.append(title);
+  const status = document.createElement("div");
+  status.className = "oc-image-upload-card__status";
+  status.setAttribute("data-oc-image-upload-status", "true");
+
+  header.append(title, status);
 
   if (payload.description) {
     const description = document.createElement("p");
@@ -230,6 +250,14 @@ function createUploadCard(payload) {
   const actions = document.createElement("div");
   actions.className = "oc-image-upload-card__actions";
 
+  const footer = document.createElement("div");
+  footer.className = "oc-image-upload-card__footer";
+
+  const hint = document.createElement("div");
+  hint.className = "oc-image-upload-card__hint";
+  hint.setAttribute("data-oc-image-upload-hint", "true");
+  hint.setAttribute("aria-live", "polite");
+
   const insertButton = document.createElement("button");
   insertButton.type = "button";
   insertButton.className = "oc-image-upload-card__action";
@@ -243,8 +271,9 @@ function createUploadCard(payload) {
   submitButton.textContent = payload.submitLabel || UI_TEXT.actionSubmit;
 
   actions.append(insertButton, submitButton);
-  root.append(header, slots, actions);
-  return { root, slots, insertButton, submitButton };
+  footer.append(hint, actions);
+  root.append(header, slots, footer);
+  return { root, slots, status, hint, insertButton, submitButton };
 }
 
 function hasUploadedRequiredSlots(payload, uploadedById) {
@@ -286,6 +315,38 @@ function createUiText() {
     loadingStreamingDetail: UI_TEXT.loadingStreamingDetail,
     errorTitle: UI_TEXT.errorTitle,
   };
+}
+
+function buildCardHint(payload, stateById, uploadedById, interactionState) {
+  if (interactionState.completed) {
+    return UI_TEXT.hintCompleted;
+  }
+  if (interactionState.submitting) {
+    return UI_TEXT.hintSubmitting;
+  }
+  if (hasUploadedRequiredSlots(payload, uploadedById)) {
+    return UI_TEXT.hintUploaded;
+  }
+  if (hasResolvedRequiredSlots(payload, stateById, uploadedById)) {
+    return UI_TEXT.hintReady;
+  }
+  return UI_TEXT.hintPending;
+}
+
+function buildCardStatus(payload, stateById, uploadedById, interactionState) {
+  if (interactionState.completed) {
+    return UI_TEXT.actionCompleted;
+  }
+  if (interactionState.submitting) {
+    return UI_TEXT.actionSubmitting;
+  }
+  if (hasUploadedRequiredSlots(payload, uploadedById)) {
+    return UI_TEXT.statusUploaded;
+  }
+  if (hasResolvedRequiredSlots(payload, stateById, uploadedById)) {
+    return UI_TEXT.statusReady;
+  }
+  return UI_TEXT.statusPending;
 }
 
 function renderFallback(cardEl, source, errorDetail) {
@@ -345,6 +406,10 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
       }
 
       const uploadedById = new Map();
+      const interactionState = {
+        submitting: false,
+        completed: false,
+      };
       const stateById = new Map(
         payload.slots.map((slot) => [
           slot.id,
@@ -361,18 +426,44 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
       const shell = createUploadCard(payload);
       surface.replaceChildren(shell.root);
 
-      const slotEntries = payload.slots.map((slot) => createSlotCard(slot, stateById));
+      const slotEntries = payload.slots.map((slot) =>
+        createSlotCard(slot, stateById, interactionState),
+      );
       shell.slots.replaceChildren(...slotEntries.map((entry) => entry.node));
 
       const syncActions = () => {
         const submitReady = hasResolvedRequiredSlots(payload, stateById, uploadedById);
         const insertReady = hasUploadedRequiredSlots(payload, uploadedById);
-        shell.submitButton.disabled = !submitReady;
-        shell.insertButton.disabled = !insertReady;
+        const locked = interactionState.submitting || interactionState.completed;
+        const status = getInteractionStateName(interactionState);
+        shell.root.setAttribute("data-oc-image-upload-state", status);
+        shell.root.classList.toggle("is-submitting", status === "submitting");
+        shell.root.classList.toggle("is-complete", status === "completed");
+        shell.status.textContent = buildCardStatus(
+          payload,
+          stateById,
+          uploadedById,
+          interactionState,
+        );
+        shell.hint.textContent = buildCardHint(
+          payload,
+          stateById,
+          uploadedById,
+          interactionState,
+        );
+        shell.submitButton.disabled = locked || !submitReady;
+        shell.insertButton.disabled = locked || !insertReady;
+        shell.submitButton.textContent = interactionState.completed
+          ? UI_TEXT.actionCompleted
+          : interactionState.submitting
+            ? UI_TEXT.actionSubmitting
+            : payload.submitLabel || UI_TEXT.actionSubmit;
       };
 
       const rerenderSlots = () => {
-        const nextEntries = payload.slots.map((slot) => createSlotCard(slot, stateById));
+        const nextEntries = payload.slots.map((slot) =>
+          createSlotCard(slot, stateById, interactionState),
+        );
         shell.slots.replaceChildren(...nextEntries.map((entry) => entry.node));
         for (const entry of nextEntries) {
           const slotId = entry.input.getAttribute("data-oc-image-upload-input") || "";
@@ -381,9 +472,15 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
             continue;
           }
           entry.uploadBox.addEventListener("click", () => {
+            if (interactionState.submitting || interactionState.completed) {
+              return;
+            }
             entry.input.click();
           });
           entry.input.addEventListener("change", () => {
+            if (interactionState.submitting || interactionState.completed) {
+              return;
+            }
             const files = Array.from(entry.input.files || []);
             const file = files[0];
             if (!file) {
@@ -430,6 +527,9 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
       syncActions();
 
       const runAction = async (mode) => {
+        if (interactionState.submitting || interactionState.completed) {
+          return false;
+        }
         if (mode === "insert") {
           const insertedReady = hasUploadedRequiredSlots(payload, uploadedById);
           if (!insertedReady) {
@@ -453,61 +553,73 @@ export function createImageUploadAdapter({ vendorBaseUrl }) {
           return false;
         }
 
-        for (const slot of payload.slots) {
-          const state = stateById.get(slot.id);
-          if (!state) {
-            continue;
-          }
-          if (!state.pendingFile || uploadedById.has(slot.id)) {
-            continue;
-          }
-          state.uploading = true;
-          state.failedMessage = "";
-          rerenderSlots();
-          syncActions();
-          try {
-            const uploadResult = await apiClient.uploadMemberImageAsset({
-              tenantAgentId,
-              slotId: slot.id,
-              workspacePath: slot.workspacePath,
-              file: state.pendingFile,
-            });
-            const uploadedItem = Array.isArray(uploadResult?.uploadedItems)
-              ? uploadResult.uploadedItems[0]
-              : null;
-            const uploadedFile = state.pendingFile;
-            state.uploading = false;
-            state.uploadCount += 1;
+        interactionState.submitting = true;
+        syncActions();
+        try {
+          for (const slot of payload.slots) {
+            const state = stateById.get(slot.id);
+            if (!state) {
+              continue;
+            }
+            if (!state.pendingFile || uploadedById.has(slot.id)) {
+              continue;
+            }
+            state.uploading = true;
             state.failedMessage = "";
-            state.pendingFile = null;
-            uploadedById.set(slot.id, {
-              fileName: uploadedFile.name,
-              workspacePath: String(uploadedItem?.workspacePath || slot.workspacePath).trim(),
-              relativePath: String(uploadedItem?.relativePath || "").trim(),
-            });
-          } catch (error) {
-            state.uploading = false;
-            state.failedMessage = localizeErrorMessage(
-              error && typeof error.message === "string"
-                ? error.message
-                : String(error || "upload_failed"),
-            );
-            uploadedById.delete(slot.id);
             rerenderSlots();
             syncActions();
+            try {
+              const uploadResult = await apiClient.uploadMemberImageAsset({
+                tenantAgentId,
+                slotId: slot.id,
+                workspacePath: slot.workspacePath,
+                file: state.pendingFile,
+              });
+              const uploadedItem = Array.isArray(uploadResult?.uploadedItems)
+                ? uploadResult.uploadedItems[0]
+                : null;
+              const uploadedFile = state.pendingFile;
+              state.uploading = false;
+              state.uploadCount += 1;
+              state.failedMessage = "";
+              state.pendingFile = null;
+              uploadedById.set(slot.id, {
+                fileName: uploadedFile.name,
+                workspacePath: String(uploadedItem?.workspacePath || slot.workspacePath).trim(),
+                relativePath: String(uploadedItem?.relativePath || "").trim(),
+              });
+            } catch (error) {
+              state.uploading = false;
+              state.failedMessage = localizeErrorMessage(
+                error && typeof error.message === "string"
+                  ? error.message
+                  : String(error || "upload_failed"),
+              );
+              uploadedById.delete(slot.id);
+              rerenderSlots();
+              syncActions();
+              return false;
+            }
+            rerenderSlots();
+            syncActions();
+          }
+
+          const uploadedReady = hasUploadedRequiredSlots(payload, uploadedById);
+          if (!uploadedReady) {
             return false;
           }
+
+          const promptText = buildSuccessPrompt(payload, uploadedById);
+          const sent = await sendPromptToChat(promptText);
+          if (sent) {
+            interactionState.completed = true;
+          }
+          return sent;
+        } finally {
+          interactionState.submitting = false;
           rerenderSlots();
           syncActions();
         }
-
-        const uploadedReady = hasUploadedRequiredSlots(payload, uploadedById);
-        if (!uploadedReady) {
-          return false;
-        }
-
-        const promptText = buildSuccessPrompt(payload, uploadedById);
-        return sendPromptToChat(promptText);
       };
 
       shell.insertButton.addEventListener("click", () => {

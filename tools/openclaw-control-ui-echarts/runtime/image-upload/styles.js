@@ -12,10 +12,29 @@ export function getImageUploadStyles() {
       padding: 12px;
       background:
         linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 90%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 86%, transparent));
+      transition:
+        border-color 180ms ease,
+        background 180ms ease,
+        box-shadow 180ms ease,
+        opacity 180ms ease;
+    }
+
+    .oc-image-upload-card.is-submitting {
+      opacity: 0.84;
+    }
+
+    .oc-image-upload-card.is-complete {
+      border-color: color-mix(in srgb, #22c55e 34%, var(--border, rgba(148, 163, 184, 0.26)) 66%);
+      background:
+        radial-gradient(circle at top right, color-mix(in srgb, #22c55e 10%, transparent), transparent 42%),
+        linear-gradient(180deg, color-mix(in srgb, var(--panel, var(--card)) 90%, transparent), color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 86%, transparent));
+      box-shadow: 0 18px 34px color-mix(in srgb, #22c55e 10%, transparent);
     }
 
     .oc-image-upload-card__header {
       display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
       gap: 6px;
     }
 
@@ -27,10 +46,32 @@ export function getImageUploadStyles() {
     }
 
     .oc-image-upload-card__description {
+      grid-column: 1 / -1;
       margin: 0;
       font-size: 12px;
       line-height: 1.55;
       color: color-mix(in srgb, currentColor 76%, transparent);
+    }
+
+    .oc-image-upload-card__status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--accent, #7eaad4) 22%, transparent);
+      background: color-mix(in srgb, var(--accent, #7eaad4) 10%, transparent);
+      color: color-mix(in srgb, var(--accent, #7eaad4) 84%, var(--text-strong, #fff) 8%);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .oc-image-upload-card.is-complete .oc-image-upload-card__status {
+      border-color: color-mix(in srgb, #22c55e 26%, transparent);
+      background: color-mix(in srgb, #22c55e 12%, transparent);
+      color: color-mix(in srgb, #22c55e 84%, white 8%);
     }
 
     .oc-image-upload-card__slots {
@@ -49,6 +90,10 @@ export function getImageUploadStyles() {
       background: color-mix(in srgb, var(--panel, var(--card)) 86%, transparent);
       min-height: 170px;
       align-content: start;
+    }
+
+    .oc-image-upload-card__slot.is-locked {
+      opacity: 0.84;
     }
 
     .oc-image-upload-card__slot-head {
@@ -157,6 +202,22 @@ export function getImageUploadStyles() {
         );
     }
 
+    .oc-image-upload-card__slot-upload-box:disabled,
+    .oc-image-upload-card__slot.is-locked .oc-image-upload-card__slot-upload-box {
+      cursor: not-allowed;
+    }
+
+    .oc-image-upload-card__slot-upload-box:disabled:hover,
+    .oc-image-upload-card__slot.is-locked .oc-image-upload-card__slot-upload-box:hover {
+      border-color: color-mix(in srgb, var(--accent, #7eaad4) 42%, var(--border, rgba(148, 163, 184, 0.4)));
+      background:
+        linear-gradient(
+          0deg,
+          color-mix(in srgb, var(--panel, var(--card)) 94%, transparent),
+          color-mix(in srgb, var(--bg-elevated, var(--panel, var(--card))) 88%, transparent)
+        );
+    }
+
     .oc-image-upload-card__slot-upload-box.has-preview {
       border-style: solid;
       border-color: color-mix(in srgb, var(--accent, #7eaad4) 30%, var(--border, rgba(148, 163, 184, 0.35)));
@@ -250,6 +311,25 @@ export function getImageUploadStyles() {
       flex-wrap: wrap;
     }
 
+    .oc-image-upload-card__footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .oc-image-upload-card__hint {
+      font-size: 12px;
+      line-height: 1.45;
+      color: color-mix(in srgb, currentColor 72%, transparent);
+    }
+
+    .oc-image-upload-card.is-complete .oc-image-upload-card__hint {
+      color: color-mix(in srgb, #22c55e 78%, currentColor 22%);
+      font-weight: 600;
+    }
+
     .oc-image-upload-card__action {
       appearance: none;
       border-radius: 999px;
@@ -270,9 +350,39 @@ export function getImageUploadStyles() {
       color: var(--primary-foreground, #fff);
     }
 
+    .oc-image-upload-card.is-complete .oc-image-upload-card__action--primary {
+      border-color: color-mix(in srgb, #22c55e 24%, transparent);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, #22c55e 84%, white 8%), color-mix(in srgb, #16a34a 88%, black 4%));
+      box-shadow: 0 14px 26px color-mix(in srgb, #22c55e 14%, transparent);
+    }
+
     .oc-image-upload-card__action:disabled {
       opacity: 0.45;
       cursor: not-allowed;
+    }
+
+    @media (max-width: 720px) {
+      .oc-image-upload-card__header {
+        grid-template-columns: 1fr;
+      }
+
+      .oc-image-upload-card__footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .oc-image-upload-card__status {
+        justify-self: start;
+      }
+
+      .oc-image-upload-card__actions {
+        width: 100%;
+      }
+
+      .oc-image-upload-card__action {
+        flex: 1 1 160px;
+      }
     }
   `;
 }

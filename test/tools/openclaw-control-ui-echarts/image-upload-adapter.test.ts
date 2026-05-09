@@ -44,7 +44,15 @@ describe("image-upload adapter", () => {
     uploadMemberImageAsset.mockClear();
   });
 
-  it("renders single-card multi-slot upload UI and gates continue by required slots", async () => {
+  async function flushAsyncWork() {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  it("renders single-card multi-slot upload UI, sends once, and locks after completion", async () => {
     const { createImageUploadAdapter } =
       await import("../../../tools/openclaw-control-ui-echarts/runtime/image-upload/adapter.js");
     const adapter = createImageUploadAdapter({
@@ -124,8 +132,7 @@ describe("image-upload adapter", () => {
     expect(enabledSubmitButton?.disabled).toBe(false);
     expect(uploadMemberImageAsset).toHaveBeenCalledTimes(0);
     enabledSubmitButton?.click();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
 
     expect(sendPromptToChat).toHaveBeenCalledTimes(1);
     const promptArg = sendPromptToChat.mock.calls[0]?.[0] || "";
@@ -133,6 +140,38 @@ describe("image-upload adapter", () => {
     expect(promptArg).toContain("hero -> Echarts/assets/hero-banner.jpg");
     expect(promptArg).toContain("./assets/logo.png");
     expect(promptArg).toContain("./assets/hero-banner.jpg");
+    expect(uploadMemberImageAsset).toHaveBeenCalledTimes(2);
+    expect(insertPromptIntoChatBox).toHaveBeenCalledTimes(0);
+    expect(host.querySelector('[data-oc-image-upload-state="completed"]')).not.toBeNull();
+    expect(enabledSubmitButton?.disabled).toBe(true);
+    expect(enabledSubmitButton?.textContent).toBe("已完成");
+    expect(host.textContent || "").toContain("已上传并继续，本卡片已锁定。");
+
+    const insertButton = host.querySelector<HTMLButtonElement>(
+      '[data-oc-image-upload-action="insert"]',
+    );
+    expect(insertButton?.disabled).toBe(true);
+
+    const lockedLogoTrigger = host.querySelector<HTMLButtonElement>(
+      '[data-oc-image-upload-trigger="logo"]',
+    );
+    const lockedHeroTrigger = host.querySelector<HTMLButtonElement>(
+      '[data-oc-image-upload-trigger="hero"]',
+    );
+    const lockedLogoInput = host.querySelector<HTMLInputElement>(
+      '[data-oc-image-upload-input="logo"]',
+    );
+    const lockedHeroInput = host.querySelector<HTMLInputElement>(
+      '[data-oc-image-upload-input="hero"]',
+    );
+    expect(lockedLogoTrigger?.disabled).toBe(true);
+    expect(lockedHeroTrigger?.disabled).toBe(true);
+    expect(lockedLogoInput?.disabled).toBe(true);
+    expect(lockedHeroInput?.disabled).toBe(true);
+
+    enabledSubmitButton?.click();
+    await flushAsyncWork();
+    expect(sendPromptToChat).toHaveBeenCalledTimes(1);
     expect(uploadMemberImageAsset).toHaveBeenCalledTimes(2);
   });
 });

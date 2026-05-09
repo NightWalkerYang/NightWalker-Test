@@ -1,4 +1,4 @@
-import { insertPromptIntoChatBox, sendPromptToChat } from "../framework/chat-composer.js";
+import { sendPromptToChat } from "../framework/chat-composer.js";
 import { createJson5Loader } from "../file/libraries.js";
 import { normalizeText } from "../framework/shared.js";
 import { getSelectStyles } from "./styles.js";
@@ -104,6 +104,16 @@ function createActionButton(label, variant, action) {
   return button;
 }
 
+function getInteractionStateName(state) {
+  if (state.completed) {
+    return "completed";
+  }
+  if (state.submitting) {
+    return "submitting";
+  }
+  return "idle";
+}
+
 function createSelectCard(payload) {
   const card = document.createElement("section");
   card.className = "oc-select-card";
@@ -153,17 +163,12 @@ function createSelectCard(payload) {
   const actions = document.createElement("div");
   actions.className = "oc-select-card__actions";
 
-  const insertButton = createActionButton(
-    UI_TEXT.actionInsert,
-    "secondary",
-    "insert",
-  );
   const sendButton = createActionButton(
     payload.submitLabel || UI_TEXT.actionSend,
     "primary",
     "send",
   );
-  actions.append(insertButton, sendButton);
+  actions.append(sendButton);
 
   footer.append(hint, actions);
   card.append(header, options, footer);
@@ -173,7 +178,6 @@ function createSelectCard(payload) {
     count,
     options,
     hint,
-    insertButton,
     sendButton,
   };
 }
@@ -247,8 +251,6 @@ function renderFallbackCard(cardEl, source, mode, detail) {
     submitLabel: UI_TEXT.actionSend,
     options: [],
   });
-  shell.count.textContent = "已降级";
-  shell.hint.textContent = "可直接把修复建议发送到聊天框。";
   shell.options.innerHTML = `
     <div class="oc-select-card__option is-selected is-disabled" data-oc-select-fallback="true">
       <span class="oc-select-card__control" aria-hidden="true"></span>
@@ -258,14 +260,45 @@ function renderFallbackCard(cardEl, source, mode, detail) {
       </div>
     </div>
   `;
-  shell.insertButton.disabled = false;
-  shell.sendButton.disabled = false;
-  shell.insertButton.addEventListener("click", () => {
-    void insertPromptIntoChatBox(fallbackPrompt);
+  const state = {
+    submitting: false,
+    completed: false,
+  };
+  const syncUi = () => {
+    const status = getInteractionStateName(state);
+    shell.card.setAttribute("data-oc-select-state", status);
+    shell.card.classList.toggle("is-submitting", status === "submitting");
+    shell.card.classList.toggle("is-complete", status === "completed");
+    shell.count.textContent = state.completed ? UI_TEXT.countCompleted : "已降级";
+    shell.hint.textContent = state.completed
+      ? UI_TEXT.hintCompleted
+      : state.submitting
+        ? UI_TEXT.hintSubmitting
+        : "可直接把修复建议发送到聊天流。";
+    shell.sendButton.disabled = state.submitting || state.completed;
+    shell.sendButton.textContent = state.completed
+      ? UI_TEXT.actionCompleted
+      : state.submitting
+        ? UI_TEXT.actionSending
+        : UI_TEXT.actionSend;
+  };
+  shell.sendButton.addEventListener("click", async () => {
+    if (state.submitting || state.completed) {
+      return;
+    }
+    state.submitting = true;
+    syncUi();
+    try {
+      const sent = await sendPromptToChat(fallbackPrompt);
+      if (sent) {
+        state.completed = true;
+      }
+    } finally {
+      state.submitting = false;
+      syncUi();
+    }
   });
-  shell.sendButton.addEventListener("click", () => {
-    void sendPromptToChat(fallbackPrompt);
-  });
+  syncUi();
   cardEl.replaceChildren(shell.card);
 }
 
@@ -324,28 +357,49 @@ export function createSelectAdapter({ vendorBaseUrl }) {
               : []
             : payload.defaultValues,
         ),
+        submitting: false,
+        completed: false,
       };
 
       const syncUi = () => {
         const selectedCount = state.selectedValues.size;
         const valid = isSelectionValid(payload, state.selectedValues);
-        shell.count.textContent = buildSelectedCountText(payload, selectedCount);
-        shell.hint.textContent = buildHintText(payload, selectedCount);
-        shell.insertButton.disabled = !valid;
-        shell.sendButton.disabled = !valid;
+        const locked = state.submitting || state.completed;
+        const interactionState = getInteractionStateName(state);
+        shell.card.setAttribute("data-oc-select-state", interactionState);
+        shell.card.classList.toggle("is-submitting", interactionState === "submitting");
+        shell.card.classList.toggle("is-complete", interactionState === "completed");
+        shell.count.textContent = state.completed
+          ? UI_TEXT.countCompleted
+          : buildSelectedCountText(payload, selectedCount);
+        shell.hint.textContent = state.completed
+          ? UI_TEXT.hintCompleted
+          : state.submitting
+            ? UI_TEXT.hintSubmitting
+            : buildHintText(payload, selectedCount);
+        shell.sendButton.disabled = locked || !valid;
+        shell.sendButton.textContent = state.completed
+          ? UI_TEXT.actionCompleted
+          : state.submitting
+            ? UI_TEXT.actionSending
+            : payload.submitLabel || UI_TEXT.actionSend;
 
         for (const { wrapper: optionWrapper, input } of inputEntries) {
           const selected = state.selectedValues.has(input.value);
           optionWrapper.classList.toggle("is-selected", selected);
 
-          if (payload.kind === "multi" && !optionsByValue.get(input.value)?.disabled) {
-            const reachedMax = state.selectedValues.size >= payload.maxSelected;
-            input.disabled = reachedMax ? !selected : false;
-          }
+          let inputDisabled = locked;
+          if (!inputDisabled) {
+            if (payload.kind === "multi" && !optionsByValue.get(input.value)?.disabled) {
+              const reachedMax = state.selectedValues.size >= payload.maxSelected;
+              inputDisabled = reachedMax ? !selected : false;
+            }
 
-          if (optionsByValue.get(input.value)?.disabled) {
-            input.disabled = true;
+            if (optionsByValue.get(input.value)?.disabled) {
+              inputDisabled = true;
+            }
           }
+          input.disabled = inputDisabled;
           optionWrapper.classList.toggle("is-disabled", input.disabled);
           input.checked = selected;
         }
@@ -354,7 +408,10 @@ export function createSelectAdapter({ vendorBaseUrl }) {
       const getSelectedOptions = () =>
         payload.options.filter((option) => state.selectedValues.has(option.value));
 
-      const runSelectionAction = async (action) => {
+      const runSelectionAction = async () => {
+        if (state.submitting || state.completed) {
+          return false;
+        }
         if (!isSelectionValid(payload, state.selectedValues)) {
           return false;
         }
@@ -362,14 +419,26 @@ export function createSelectAdapter({ vendorBaseUrl }) {
         if (!promptText) {
           return false;
         }
-        if (action === "send") {
-          return sendPromptToChat(promptText);
+        state.submitting = true;
+        syncUi();
+        try {
+          const sent = await sendPromptToChat(promptText);
+          if (sent) {
+            state.completed = true;
+          }
+          return sent;
+        } finally {
+          state.submitting = false;
+          syncUi();
         }
-        return insertPromptIntoChatBox(promptText);
       };
 
       for (const { input } of inputEntries) {
         input.addEventListener("change", () => {
+          if (state.submitting || state.completed) {
+            syncUi();
+            return;
+          }
           if (payload.kind === "single") {
             state.selectedValues = input.checked ? new Set([input.value]) : new Set();
             syncUi();
@@ -392,11 +461,8 @@ export function createSelectAdapter({ vendorBaseUrl }) {
         });
       }
 
-      shell.insertButton.addEventListener("click", () => {
-        void runSelectionAction("insert");
-      });
       shell.sendButton.addEventListener("click", () => {
-        void runSelectionAction("send");
+        void runSelectionAction();
       });
 
       syncUi();

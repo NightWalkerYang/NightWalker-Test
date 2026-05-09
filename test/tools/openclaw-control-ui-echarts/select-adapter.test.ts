@@ -23,7 +23,13 @@ describe("select adapter", () => {
     sendPromptToChat.mockClear();
   });
 
-  it("renders a single-select card and sends the selected prompt", async () => {
+  async function flushAsyncWork() {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  it("renders a single-select card, sends once, and locks after completion", async () => {
     const { createSelectAdapter } = await import(
       "../../../tools/openclaw-control-ui-echarts/runtime/select/adapter.js"
     );
@@ -64,13 +70,28 @@ describe("select adapter", () => {
     const sendButton = host.querySelector<HTMLButtonElement>(
       '[data-oc-select-action="send"]',
     );
+    expect(
+      host.querySelector('[data-oc-select-action="insert"]'),
+    ).toBeNull();
     expect(sendButton?.disabled).toBe(false);
     sendButton?.click();
+    await flushAsyncWork();
 
     expect(sendPromptToChat).toHaveBeenCalledWith("把界面优化成红色。");
+    expect(sendPromptToChat).toHaveBeenCalledTimes(1);
+    expect(insertPromptIntoChatBox).toHaveBeenCalledTimes(0);
+    expect(host.querySelector('[data-oc-select-state="completed"]')).not.toBeNull();
+    expect(sendButton?.disabled).toBe(true);
+    expect(sendButton?.textContent).toBe("已完成");
+    expect(radio?.disabled).toBe(true);
+    expect(host.textContent).toContain("已按所选继续，本卡片已锁定。");
+
+    sendButton?.click();
+    await flushAsyncWork();
+    expect(sendPromptToChat).toHaveBeenCalledTimes(1);
   });
 
-  it("renders a multi-select card, enforces maxSelected, and inserts a combined prompt", async () => {
+  it("renders a multi-select card, enforces maxSelected, and locks after send", async () => {
     const { createSelectAdapter } = await import(
       "../../../tools/openclaw-control-ui-echarts/runtime/select/adapter.js"
     );
@@ -120,15 +141,24 @@ describe("select adapter", () => {
 
     expect(third?.disabled).toBe(true);
 
-    const insertButton = host.querySelector<HTMLButtonElement>(
-      '[data-oc-select-action="insert"]',
+    const sendButton = host.querySelector<HTMLButtonElement>(
+      '[data-oc-select-action="send"]',
     );
-    expect(insertButton?.disabled).toBe(false);
-    insertButton?.click();
+    expect(sendButton?.disabled).toBe(false);
+    expect(
+      host.querySelector('[data-oc-select-action="insert"]'),
+    ).toBeNull();
+    sendButton?.click();
+    await flushAsyncWork();
 
-    expect(insertPromptIntoChatBox).toHaveBeenCalledWith(
+    expect(sendPromptToChat).toHaveBeenCalledWith(
       "请按以下已选项继续：\n1. 把界面优化成红色主题。\n2. 把页面间距收紧，让信息密度更高。",
     );
+    expect(insertPromptIntoChatBox).toHaveBeenCalledTimes(0);
+    expect(host.querySelector('[data-oc-select-state="completed"]')).not.toBeNull();
+    expect(first?.disabled).toBe(true);
+    expect(second?.disabled).toBe(true);
+    expect(third?.disabled).toBe(true);
   });
 
   it("renders strict JSON when code block text contains invisible whitespace characters", async () => {
@@ -193,6 +223,12 @@ describe("select adapter", () => {
     );
     expect(sendButton).not.toBeNull();
     sendButton?.click();
+    await flushAsyncWork();
+    expect(sendPromptToChat).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-oc-select-state="completed"]')).not.toBeNull();
+
+    sendButton?.click();
+    await flushAsyncWork();
     expect(sendPromptToChat).toHaveBeenCalledTimes(1);
   });
 });
