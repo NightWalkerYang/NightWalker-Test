@@ -1148,83 +1148,60 @@ function resolveMemberHistoryCursor(state) {
   return "";
 }
 
-function findScrollableChatContainer(root) {
-  if (!(root instanceof HTMLElement)) {
+function resolveMemberHistoryScrollTarget(app, event = null) {
+  const currentTarget = event?.currentTarget;
+  if (currentTarget instanceof HTMLElement) {
+    return currentTarget;
+  }
+  if (!(app instanceof HTMLElement)) {
     return null;
   }
-  const candidates = [root.querySelector(".chat-thread"), root].filter(
-    (candidate) => candidate instanceof HTMLElement,
-  );
-  for (const candidate of candidates) {
-    if (!(candidate instanceof HTMLElement)) {
-      continue;
-    }
-    const overflowY = getComputedStyle(candidate).overflowY;
-    const canScroll =
-      overflowY === "auto" ||
-      overflowY === "scroll" ||
-      candidate.scrollHeight - candidate.clientHeight > 1;
-    if (canScroll) {
-      return candidate;
-    }
+  const chatSurface = findChatSurface(app) || findChatSurface(document);
+  const threadCandidate =
+    chatSurface instanceof HTMLElement ? chatSurface.querySelector(".chat-thread") : null;
+  if (threadCandidate instanceof HTMLElement) {
+    return threadCandidate;
   }
   return null;
 }
 
-function resolveMemberHistoryScrollTarget(app) {
-  if (!(app instanceof HTMLElement)) {
-    return null;
-  }
-  const compatChatSurface = findChatSurface(app) || findChatSurface(document);
-  const scrollableSurface = findScrollableChatContainer(
-    compatChatSurface instanceof HTMLElement ? compatChatSurface : app,
-  );
-  if (scrollableSurface) {
-    return scrollableSurface;
-  }
-  return (document.scrollingElement ?? document.documentElement) instanceof HTMLElement
-    ? (document.scrollingElement ?? document.documentElement)
-    : null;
-}
-
-function bindMemberHistoryScrollListener(controller) {
-  if (!controller?.app) {
+function bindMemberHistoryPagination(controller) {
+  const app = controller?.app;
+  if (!(app instanceof HTMLElement) || typeof app.handleChatScroll !== "function") {
     return;
   }
-  const nextTarget = resolveMemberHistoryScrollTarget(controller.app);
-  const previousTarget = controller.historyScrollTarget;
-  if (previousTarget && previousTarget !== nextTarget && controller.onHistoryScroll) {
-    previousTarget.removeEventListener("scroll", controller.onHistoryScroll);
+  if (!app.__ocOriginalHandleChatScroll) {
+    app.__ocOriginalHandleChatScroll = app.handleChatScroll.bind(app);
   }
-  if (!controller.onHistoryScroll) {
-    controller.onHistoryScroll = () => {
-      void maybeLoadOlderMemberHistory(window._ocMemberChatSurfaceController);
-    };
+  if (app.__ocMemberHistoryHandleChatScrollPatched) {
+    return;
   }
-  controller.historyScrollTarget = nextTarget;
-  if (nextTarget && previousTarget !== nextTarget) {
-    nextTarget.addEventListener("scroll", controller.onHistoryScroll, { passive: true });
-  }
+  app.handleChatScroll = (event) => {
+    app.__ocOriginalHandleChatScroll(event);
+    void maybeLoadOlderMemberHistory(window._ocMemberChatSurfaceController, event);
+  };
+  app.__ocMemberHistoryHandleChatScrollPatched = true;
 }
 
-function unbindMemberHistoryScrollListener(controller) {
+function unbindMemberHistoryPagination(controller) {
+  const app = controller?.app;
+  if (!(app instanceof HTMLElement)) {
+    return;
+  }
   if (
-    controller?.historyScrollTarget instanceof HTMLElement &&
-    typeof controller?.onHistoryScroll === "function"
+    app.__ocMemberHistoryHandleChatScrollPatched &&
+    typeof app.__ocOriginalHandleChatScroll === "function"
   ) {
-    controller.historyScrollTarget.removeEventListener("scroll", controller.onHistoryScroll);
+    app.handleChatScroll = app.__ocOriginalHandleChatScroll;
   }
-  if (controller && typeof controller === "object") {
-    controller.historyScrollTarget = null;
-  }
+  delete app.__ocMemberHistoryHandleChatScrollPatched;
 }
 
-async function maybeLoadOlderMemberHistory(controller) {
+async function maybeLoadOlderMemberHistory(controller, event = null) {
   if (!controller?.app || !controller.currentSessionKey) {
     return;
   }
-  const scrollTarget =
-    controller.historyScrollTarget || resolveMemberHistoryScrollTarget(controller.app);
+  const scrollTarget = resolveMemberHistoryScrollTarget(controller.app, event);
   if (!(scrollTarget instanceof HTMLElement)) {
     return;
   }
@@ -1297,8 +1274,7 @@ async function maybeLoadOlderMemberHistory(controller) {
     }
     app.requestUpdate?.();
     await Promise.resolve();
-    const latestScrollTarget =
-      activeController.historyScrollTarget || resolveMemberHistoryScrollTarget(app);
+    const latestScrollTarget = resolveMemberHistoryScrollTarget(app, event);
     if (latestScrollTarget instanceof HTMLElement) {
       const delta = latestScrollTarget.scrollHeight - previousHeight;
       latestScrollTarget.scrollTop = Math.max(0, previousTop + delta);
@@ -2155,7 +2131,6 @@ function attachSectionHandlers(section, controller) {
       pinMemberChatSession(ctrl.app, nextSessionKey, {
         skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
       });
-      bindMemberHistoryScrollListener(ctrl);
       renderSidebarSection(ctrl);
       return;
     }
@@ -2272,7 +2247,7 @@ async function syncMemberChatSurface() {
   memberChatSurfaceSyncing = true;
   try {
     if (!isMemberChatRoute()) {
-      unbindMemberHistoryScrollListener(window._ocMemberChatSurfaceController);
+      unbindMemberHistoryPagination(window._ocMemberChatSurfaceController);
       const app = findOpenClawApp(document);
       if (app instanceof HTMLElement) {
         clearChatLoadingFailsafe(app);
@@ -2325,7 +2300,7 @@ async function syncMemberChatSurface() {
       sessionsFromGateway,
     );
 
-    unbindMemberHistoryScrollListener(window._ocMemberChatSurfaceController);
+    unbindMemberHistoryPagination(window._ocMemberChatSurfaceController);
     const controller = {
       app,
       sidebar,
@@ -2338,8 +2313,6 @@ async function syncMemberChatSurface() {
       hasDraftSession: isMemberDraftRouteLocked(session, selectedAgent, currentSessionKey),
       pendingDeleteSessionKey: "",
       toastTimer: 0,
-      historyScrollTarget: null,
-      onHistoryScroll: null,
     };
 
     renderSidebarSection(controller);
@@ -2354,7 +2327,7 @@ async function syncMemberChatSurface() {
       skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
     });
     window._ocMemberChatSurfaceController = controller;
-    bindMemberHistoryScrollListener(controller);
+    bindMemberHistoryPagination(controller);
     void syncMemberUsageRecords(
       controller,
       currentSessionKey,
@@ -2483,7 +2456,7 @@ export function resetMemberChatSurfaceForTests() {
   memberChatSurfaceSyncing = false;
   memberChatSurfaceSyncQueued = false;
   memberChatSurfaceSuppressNextRouteSync = false;
-  unbindMemberHistoryScrollListener(window._ocMemberChatSurfaceController);
+  unbindMemberHistoryPagination(window._ocMemberChatSurfaceController);
   if (typeof memberChatRouteCleanup === "function") {
     memberChatRouteCleanup();
   }

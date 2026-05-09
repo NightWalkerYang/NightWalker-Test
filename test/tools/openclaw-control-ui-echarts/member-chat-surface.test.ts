@@ -62,6 +62,7 @@ function createAppStub(overrides = {}) {
   });
   app.loadAssistantIdentity = vi.fn(async () => {});
   app.requestUpdate = vi.fn(() => {});
+  app.handleChatScroll = vi.fn(() => {});
   return app;
 }
 
@@ -207,6 +208,11 @@ function attachChatThread(
       }
       scrollTop = Number(options?.top || 0);
     }),
+  });
+  thread.addEventListener("scroll", (event) => {
+    if (typeof app.handleChatScroll === "function") {
+      app.handleChatScroll(event);
+    }
   });
   chatSurface.append(thread);
   app.append(chatSurface);
@@ -838,6 +844,91 @@ describe("member chat surface", () => {
     expect(apiState.historyPageCalls).toHaveLength(1);
     expect(window._ocMemberChatSurfaceController?.currentSessionKey).toBe(olderSessionKey);
     expect(app.chatMessages.map((message) => message?.content)).toEqual(["旧会话消息"]);
+  });
+
+  it("loads older member history through the patched native handleChatScroll even when the chat thread appears after binding", async () => {
+    const latestSessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    const apiState = installTenantApiFetchStub({
+      historyPageHandler: async () => ({
+        messages: [
+          {
+            role: "user",
+            content: "更早的第一页",
+            __openclaw: { seq: 1 },
+          },
+        ],
+        hasMore: false,
+        nextCursor: "",
+      }),
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub({
+      request: async (method) => {
+        if (method === "sessions.list") {
+          return {
+            sessions: [
+              {
+                key: latestSessionKey,
+                label: "本周分析",
+                updatedAt: Date.now(),
+              },
+            ],
+          };
+        }
+        if (method === "chat.history") {
+          return {
+            messages: [
+              {
+                role: "assistant",
+                content: "当前首屏消息",
+                __openclaw: { seq: 3 },
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      },
+    });
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+    await flush();
+
+    const thread = attachChatThread(app);
+    thread.scrollTop = 0;
+    app.handleChatScroll({ currentTarget: thread });
+    await flush();
+    await flush();
+
+    expect(apiState.historyPageCalls).toHaveLength(1);
+    expect(apiState.historyPageCalls[0]?.cursor).toBe("seq:3");
+    expect(app.chatMessages.map((message) => message?.__openclaw?.seq)).toEqual([1, 3]);
   });
 
   it("creates a new member session and shows it in the sidebar list", async () => {
