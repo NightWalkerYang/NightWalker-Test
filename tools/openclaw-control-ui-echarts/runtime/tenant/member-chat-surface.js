@@ -1,5 +1,6 @@
 import {
   findBreadcrumb,
+  findChatSurface,
   findClosestComposerTextarea,
   findClosestNewSessionButton,
   findClosestSendButton,
@@ -47,6 +48,8 @@ const CHAT_FAILSAFE_PROGRESS_KEY = "__ocMemberChatFailsafeProgressKey";
 const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
 const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
 const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
+const MEMBER_CHAT_HISTORY_PAGE_SIZE = 200;
+const MEMBER_CHAT_HISTORY_TOP_THRESHOLD_PX = 24;
 const MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY =
   "openclaw:tenant-platform:member-chat:draft-route-lock:v1";
 let memberChatSurfaceSyncing = false;
@@ -997,6 +1000,317 @@ function shouldSkipSessionHistoryHydration(sessions, sessionKey) {
   return isProvisionalSessionTitle(title);
 }
 
+function normalizeMessageSeq(message) {
+  const raw =
+    message?.__openclaw?.seq ??
+    message?.seq ??
+    message?.sequence ??
+    message?.messageSequence ??
+    null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function readFirstLoadedMessageSeq(messages) {
+  if (!Array.isArray(messages)) {
+    return null;
+  }
+  for (const message of messages) {
+    const seq = normalizeMessageSeq(message);
+    if (Number.isFinite(seq)) {
+      return seq;
+    }
+  }
+  return null;
+}
+
+function mergeOlderMemberHistory(existingMessages, olderMessages) {
+  const existing = Array.isArray(existingMessages) ? existingMessages : [];
+  const incoming = Array.isArray(olderMessages) ? olderMessages : [];
+  if (incoming.length === 0) {
+    return existing.slice();
+  }
+  const dedupedExisting = existing.filter((message) => !isAssistantSilentReply(message));
+  const seenSeq = new Set();
+  const seenFallback = new Set();
+  const merged = [];
+  const collectKey = (message) => {
+    const seq = normalizeMessageSeq(message);
+    if (Number.isFinite(seq)) {
+      return `seq:${seq}`;
+    }
+    const messageId = String(message?.id || message?.messageId || message?.message_id || "").trim();
+    if (messageId) {
+      return `id:${messageId}`;
+    }
+    try {
+      return `json:${JSON.stringify(message)}`;
+    } catch {
+      return "";
+    }
+  };
+  for (const message of [...incoming, ...dedupedExisting]) {
+    if (isAssistantSilentReply(message)) {
+      continue;
+    }
+    const seq = normalizeMessageSeq(message);
+    if (Number.isFinite(seq)) {
+      if (seenSeq.has(seq)) {
+        continue;
+      }
+      seenSeq.add(seq);
+      merged.push(message);
+      continue;
+    }
+    const fallbackKey = collectKey(message);
+    if (fallbackKey && seenFallback.has(fallbackKey)) {
+      continue;
+    }
+    if (fallbackKey) {
+      seenFallback.add(fallbackKey);
+    }
+    merged.push(message);
+  }
+  return merged;
+}
+
+function buildHistoryPaginationState(sessionKey) {
+  return {
+    sessionKey,
+    hasMore: true,
+    nextCursor: "",
+    checkedOlder: false,
+    loadingOlder: false,
+    oldestSeq: null,
+    loadedCursors: new Set(),
+  };
+}
+
+function ensureMemberHistoryPaginationState(app, sessionKey) {
+  if (!(app instanceof HTMLElement)) {
+    return buildHistoryPaginationState(sessionKey);
+  }
+  const normalizedSessionKey = String(sessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey) {
+    app.__ocMemberHistoryPagination = buildHistoryPaginationState("");
+    return app.__ocMemberHistoryPagination;
+  }
+  const existing = app.__ocMemberHistoryPagination;
+  if (
+    existing &&
+    typeof existing === "object" &&
+    String(existing.sessionKey || "")
+      .trim()
+      .toLowerCase() === normalizedSessionKey
+  ) {
+    return existing;
+  }
+  const nextState = buildHistoryPaginationState(normalizedSessionKey);
+  app.__ocMemberHistoryPagination = nextState;
+  return nextState;
+}
+
+function updateMemberHistoryPaginationFromMessages(app, sessionKey, messages, patch = {}) {
+  const state = ensureMemberHistoryPaginationState(app, sessionKey);
+  state.oldestSeq = readFirstLoadedMessageSeq(messages);
+  if (Object.prototype.hasOwnProperty.call(patch, "hasMore")) {
+    state.hasMore = patch.hasMore === true;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "nextCursor")) {
+    state.nextCursor = String(patch.nextCursor || "").trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "checkedOlder")) {
+    state.checkedOlder = patch.checkedOlder === true;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "loadingOlder")) {
+    state.loadingOlder = patch.loadingOlder === true;
+  }
+  return state;
+}
+
+function resolveMemberHistoryCursor(state) {
+  const normalizedCursor = String(state?.nextCursor || "").trim();
+  if (normalizedCursor) {
+    return normalizedCursor;
+  }
+  const oldestSeq = Number(state?.oldestSeq);
+  if (Number.isFinite(oldestSeq) && oldestSeq > 0) {
+    return `seq:${oldestSeq}`;
+  }
+  return "";
+}
+
+function findScrollableChatContainer(root) {
+  if (!(root instanceof HTMLElement)) {
+    return null;
+  }
+  const candidates = [root.querySelector(".chat-thread"), root].filter(
+    (candidate) => candidate instanceof HTMLElement,
+  );
+  for (const candidate of candidates) {
+    if (!(candidate instanceof HTMLElement)) {
+      continue;
+    }
+    const overflowY = getComputedStyle(candidate).overflowY;
+    const canScroll =
+      overflowY === "auto" ||
+      overflowY === "scroll" ||
+      candidate.scrollHeight - candidate.clientHeight > 1;
+    if (canScroll) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function resolveMemberHistoryScrollTarget(app) {
+  if (!(app instanceof HTMLElement)) {
+    return null;
+  }
+  const compatChatSurface = findChatSurface(app) || findChatSurface(document);
+  const scrollableSurface = findScrollableChatContainer(
+    compatChatSurface instanceof HTMLElement ? compatChatSurface : app,
+  );
+  if (scrollableSurface) {
+    return scrollableSurface;
+  }
+  return (document.scrollingElement ?? document.documentElement) instanceof HTMLElement
+    ? (document.scrollingElement ?? document.documentElement)
+    : null;
+}
+
+function bindMemberHistoryScrollListener(controller) {
+  if (!controller?.app) {
+    return;
+  }
+  const nextTarget = resolveMemberHistoryScrollTarget(controller.app);
+  const previousTarget = controller.historyScrollTarget;
+  if (previousTarget && previousTarget !== nextTarget && controller.onHistoryScroll) {
+    previousTarget.removeEventListener("scroll", controller.onHistoryScroll);
+  }
+  if (!controller.onHistoryScroll) {
+    controller.onHistoryScroll = () => {
+      void maybeLoadOlderMemberHistory(window._ocMemberChatSurfaceController);
+    };
+  }
+  controller.historyScrollTarget = nextTarget;
+  if (nextTarget && previousTarget !== nextTarget) {
+    nextTarget.addEventListener("scroll", controller.onHistoryScroll, { passive: true });
+  }
+}
+
+function unbindMemberHistoryScrollListener(controller) {
+  if (
+    controller?.historyScrollTarget instanceof HTMLElement &&
+    typeof controller?.onHistoryScroll === "function"
+  ) {
+    controller.historyScrollTarget.removeEventListener("scroll", controller.onHistoryScroll);
+  }
+  if (controller && typeof controller === "object") {
+    controller.historyScrollTarget = null;
+  }
+}
+
+async function maybeLoadOlderMemberHistory(controller) {
+  if (!controller?.app || !controller.currentSessionKey) {
+    return;
+  }
+  const scrollTarget =
+    controller.historyScrollTarget || resolveMemberHistoryScrollTarget(controller.app);
+  if (!(scrollTarget instanceof HTMLElement)) {
+    return;
+  }
+  if (scrollTarget.scrollTop > MEMBER_CHAT_HISTORY_TOP_THRESHOLD_PX) {
+    return;
+  }
+  const app = controller.app;
+  const sessionKey = String(controller.currentSessionKey || "")
+    .trim()
+    .toLowerCase();
+  const state = updateMemberHistoryPaginationFromMessages(
+    app,
+    sessionKey,
+    Array.isArray(app.chatMessages) ? app.chatMessages : [],
+  );
+  if (state.loadingOlder) {
+    return;
+  }
+  const cursor = resolveMemberHistoryCursor(state);
+  if (state.checkedOlder && !state.hasMore) {
+    return;
+  }
+  if (!cursor) {
+    state.checkedOlder = true;
+    state.hasMore = false;
+    return;
+  }
+  if (state.loadedCursors instanceof Set && state.loadedCursors.has(cursor)) {
+    return;
+  }
+
+  state.loadingOlder = true;
+  const previousHeight = scrollTarget.scrollHeight;
+  const previousTop = scrollTarget.scrollTop;
+  try {
+    const page = await createTenantApiClient().getMemberSessionHistoryPage(sessionKey, {
+      limit: MEMBER_CHAT_HISTORY_PAGE_SIZE,
+      cursor,
+    });
+    const activeController = window._ocMemberChatSurfaceController;
+    if (!activeController || activeController !== controller) {
+      return;
+    }
+    const activeSessionKey = String(activeController.currentSessionKey || "")
+      .trim()
+      .toLowerCase();
+    if (
+      activeSessionKey !== sessionKey ||
+      String(app.__ocPinnedSessionKey || "")
+        .trim()
+        .toLowerCase() !== sessionKey
+    ) {
+      return;
+    }
+    const olderMessages = Array.isArray(page?.messages)
+      ? page.messages
+      : Array.isArray(page?.items)
+        ? page.items
+        : [];
+    const mergedMessages = mergeOlderMemberHistory(app.chatMessages, olderMessages);
+    app.chatMessages = mergedMessages;
+    updateMemberHistoryPaginationFromMessages(app, sessionKey, mergedMessages, {
+      hasMore: page?.hasMore === true,
+      nextCursor: page?.nextCursor,
+      checkedOlder: true,
+    });
+    const nextState = ensureMemberHistoryPaginationState(app, sessionKey);
+    if (nextState.loadedCursors instanceof Set) {
+      nextState.loadedCursors.add(cursor);
+    }
+    app.requestUpdate?.();
+    await Promise.resolve();
+    const latestScrollTarget =
+      activeController.historyScrollTarget || resolveMemberHistoryScrollTarget(app);
+    if (latestScrollTarget instanceof HTMLElement) {
+      const delta = latestScrollTarget.scrollHeight - previousHeight;
+      latestScrollTarget.scrollTop = Math.max(0, previousTop + delta);
+    }
+  } catch {
+    // Ignore older-page failures and allow a future retry.
+  } finally {
+    const activeState = ensureMemberHistoryPaginationState(app, sessionKey);
+    activeState.loadingOlder = false;
+  }
+}
+
 function isDraftOnlySessionRow(row) {
   if (!row || row.hasGatewaySession !== false) {
     return false;
@@ -1697,6 +2011,12 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
     }
 
     if (skipHydrateHistory) {
+      updateMemberHistoryPaginationFromMessages(app, sessionKey, [], {
+        hasMore: false,
+        nextCursor: "",
+        checkedOlder: true,
+        loadingOlder: false,
+      });
       app.__ocPinnedSessionHydratingKey = "";
       app.__ocPinnedSessionHydratedKey = sessionKey;
       app.chatLoading = false;
@@ -1723,6 +2043,12 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
         if (app.__ocPinnedSessionKey === targetKey) {
           const msgs = Array.isArray(res?.messages) ? res.messages : [];
           app.chatMessages = msgs.filter((message) => !isAssistantSilentReply(message));
+          updateMemberHistoryPaginationFromMessages(app, targetKey, app.chatMessages, {
+            hasMore: true,
+            nextCursor: "",
+            checkedOlder: false,
+            loadingOlder: false,
+          });
           app.chatThinkingLevel = res?.thinkingLevel ?? null;
           app.chatRunId = null;
           app.chatStream = null;
@@ -1748,6 +2074,12 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
         }
         if (app.__ocPinnedSessionKey === targetKey) {
           app.chatMessages = [];
+          updateMemberHistoryPaginationFromMessages(app, targetKey, [], {
+            hasMore: false,
+            nextCursor: "",
+            checkedOlder: false,
+            loadingOlder: false,
+          });
           app.chatThinkingLevel = null;
           app.__ocPinnedSessionHydratedKey = "";
           app.chatLoading = false;
@@ -1823,6 +2155,7 @@ function attachSectionHandlers(section, controller) {
       pinMemberChatSession(ctrl.app, nextSessionKey, {
         skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
       });
+      bindMemberHistoryScrollListener(ctrl);
       renderSidebarSection(ctrl);
       return;
     }
@@ -1939,6 +2272,7 @@ async function syncMemberChatSurface() {
   memberChatSurfaceSyncing = true;
   try {
     if (!isMemberChatRoute()) {
+      unbindMemberHistoryScrollListener(window._ocMemberChatSurfaceController);
       const app = findOpenClawApp(document);
       if (app instanceof HTMLElement) {
         clearChatLoadingFailsafe(app);
@@ -1991,6 +2325,7 @@ async function syncMemberChatSurface() {
       sessionsFromGateway,
     );
 
+    unbindMemberHistoryScrollListener(window._ocMemberChatSurfaceController);
     const controller = {
       app,
       sidebar,
@@ -2003,6 +2338,8 @@ async function syncMemberChatSurface() {
       hasDraftSession: isMemberDraftRouteLocked(session, selectedAgent, currentSessionKey),
       pendingDeleteSessionKey: "",
       toastTimer: 0,
+      historyScrollTarget: null,
+      onHistoryScroll: null,
     };
 
     renderSidebarSection(controller);
@@ -2017,6 +2354,7 @@ async function syncMemberChatSurface() {
       skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
     });
     window._ocMemberChatSurfaceController = controller;
+    bindMemberHistoryScrollListener(controller);
     void syncMemberUsageRecords(
       controller,
       currentSessionKey,
@@ -2145,6 +2483,7 @@ export function resetMemberChatSurfaceForTests() {
   memberChatSurfaceSyncing = false;
   memberChatSurfaceSyncQueued = false;
   memberChatSurfaceSuppressNextRouteSync = false;
+  unbindMemberHistoryScrollListener(window._ocMemberChatSurfaceController);
   if (typeof memberChatRouteCleanup === "function") {
     memberChatRouteCleanup();
   }

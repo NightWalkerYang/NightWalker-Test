@@ -434,6 +434,19 @@ export function createTenantApiClient() {
     listMemberSessions(tenantAgentId) {
       return requestJson(withQuery("/member/sessions", { tenantAgentId }));
     },
+    getMemberSessionHistoryPage(sessionKey, { limit = 200, cursor = "" } = {}) {
+      const normalizedSessionKey = String(sessionKey || "").trim();
+      if (!normalizedSessionKey) {
+        throw new Error("session_key_required");
+      }
+      return requestJson(
+        withQuery(`/sessions/${encodeURIComponent(normalizedSessionKey)}/history`, {
+          limit,
+          cursor,
+        }),
+        { cache: "no-store" },
+      );
+    },
     registerMemberSession(body) {
       return requestJson("/member/sessions", { method: "POST", body });
     },
