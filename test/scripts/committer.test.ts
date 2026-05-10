@@ -1,11 +1,31 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createScriptTestHarness } from "./test-helpers.js";
 
 const scriptPath = path.join(process.cwd(), "scripts", "committer");
+const powerShellWrapperPath = path.join(process.cwd(), "scripts", "committer.ps1");
 const { createTempDir } = createScriptTestHarness();
+
+function findPowerShell(): string | undefined {
+  for (const candidate of ["pwsh", "powershell"]) {
+    const result = spawnSync(
+      candidate,
+      ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"],
+      {
+        encoding: "utf8",
+      },
+    );
+    if (result.status === 0) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+const powershell = findPowerShell();
+const runIfPowerShell = powershell ? it : it.skip;
 
 function run(cwd: string, command: string, args: string[]) {
   return execFileSync(command, args, {
@@ -45,6 +65,19 @@ function installHook(repo: string, relativePath: string, contents: string) {
     mode: 0o755,
   });
   git(repo, "config", "core.hooksPath", path.dirname(relativePath));
+}
+
+function installWindowsWrapperScripts(repo: string) {
+  const scriptsDir = path.join(repo, "scripts");
+  mkdirSync(scriptsDir, { recursive: true });
+  writeFileSync(path.join(scriptsDir, "committer"), readFileSync(scriptPath, "utf8"), {
+    encoding: "utf8",
+  });
+  writeFileSync(
+    path.join(scriptsDir, "committer.ps1"),
+    readFileSync(powerShellWrapperPath, "utf8"),
+    { encoding: "utf8" },
+  );
 }
 
 function commitWithHelper(repo: string, commitMessage: string, ...args: string[]) {
@@ -195,5 +228,32 @@ describe("scripts/committer", () => {
     expect(output).toContain(
       'Usage: committer [--force] [--fast] "commit message" "file" ["file" ...]',
     );
+  });
+
+  runIfPowerShell("dispatches extensionless invocation through the PowerShell wrapper", () => {
+    const repo = createRepo();
+    installWindowsWrapperScripts(repo);
+    writeRepoFile(repo, "nested/file with spaces.txt", "wrapped\n");
+
+    const result = spawnSync(
+      powershell!,
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "scripts/committer 'test: powershell wrapper' 'nested/file with spaces.txt'",
+      ],
+      {
+        cwd: repo,
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain('Committed "test: powershell wrapper" with 1 files');
+    expect(committedPaths(repo)).toEqual(["nested/file with spaces.txt"]);
   });
 });
