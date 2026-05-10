@@ -48,6 +48,7 @@ import {
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
+  getTenantDataSourceBinding,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
 import { rewriteVisualizationHtml } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 
@@ -514,6 +515,79 @@ describe("tenant platform database foundation", () => {
       } else {
         process.env.OPENCLAW_WORKSPACE_DIR = previousWorkspaceDir;
       }
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("auto-binds a legacy single active data source for an unbound tenant", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "legacy-single-source",
+        name: "租户 Legacy",
+        adminUsername: "legacy-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+
+      db.prepare(
+        `INSERT INTO data_sources (
+           id,
+           code,
+           name,
+           source_type,
+           connection_json,
+           k3cloud_profile_json,
+           created_at,
+           updated_at
+         ) VALUES (
+           'data-source-legacy-1',
+           'legacy-source-1',
+           '老环境唯一数据源',
+           'kingdee_analytics',
+           @connectionJson,
+           @profileJson,
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        connectionJson: JSON.stringify({
+          analyticsPgDsn: "postgresql:///kingdee_analytics?host=/var/run/postgresql",
+        }),
+        profileJson: JSON.stringify({
+          tenant: {
+            dbid: "6220b009309f24",
+          },
+        }),
+        createdAt: "2026-05-10T00:00:00.000Z",
+        updatedAt: "2026-05-10T00:00:00.000Z",
+      });
+
+      const binding = getTenantDataSourceBinding(db, tenant.id);
+      expect(binding?.dataSourceId).toBe("data-source-legacy-1");
+
+      const dataSource = db
+        .prepare(
+          `SELECT source_type AS sourceType,
+                  source_dbid AS sourceDbid,
+                  source_tenant_code AS sourceTenantCode
+             FROM data_sources
+            WHERE id = 'data-source-legacy-1'`,
+        )
+        .get();
+      expect(dataSource?.sourceType).toBe("kingdee_analytics");
+      expect(dataSource?.sourceDbid).toBe("6220b009309f24");
+      expect(dataSource?.sourceTenantCode).toBe("demo-tenant");
+    } finally {
       closeTenantPlatformDb(db);
     }
   });
