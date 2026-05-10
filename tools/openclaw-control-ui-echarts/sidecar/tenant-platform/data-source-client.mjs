@@ -143,12 +143,63 @@ function cloneConnectionCandidate(connection, overrides = {}) {
   };
 }
 
+function parseAnalyticsDsnCandidate(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  try {
+    const url = new URL(normalized);
+    if (!/^postgres(?:ql)?$/i.test(url.protocol.replace(/:$/, ""))) {
+      return null;
+    }
+    const database = url.pathname.replace(/^\/+/, "").trim();
+    const hostParam = url.searchParams.get("host")?.trim() || "";
+    const host = url.hostname?.trim() || hostParam;
+    const port =
+      normalizeConnectionPort(url.port) ??
+      (hostParam.startsWith("/") ? DEFAULT_POSTGRES_PORT : DEFAULT_POSTGRES_PORT);
+    return {
+      host,
+      port,
+      database,
+      user: decodeURIComponent(url.username || "").trim(),
+      password: decodeURIComponent(url.password || "").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function buildAnalyticsConnectionCandidates(connection) {
   if (!connection || typeof connection !== "object" || Array.isArray(connection)) {
     return [];
   }
 
-  const baseCandidate = { ...connection };
+  const dsnCandidate =
+    parseAnalyticsDsnCandidate(connection.analyticsPgDsn) ||
+    parseAnalyticsDsnCandidate(connection.pgDsn) ||
+    parseAnalyticsDsnCandidate(connection.dsn);
+  const baseCandidate = {
+    ...dsnCandidate,
+    ...connection,
+    host:
+      String(connection.host || "").trim() ||
+      String(dsnCandidate?.host || "").trim(),
+    port:
+      normalizeConnectionPort(connection.port) ??
+      normalizeConnectionPort(dsnCandidate?.port) ??
+      DEFAULT_POSTGRES_PORT,
+    database:
+      String(connection.database || "").trim() ||
+      String(dsnCandidate?.database || "").trim(),
+    user:
+      String(connection.user || "").trim() ||
+      String(dsnCandidate?.user || "").trim(),
+    password:
+      String(connection.password || "").trim() ||
+      String(dsnCandidate?.password || "").trim(),
+  };
   const normalizedHost = String(baseCandidate.host || "")
     .trim()
     .toLowerCase();
@@ -181,6 +232,21 @@ export function buildAnalyticsConnectionCandidates(connection) {
   };
 
   pushCandidate(baseCandidate);
+
+  if (String(baseCandidate.host || "").trim().startsWith("/")) {
+    pushCandidate(
+      cloneConnectionCandidate(baseCandidate, {
+        host: DOCKER_HOST_ALIAS,
+        port: DEFAULT_POSTGRES_PORT,
+      }),
+    );
+    pushCandidate(
+      cloneConnectionCandidate(baseCandidate, {
+        host: "172.18.0.1",
+        port: DEFAULT_POSTGRES_PORT,
+      }),
+    );
+  }
 
   if (LOCALHOST_HOSTS.has(normalizedHost)) {
     pushCandidate(cloneConnectionCandidate(baseCandidate, { host: DOCKER_HOST_ALIAS }));

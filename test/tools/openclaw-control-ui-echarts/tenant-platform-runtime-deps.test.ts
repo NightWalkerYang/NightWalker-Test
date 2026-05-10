@@ -10,6 +10,7 @@ import {
   buildTenantPlatformExtraDependencySpecs,
   buildTenantPlatformPythonRuntimeDockerArgs,
 } from "../../../tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs";
+import { buildAnalyticsConnectionCandidates } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs";
 
 describe("tenant platform runtime deps", () => {
   it("keeps pg in the zero-intrusive runtime dependency set", () => {
@@ -95,5 +96,30 @@ describe("tenant platform runtime deps", () => {
     );
     expect(script).toContain("npm install --no-save --no-package-lock --ignore-scripts --prefix");
     expect(script).toContain("python3-pandas python3-sqlalchemy python3-psycopg2");
+  });
+
+  it("builds host candidates from legacy analytics DSNs that point at unix sockets", () => {
+    const candidates = buildAnalyticsConnectionCandidates({
+      analyticsPgDsn: "postgresql:///kingdee_analytics?host=/var/run/postgresql",
+    });
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          host: "/var/run/postgresql",
+          port: 5432,
+          database: "kingdee_analytics",
+        }),
+        expect.objectContaining({
+          host: "host.docker.internal",
+          port: 5432,
+          database: "kingdee_analytics",
+        }),
+        expect.objectContaining({
+          host: "172.18.0.1",
+          port: 5432,
+          database: "kingdee_analytics",
+        }),
+      ]),
+    );
   });
 });
