@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   buildRuntimeExtraDependencySpecs,
@@ -74,5 +75,25 @@ describe("tenant platform runtime deps", () => {
       "-lc",
       "python3 -m pip --version >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip python3-venv build-essential); python3 -m pip install --break-system-packages --no-cache-dir --prefer-binary --target /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages -r /work/tools/openclaw-sandbox-simulation-starter/requirements.txt",
     ]);
+  });
+
+  it("keeps the shell deploy script aligned with tenant sidecar runtime mounts and fallbacks", () => {
+    const script = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "tools",
+        "openclaw-control-ui-echarts",
+        "setup-direct-docker-compose-up.sh",
+      ),
+      "utf8",
+    );
+    expect(script).toContain(
+      "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules:/app/tools/openclaw-control-ui-echarts/node_modules:ro",
+    );
+    expect(script).toContain(
+      "PYTHONPATH: /app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages",
+    );
+    expect(script).toContain("npm install --no-save --no-package-lock --ignore-scripts --prefix");
+    expect(script).toContain("python3-pandas python3-sqlalchemy python3-psycopg2");
   });
 });

@@ -548,45 +548,35 @@ EOF
 }
 
 prepare_tenant_platform_runtime_node_modules() {
-  command -v node >/dev/null 2>&1 || return 0
-  mkdir -p "$ROOT_DIR/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules"
-  node --input-type=module <<'NODE'
-import fs from "node:fs";
-import path from "node:path";
-
-const repoRoot = process.cwd();
-const outputRoot = path.join(
-  repoRoot,
-  "tools",
-  "openclaw-control-ui-echarts",
-  "generated",
-  "tenant-platform-runtime",
-  "node_modules",
-);
-fs.mkdirSync(outputRoot, { recursive: true });
-
-const packages = ["pg"];
-for (const packageName of packages) {
-  const sourceDir = path.join(repoRoot, "node_modules", packageName);
-  const targetDir = path.join(outputRoot, packageName);
-  if (!fs.existsSync(sourceDir)) {
-    continue;
-  }
-  fs.rmSync(targetDir, { recursive: true, force: true });
-  fs.cpSync(sourceDir, targetDir, { recursive: true });
-}
-NODE
+  command -v docker >/dev/null 2>&1 || return 0
+  local image_ref="$1"
+  local runtime_root="$ROOT_DIR/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime"
+  mkdir -p "$runtime_root/node_modules"
+  docker run --rm -u 0 \
+    -v "$ROOT_DIR:/work" \
+    -w /work \
+    -e NPM_CONFIG_REGISTRY="${OPENCLAW_NPM_REGISTRY:-https://registry.npmmirror.com}" \
+    "$image_ref" \
+    sh -lc "mkdir -p /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime && npm install --no-save --no-package-lock --ignore-scripts --prefix /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime pg@8.20.0"
 }
 
 prepare_tenant_platform_runtime_python_packages() {
   command -v docker >/dev/null 2>&1 || return 0
   local image_ref="$1"
   mkdir -p "$ROOT_DIR/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages"
+  if docker run --rm -u 0 \
+    -v "$ROOT_DIR:/work" \
+    -w /work \
+    "$image_ref" \
+    sh -lc "python3 -m pip --version >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip python3-venv build-essential); python3 -m pip install --break-system-packages --no-cache-dir --prefer-binary --target /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages -r /work/tools/openclaw-sandbox-simulation-starter/requirements.txt"; then
+    return 0
+  fi
+
   docker run --rm -u 0 \
     -v "$ROOT_DIR:/work" \
     -w /work \
     "$image_ref" \
-    sh -lc "python3 -m pip --version >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip python3-venv build-essential); python3 -m pip install --break-system-packages --no-cache-dir --prefer-binary --target /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages -r /work/tools/openclaw-sandbox-simulation-starter/requirements.txt"
+    sh -lc "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pandas python3-sqlalchemy python3-psycopg2 && rm -rf /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages/* && for site_dir in /usr/lib/python3/dist-packages /usr/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages; do if [ -d \"\$site_dir\" ]; then cp -a \"\$site_dir\"/. /work/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages/; fi; done"
 }
 
 # Run config CLI against the gateway image directly so setup does not depend on
@@ -878,7 +868,7 @@ main() {
       ensure_gateway_service_image_current
     fi
   fi
-  prepare_tenant_platform_runtime_node_modules
+  prepare_tenant_platform_runtime_node_modules "$image_ref"
   prepare_tenant_platform_runtime_python_packages "$image_ref"
   collect_extra_mounts
   write_override "${COLLECTED_EXTRA_MOUNTS[@]}"
