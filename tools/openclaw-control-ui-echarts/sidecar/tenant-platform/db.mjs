@@ -5395,15 +5395,35 @@ function stripSandboxJsonSuffix(fileName) {
     .replace(/_sandbox\.json$/i, "");
 }
 
+const DEFAULT_SANDBOX_FILE_NAME = "采购沙盒模拟_sandbox.json";
+
+function createDefaultSandboxEntry(agent) {
+  const baseAgentId = String(agent?.baseAgentId || "").trim();
+  const sandboxName =
+    baseAgentId === "kingdee-cloud" ? "真实金蝶采购预测验证" : "采购沙盒模拟";
+  return {
+    ...agent,
+    sandboxFileName: DEFAULT_SANDBOX_FILE_NAME,
+    sandboxName,
+    sandboxRelativePath: path.posix.join("Sandbox", DEFAULT_SANDBOX_FILE_NAME),
+    isVirtualSandbox: true,
+  };
+}
+
 export function listAssignedAgentSandboxesForUser(db, params, configAgents = []) {
-  return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) =>
-    listWorkspaceSandboxFiles(agent.derivedWorkspaceDir).map((sandboxFileName) => ({
+  return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) => {
+    const sandboxFiles = listWorkspaceSandboxFiles(agent.derivedWorkspaceDir);
+    if (!sandboxFiles.length) {
+      return [createDefaultSandboxEntry(agent)];
+    }
+    return sandboxFiles.map((sandboxFileName) => ({
       ...agent,
       sandboxFileName,
       sandboxName: stripSandboxJsonSuffix(sandboxFileName),
       sandboxRelativePath: path.posix.join("Sandbox", sandboxFileName),
-    })),
-  );
+      isVirtualSandbox: false,
+    }));
+  });
 }
 
 export function syncTenantUsageRecords(db, params) {

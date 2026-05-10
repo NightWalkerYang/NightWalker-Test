@@ -37,6 +37,7 @@ import {
   revokePlatformTenantAgents,
   listAssignedAgentsForUser,
   listAssignedAgentVisualizationsForUser,
+  listAssignedAgentSandboxesForUser,
   getTenantOverview,
   getTenantWalletDashboard,
   listTenantUsageRecords,
@@ -370,6 +371,21 @@ describe("tenant platform database foundation", () => {
             item.visualizationFileName.endsWith("_index.html") && item.agentName === "财务分析助手",
         ),
       ).toBe(true);
+
+      const sandboxes = listAssignedAgentSandboxesForUser(
+        db,
+        {
+          tenantId: tenant.id,
+          userId: member.id,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        },
+        catalog,
+      );
+      expect(sandboxes).toHaveLength(1);
+      expect(sandboxes[0]?.sandboxFileName).toBe("采购沙盒模拟_sandbox.json");
+      expect(sandboxes[0]?.sandboxName).toBe("采购沙盒模拟");
+      expect(sandboxes[0]?.isVirtualSandbox).toBe(true);
     } finally {
       closeTenantPlatformDb(db);
     }

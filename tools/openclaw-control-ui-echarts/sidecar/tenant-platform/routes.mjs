@@ -1946,6 +1946,35 @@ function resolveMemberSandboxForPayload(payload, deps, configAgents) {
   );
 }
 
+function createVirtualSandboxPayload(sandbox) {
+  const sandboxName =
+    String(sandbox?.sandboxName || "").trim() || "采购沙盒模拟";
+  const agentName =
+    String(sandbox?.agentName || "").trim() || "沙盒模拟助手";
+  return {
+    sandboxName,
+    agentName,
+    summary: {
+      forecastDemandQty: 0,
+      recommendedPurchaseQty: 0,
+      estimatedPurchaseCost: 0,
+      shortageRiskLevel: "low",
+    },
+    graph: {
+      nodes: [{ id: "scenario-root", label: sandboxName, type: "scenario", riskLevel: "low" }],
+      edges: [],
+    },
+    recommendations: [],
+    report: {
+      headline: "请先选择历史依据期间、预测期间和原料范围后再运行沙盒模拟。",
+      bullets: [
+        "当前工作区没有预置 Sandbox JSON，系统已自动回退到默认沙盒入口。",
+        "进入后仍可读取成员可见数据目录、原料候选并直接执行实时模拟。",
+      ],
+    },
+  };
+}
+
 export function createTenantPlatformRouter(deps) {
   return async function handleTenantPlatformRequest(request, response) {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
@@ -3986,7 +4015,10 @@ export function createTenantPlatformRouter(deps) {
       }
       const sandboxPath = path.join(workspaceRoot, "Sandbox", sandbox.sandboxFileName);
       try {
-        const content = JSON.parse(fs.readFileSync(sandboxPath, "utf8"));
+        const content =
+          sandbox.isVirtualSandbox || !fs.existsSync(sandboxPath)
+            ? createVirtualSandboxPayload(sandbox)
+            : JSON.parse(fs.readFileSync(sandboxPath, "utf8"));
         sendJson(request, response, 200, {
           ok: true,
           data: content,
