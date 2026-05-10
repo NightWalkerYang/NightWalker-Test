@@ -81,6 +81,13 @@ def test_build_live_run_payload_prefers_source_tenant_code(monkeypatch):
         ]
 
     monkeypatch.setattr(runner, "compute_live_material_rows", fake_compute_live_material_rows)
+    monkeypatch.setattr(
+        runner,
+        "build_history_rows_by_material",
+        lambda **_kwargs: {
+            "M001": [{"month": "2026-03", "demandQty": 50}],
+        },
+    )
 
     payload = sample_input_payload()
     runner.build_live_run_payload(payload)
@@ -138,6 +145,13 @@ def test_build_live_run_payload_filters_candidates_by_selected_material_ids(monk
         ]
 
     monkeypatch.setattr(runner, "compute_live_material_rows", fake_compute_live_material_rows)
+    monkeypatch.setattr(
+        runner,
+        "build_history_rows_by_material",
+        lambda **_kwargs: {
+            "M001": [{"month": "2026-03", "demandQty": 50}],
+        },
+    )
 
     payload = sample_input_payload()
     payload["selectedMaterialIds"] = ["M001"]
@@ -160,6 +174,153 @@ def test_build_live_run_payload_raises_when_selected_materials_have_no_predictab
         assert str(error) == "sandbox_selected_materials_not_found"
     else:
         raise AssertionError("expected ValueError when selected materials have no predictable candidates")
+
+
+def stub_single_material_live_run(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "load_candidate_material_rows",
+        lambda **_kwargs: [
+            {
+                "materialId": "M001",
+                "materialName": "原料 A",
+                "activityQty": 100,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        runner,
+        "compute_live_material_rows",
+        lambda **_kwargs: [
+            {
+                "materialId": "M001",
+                "materialName": "原料 A",
+                "predictedDemandQty": 150,
+                "inventoryAvailableQty": 20,
+                "recommendedQty": 130,
+                "estimatedCost": 1105,
+                "riskLevel": "high",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        runner,
+        "build_history_rows_by_material",
+        lambda **_kwargs: {
+            "M001": [
+                {"month": "2026-01", "demandQty": 40},
+                {"month": "2026-02", "demandQty": 50},
+                {"month": "2026-03", "demandQty": 60},
+            ]
+        },
+    )
+
+
+def test_build_live_run_payload_adds_prediction_evidence_summary_contract(monkeypatch):
+    stub_single_material_live_run(monkeypatch)
+
+    payload = runner.build_live_run_payload(sample_input_payload())
+
+    assert "evidenceSummary" in payload
+    assert payload["evidenceSummary"] == {
+        "defaultProfile": "balanced",
+        "availableProfiles": [
+            "balanced",
+            "risk",
+            "cost",
+            "supply_assurance",
+            "inventory_safety",
+        ],
+        "defaultVisibleCount": 5,
+        "ruleCatalogVersion": "sandbox-evidence-v1",
+    }
+
+
+def test_build_live_run_payload_adds_prediction_recommendation_evidence_contract(monkeypatch):
+    stub_single_material_live_run(monkeypatch)
+
+    payload = runner.build_live_run_payload(sample_input_payload())
+
+    row = payload["recommendations"][0]
+    assert {"impactScore", "impactProfile", "whyText", "evidence"} <= set(row)
+    assert row["impactProfile"] == "balanced"
+    assert row["impactScore"] > 0
+    assert row["whyText"]
+    assert row["evidence"]["predictedDemandQty"] == 150
+    assert row["evidence"]["inventoryAvailableQty"] == 20
+
+    rules_by_id = {
+        str(rule["ruleId"]): rule
+        for rule in row["evidence"]["triggeredRules"]
+    }
+    assert "inventory_gap" in rules_by_id
+    inventory_gap_rule = rules_by_id["inventory_gap"]
+    assert inventory_gap_rule["label"] == "库存缺口"
+    assert inventory_gap_rule["severity"] == "high"
+    assert inventory_gap_rule["values"]["predictedDemandQty"] == 150
+    assert inventory_gap_rule["values"]["inventoryAvailableQty"] == 20
+    assert inventory_gap_rule["values"]["gapQty"] > 0
+
+
+def test_build_live_run_payload_uses_deterministic_fallback_why_text(monkeypatch):
+    stub_single_material_live_run(monkeypatch)
+
+    payload = runner.build_live_run_payload(sample_input_payload())
+
+    row = payload["recommendations"][0]
+    assert "whyText" in row
+    why_text = row["whyText"]
+    assert "原料 A" in why_text
+    assert "库存" in why_text
+    assert "预测需求" in why_text
+    assert why_text.endswith("。")
+
+
+def test_build_live_run_payload_pads_recent_history_series_for_trend_evidence(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "load_candidate_material_rows",
+        lambda **_kwargs: [
+            {
+                "materialId": "M001",
+                "materialName": "原料 A",
+                "activityQty": 100,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        runner,
+        "compute_live_material_rows",
+        lambda **_kwargs: [
+            {
+                "materialId": "M001",
+                "materialName": "原料 A",
+                "predictedDemandQty": 150,
+                "inventoryAvailableQty": 20,
+                "recommendedQty": 130,
+                "estimatedCost": 1105,
+                "riskLevel": "high",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        runner,
+        "build_history_rows_by_material",
+        lambda **_kwargs: {
+            "M001": [{"month": "2026-03", "demandQty": 60}],
+        },
+    )
+
+    payload = runner.build_live_run_payload(sample_input_payload())
+    evidence = payload["recommendations"][0]["evidence"]
+
+    assert evidence["historyDemandRecent3Months"] == [
+        {"month": "2026-01", "demandQty": 0.0},
+        {"month": "2026-02", "demandQty": 0.0},
+        {"month": "2026-03", "demandQty": 60.0},
+    ]
+    assert evidence["historyDemandTrend"] == "up"
+    assert evidence["historyDemandVolatility"] > 0
 
 
 def test_runner_writes_status_and_result_files(tmp_path, monkeypatch):
@@ -243,6 +404,13 @@ def test_runner_output_changes_with_target_window(monkeypatch):
             },
         ],
     )
+    monkeypatch.setattr(
+        runner,
+        "build_history_rows_by_material",
+        lambda **_kwargs: {
+            "M001": [{"month": "2026-03", "demandQty": 50}],
+        },
+    )
 
     first = runner.build_live_run_payload(sample_input_payload("2026-04-01", "2026-04-30"))
     second = runner.build_live_run_payload(sample_input_payload("2026-04-01", "2026-06-30"))
@@ -279,6 +447,13 @@ def test_runner_output_changes_with_input_history_window(monkeypatch):
                 "activityQty": 100,
             }
         ],
+    )
+    monkeypatch.setattr(
+        runner,
+        "build_history_rows_by_material",
+        lambda **_kwargs: {
+            "M001": [{"month": "2026-03", "demandQty": 50}],
+        },
     )
 
     first_payload = sample_input_payload()

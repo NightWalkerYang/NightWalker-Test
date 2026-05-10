@@ -115,7 +115,10 @@ function readAnalyticsConnectionErrorCode(error) {
 
 export function isRetryableAnalyticsConnectionError(error) {
   const code = readAnalyticsConnectionErrorCode(error);
-  if (code && ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ETIMEDOUT", "ECONNRESET"].includes(code)) {
+  if (
+    code &&
+    ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ETIMEDOUT", "ECONNRESET"].includes(code)
+  ) {
     return true;
   }
   const message = String(error?.message || error || "")
@@ -157,7 +160,9 @@ export function buildAnalyticsConnectionCandidates(connection) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
       return;
     }
-    const nextHost = String(candidate.host || "").trim().toLowerCase();
+    const nextHost = String(candidate.host || "")
+      .trim()
+      .toLowerCase();
     const nextPort = normalizeConnectionPort(candidate.port) ?? DEFAULT_POSTGRES_PORT;
     const dedupeKey = JSON.stringify({
       host: nextHost,
@@ -446,7 +451,9 @@ function mapDatasetColumnRow(row) {
   return {
     relationName: String(row?.relationName || "").trim(),
     columnName: String(row?.columnName || "").trim(),
-    dataType: String(row?.dataType || "").trim().toLowerCase(),
+    dataType: String(row?.dataType || "")
+      .trim()
+      .toLowerCase(),
   };
 }
 
@@ -502,13 +509,14 @@ function toReadableDatasetLabel(row) {
   ];
   const prefix = prefixLabels.find(([key]) => relationName.startsWith(key));
   if (prefix) {
-    const base = relationName.replace(/_current$/, "").slice(prefix[0].length).replaceAll("_", " ");
+    const base = relationName
+      .replace(/_current$/, "")
+      .slice(prefix[0].length)
+      .replaceAll("_", " ");
     return `${prefix[1]} ${base}`;
   }
   if (objectCode) {
-    return objectCode
-      .replaceAll("_", " ")
-      .replace(/\b\w/g, (value) => value.toUpperCase());
+    return objectCode.replaceAll("_", " ").replace(/\b\w/g, (value) => value.toUpperCase());
   }
   return relationName
     .replace(/_current$/, "")
@@ -517,7 +525,9 @@ function toReadableDatasetLabel(row) {
 }
 
 function pickColumn(columns, priorities, fallbackMatcher = null) {
-  const byName = new Map(columns.map((column) => [column.columnName.toLowerCase(), column.columnName]));
+  const byName = new Map(
+    columns.map((column) => [column.columnName.toLowerCase(), column.columnName]),
+  );
   for (const name of priorities) {
     const match = byName.get(name.toLowerCase());
     if (match) {
@@ -525,7 +535,9 @@ function pickColumn(columns, priorities, fallbackMatcher = null) {
     }
   }
   if (typeof fallbackMatcher === "function") {
-    const match = columns.find((column) => fallbackMatcher(column.columnName.toLowerCase(), column));
+    const match = columns.find((column) =>
+      fallbackMatcher(column.columnName.toLowerCase(), column),
+    );
     return match?.columnName || "";
   }
   return "";
@@ -536,8 +548,15 @@ function qualifyPgIdentifier(alias, value) {
 }
 
 function hasPgColumn(columns, name) {
-  const normalizedName = String(name || "").trim().toLowerCase();
-  return columns.some((column) => String(column?.columnName || "").trim().toLowerCase() === normalizedName);
+  const normalizedName = String(name || "")
+    .trim()
+    .toLowerCase();
+  return columns.some(
+    (column) =>
+      String(column?.columnName || "")
+        .trim()
+        .toLowerCase() === normalizedName,
+  );
 }
 
 function buildJsonTextExpression(alias, columnName, keys) {
@@ -602,7 +621,11 @@ function buildMaterialActivitySourceSpec(relationName, columns, alias = "base") 
       dateSql: hasPgColumn(columns, "bill_date")
         ? qualifyPgIdentifier(alias, "bill_date")
         : hasDocumentJson
-          ? buildJsonDateExpression(alias, "document_json", ["FDate", "FDeliveryDate", "FPREARRIVALDATE"])
+          ? buildJsonDateExpression(alias, "document_json", [
+              "FDate",
+              "FDeliveryDate",
+              "FPREARRIVALDATE",
+            ])
           : "",
       orgSql: hasPgColumn(columns, "purchase_org_id")
         ? qualifyPgIdentifier(alias, "purchase_org_id")
@@ -679,11 +702,17 @@ function buildMaterialMasterLookupSpec(columns, alias = "master") {
 
 function inferDatasetColumns(columns) {
   const dateColumn = pickColumn(
-    columns.filter((column) => column.dataType.includes("date") || column.dataType.includes("time")),
+    columns.filter(
+      (column) => column.dataType.includes("date") || column.dataType.includes("time"),
+    ),
     DATE_COLUMN_PRIORITIES,
     (name) => name.endsWith("_date") || name.includes("bill") || name.includes("biz"),
   );
-  const orgColumn = pickColumn(columns, ORG_COLUMN_PRIORITIES, (name) => name.endsWith("org_id") || name.endsWith("org_number"));
+  const orgColumn = pickColumn(
+    columns,
+    ORG_COLUMN_PRIORITIES,
+    (name) => name.endsWith("org_id") || name.endsWith("org_number"),
+  );
   return {
     dateColumn,
     orgColumn,
@@ -789,7 +818,9 @@ async function loadDynamicDatasetDictionary(binding) {
 }
 
 async function loadDatasetColumns(binding, relationNames) {
-  const names = [...new Set(relationNames.map((name) => String(name || "").trim()).filter(Boolean))];
+  const names = [
+    ...new Set(relationNames.map((name) => String(name || "").trim()).filter(Boolean)),
+  ];
   if (names.length === 0) {
     return new Map();
   }
@@ -976,7 +1007,12 @@ export async function listSandboxDataCatalogForDataSource(binding, options = {})
       ...stats,
     });
   }
-  const recommendedInputPeriod = await loadRecommendedInputPeriod(binding, datasets, catalog, options);
+  const recommendedInputPeriod = await loadRecommendedInputPeriod(
+    binding,
+    datasets,
+    catalog,
+    options,
+  );
   return {
     dataSourceId: String(binding?.dataSourceId || binding?.id || "").trim(),
     dataSourceName: String(binding?.dataSourceName || binding?.name || "").trim(),
@@ -996,135 +1032,78 @@ export async function listSandboxMaterialCandidatesForDataSource(binding, option
   const inputEndDate = normalizeCatalogDate(options.inputEndDate);
   const keyword = String(options.keyword || "").trim();
   const allowedOrgIds = normalizeAllowedOrgIds(options.allowedOrgIds);
-  const params = [];
-  let orgParamRef = "";
-  let inputStartDateRef = "";
-  let inputEndDateRef = "";
-  let keywordRef = "";
+  const tenantCode = String(
+    binding?.sourceTenantCode ||
+      binding?.source_tenant_code ||
+      binding?.connectionJson?.sourceTenantCode ||
+      binding?.connection_json?.sourceTenantCode ||
+      "",
+  ).trim();
+  if (!tenantCode) {
+    throw new Error("material_candidates_unavailable");
+  }
+  const params = [tenantCode];
+  const where = ["tenant_id = $1::text"];
   if (allowedOrgIds.length > 0) {
     params.push(allowedOrgIds);
-    orgParamRef = `$${params.length}::text[]`;
+    where.push(`org_id = ANY($${params.length}::text[])`);
   }
   if (inputStartDate) {
     params.push(inputStartDate);
-    inputStartDateRef = `$${params.length}::date`;
+    where.push(`target_month >= date_trunc('month', $${params.length}::date)::date`);
   }
   if (inputEndDate) {
     params.push(inputEndDate);
-    inputEndDateRef = `$${params.length}::date`;
+    where.push(`target_month <= date_trunc('month', $${params.length}::date)::date`);
   }
+  let keywordWhereSql = "";
   if (keyword) {
     params.push(`%${keyword}%`);
-    keywordRef = `$${params.length}`;
+    keywordWhereSql = `AND (
+      demand.material_id ILIKE $${params.length}
+      OR COALESCE(master.material_name, demand.material_id) ILIKE $${params.length}
+    )`;
   }
-  const relationNames = [
-    "sales_order_current",
-    "sales_delivery_notice_current",
-    "pur_purchaseorder_current",
-    "pur_receivebill_current",
-    "bd_material_current",
-  ];
-  const columnsByRelation = await loadDatasetColumns(binding, relationNames);
-  const activitySources = relationNames
-    .filter((relationName) => relationName !== "bd_material_current")
-    .map((relationName) =>
-      buildMaterialActivitySourceSpec(relationName, columnsByRelation.get(relationName) || []),
-    )
-    .filter(Boolean);
-  const masterLookup = buildMaterialMasterLookupSpec(
-    columnsByRelation.get("bd_material_current") || [],
-  );
-  const buildActivityWhereSql = (source) => {
-    const where = [`${source.materialIdSql} IS NOT NULL`];
-    if (orgParamRef && source.orgSql) {
-      where.push(`${source.orgSql} = ANY(${orgParamRef})`);
-    }
-    if (inputStartDateRef && source.dateSql) {
-      where.push(`${source.dateSql} >= ${inputStartDateRef}`);
-    }
-    if (inputEndDateRef && source.dateSql) {
-      where.push(`${source.dateSql} <= ${inputEndDateRef}`);
-    }
-    return `WHERE ${where.join(" AND ")}`;
-  };
-  const activeMaterialSql = activitySources
-    .map(
-      (source) => `SELECT
-         ${source.materialIdSql} AS material_id,
-         ${source.materialNameSql || "NULL::text"} AS material_name,
-         COUNT(*)::bigint AS activity_score
-       FROM ${quotePgIdentifier(source.relationName)} base
-       ${buildActivityWhereSql(source)}
-       GROUP BY 1, 2`,
-    )
-    .join(`
-       UNION ALL
-`);
-  if (!activeMaterialSql) {
-    return {
-      dataSourceId: String(binding?.dataSourceId || binding?.id || "").trim(),
-      dataSourceName: String(binding?.dataSourceName || binding?.name || "").trim(),
-      inputStartDate: inputStartDate || null,
-      inputEndDate: inputEndDate || null,
-      keyword: keyword || null,
-      items: [],
-    };
-  }
-  const hasMasterLookup = Boolean(masterLookup.materialIdSql);
-  const masterCodeSql = masterLookup.materialCodeSql || "NULL::text";
-  const masterNameSql = masterLookup.materialNameSql || "NULL::text";
-  const resolvedMasterCodeSql = hasMasterLookup ? "master.material_code" : "NULL::text";
-  const resolvedMasterNameSql = hasMasterLookup ? "master.material_name" : "NULL::text";
-  const keywordWhereSql = keywordRef
-    ? `WHERE (
-         ranked.material_id ILIKE ${keywordRef}
-         OR COALESCE(${resolvedMasterCodeSql}, '') ILIKE ${keywordRef}
-         OR COALESCE(${resolvedMasterNameSql}, '') ILIKE ${keywordRef}
-         OR COALESCE(ranked.material_name, '') ILIKE ${keywordRef}
-       )`
-    : "";
-  const masterMaterialsCteSql = hasMasterLookup
-    ? `,
-     master_materials AS (
-       SELECT
-         ${masterLookup.materialIdSql} AS material_id,
-         MAX(${masterCodeSql}) AS material_code,
-         MAX(${masterNameSql}) AS material_name
-       FROM bd_material_current master
-       WHERE ${masterLookup.materialIdSql} IS NOT NULL
-       GROUP BY 1
-     )`
-    : "";
-  const masterMaterialsJoinSql = hasMasterLookup
-    ? `LEFT JOIN master_materials master
-       ON master.material_id = ranked.material_id`
-    : "";
   params.push(SANDBOX_MATERIAL_LIMIT);
+  const limitRef = `$${params.length}`;
   const rows = await queryRawRows(
     binding,
-    `WITH active_materials AS (
-       ${activeMaterialSql}
-     ),
-     ranked_materials AS (
+    `WITH demand AS (
        SELECT
          material_id,
-         MAX(NULLIF(material_name, '')) AS material_name,
-         SUM(activity_score)::bigint AS activity_score
-       FROM active_materials
+         SUM(demand_qty)::numeric AS activity_qty
+       FROM sandbox_v1.feature_material_monthly_demand
+       WHERE ${where.join(" AND ")}
        GROUP BY material_id
-     )${masterMaterialsCteSql}
+     ),
+     master_materials AS (
+       SELECT
+         COALESCE(
+           NULLIF(document_json ->> 'FNumber', ''),
+           NULLIF(source_object_id::text, ''),
+           NULLIF(document_json ->> 'FMaterialId', '')
+         ) AS material_id,
+         MAX(
+           COALESCE(
+             NULLIF(document_json ->> 'FName', ''),
+             NULLIF(document_json ->> 'FMaterialDesc', '')
+           )
+         ) AS material_name
+       FROM bd_material_current
+       GROUP BY 1
+     )
      SELECT
-       ranked.material_id AS "materialId",
-       COALESCE(${resolvedMasterCodeSql}, ranked.material_id) AS "materialCode",
-       COALESCE(${resolvedMasterNameSql}, ${resolvedMasterCodeSql}, ranked.material_name, ranked.material_id) AS "materialName"
-     FROM ranked_materials ranked
-     ${masterMaterialsJoinSql}
-     ${keywordWhereSql}
-     ORDER BY
-       ranked.activity_score DESC,
-       COALESCE(${resolvedMasterCodeSql}, ranked.material_id),
-       ranked.material_id
-     LIMIT $${params.length}`,
+       demand.material_id AS "materialId",
+       demand.material_id AS "materialCode",
+       COALESCE(master.material_name, demand.material_id) AS "materialName",
+       demand.activity_qty AS "activityQty"
+     FROM demand
+     LEFT JOIN master_materials master
+       ON master.material_id = demand.material_id
+     WHERE 1 = 1
+       ${keywordWhereSql}
+     ORDER BY demand.activity_qty DESC, demand.material_id
+     LIMIT ${limitRef}`,
     params,
   );
   return {
@@ -1133,19 +1112,19 @@ export async function listSandboxMaterialCandidatesForDataSource(binding, option
     inputStartDate: inputStartDate || null,
     inputEndDate: inputEndDate || null,
     keyword: keyword || null,
-    items: [...new Map(
-      rows
-        .map((row) => ({
-          materialId: String(row?.materialId || "").trim(),
-          materialCode: String(row?.materialCode || "").trim(),
-          materialName: String(row?.materialName || "").trim(),
-        }))
-        .filter((item) => item.materialId || item.materialCode || item.materialName)
-        .map((item) => [
-          item.materialId || item.materialCode || item.materialName,
-          item,
-        ]),
-    ).values()],
+    items: [
+      ...new Map(
+        rows
+          .map((row) => ({
+            materialId: String(row?.materialId || "").trim(),
+            materialCode: String(row?.materialCode || "").trim(),
+            materialName: String(row?.materialName || "").trim(),
+            activityQty: Number(row?.activityQty || row?.activity_score || 0),
+          }))
+          .filter((item) => item.materialId || item.materialCode || item.materialName)
+          .map((item) => [item.materialId || item.materialCode || item.materialName, item]),
+      ).values(),
+    ],
   };
 }
 
@@ -1164,7 +1143,13 @@ export async function listOrganizationsForDataSource(binding) {
 }
 
 export async function validateOrganizationIds(binding, orgIds) {
-  const normalizedOrgIds = [...new Set((Array.isArray(orgIds) ? orgIds : []).map((entry) => String(entry || "").trim()).filter(Boolean))];
+  const normalizedOrgIds = [
+    ...new Set(
+      (Array.isArray(orgIds) ? orgIds : [])
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean),
+    ),
+  ];
   if (normalizedOrgIds.length === 0) {
     return [];
   }

@@ -21,6 +21,12 @@ import {
   saveBrandingState,
 } from "./branding.mjs";
 import {
+  listSandboxDataCatalogForDataSource,
+  listSandboxMaterialCandidatesForDataSource,
+  listOrganizationsForDataSource,
+  validateOrganizationIds,
+} from "./data-source-client.mjs";
+import {
   createBootstrapLocalTenantAdmin,
   assignTenantAgentToUser,
   createPlatformUpdateLog,
@@ -45,6 +51,7 @@ import {
   getUserByUsername,
   assignTenantAgentsToUser,
   listAssignedAgentsForUser,
+  listAssignedAgentSandboxesForUser,
   listAssignedAgentVisualizationsForUser,
   listActiveSyncSchedules,
   listDataSources,
@@ -85,6 +92,11 @@ import {
   listTenantAgentSessions,
 } from "./db.mjs";
 import { applyLocalRenewalCode, importLocalLicense, readLocalLicenseState } from "./license.mjs";
+import {
+  submitSandboxRunJob,
+  getSandboxRunStatusJob,
+  getSandboxRunResultJob,
+} from "./sandbox-runner.mjs";
 
 function sendJson(request, response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -499,6 +511,55 @@ function normalizePath(basePath, pathname) {
     return null;
   }
   return pathname.slice(basePath.length) || "/";
+}
+
+function normalizeMemberOrgScopeModeValue(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "all" || normalized === "custom" ? normalized : "none";
+}
+
+function readTenantMemberOrgScope(db, tenantId, userId, dataSourceId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  const normalizedUserId = String(userId || "").trim();
+  const normalizedDataSourceId = String(dataSourceId || "").trim();
+  if (!normalizedTenantId || !normalizedUserId || !normalizedDataSourceId) {
+    return {
+      userId: normalizedUserId,
+      dataSourceId: normalizedDataSourceId,
+      scopeMode: "none",
+      sandboxEnabled: false,
+      orgScopeCount: 0,
+      orgScopes: [],
+    };
+  }
+  const policy = db
+    .prepare(
+      `SELECT scope_mode AS scopeMode,
+              sandbox_enabled AS sandboxEnabled
+         FROM tenant_member_source_policies
+        WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?
+        LIMIT 1`,
+    )
+    .get(normalizedTenantId, normalizedUserId, normalizedDataSourceId);
+  const orgScopes = db
+    .prepare(
+      `SELECT org_id AS orgId,
+              org_name_snapshot AS orgNameSnapshot
+         FROM tenant_member_org_scopes
+        WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?
+        ORDER BY created_at ASC, org_id ASC`,
+    )
+    .all(normalizedTenantId, normalizedUserId, normalizedDataSourceId);
+  return {
+    userId: normalizedUserId,
+    dataSourceId: normalizedDataSourceId,
+    scopeMode: normalizeMemberOrgScopeModeValue(policy?.scopeMode),
+    sandboxEnabled: Number(policy?.sandboxEnabled || 0) > 0,
+    orgScopeCount: Array.isArray(orgScopes) ? orgScopes.length : 0,
+    orgScopes: Array.isArray(orgScopes) ? orgScopes : [],
+  };
 }
 
 const MEMBER_SESSION_HISTORY_PAGE_TAIL_FACTOR = 20;
@@ -1837,6 +1898,52 @@ function readMemberVisualizationTokenPayload(token, secret) {
     visualizationRelativePath,
     visualizationFileName: path.posix.basename(visualizationRelativePath),
   };
+}
+
+function readMemberSandboxTokenPayload(token, secret) {
+  const payload = readSessionToken(token, secret);
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  if (String(payload.purpose || "").trim() !== "member_sandbox") {
+    return null;
+  }
+  const tenantId = String(payload.tenantId || "").trim();
+  const userId = String(payload.userId || "").trim();
+  const derivedAgentId = String(payload.derivedAgentId || "").trim();
+  const sandboxFileName = String(payload.sandboxFileName || "").trim();
+  if (!tenantId || !userId || !derivedAgentId || !sandboxFileName) {
+    return null;
+  }
+  return {
+    tenantId,
+    userId,
+    derivedAgentId,
+    sandboxFileName,
+  };
+}
+
+function resolveMemberSandboxForPayload(payload, deps, configAgents) {
+  if (!payload) {
+    return null;
+  }
+  const sandboxes = listAssignedAgentSandboxesForUser(
+    deps.db,
+    {
+      tenantId: payload.tenantId,
+      userId: payload.userId,
+      configPath: deps.config.configPath,
+      configDir: deps.config.configDir,
+    },
+    configAgents,
+  );
+  return (
+    sandboxes.find(
+      (item) =>
+        item.derivedAgentId === payload.derivedAgentId &&
+        item.sandboxFileName === payload.sandboxFileName,
+    ) || null
+  );
 }
 
 export function createTenantPlatformRouter(deps) {
@@ -3809,6 +3916,332 @@ export function createTenantPlatformRouter(deps) {
         ok: true,
         data: visualizations,
       });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/sandboxes") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const sandboxes = listAssignedAgentSandboxesForUser(
+        deps.db,
+        {
+          ...session,
+          configPath: deps.config.configPath,
+          configDir: deps.config.configDir,
+        },
+        configAgents,
+      ).map((item) => {
+        const token = issueSessionToken(
+          {
+            purpose: "member_sandbox",
+            tenantId: item.tenantId,
+            userId: item.userId,
+            derivedAgentId: item.derivedAgentId,
+            sandboxFileName: item.sandboxFileName,
+          },
+          deps.config.sessionSecret,
+        );
+        const title = item.agentName ? `${item.sandboxName} · ${item.agentName}` : item.sandboxName;
+        return {
+          id: `${item.derivedAgentId}:${item.sandboxFileName}`,
+          agentId: item.derivedAgentId,
+          baseAgentId: item.baseAgentId,
+          agentName: item.agentName,
+          sandboxFileName: item.sandboxFileName,
+          sandboxName: item.sandboxName,
+          title,
+          token,
+          href: `/sandbox-view/?token=${encodeURIComponent(token)}`,
+        };
+      });
+      sendJson(request, response, 200, {
+        ok: true,
+        data: sandboxes,
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/sandboxes/resolve") {
+      const token = String(url.searchParams.get("token") || "").trim();
+      if (!token) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      const payload = readMemberSandboxTokenPayload(token, deps.config.sessionSecret);
+      if (!payload) {
+        sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+        return;
+      }
+      const sandbox = resolveMemberSandboxForPayload(payload, deps, configAgents);
+      if (!sandbox) {
+        sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+        return;
+      }
+      const workspaceRoot = String(sandbox.derivedWorkspaceDir || "").trim();
+      if (!workspaceRoot) {
+        sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+        return;
+      }
+      const sandboxPath = path.join(workspaceRoot, "Sandbox", sandbox.sandboxFileName);
+      try {
+        const content = JSON.parse(fs.readFileSync(sandboxPath, "utf8"));
+        sendJson(request, response, 200, {
+          ok: true,
+          data: content,
+        });
+      } catch {
+        sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/sandboxes/data-catalog") {
+      const token = String(url.searchParams.get("token") || "").trim();
+      if (!token) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      const payload = readMemberSandboxTokenPayload(token, deps.config.sessionSecret);
+      if (!payload) {
+        sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+        return;
+      }
+      try {
+        const binding = getTenantDataSourceBinding(deps.db, payload.tenantId);
+        if (!binding?.dataSourceId) {
+          sendJson(request, response, 400, { ok: false, error: "tenant_data_source_unbound" });
+          return;
+        }
+        const dataSource = getDataSourceById(deps.db, binding.dataSourceId);
+        if (!dataSource) {
+          sendJson(request, response, 404, { ok: false, error: "data_source_not_found" });
+          return;
+        }
+        const orgScope = readTenantMemberOrgScope(
+          deps.db,
+          payload.tenantId,
+          payload.userId,
+          binding.dataSourceId,
+        );
+        const allowedOrgIds =
+          orgScope.scopeMode === "custom"
+            ? (Array.isArray(orgScope.orgScopes) ? orgScope.orgScopes : [])
+                .map((entry) => String(entry?.orgId || "").trim())
+                .filter(Boolean)
+            : [];
+        const catalog = await listSandboxDataCatalogForDataSource(dataSource, {
+          inputStartDate: String(url.searchParams.get("inputStartDate") || "").trim(),
+          inputEndDate: String(url.searchParams.get("inputEndDate") || "").trim(),
+          scopeMode: orgScope.scopeMode,
+          allowedOrgIds,
+        });
+        sendJson(request, response, 200, { ok: true, data: catalog });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/member/sandboxes/material-candidates") {
+      const token = String(url.searchParams.get("token") || "").trim();
+      if (!token) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      const payload = readMemberSandboxTokenPayload(token, deps.config.sessionSecret);
+      if (!payload) {
+        sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+        return;
+      }
+      try {
+        const binding = getTenantDataSourceBinding(deps.db, payload.tenantId);
+        if (!binding?.dataSourceId) {
+          sendJson(request, response, 400, { ok: false, error: "tenant_data_source_unbound" });
+          return;
+        }
+        const dataSource = getDataSourceById(deps.db, binding.dataSourceId);
+        if (!dataSource) {
+          sendJson(request, response, 404, { ok: false, error: "data_source_not_found" });
+          return;
+        }
+        const orgScope = readTenantMemberOrgScope(
+          deps.db,
+          payload.tenantId,
+          payload.userId,
+          binding.dataSourceId,
+        );
+        const allowedOrgIds =
+          orgScope.scopeMode === "custom"
+            ? (Array.isArray(orgScope.orgScopes) ? orgScope.orgScopes : [])
+                .map((entry) => String(entry?.orgId || "").trim())
+                .filter(Boolean)
+            : [];
+        const candidates = await listSandboxMaterialCandidatesForDataSource(dataSource, {
+          inputStartDate: String(url.searchParams.get("inputStartDate") || "").trim(),
+          inputEndDate: String(url.searchParams.get("inputEndDate") || "").trim(),
+          keyword: String(url.searchParams.get("keyword") || "").trim(),
+          allowedOrgIds,
+        });
+        sendJson(request, response, 200, { ok: true, data: candidates });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/member/sandboxes/run") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const token = String(body.token || "").trim();
+        if (!token) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        const payload = readMemberSandboxTokenPayload(token, deps.config.sessionSecret);
+        if (
+          !payload ||
+          payload.tenantId !== session.tenantId ||
+          payload.userId !== session.userId
+        ) {
+          sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+          return;
+        }
+        const sandbox = resolveMemberSandboxForPayload(payload, deps, configAgents);
+        if (!sandbox) {
+          sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+          return;
+        }
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        if (!binding?.dataSourceId) {
+          sendJson(request, response, 400, { ok: false, error: "tenant_data_source_unbound" });
+          return;
+        }
+        const dataSource = getDataSourceById(deps.db, binding.dataSourceId);
+        if (!dataSource) {
+          sendJson(request, response, 404, { ok: false, error: "data_source_not_found" });
+          return;
+        }
+        const orgScope = readTenantMemberOrgScope(
+          deps.db,
+          session.tenantId,
+          session.userId,
+          binding.dataSourceId,
+        );
+        const run = await submitSandboxRunJob({
+          sandbox: {
+            ...sandbox,
+            sandboxName: sandbox.sandboxName,
+            agentName: sandbox.agentName,
+          },
+          binding: {
+            ...binding,
+            connection: dataSource.connectionJson || {},
+            sourceTenantCode:
+              dataSource.connectionJson?.sourceTenantCode || dataSource.sourceTenantCode || null,
+            sourceDbid: dataSource.connectionJson?.sourceDbid || dataSource.sourceDbid || null,
+          },
+          orgScope,
+          input: body,
+        });
+        sendJson(request, response, 200, { ok: true, data: run });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && /^\/member\/sandboxes\/runs\/[^/]+$/i.test(relativePath)) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const runId = decodeURIComponent(
+        relativePath.replace(/^\/member\/sandboxes\/runs\//i, ""),
+      ).trim();
+      const token = String(url.searchParams.get("token") || "").trim();
+      if (!token || !runId) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      try {
+        const payload = readMemberSandboxTokenPayload(token, deps.config.sessionSecret);
+        if (
+          !payload ||
+          payload.tenantId !== session.tenantId ||
+          payload.userId !== session.userId
+        ) {
+          sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+          return;
+        }
+        const sandbox = resolveMemberSandboxForPayload(payload, deps, configAgents);
+        if (!sandbox) {
+          sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+          return;
+        }
+        const status = await getSandboxRunStatusJob({ sandbox, runId });
+        sendJson(request, response, 200, { ok: true, data: status });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      request.method === "GET" &&
+      /^\/member\/sandboxes\/runs\/[^/]+\/result$/i.test(relativePath)
+    ) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const match = relativePath.match(/^\/member\/sandboxes\/runs\/([^/]+)\/result$/i);
+      const runId = decodeURIComponent(String(match?.[1] || "")).trim();
+      const token = String(url.searchParams.get("token") || "").trim();
+      if (!token || !runId) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      try {
+        const payload = readMemberSandboxTokenPayload(token, deps.config.sessionSecret);
+        if (
+          !payload ||
+          payload.tenantId !== session.tenantId ||
+          payload.userId !== session.userId
+        ) {
+          sendJson(request, response, 401, { ok: false, error: "invalid_token" });
+          return;
+        }
+        const sandbox = resolveMemberSandboxForPayload(payload, deps, configAgents);
+        if (!sandbox) {
+          sendJson(request, response, 404, { ok: false, error: "sandbox_not_found" });
+          return;
+        }
+        const result = await getSandboxRunResultJob({ sandbox, runId });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 

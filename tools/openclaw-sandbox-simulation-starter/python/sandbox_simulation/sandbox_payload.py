@@ -2,6 +2,19 @@ from __future__ import annotations
 
 from collections import Counter
 
+DEFAULT_EVIDENCE_SUMMARY = {
+    "defaultProfile": "balanced",
+    "availableProfiles": [
+        "balanced",
+        "risk",
+        "cost",
+        "supply_assurance",
+        "inventory_safety",
+    ],
+    "defaultVisibleCount": 5,
+    "ruleCatalogVersion": "sandbox-evidence-v1",
+}
+
 
 def sanitize_sandbox_name(sandbox_name: str) -> str:
     normalized = str(sandbox_name or "").strip() or "sandbox-simulation"
@@ -16,6 +29,7 @@ def build_sandbox_payload(
     agent_name: str,
     recommendations: list[dict],
     report_bullets: list[str],
+    evidence_summary: dict | None = None,
 ) -> dict:
     normalized_recommendations = list(recommendations or [])
     total_forecast_demand = sum(float(item.get("predictedDemandQty", 0) or 0) for item in normalized_recommendations)
@@ -105,4 +119,5 @@ def build_sandbox_payload(
             "headline": report_bullets[0] if report_bullets else "",
             "bullets": list(report_bullets or []),
         },
+        "evidenceSummary": dict(evidence_summary or DEFAULT_EVIDENCE_SUMMARY),
     }

@@ -859,8 +859,11 @@ function mapDataSourceRow(row) {
   return {
     id: String(row.id || "").trim(),
     name: String(row.name || "").trim(),
+    sourceType: String((row.sourceType ?? row.source_type) || "").trim(),
     status: normalizeDataSourceStatus(row.status),
     connectionJson: parseJsonObject(row.connectionJson ?? row.connection_json),
+    sourceDbid: String((row.sourceDbid ?? row.source_dbid) || "").trim() || null,
+    sourceTenantCode: String((row.sourceTenantCode ?? row.source_tenant_code) || "").trim() || null,
     k3cloudProfileJson: parseJsonObject(row.k3cloudProfileJson ?? row.k3cloud_profile_json),
     createdAt: String((row.createdAt ?? row.created_at) || "").trim(),
     updatedAt: String((row.updatedAt ?? row.updated_at) || "").trim(),
@@ -1035,6 +1038,29 @@ function syncTenantDerivedAgentProfiles(db, tenantId) {
     }
   }
   return changedCount;
+}
+
+export function resolveWorkspaceSandboxRunDir(workspaceDir, runId) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  const normalizedRunId = String(runId || "").trim();
+  if (!normalizedWorkspaceDir || !normalizedRunId) {
+    return "";
+  }
+  return path.join(normalizedWorkspaceDir, "Sandbox", "runs", normalizedRunId);
+}
+
+export function readWorkspaceSandboxRunJson(workspaceDir, runId, fileName, fallback = null) {
+  const runDir = resolveWorkspaceSandboxRunDir(workspaceDir, runId);
+  const normalizedFileName = String(fileName || "").trim();
+  if (!runDir || !normalizedFileName) {
+    return fallback;
+  }
+  try {
+    const targetPath = path.join(runDir, normalizedFileName);
+    return JSON.parse(fs.readFileSync(targetPath, "utf8"));
+  } catch {
+    return fallback;
+  }
 }
 
 function resolveConfiguredModelTokenPricing(params = {}) {
@@ -3814,8 +3840,11 @@ export function listDataSources(db, params = {}) {
     .prepare(
       `SELECT id,
               name,
+              source_type AS sourceType,
               status,
               connection_json AS connectionJson,
+              source_dbid AS sourceDbid,
+              source_tenant_code AS sourceTenantCode,
               k3cloud_profile_json AS k3cloudProfileJson,
               created_at AS createdAt,
               updated_at AS updatedAt
@@ -3837,8 +3866,11 @@ export function getDataSourceById(db, dataSourceId) {
       .prepare(
         `SELECT id,
                 name,
+                source_type AS sourceType,
                 status,
                 connection_json AS connectionJson,
+                source_dbid AS sourceDbid,
+                source_tenant_code AS sourceTenantCode,
                 k3cloud_profile_json AS k3cloudProfileJson,
                 created_at AS createdAt,
                 updated_at AS updatedAt
@@ -5333,6 +5365,44 @@ export function listAssignedAgentVisualizationsForUser(db, params, configAgents 
         visualizationRelativePath,
       };
     }),
+  );
+}
+
+function listWorkspaceSandboxFiles(workspaceDir) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir) {
+    return [];
+  }
+  const sandboxDir = path.join(normalizedWorkspaceDir, "Sandbox");
+  try {
+    if (!fs.existsSync(sandboxDir) || !fs.statSync(sandboxDir).isDirectory()) {
+      return [];
+    }
+    return fs
+      .readdirSync(sandboxDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /_sandbox\.json$/i.test(entry.name))
+      .map((entry) => entry.name)
+      .toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function stripSandboxJsonSuffix(fileName) {
+  return String(fileName || "")
+    .trim()
+    .replace(/_sandbox\.json$/i, "");
+}
+
+export function listAssignedAgentSandboxesForUser(db, params, configAgents = []) {
+  return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) =>
+    listWorkspaceSandboxFiles(agent.derivedWorkspaceDir).map((sandboxFileName) => ({
+      ...agent,
+      sandboxFileName,
+      sandboxName: stripSandboxJsonSuffix(sandboxFileName),
+      sandboxRelativePath: path.posix.join("Sandbox", sandboxFileName),
+    })),
   );
 }
 
