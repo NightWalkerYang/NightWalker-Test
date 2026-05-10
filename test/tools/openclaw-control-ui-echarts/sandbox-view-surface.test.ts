@@ -12,15 +12,15 @@ async function flushMicrotasks(count = 5) {
 }
 
 function openMaterialPicker() {
-  document.querySelector("[data-sandbox-material-picker-open]")?.dispatchEvent(
-    new MouseEvent("click", { bubbles: true }),
-  );
+  document
+    .querySelector("[data-sandbox-material-picker-open]")
+    ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
 function closeMaterialPicker() {
-  document.querySelector("[data-sandbox-material-picker-close]")?.dispatchEvent(
-    new MouseEvent("click", { bubbles: true }),
-  );
+  document
+    .querySelector("[data-sandbox-material-picker-close]")
+    ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
 function selectMaterialCandidate(materialId) {
@@ -418,7 +418,9 @@ describe("public sandbox view surface", () => {
     await flushMicrotasks();
 
     expect(document.body.textContent).toContain("正在刷新数据目录");
-    expect(document.body.textContent).toContain("正在读取当前租户绑定数据源和成员组织范围的数据目录");
+    expect(document.body.textContent).toContain(
+      "正在读取当前租户绑定数据源和成员组织范围的数据目录",
+    );
     expect(document.body.textContent).not.toContain(
       "数据目录未完全就绪，运行时会使用当前可见的沙盒数据兜底。",
     );
@@ -538,9 +540,9 @@ describe("public sandbox view surface", () => {
     expect(document.body.textContent).toContain("原料 Live");
     expect(document.body.textContent).not.toContain("1,105");
     selectMaterialCandidate("M009");
-    document.querySelector("[data-sandbox-run]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await vi.runAllTimersAsync();
     await Promise.resolve();
 
@@ -548,14 +550,12 @@ describe("public sandbox view surface", () => {
     expect(document.body.textContent).toContain("模拟问题");
     expect(document.body.textContent).toContain("预测期间");
     expect(document.querySelector("#oc-sandbox-view-graph")).not.toBeNull();
-    expect(document.querySelector("[data-sandbox-graph-play]")?.textContent).toContain(
-      "重播",
-    );
+    expect(document.querySelector("[data-sandbox-graph-play]")?.textContent).toContain("重播");
     expect(document.querySelector(".oc-sandbox-view-metric-chart-panel")).toBeNull();
     expect(document.querySelector("[data-sandbox-metric-chart]")).toBeNull();
-    document.querySelectorAll(".oc-sandbox-view-metric")[2]?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelectorAll(".oc-sandbox-view-metric")[2]
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(document.querySelector(".oc-sandbox-view-metric.is-charting")).toBeNull();
     expect(document.querySelector("[data-sandbox-metric-modal]")).not.toBeNull();
     expect(document.querySelector("[data-sandbox-metric-chart]")).not.toBeNull();
@@ -608,13 +608,7 @@ describe("public sandbox view surface", () => {
       (element) => element.textContent,
     );
 
-    expect(datasetLabels).toEqual([
-      "销售订单",
-      "采购订单",
-      "物料主数据",
-      "供应商价格",
-      "组织范围",
-    ]);
+    expect(datasetLabels).toEqual(["销售订单", "采购订单", "物料主数据", "供应商价格", "组织范围"]);
     expect(document.body.textContent).not.toContain("采购收货");
     expect(document.body.textContent).not.toContain("采购申请单当前表");
     expect(document.body.textContent).not.toContain("即时库存当前表");
@@ -906,9 +900,9 @@ describe("public sandbox view surface", () => {
     await flushMicrotasks(8);
 
     selectMaterialCandidate("M009");
-    document.querySelector("[data-sandbox-run]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushMicrotasks();
 
     expect(calls.some((call) => call.url.includes("/member/sandboxes/run"))).toBe(false);
@@ -948,9 +942,9 @@ describe("public sandbox view surface", () => {
     expect(inputStart instanceof HTMLInputElement ? inputStart.value : "").toBe("2024-01-05");
     expect(inputEnd instanceof HTMLInputElement ? inputEnd.value : "").toBe("2024-06-05");
 
-    document.querySelector("[data-apply-recommended-period]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-apply-recommended-period]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushMicrotasks(4);
 
     expect(inputStart instanceof HTMLInputElement ? inputStart.value : "").toBe("2024-01-05");
@@ -1054,9 +1048,9 @@ describe("public sandbox view surface", () => {
     await flushMicrotasks();
 
     expect(document.body.textContent).toContain("当前历史依据期间仅匹配 1 个原料");
-    document.querySelector("[data-sandbox-material-apply-recommended-period]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-material-apply-recommended-period]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushMicrotasks(8);
 
     expect(inputStart instanceof HTMLInputElement ? inputStart.value : "").toBe("2024-01-17");
@@ -1282,7 +1276,12 @@ describe("public sandbox view surface", () => {
           shortageRiskLevel: "medium",
         },
         recommendations: [
-          { materialId: "M009", materialName: "原料 Live", recommendedQty: 244, estimatedCost: 2205 },
+          {
+            materialId: "M009",
+            materialName: "原料 Live",
+            recommendedQty: 244,
+            estimatedCost: 2205,
+          },
           { materialId: "M010", materialName: "辅料 A", recommendedQty: 18, estimatedCost: 105 },
         ],
         report: {
@@ -1300,7 +1299,12 @@ describe("public sandbox view surface", () => {
           shortageRiskLevel: "medium",
         },
         recommendations: [
-          { materialId: "M009", materialName: "原料 Live", recommendedQty: 244, estimatedCost: 2205 },
+          {
+            materialId: "M009",
+            materialName: "原料 Live",
+            recommendedQty: 244,
+            estimatedCost: 2205,
+          },
           { materialId: "M010", materialName: "辅料 A", recommendedQty: 18, estimatedCost: 105 },
         ],
         report: {
@@ -1314,9 +1318,9 @@ describe("public sandbox view surface", () => {
     await bootSandboxViewSurface();
     await flushMicrotasks();
     selectMaterialCandidate("M009");
-    document.querySelector("[data-sandbox-run]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await vi.runAllTimersAsync();
     await flushMicrotasks();
 
@@ -1386,9 +1390,7 @@ describe("public sandbox view surface", () => {
         const url = String(input || "");
         const method = init?.method || "GET";
         const body =
-          typeof init?.body === "string" && init.body.trim()
-            ? JSON.parse(init.body)
-            : null;
+          typeof init?.body === "string" && init.body.trim() ? JSON.parse(init.body) : null;
         calls.push({ url, method, body });
         if (url.includes("/member/sandboxes/runs/run_live_1/result")) {
           return {
@@ -1460,9 +1462,9 @@ describe("public sandbox view surface", () => {
     await flushMicrotasks();
 
     selectMaterialCandidate("M009");
-    document.querySelector("[data-sandbox-run]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushMicrotasks();
     expect(document.body.textContent).toContain("沙盒任务已提交：run_live_1");
     expect(document.querySelector("[data-sandbox-run]")?.textContent).toContain("正在运行");
@@ -1519,9 +1521,9 @@ describe("public sandbox view surface", () => {
       }
     });
     selectMaterialCandidate("M009");
-    document.querySelector("[data-sandbox-run]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await vi.runAllTimersAsync();
     await Promise.resolve();
 
@@ -1562,14 +1564,376 @@ describe("public sandbox view surface", () => {
     await bootSandboxViewSurface();
     await flushMicrotasks();
     selectMaterialCandidate("M009");
-    document.querySelector("[data-sandbox-run]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await vi.runAllTimersAsync();
     await Promise.resolve();
 
     expect(document.body.textContent).toContain("未命名物料");
     expect(document.body.textContent).toContain("原料 C");
+  });
+
+  it("shows only the top five evidence rows and exposes profile controls", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, "", "/sandbox-view/?token=member-sandbox-token");
+    window.G6 = {
+      Graph: class {
+        constructor() {}
+        render() {
+          return undefined;
+        }
+      },
+    };
+    stubSandboxResolve(
+      {
+        sandboxName: "采购沙盒模拟",
+        summary: {
+          forecastDemandQty: 688,
+          recommendedPurchaseQty: 544,
+          estimatedPurchaseCost: 5205,
+          shortageRiskLevel: "high",
+        },
+        evidenceSummary: {
+          defaultProfile: "balanced",
+          availableProfiles: ["balanced", "risk", "cost", "supply_assurance", "inventory_safety"],
+          defaultVisibleCount: 5,
+          ruleCatalogVersion: "sandbox-evidence-v1",
+        },
+        recommendations: [
+          {
+            materialId: "M001",
+            materialName: "原料 A",
+            recommendedQty: 100,
+            estimatedCost: 1000,
+            impactScore: 0.95,
+            impactProfile: "balanced",
+            profileScores: {
+              balanced: 0.95,
+              risk: 0.92,
+              cost: 0.7,
+              supply_assurance: 0.88,
+              inventory_safety: 0.9,
+            },
+            whyText: "原料 A：当前库存不足以覆盖预测需求。",
+            evidence: {
+              historyDemandAvg: 100,
+              historyDemandRecent3Months: [
+                { month: "2024-01", demandQty: 90 },
+                { month: "2024-02", demandQty: 100 },
+                { month: "2024-03", demandQty: 110 },
+              ],
+              historyDemandTrend: "up",
+              historyDemandVolatility: 0.2,
+              inventoryAvailableQty: 20,
+              predictedDemandQty: 150,
+              recommendedQty: 100,
+              estimatedCost: 1000,
+              gapQty: 130,
+              coverageDays: 4,
+              triggeredRules: [],
+            },
+          },
+          {
+            materialId: "M002",
+            materialName: "原料 B",
+            recommendedQty: 90,
+            estimatedCost: 900,
+            impactScore: 0.85,
+            impactProfile: "balanced",
+            profileScores: {
+              balanced: 0.85,
+              risk: 0.8,
+              cost: 0.66,
+              supply_assurance: 0.82,
+              inventory_safety: 0.78,
+            },
+            whyText: "原料 B：建议采购量主要来自历史需求与库存平衡结果。",
+            evidence: {
+              historyDemandAvg: 90,
+              historyDemandRecent3Months: [
+                { month: "2024-01", demandQty: 90 },
+                { month: "2024-02", demandQty: 90 },
+                { month: "2024-03", demandQty: 90 },
+              ],
+              historyDemandTrend: "flat",
+              historyDemandVolatility: 0,
+              inventoryAvailableQty: 70,
+              predictedDemandQty: 90,
+              recommendedQty: 90,
+              estimatedCost: 900,
+              gapQty: 20,
+              coverageDays: 18,
+              triggeredRules: [],
+            },
+          },
+          {
+            materialId: "M003",
+            materialName: "原料 C",
+            recommendedQty: 80,
+            estimatedCost: 800,
+            impactScore: 0.75,
+            impactProfile: "balanced",
+            profileScores: {
+              balanced: 0.75,
+              risk: 0.7,
+              cost: 0.62,
+              supply_assurance: 0.68,
+              inventory_safety: 0.72,
+            },
+            whyText: "原料 C：建议采购量主要来自历史需求与库存平衡结果。",
+            evidence: {
+              historyDemandAvg: 80,
+              historyDemandRecent3Months: [
+                { month: "2024-01", demandQty: 70 },
+                { month: "2024-02", demandQty: 80 },
+                { month: "2024-03", demandQty: 90 },
+              ],
+              historyDemandTrend: "up",
+              historyDemandVolatility: 0.1,
+              inventoryAvailableQty: 50,
+              predictedDemandQty: 80,
+              recommendedQty: 80,
+              estimatedCost: 800,
+              gapQty: 30,
+              coverageDays: 12,
+              triggeredRules: [],
+            },
+          },
+          {
+            materialId: "M004",
+            materialName: "原料 D",
+            recommendedQty: 70,
+            estimatedCost: 700,
+            impactScore: 0.65,
+            impactProfile: "balanced",
+            profileScores: {
+              balanced: 0.65,
+              risk: 0.6,
+              cost: 0.58,
+              supply_assurance: 0.62,
+              inventory_safety: 0.64,
+            },
+            whyText: "原料 D：建议采购量主要来自历史需求与库存平衡结果。",
+            evidence: {
+              historyDemandAvg: 70,
+              historyDemandRecent3Months: [
+                { month: "2024-01", demandQty: 72 },
+                { month: "2024-02", demandQty: 69 },
+                { month: "2024-03", demandQty: 70 },
+              ],
+              historyDemandTrend: "flat",
+              historyDemandVolatility: 0.05,
+              inventoryAvailableQty: 60,
+              predictedDemandQty: 70,
+              recommendedQty: 70,
+              estimatedCost: 700,
+              gapQty: 10,
+              coverageDays: 21,
+              triggeredRules: [],
+            },
+          },
+          {
+            materialId: "M005",
+            materialName: "原料 E",
+            recommendedQty: 60,
+            estimatedCost: 600,
+            impactScore: 0.55,
+            impactProfile: "balanced",
+            profileScores: {
+              balanced: 0.55,
+              risk: 0.5,
+              cost: 0.54,
+              supply_assurance: 0.52,
+              inventory_safety: 0.56,
+            },
+            whyText: "原料 E：建议采购量主要来自历史需求与库存平衡结果。",
+            evidence: {
+              historyDemandAvg: 60,
+              historyDemandRecent3Months: [
+                { month: "2024-01", demandQty: 55 },
+                { month: "2024-02", demandQty: 60 },
+                { month: "2024-03", demandQty: 65 },
+              ],
+              historyDemandTrend: "up",
+              historyDemandVolatility: 0.08,
+              inventoryAvailableQty: 40,
+              predictedDemandQty: 60,
+              recommendedQty: 60,
+              estimatedCost: 600,
+              gapQty: 20,
+              coverageDays: 20,
+              triggeredRules: [],
+            },
+          },
+          {
+            materialId: "M006",
+            materialName: "原料 F",
+            recommendedQty: 50,
+            estimatedCost: 500,
+            impactScore: 0.45,
+            impactProfile: "balanced",
+            profileScores: {
+              balanced: 0.45,
+              risk: 0.4,
+              cost: 0.46,
+              supply_assurance: 0.42,
+              inventory_safety: 0.44,
+            },
+            whyText: "原料 F：建议采购量主要来自历史需求与库存平衡结果。",
+            evidence: {
+              historyDemandAvg: 50,
+              historyDemandRecent3Months: [
+                { month: "2024-01", demandQty: 50 },
+                { month: "2024-02", demandQty: 49 },
+                { month: "2024-03", demandQty: 51 },
+              ],
+              historyDemandTrend: "flat",
+              historyDemandVolatility: 0.02,
+              inventoryAvailableQty: 48,
+              predictedDemandQty: 50,
+              recommendedQty: 50,
+              estimatedCost: 500,
+              gapQty: 2,
+              coverageDays: 28,
+              triggeredRules: [],
+            },
+          },
+        ],
+        report: {
+          headline: "evidence headline",
+          bullets: ["evidence bullet"],
+        },
+      },
+      createLiveCatalog(),
+      undefined,
+      createMaterialCandidates(),
+    );
+
+    await bootSandboxViewSurface();
+    await flushMicrotasks();
+    selectMaterialCandidate("M009");
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.runAllTimersAsync();
+    await flushMicrotasks();
+
+    const rows = Array.from(document.querySelectorAll("[data-recommendation-row]"));
+    expect(rows).toHaveLength(5);
+    expect(document.body.textContent).toContain("平衡模式");
+    expect(document.body.textContent).toContain("偏风险");
+    expect(document.body.textContent).toContain("查看全部物料依据");
+    expect(document.body.textContent).not.toContain("原料 F");
+  });
+
+  it("expands one evidence card with a mini trend chart", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, "", "/sandbox-view/?token=member-sandbox-token");
+    window.G6 = {
+      Graph: class {
+        constructor() {}
+        setData() {}
+        render() {
+          return undefined;
+        }
+      },
+    };
+    window.echarts = {
+      init() {
+        return {
+          setOption() {
+            return undefined;
+          },
+        };
+      },
+    };
+    stubSandboxResolve(
+      {
+        sandboxName: "采购沙盒模拟",
+        summary: {
+          forecastDemandQty: 288,
+          recommendedPurchaseQty: 244,
+          estimatedPurchaseCost: 2205,
+          shortageRiskLevel: "medium",
+        },
+        evidenceSummary: {
+          defaultProfile: "balanced",
+          availableProfiles: ["balanced", "risk", "cost", "supply_assurance", "inventory_safety"],
+          defaultVisibleCount: 5,
+          ruleCatalogVersion: "sandbox-evidence-v1",
+        },
+        recommendations: [
+          {
+            materialId: "M009",
+            materialName: "原料 Live",
+            recommendedQty: 244,
+            estimatedCost: 2205,
+            impactScore: 0.92,
+            impactProfile: "balanced",
+            profileScores: {
+              balanced: 0.92,
+              risk: 0.91,
+              cost: 0.78,
+              supply_assurance: 0.88,
+              inventory_safety: 0.9,
+            },
+            whyText: "原料 Live：当前库存不足以覆盖预测需求。",
+            evidence: {
+              historyDemandAvg: 120,
+              historyDemandRecent3Months: [
+                { month: "2024-01", demandQty: 100 },
+                { month: "2024-02", demandQty: 118 },
+                { month: "2024-03", demandQty: 142 },
+              ],
+              historyDemandTrend: "up",
+              historyDemandVolatility: 0.22,
+              inventoryAvailableQty: 18,
+              predictedDemandQty: 150,
+              recommendedQty: 244,
+              estimatedCost: 2205,
+              gapQty: 132,
+              coverageDays: 3.6,
+              triggeredRules: [
+                {
+                  ruleId: "inventory_gap",
+                  label: "库存缺口",
+                  severity: "high",
+                  values: { gapQty: 132 },
+                },
+              ],
+            },
+          },
+        ],
+        report: {
+          headline: "live result headline",
+          bullets: ["结果来自 live run"],
+        },
+      },
+      createLiveCatalog(),
+      undefined,
+      createMaterialCandidates(),
+    );
+
+    await bootSandboxViewSurface();
+    await flushMicrotasks();
+    selectMaterialCandidate("M009");
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.runAllTimersAsync();
+    await flushMicrotasks();
+
+    document
+      .querySelector("[data-recommendation-row]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(document.querySelector("[data-sandbox-evidence-panel]")).not.toBeNull();
+    expect(document.querySelector("[data-sandbox-evidence-mini-chart]")).not.toBeNull();
+    expect(document.body.textContent).toContain("最近 3 个月需求");
+    expect(document.body.textContent).toContain("库存缺口");
+    expect(document.body.textContent).toContain("当前库存不足以覆盖预测需求");
   });
 
   it("blocks a sandbox run when no material candidate is selected", async () => {
@@ -1630,9 +1994,9 @@ describe("public sandbox view surface", () => {
     await bootSandboxViewSurface();
     await flushMicrotasks();
 
-    document.querySelector("[data-sandbox-run]")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    document
+      .querySelector("[data-sandbox-run]")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushMicrotasks();
 
     expect(calls.some((call) => call.url.includes("/member/sandboxes/run"))).toBe(false);

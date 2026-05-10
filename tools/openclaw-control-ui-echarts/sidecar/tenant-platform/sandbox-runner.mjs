@@ -1,13 +1,10 @@
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
-import { spawn } from "node:child_process";
 import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  resolveWorkspaceSandboxRunDir,
-  readWorkspaceSandboxRunJson,
-} from "./db.mjs";
+import { resolveWorkspaceSandboxRunDir, readWorkspaceSandboxRunJson } from "./db.mjs";
 
 const SIDE_CAR_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SIDE_CAR_DIR, "../../../../");
@@ -78,6 +75,16 @@ function buildRunnerInput({ runId, sandbox, binding, orgScope, input }) {
     selectedMaterialIds: Array.isArray(input?.selectedMaterialIds)
       ? input.selectedMaterialIds.map((item) => String(item || "").trim()).filter(Boolean)
       : [],
+    selectedMaterialCandidates: Array.isArray(input?.selectedMaterialCandidates)
+      ? input.selectedMaterialCandidates
+          .map((item) => ({
+            materialId: String(item?.materialId || "").trim(),
+            materialCode: String(item?.materialCode || "").trim(),
+            materialName: String(item?.materialName || "").trim(),
+            activityQty: Number(item?.activityQty || 0),
+          }))
+          .filter((item) => item.materialId)
+      : [],
     dataSource: {
       dataSourceId: binding?.dataSourceId,
       dataSourceName: binding?.dataSourceName,
@@ -124,7 +131,9 @@ function startPythonRunner({ executable, inputPath, env, cwd, runDir, runId }) {
       settled = true;
       child.on("exit", (code, signal) => {
         const status = readRunJson(runDir, "status.json", null);
-        const normalizedStatus = String(status?.status || "").trim().toLowerCase();
+        const normalizedStatus = String(status?.status || "")
+          .trim()
+          .toLowerCase();
         if ((normalizedStatus === "queued" || normalizedStatus === "running") && code !== 0) {
           writeRunJson(
             runDir,
@@ -164,7 +173,13 @@ function startPythonRunner({ executable, inputPath, env, cwd, runDir, runId }) {
   });
 }
 
-export async function submitSandboxRunJob({ sandbox, binding, orgScope, input, pythonExecutable = "" }) {
+export async function submitSandboxRunJob({
+  sandbox,
+  binding,
+  orgScope,
+  input,
+  pythonExecutable = "",
+}) {
   const workspaceDir = String(sandbox?.derivedWorkspaceDir || "").trim();
   if (!workspaceDir) {
     throw new Error("sandbox_not_found");
@@ -210,13 +225,16 @@ export async function submitSandboxRunJob({ sandbox, binding, orgScope, input, p
     buildStatusPayload(runId, "failed", {
       resultAvailable: false,
       errorMessage:
-        lastError?.code === "ENOENT" ? "sandbox_python_runtime_unavailable" : String(lastError?.message || "sandbox_run_spawn_failed"),
+        lastError?.code === "ENOENT"
+          ? "sandbox_python_runtime_unavailable"
+          : String(lastError?.message || "sandbox_run_spawn_failed"),
     }),
   );
   throw new Error(
-    lastError?.code === "ENOENT" ? "sandbox_python_runtime_unavailable" : String(lastError?.message || "sandbox_run_spawn_failed"),
+    lastError?.code === "ENOENT"
+      ? "sandbox_python_runtime_unavailable"
+      : String(lastError?.message || "sandbox_run_spawn_failed"),
   );
-
 }
 
 export async function getSandboxRunStatusJob({ sandbox, runId }) {

@@ -174,6 +174,14 @@ async function submitSandboxRun(spec) {
     targetPeriod: spec.targetPeriod,
     selectedDatasetIds: [...spec.selectedDatasetIds],
     selectedMaterialIds: [...spec.selectedMaterialIds],
+    selectedMaterialCandidates: spec.materialCandidates
+      .filter((candidate) => spec.selectedMaterialIds.has(candidate.materialId))
+      .map((candidate) => ({
+        materialId: candidate.materialId,
+        materialCode: candidate.materialCode,
+        materialName: candidate.materialName,
+        activityQty: Number(candidate.activityQty || 0),
+      })),
   });
 }
 
@@ -217,6 +225,176 @@ function createMetric(label, value, description) {
   return element;
 }
 
+function getEvidenceSummary(payload) {
+  if (!payload?.evidenceSummary || typeof payload.evidenceSummary !== "object") {
+    return {
+      defaultProfile: "balanced",
+      availableProfiles: ["balanced"],
+      defaultVisibleCount: 5,
+    };
+  }
+  return payload.evidenceSummary;
+}
+
+function normalizeImpactProfileLabel(profile) {
+  const normalized = String(profile || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "risk") {
+    return "偏风险";
+  }
+  if (normalized === "cost") {
+    return "偏成本";
+  }
+  if (normalized === "supply_assurance") {
+    return "偏供货保障";
+  }
+  if (normalized === "inventory_safety") {
+    return "偏库存安全";
+  }
+  return "平衡模式";
+}
+
+function rankRecommendationsByProfile(recommendations, profile) {
+  return [...recommendations].sort((left, right) => {
+    const leftScore = Number(left?.profileScores?.[profile] ?? left?.impactScore ?? 0);
+    const rightScore = Number(right?.profileScores?.[profile] ?? right?.impactScore ?? 0);
+    return rightScore - leftScore;
+  });
+}
+
+function renderEvidenceProfileOptions(availableProfiles, activeProfile) {
+  return `
+    <div class="oc-sandbox-view-profile-switcher" data-sandbox-profile-switcher>
+      ${availableProfiles
+        .map(
+          (profile) => `
+            <button
+              type="button"
+              class="oc-sandbox-view-profile-chip ${profile === activeProfile ? "is-active" : ""}"
+              data-sandbox-profile="${escapeAttribute(profile)}"
+            >
+              ${escapeHtml(normalizeImpactProfileLabel(profile))}
+            </button>`,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderRecommendationRows(recommendations) {
+  return recommendations
+    .map(
+      (item) => `
+        <tr data-recommendation-row data-material-id="${escapeAttribute(item.materialId || "")}" data-material-name="${escapeAttribute(getMaterialDisplayName(item))}">
+          <td>${escapeHtml(item.materialId || "-")}</td>
+          <td>${escapeHtml(getMaterialDisplayName(item))}</td>
+          <td>${formatNumber(item.recommendedQty)}</td>
+          <td>${formatNumber(item.estimatedCost)}</td>
+          <td>${formatNumber(item.impactScore)}</td>
+          <td>${escapeHtml(normalizeRiskLabel(item.riskLevel))}</td>
+        </tr>`,
+    )
+    .join("");
+}
+
+async function renderEvidenceMiniChart(series, container) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+  try {
+    const echarts = await ensureEchartsLibrary();
+    if (!echarts?.init) {
+      throw new Error("sandbox_echarts_unavailable");
+    }
+    const chart = echarts.init(container, null, { renderer: "canvas" });
+    chart.setOption(
+      {
+        animation: false,
+        grid: { left: 16, right: 8, top: 10, bottom: 18 },
+        xAxis: {
+          type: "category",
+          data: (Array.isArray(series) ? series : []).map((item) =>
+            String(item?.month || "").trim(),
+          ),
+          axisLabel: { color: "#b7c8d8" },
+          axisLine: { lineStyle: { color: "rgba(138, 180, 217, 0.25)" } },
+        },
+        yAxis: {
+          type: "value",
+          axisLabel: { color: "#b7c8d8" },
+          splitLine: { lineStyle: { color: "rgba(138, 180, 217, 0.1)" } },
+        },
+        series: [
+          {
+            type: "line",
+            smooth: true,
+            data: (Array.isArray(series) ? series : []).map((item) => Number(item?.demandQty || 0)),
+            lineStyle: { color: "#38bdf8" },
+            itemStyle: { color: "#67e8f9" },
+            areaStyle: { color: "rgba(56, 189, 248, 0.15)" },
+          },
+        ],
+      },
+      true,
+    );
+  } catch {
+    container.textContent = "趋势图加载失败";
+  }
+}
+
+function renderEvidencePanel(item) {
+  const evidence = item?.evidence || {};
+  const triggeredRules = Array.isArray(evidence.triggeredRules) ? evidence.triggeredRules : [];
+  return `
+    <section class="oc-sandbox-view-evidence-panel" data-sandbox-evidence-panel>
+      <div class="oc-sandbox-view-panel-heading">
+        <div>
+          <h2 class="oc-sandbox-view-section-title">预测依据</h2>
+          <p class="oc-sandbox-view-subtitle">${escapeHtml(item?.whyText || "")}</p>
+        </div>
+      </div>
+      <div class="oc-sandbox-view-evidence-grid">
+        <div class="oc-sandbox-view-evidence-chart">
+          <h3 class="oc-sandbox-view-small-title">最近 3 个月需求</h3>
+          <div class="oc-sandbox-view-evidence-mini-chart" data-sandbox-evidence-mini-chart></div>
+        </div>
+        <div class="oc-sandbox-view-evidence-metrics">
+          <div><span>历史需求均值</span><strong>${formatNumber(evidence.historyDemandAvg)}</strong></div>
+          <div><span>当前库存</span><strong>${formatNumber(evidence.inventoryAvailableQty)}</strong></div>
+          <div><span>预测需求</span><strong>${formatNumber(evidence.predictedDemandQty)}</strong></div>
+          <div><span>建议采购量</span><strong>${formatNumber(evidence.recommendedQty)}</strong></div>
+          <div><span>预计成本</span><strong>${formatNumber(evidence.estimatedCost)}</strong></div>
+          <div><span>缺口数量</span><strong>${formatNumber(evidence.gapQty)}</strong></div>
+          <div><span>库存覆盖天数</span><strong>${formatNumber(evidence.coverageDays)}</strong></div>
+          <div><span>风险等级</span><strong>${escapeHtml(normalizeRiskLabel(item?.riskLevel))}</strong></div>
+        </div>
+      </div>
+      <h3 class="oc-sandbox-view-small-title">命中规则</h3>
+      <ul class="oc-sandbox-view-report">
+        ${triggeredRules
+          .map(
+            (rule) =>
+              `<li>${escapeHtml(rule?.label || rule?.ruleId || "")} · ${escapeHtml(normalizeRiskLabel(rule?.severity || ""))}</li>`,
+          )
+          .join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function updateEvidencePanel(root, item) {
+  const panelContainer = root.querySelector("[data-sandbox-evidence-slot]");
+  if (!(panelContainer instanceof HTMLElement)) {
+    return;
+  }
+  panelContainer.innerHTML = item ? renderEvidencePanel(item) : "";
+  const chartContainer = panelContainer.querySelector("[data-sandbox-evidence-mini-chart]");
+  if (item && chartContainer instanceof HTMLElement) {
+    void renderEvidenceMiniChart(item?.evidence?.historyDemandRecent3Months || [], chartContainer);
+  }
+}
+
 function escapeAttribute(value) {
   return escapeHtml(value).replaceAll("`", "&#96;");
 }
@@ -231,7 +409,9 @@ function escapeHtml(value) {
 }
 
 function normalizeRiskLabel(value) {
-  const riskLevel = String(value || "").trim().toLowerCase();
+  const riskLevel = String(value || "")
+    .trim()
+    .toLowerCase();
   if (riskLevel === "high") {
     return "高";
   }
@@ -394,7 +574,9 @@ function normalizeGraphPayloadForG6(graphPayload, dimensions = {}) {
 }
 
 function translateGraphEdgeLabel(label) {
-  const normalized = String(label || "").trim().toUpperCase();
+  const normalized = String(label || "")
+    .trim()
+    .toUpperCase();
   const labels = {
     HAS_MATERIAL: "关联物料",
     USES_COMPONENT: "使用物料",
@@ -436,7 +618,11 @@ function createSourceRelationshipGraph(payload, selectedMetadataIds = null) {
   const selected =
     selectedMetadataIds instanceof Set && selectedMetadataIds.size > 0
       ? selectedMetadataIds
-      : new Set(getMetadataOptions(payload).filter((item) => item.checked).map((item) => item.id));
+      : new Set(
+          getMetadataOptions(payload)
+            .filter((item) => item.checked)
+            .map((item) => item.id),
+        );
   const materialSamples = collectMaterialSamples(recommendations, 4).map((node) => ({
     ...node,
     nodeType: "materialSample",
@@ -444,13 +630,27 @@ function createSourceRelationshipGraph(payload, selectedMetadataIds = null) {
   const candidateNodes = [
     { id: "scenario-root", label: "沙盒场景", nodeType: "scenario" },
     selected.has("org_scope") ? { id: "org-scope", label: "组织范围", nodeType: "org" } : null,
-    selected.has("sales_order") ? { id: "sales-order", label: "销售订单", nodeType: "sales" } : null,
-    selected.has("sales_outbound") ? { id: "sales-outbound", label: "销售出库", nodeType: "sales" } : null,
-    selected.has("material_master") ? { id: "material-master", label: "物料主数据", nodeType: "material" } : null,
-    selected.has("inventory_snapshot") ? { id: "inventory-snapshot", label: "库存快照", nodeType: "inventory" } : null,
-    selected.has("purchase_order") ? { id: "purchase-order", label: "采购订单", nodeType: "purchase" } : null,
-    selected.has("purchase_receipt") ? { id: "purchase-receipt", label: "采购收货", nodeType: "purchase" } : null,
-    selected.has("supplier_price") ? { id: "supplier-price", label: "供应商/价格", nodeType: "supplier" } : null,
+    selected.has("sales_order")
+      ? { id: "sales-order", label: "销售订单", nodeType: "sales" }
+      : null,
+    selected.has("sales_outbound")
+      ? { id: "sales-outbound", label: "销售出库", nodeType: "sales" }
+      : null,
+    selected.has("material_master")
+      ? { id: "material-master", label: "物料主数据", nodeType: "material" }
+      : null,
+    selected.has("inventory_snapshot")
+      ? { id: "inventory-snapshot", label: "库存快照", nodeType: "inventory" }
+      : null,
+    selected.has("purchase_order")
+      ? { id: "purchase-order", label: "采购订单", nodeType: "purchase" }
+      : null,
+    selected.has("purchase_receipt")
+      ? { id: "purchase-receipt", label: "采购收货", nodeType: "purchase" }
+      : null,
+    selected.has("supplier_price")
+      ? { id: "supplier-price", label: "供应商/价格", nodeType: "supplier" }
+      : null,
     ...materialSamples,
   ].filter(Boolean);
   const nodeIds = new Set(candidateNodes.map((node) => node.id));
@@ -464,22 +664,22 @@ function createSourceRelationshipGraph(payload, selectedMetadataIds = null) {
     label: "示例物料",
   }));
   const edges = [
-      { source: "scenario-root", target: "org-scope", label: "限定组织" },
-      { source: "org-scope", target: "sales-order", label: "归属组织" },
-      { source: "org-scope", target: "inventory-snapshot", label: "归属组织" },
-      { source: "org-scope", target: "purchase-order", label: "归属组织" },
-      { source: "org-scope", target: "purchase-receipt", label: "归属组织" },
-      { source: "org-scope", target: "supplier-price", label: "归属组织" },
-      { source: "sales-order", target: "sales-outbound", label: "产生出库" },
-      { source: "sales-outbound", target: "material-master", label: "关联物料" },
-      { source: "inventory-snapshot", target: "material-master", label: "记录库存" },
-      { source: "purchase-order", target: "material-master", label: "采购物料" },
-      { source: "purchase-receipt", target: "material-master", label: "收货物料" },
-      { source: "purchase-order", target: "purchase-receipt", label: "形成收货" },
-      { source: "supplier-price", target: "material-master", label: "维护价格" },
-      { source: "purchase-order", target: "supplier-price", label: "引用价格" },
-      ...materialEdges,
-    ].filter((edge) => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target));
+    { source: "scenario-root", target: "org-scope", label: "限定组织" },
+    { source: "org-scope", target: "sales-order", label: "归属组织" },
+    { source: "org-scope", target: "inventory-snapshot", label: "归属组织" },
+    { source: "org-scope", target: "purchase-order", label: "归属组织" },
+    { source: "org-scope", target: "purchase-receipt", label: "归属组织" },
+    { source: "org-scope", target: "supplier-price", label: "归属组织" },
+    { source: "sales-order", target: "sales-outbound", label: "产生出库" },
+    { source: "sales-outbound", target: "material-master", label: "关联物料" },
+    { source: "inventory-snapshot", target: "material-master", label: "记录库存" },
+    { source: "purchase-order", target: "material-master", label: "采购物料" },
+    { source: "purchase-receipt", target: "material-master", label: "收货物料" },
+    { source: "purchase-order", target: "purchase-receipt", label: "形成收货" },
+    { source: "supplier-price", target: "material-master", label: "维护价格" },
+    { source: "purchase-order", target: "supplier-price", label: "引用价格" },
+    ...materialEdges,
+  ].filter((edge) => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target));
   return {
     nodes,
     edges,
@@ -529,22 +729,45 @@ function createGraphReplayStages(graphPayload) {
     return [{ label: "完成图谱", data: graphPayload }];
   }
   const idsByType = (matcher) =>
-    new Set(nodes.filter((node) => matcher(String(node.nodeType || node.type || "").toLowerCase(), String(node.id || ""))).map((node) => node.id));
+    new Set(
+      nodes
+        .filter((node) =>
+          matcher(String(node.nodeType || node.type || "").toLowerCase(), String(node.id || "")),
+        )
+        .map((node) => node.id),
+    );
   const rootIds = idsByType((type, id) => id === "scenario-root" || type.includes("scenario"));
   if (rootIds.size === 0 && nodes[0]?.id) {
     rootIds.add(nodes[0].id);
   }
   const orgIds = idsByType((type, id) => type.includes("org") || id.includes("org"));
   const salesIds = idsByType((type, id) => type.includes("sales") || id.includes("sales"));
-  const inventoryIds = idsByType((type, id) => type.includes("inventory") || id.includes("inventory"));
+  const inventoryIds = idsByType(
+    (type, id) => type.includes("inventory") || id.includes("inventory"),
+  );
   const purchaseIds = idsByType((type, id) => type.includes("purchase") || id.includes("purchase"));
   const priceIds = idsByType((type, id) => type.includes("supplier") || id.includes("price"));
-  const materialMasterIds = idsByType((type, id) => type === "material" || id === "material-master");
-  const materialIds = idsByType((type, id) => type.includes("material") || id.startsWith("material:"));
+  const materialMasterIds = idsByType(
+    (type, id) => type === "material" || id === "material-master",
+  );
+  const materialIds = idsByType(
+    (type, id) => type.includes("material") || id.startsWith("material:"),
+  );
   const stages = [
     { label: "读取场景", ids: rootIds },
     { label: "载入组织范围", ids: new Set([...rootIds, ...orgIds]) },
-    { label: "连接业务单据", ids: new Set([...rootIds, ...orgIds, ...salesIds, ...inventoryIds, ...purchaseIds, ...priceIds, ...materialMasterIds]) },
+    {
+      label: "连接业务单据",
+      ids: new Set([
+        ...rootIds,
+        ...orgIds,
+        ...salesIds,
+        ...inventoryIds,
+        ...purchaseIds,
+        ...priceIds,
+        ...materialMasterIds,
+      ]),
+    },
     { label: "展开物料关系", ids: new Set(nodes.map((node) => node.id)) },
     { label: "完成关系图谱", ids: new Set(nodes.map((node) => node.id)) },
   ];
@@ -646,7 +869,9 @@ async function renderGraph(graphPayload) {
           labelLineWidth: 4,
           size: (datum) => (String(datum?.id || "") === "scenario-root" ? 46 : 34),
           fill: (datum) => {
-            const riskLevel = String(datum.riskLevel || "").trim().toLowerCase();
+            const riskLevel = String(datum.riskLevel || "")
+              .trim()
+              .toLowerCase();
             if (riskLevel === "high") {
               return "#f97316";
             }
@@ -827,7 +1052,8 @@ function openMetricChartModal(metricKey, metricLabel, recommendations) {
     </article>
   `;
   modal.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("[data-sandbox-modal-close]") : null;
+    const target =
+      event.target instanceof Element ? event.target.closest("[data-sandbox-modal-close]") : null;
     if (target) {
       closeMetricModal();
     }
@@ -839,14 +1065,64 @@ function openMetricChartModal(metricKey, metricLabel, recommendations) {
 
 function getMetadataOptions(payload) {
   const recommendations = Array.isArray(payload?.recommendations) ? payload.recommendations : [];
-  const hasPrice = recommendations.some((item) => Number(item?.unitCost || item?.estimatedCost) > 0);
+  const hasPrice = recommendations.some(
+    (item) => Number(item?.unitCost || item?.estimatedCost) > 0,
+  );
   return [
-    { id: "sales_order", label: "销售订单", description: "订单需求、客户与物料订货节奏", checked: true, rowCount: 0, status: "fallback", periodMode: "range" },
-    { id: "sales_outbound", label: "销售出库", description: "近月实际出库与客户需求波动", checked: true, rowCount: 0, status: "fallback", periodMode: "range" },
-    { id: "material_master", label: "物料主数据", description: "物料编码、名称与基础属性", checked: true, rowCount: recommendations.length, status: "fallback", periodMode: "snapshot" },
-    { id: "purchase_order", label: "采购订单", description: "历史采购节奏与未结订单", checked: true, rowCount: 0, status: "fallback", periodMode: "snapshot" },
-    { id: "supplier_price", label: "供应商/价格参考", description: hasPrice ? "采购/销售单价兜底价格" : "价格数据未充分覆盖", checked: hasPrice, rowCount: 0, status: "fallback", periodMode: "snapshot" },
-    { id: "org_scope", label: "组织范围", description: "租户成员可见组织隔离边界", checked: true, rowCount: 0, status: "fallback", periodMode: "snapshot" },
+    {
+      id: "sales_order",
+      label: "销售订单",
+      description: "订单需求、客户与物料订货节奏",
+      checked: true,
+      rowCount: 0,
+      status: "fallback",
+      periodMode: "range",
+    },
+    {
+      id: "sales_outbound",
+      label: "销售出库",
+      description: "近月实际出库与客户需求波动",
+      checked: true,
+      rowCount: 0,
+      status: "fallback",
+      periodMode: "range",
+    },
+    {
+      id: "material_master",
+      label: "物料主数据",
+      description: "物料编码、名称与基础属性",
+      checked: true,
+      rowCount: recommendations.length,
+      status: "fallback",
+      periodMode: "snapshot",
+    },
+    {
+      id: "purchase_order",
+      label: "采购订单",
+      description: "历史采购节奏与未结订单",
+      checked: true,
+      rowCount: 0,
+      status: "fallback",
+      periodMode: "snapshot",
+    },
+    {
+      id: "supplier_price",
+      label: "供应商/价格参考",
+      description: hasPrice ? "采购/销售单价兜底价格" : "价格数据未充分覆盖",
+      checked: hasPrice,
+      rowCount: 0,
+      status: "fallback",
+      periodMode: "snapshot",
+    },
+    {
+      id: "org_scope",
+      label: "组织范围",
+      description: "租户成员可见组织隔离边界",
+      checked: true,
+      rowCount: 0,
+      status: "fallback",
+      periodMode: "snapshot",
+    },
   ];
 }
 
@@ -931,32 +1207,39 @@ function renderDatasetCard(dataset) {
 
 function normalizeMaterialCandidates(candidates) {
   const items = Array.isArray(candidates?.items) ? candidates.items : [];
-  return [...new Map(
-    items
-      .map((item) => {
-        const materialId = String(item?.materialId || item?.id || "").trim();
-        if (!materialId) {
-          return null;
-        }
-        const materialName = String(item?.materialName || item?.label || materialId).trim();
-        const materialCode = String(item?.materialCode || materialId).trim();
-        const searchText = [materialId, materialCode, materialName, item?.keyword]
-          .map((value) => String(value || "").trim().toLowerCase())
-          .filter(Boolean)
-          .join(" ");
-        return [
-          materialId,
-          {
+  return [
+    ...new Map(
+      items
+        .map((item) => {
+          const materialId = String(item?.materialId || item?.id || "").trim();
+          if (!materialId) {
+            return null;
+          }
+          const materialName = String(item?.materialName || item?.label || materialId).trim();
+          const materialCode = String(item?.materialCode || materialId).trim();
+          const searchText = [materialId, materialCode, materialName, item?.keyword]
+            .map((value) =>
+              String(value || "")
+                .trim()
+                .toLowerCase(),
+            )
+            .filter(Boolean)
+            .join(" ");
+          return [
             materialId,
-            materialName,
-            materialCode,
-            searchText,
-            checked: false,
-          },
-        ];
-      })
-      .filter(Boolean),
-  ).values()];
+            {
+              materialId,
+              materialName,
+              materialCode,
+              activityQty: Number(item?.activityQty || 0),
+              searchText,
+              checked: false,
+            },
+          ];
+        })
+        .filter(Boolean),
+    ).values(),
+  ];
 }
 
 function renderMaterialCandidateCard(candidate) {
@@ -972,12 +1255,14 @@ function renderMaterialCandidateCard(candidate) {
 }
 
 function classifyMaterialCandidate(candidate) {
-  const name = String(candidate?.materialName || "").trim().toLowerCase();
-  const code = String(candidate?.materialCode || "").trim().toLowerCase();
+  const name = String(candidate?.materialName || "")
+    .trim()
+    .toLowerCase();
+  const code = String(candidate?.materialCode || "")
+    .trim()
+    .toLowerCase();
   const text = `${name} ${code}`;
-  if (
-    /乌龙|红茶|绿茶|茉莉|铁观音|普洱|茶|冻顶|龙井|岩茶|白桃乌龙|桂花乌龙/.test(text)
-  ) {
+  if (/乌龙|红茶|绿茶|茉莉|铁观音|普洱|茶|冻顶|龙井|岩茶|白桃乌龙|桂花乌龙/.test(text)) {
     return "茶基底";
   }
   if (/奶|淡奶油|稀奶油|芝士|炼奶|牛乳|牛奶|乳/.test(text)) {
@@ -1037,7 +1322,10 @@ function renderMaterialPickerSummary(state) {
   const selectedCount = selectedMaterials.length;
   const summaryText =
     selectedCount > 0
-      ? selectedMaterials.slice(0, 3).map((candidate) => candidate.materialName).join("、")
+      ? selectedMaterials
+          .slice(0, 3)
+          .map((candidate) => candidate.materialName)
+          .join("、")
       : "运行前至少选择一个真实原料";
   const extraCount = selectedCount > 3 ? `，另 ${selectedCount - 3} 个` : "";
   const countLabel = selectedCount > 0 ? `已选 ${selectedCount} 个原料` : "尚未选择原料";
@@ -1053,12 +1341,15 @@ function renderMaterialPickerSummary(state) {
 
 function renderMaterialPickerModalContent(state) {
   const query = state.materialCandidateQuery.trim().toLowerCase();
-  const visibleCandidates = state.materialCandidates.filter((candidate) =>
-    !query || candidate.searchText.includes(query),
+  const visibleCandidates = state.materialCandidates.filter(
+    (candidate) => !query || candidate.searchText.includes(query),
   );
   const selectedMaterials = state.materialCandidates.filter((candidate) => candidate.checked);
   const selectedCount = selectedMaterials.length;
-  const hasSparseCandidates = state.materialStatus === "ready" && state.materialCandidates.length > 0 && state.materialCandidates.length <= 3;
+  const hasSparseCandidates =
+    state.materialStatus === "ready" &&
+    state.materialCandidates.length > 0 &&
+    state.materialCandidates.length <= 3;
   return `
     <section class="oc-sandbox-view-modal" data-sandbox-material-picker-modal>
       <div class="oc-sandbox-view-modal-backdrop" data-sandbox-material-picker-close></div>
@@ -1083,12 +1374,16 @@ function renderMaterialPickerModalContent(state) {
             ${selectedMaterials.map((candidate) => `<span class="oc-sandbox-selected-materials__chip" data-sandbox-selected-material-chip>${escapeHtml(candidate.materialName)}</span>`).join("")}
           </div>
         </section>
-        ${hasSparseCandidates ? `
+        ${
+          hasSparseCandidates
+            ? `
           <div class="oc-sandbox-view-plan-alert oc-sandbox-view-plan-alert--material" data-sandbox-material-sparse-hint>
             <span>当前历史依据期间仅匹配 <strong>${escapeHtml(String(state.materialCandidates.length))} 个原料</strong>，可切换到更有业务数据的期间后再选择。</span>
             ${state.recommendedInputPeriod ? `<button type="button" class="oc-sandbox-view-ghost" data-sandbox-material-apply-recommended-period>带入推荐期间</button>` : ""}
           </div>
-        ` : ""}
+        `
+            : ""
+        }
         <div class="oc-sandbox-view-metadata-grid oc-sandbox-view-metadata-grid--material-picker" data-sandbox-material-candidates>
           ${renderMaterialCandidateGroups(visibleCandidates)}
         </div>
@@ -1130,7 +1425,9 @@ function readSimulationSpec(root, state) {
     return input instanceof HTMLInputElement ? input.value : state.periods[name];
   };
   const selectedDatasetIds = new Set(
-    Array.from(root.querySelectorAll("[data-dataset-card] input:checked")).map((input) => input.value),
+    Array.from(root.querySelectorAll("[data-dataset-card] input:checked")).map(
+      (input) => input.value,
+    ),
   );
   const selectedMaterialIds = new Set(
     state.materialCandidates
@@ -1180,7 +1477,11 @@ function hasDemandEvidenceForRun(spec) {
 }
 
 function getRecommendedInputPeriodNotice(state, spec) {
-  if (state.catalogStatus !== "ready" || hasDemandEvidenceForRun(spec) || !state.recommendedInputPeriod) {
+  if (
+    state.catalogStatus !== "ready" ||
+    hasDemandEvidenceForRun(spec) ||
+    !state.recommendedInputPeriod
+  ) {
     return "";
   }
   const sourceLabel =
@@ -1195,14 +1496,19 @@ function getRecommendedInputPeriodNotice(state, spec) {
 }
 
 function renderSimulationPlan(spec, catalogStatus, state = null) {
-  const selectedDatasets = spec.datasets.filter((dataset) => spec.selectedDatasetIds.has(dataset.id));
+  const selectedDatasets = spec.datasets.filter((dataset) =>
+    spec.selectedDatasetIds.has(dataset.id),
+  );
   const selectedNames = selectedDatasets.map((dataset) => dataset.label).join("、") || "尚未选择";
   const selectedMaterials = spec.materialCandidates.filter((candidate) =>
     spec.selectedMaterialIds.has(candidate.materialId),
   );
   const selectedMaterialNames =
     selectedMaterials.map((candidate) => candidate.materialName).join("、") || "尚未选择";
-  const rows = selectedDatasets.reduce((total, dataset) => total + (Number(dataset.rowCount) || 0), 0);
+  const rows = selectedDatasets.reduce(
+    (total, dataset) => total + (Number(dataset.rowCount) || 0),
+    0,
+  );
   const planNote =
     catalogStatus === "ready"
       ? "数据目录来自当前租户绑定数据源和成员组织范围。"
@@ -1229,12 +1535,12 @@ function renderSimulationPlan(spec, catalogStatus, state = null) {
 function shouldAutoApplyRecommendedPeriod(state) {
   return Boolean(
     !state.autoAdjustedToRecommendedPeriod &&
-      !state.periodTouchedByUser &&
-      state.recommendedInputPeriod &&
-      state.materialCandidates.length > 0 &&
-      state.materialCandidates.length <= 3 &&
-      (state.periods.inputStartDate !== state.recommendedInputPeriod.startDate ||
-        state.periods.inputEndDate !== state.recommendedInputPeriod.endDate),
+    !state.periodTouchedByUser &&
+    state.recommendedInputPeriod &&
+    state.materialCandidates.length > 0 &&
+    state.materialCandidates.length <= 3 &&
+    (state.periods.inputStartDate !== state.recommendedInputPeriod.startDate ||
+      state.periods.inputEndDate !== state.recommendedInputPeriod.endDate),
   );
 }
 
@@ -1263,8 +1569,10 @@ function applyRecommendedInputPeriod(root, state) {
 async function refreshSandboxDataCatalog(root, payload, state) {
   const inputStart = root.querySelector('[data-sandbox-period="inputStartDate"]');
   const inputEnd = root.querySelector('[data-sandbox-period="inputEndDate"]');
-  state.periods.inputStartDate = inputStart instanceof HTMLInputElement ? inputStart.value : state.periods.inputStartDate;
-  state.periods.inputEndDate = inputEnd instanceof HTMLInputElement ? inputEnd.value : state.periods.inputEndDate;
+  state.periods.inputStartDate =
+    inputStart instanceof HTMLInputElement ? inputStart.value : state.periods.inputStartDate;
+  state.periods.inputEndDate =
+    inputEnd instanceof HTMLInputElement ? inputEnd.value : state.periods.inputEndDate;
   state.catalogStatus = "loading";
   state.catalogMessage = "正在刷新数据目录";
   updateSimulationPlan(root, state);
@@ -1323,14 +1631,14 @@ function bindMaterialPickerModal(root, state) {
   });
   modal.addEventListener("change", (event) => {
     const target =
-      event.target instanceof Element ? event.target.closest("[data-material-candidate-card] input") : null;
+      event.target instanceof Element
+        ? event.target.closest("[data-material-candidate-card] input")
+        : null;
     if (!(target instanceof HTMLInputElement)) {
       return;
     }
     state.materialCandidates = state.materialCandidates.map((candidate) =>
-      candidate.materialId === target.value
-        ? { ...candidate, checked: target.checked }
-        : candidate,
+      candidate.materialId === target.value ? { ...candidate, checked: target.checked } : candidate,
     );
     updateSimulationPlan(root, state);
     renderMaterialCandidates(root, state);
@@ -1452,7 +1760,9 @@ function updateRunStepState(root, activeIndex, statusMessage = "") {
 }
 
 function inferRunStepIndex(runStatus) {
-  const normalized = String(runStatus || "").trim().toLowerCase();
+  const normalized = String(runStatus || "")
+    .trim()
+    .toLowerCase();
   if (normalized === "queued") {
     return 1;
   }
@@ -1469,7 +1779,9 @@ async function pollSandboxRunUntilComplete(root, token, runId) {
   let attempts = 0;
   while (attempts < 60) {
     const status = await loadSandboxRunStatus(token, runId);
-    const normalizedStatus = String(status?.status || "running").trim().toLowerCase();
+    const normalizedStatus = String(status?.status || "running")
+      .trim()
+      .toLowerCase();
     const statusLabel =
       normalizedStatus === "queued"
         ? "正在排队等待执行"
@@ -1577,7 +1889,9 @@ function renderSimulationStart(payload, token = "") {
     if (taskType instanceof HTMLInputElement) {
       taskType.value = target.dataset.taskType || "自定义预测任务";
     }
-    root.querySelectorAll("[data-question]").forEach((item) => item.classList.remove("is-selected"));
+    root
+      .querySelectorAll("[data-question]")
+      .forEach((item) => item.classList.remove("is-selected"));
     target.classList.add("is-selected");
     updateSimulationPlan(root, state);
   });
@@ -1598,16 +1912,15 @@ function renderSimulationStart(payload, token = "") {
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    if (target.matches('[data-sandbox-period="inputStartDate"], [data-sandbox-period="inputEndDate"]')) {
+    if (
+      target.matches('[data-sandbox-period="inputStartDate"], [data-sandbox-period="inputEndDate"]')
+    ) {
       state.periodTouchedByUser = true;
       void refreshSandboxDataCatalog(root, payload, state);
       void refreshSandboxMaterialCandidates(root, state);
       return;
     }
-    if (
-      target.matches("[data-dataset-card] input") ||
-      target.matches("[data-sandbox-period]")
-    ) {
+    if (target.matches("[data-dataset-card] input") || target.matches("[data-sandbox-period]")) {
       updateSimulationPlan(root, state);
       renderMaterialCandidates(root, state);
     }
@@ -1621,7 +1934,10 @@ function renderSimulationStart(payload, token = "") {
       openMaterialPickerModal(root, state);
       return;
     }
-    const target = event.target instanceof Element ? event.target.closest("[data-apply-recommended-period]") : null;
+    const target =
+      event.target instanceof Element
+        ? event.target.closest("[data-apply-recommended-period]")
+        : null;
     if (!(target instanceof HTMLElement) || !state.recommendedInputPeriod) {
       return;
     }
@@ -1709,11 +2025,20 @@ function renderSandboxResults(payload, selectedMetadataIds = null, spec = null) 
   const summary = payload?.summary || {};
   const recommendations = Array.isArray(payload?.recommendations) ? payload.recommendations : [];
   const report = payload?.report || {};
+  const evidenceSummary = getEvidenceSummary(payload);
+  const availableProfiles = Array.isArray(evidenceSummary.availableProfiles)
+    ? evidenceSummary.availableProfiles
+    : ["balanced"];
+  let activeProfile = String(evidenceSummary.defaultProfile || "balanced").trim() || "balanced";
+  let showAllEvidence = false;
   const sourceGraph = createSourceRelationshipGraph(payload, selectedMetadataIds);
   const focusState = {
     materialId: "",
     materialName: "",
     metricKey: "",
+  };
+  const detailState = {
+    materialId: "",
   };
 
   document.title = sandboxName;
@@ -1742,10 +2067,30 @@ function renderSandboxResults(payload, selectedMetadataIds = null, spec = null) 
   const metrics = document.createElement("section");
   metrics.className = "oc-sandbox-view-metrics";
   const metricEntries = [
-    { label: "预测需求", value: formatNumber(summary.forecastDemandQty), key: "forecast", description: "点击查看需求 Top 物料" },
-    { label: "建议采购量", value: formatNumber(summary.recommendedPurchaseQty), key: "purchase", description: "点击查看建议采购结构" },
-    { label: "预计采购成本", value: formatNumber(summary.estimatedPurchaseCost), key: "cost", description: "点击查看成本分布" },
-    { label: "缺料风险", value: normalizeRiskLabel(summary.shortageRiskLevel), key: "risk", description: "点击查看风险占比" },
+    {
+      label: "预测需求",
+      value: formatNumber(summary.forecastDemandQty),
+      key: "forecast",
+      description: "点击查看需求 Top 物料",
+    },
+    {
+      label: "建议采购量",
+      value: formatNumber(summary.recommendedPurchaseQty),
+      key: "purchase",
+      description: "点击查看建议采购结构",
+    },
+    {
+      label: "预计采购成本",
+      value: formatNumber(summary.estimatedPurchaseCost),
+      key: "cost",
+      description: "点击查看成本分布",
+    },
+    {
+      label: "缺料风险",
+      value: normalizeRiskLabel(summary.shortageRiskLevel),
+      key: "risk",
+      description: "点击查看风险占比",
+    },
   ];
   metricEntries.forEach((entry) => {
     const metric = createMetric(entry.label, entry.value, entry.description);
@@ -1774,44 +2119,60 @@ function renderSandboxResults(payload, selectedMetadataIds = null, spec = null) 
 
   const right = document.createElement("section");
   right.className = "oc-sandbox-view-panel";
-  const rowsHtml = recommendations
-    .map(
-      (item) => `
-        <tr data-recommendation-row data-material-id="${escapeAttribute(item.materialId || "")}" data-material-name="${escapeAttribute(getMaterialDisplayName(item))}">
-          <td>${escapeHtml(item.materialId || "-")}</td>
-          <td>${escapeHtml(getMaterialDisplayName(item))}</td>
-          <td>${formatNumber(item.recommendedQty)}</td>
-          <td>${formatNumber(item.estimatedCost)}</td>
-        </tr>`,
-    )
-    .join("");
   const bulletsHtml = Array.isArray(report.bullets)
     ? report.bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
     : "";
-  right.innerHTML = `
-    <h2 class="oc-sandbox-view-section-title">采购建议</h2>
-    <p class="oc-sandbox-view-subtitle oc-sandbox-view-focus-caption" data-sandbox-focus-caption>当前聚焦 全部物料</p>
-    <table class="oc-sandbox-view-table">
-      <thead>
-        <tr>
-          <th>物料编码</th>
-          <th>物料名称</th>
-          <th>建议数量</th>
-          <th>预计成本</th>
-        </tr>
-      </thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
-    <h2 class="oc-sandbox-view-section-title" style="margin-top:18px;">解释报告</h2>
-    <p class="oc-sandbox-view-subtitle">${escapeHtml(report.headline || "")}</p>
-    <ul class="oc-sandbox-view-report">${bulletsHtml}</ul>
-  `;
+  function syncRecommendationPanel() {
+    const ranked = rankRecommendationsByProfile(recommendations, activeProfile);
+    const visible = showAllEvidence
+      ? ranked
+      : ranked.slice(0, Number(evidenceSummary.defaultVisibleCount || 5) || 5);
+    if (!detailState.materialId && visible[0]?.materialId) {
+      detailState.materialId = String(visible[0].materialId || "").trim();
+    }
+    const selectedItem =
+      visible.find((item) => String(item?.materialId || "").trim() === detailState.materialId) ||
+      visible[0] ||
+      null;
+    right.innerHTML = `
+      <h2 class="oc-sandbox-view-section-title">采购建议</h2>
+      ${renderEvidenceProfileOptions(availableProfiles, activeProfile)}
+      <p class="oc-sandbox-view-subtitle oc-sandbox-view-focus-caption" data-sandbox-focus-caption>当前聚焦 ${escapeHtml(selectedItem ? getMaterialDisplayName(selectedItem) : "全部物料")}</p>
+      <table class="oc-sandbox-view-table">
+        <thead>
+          <tr>
+            <th>物料编码</th>
+            <th>物料名称</th>
+            <th>建议数量</th>
+            <th>预计成本</th>
+            <th>影响分</th>
+            <th>风险</th>
+          </tr>
+        </thead>
+        <tbody>${renderRecommendationRows(visible)}</tbody>
+      </table>
+      ${!showAllEvidence && ranked.length > visible.length ? '<button class="oc-sandbox-view-ghost oc-sandbox-view-evidence-more" type="button" data-sandbox-show-all-evidence>查看全部物料依据</button>' : ""}
+      <div data-sandbox-evidence-slot>${selectedItem ? renderEvidencePanel(selectedItem) : ""}</div>
+      <h2 class="oc-sandbox-view-section-title" style="margin-top:18px;">解释报告</h2>
+      <p class="oc-sandbox-view-subtitle">${escapeHtml(report.headline || "")}</p>
+      <ul class="oc-sandbox-view-report">${bulletsHtml}</ul>
+    `;
+    right.querySelectorAll("[data-recommendation-row]").forEach((row) => {
+      if (!(row instanceof HTMLElement)) {
+        return;
+      }
+      row.classList.toggle("is-active", row.dataset.materialId === detailState.materialId);
+    });
+    updateEvidencePanel(right, selectedItem);
+  }
 
   grid.append(left, right);
   root.append(metrics, grid);
   document.body.replaceChildren(root);
+  syncRecommendationPanel();
   metrics.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("[data-metric-label]") : null;
+    const target =
+      event.target instanceof Element ? event.target.closest("[data-metric-label]") : null;
     if (!(target instanceof HTMLElement)) {
       return;
     }
@@ -1860,24 +2221,57 @@ function renderSandboxResults(payload, selectedMetadataIds = null, spec = null) 
     }
     openMetricChartModal(metricKey, metricLabel, recommendations);
   });
-  right.querySelector("tbody")?.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("[data-recommendation-row]") : null;
+  right.addEventListener("click", (event) => {
+    const profileTarget =
+      event.target instanceof Element ? event.target.closest("[data-sandbox-profile]") : null;
+    if (profileTarget instanceof HTMLElement) {
+      activeProfile =
+        String(profileTarget.getAttribute("data-sandbox-profile") || "balanced").trim() ||
+        "balanced";
+      syncRecommendationPanel();
+      return;
+    }
+    const showAllTarget =
+      event.target instanceof Element
+        ? event.target.closest("[data-sandbox-show-all-evidence]")
+        : null;
+    if (showAllTarget instanceof HTMLElement) {
+      showAllEvidence = true;
+      syncRecommendationPanel();
+      return;
+    }
+    const target =
+      event.target instanceof Element ? event.target.closest("[data-recommendation-row]") : null;
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    focusState.materialId = String(target.dataset.materialId || "").trim();
+    detailState.materialId = String(target.dataset.materialId || "").trim();
+    focusState.materialId = detailState.materialId;
     focusState.materialName = String(target.dataset.materialName || "").trim() || "未命名物料";
     focusState.metricKey = "";
     right.querySelectorAll("[data-recommendation-row]").forEach((row) => {
+      if (!(row instanceof HTMLElement)) {
+        return;
+      }
       row.classList.toggle("is-active", row === target);
     });
+    const ranked = rankRecommendationsByProfile(recommendations, activeProfile);
+    const visible = showAllEvidence
+      ? ranked
+      : ranked.slice(0, Number(evidenceSummary.defaultVisibleCount || 5) || 5);
+    const selectedItem =
+      visible.find((item) => String(item?.materialId || "").trim() === detailState.materialId) ||
+      null;
     const caption = root.querySelector("[data-sandbox-focus-caption]");
     if (caption instanceof HTMLElement) {
       caption.textContent = `当前聚焦 ${focusState.materialName}`;
     }
+    updateEvidencePanel(right, selectedItem);
     syncGraphFocus(sourceGraph, focusState);
   });
-  root.querySelector("[data-sandbox-reset]")?.addEventListener("click", () => renderSimulationStart(payload, spec?.token || ""));
+  root
+    .querySelector("[data-sandbox-reset]")
+    ?.addEventListener("click", () => renderSimulationStart(payload, spec?.token || ""));
   left.querySelector("[data-sandbox-graph-play]")?.addEventListener("click", () => {
     if (window.__openclawSandboxGraphInstance && window.__openclawSandboxGraphReplayStages) {
       startGraphReplay(
@@ -1885,7 +2279,10 @@ function renderSandboxResults(payload, selectedMetadataIds = null, spec = null) 
         window.__openclawSandboxGraphReplayStages,
       );
       if (sandboxGraphFocusState?.materialId) {
-        window.setTimeout(() => syncGraphFocus(sourceGraph, sandboxGraphFocusState), GRAPH_REPLAY_DELAY_MS * 5);
+        window.setTimeout(
+          () => syncGraphFocus(sourceGraph, sandboxGraphFocusState),
+          GRAPH_REPLAY_DELAY_MS * 5,
+        );
       }
     }
   });

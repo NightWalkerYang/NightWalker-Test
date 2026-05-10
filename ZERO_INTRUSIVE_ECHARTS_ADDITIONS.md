@@ -20,6 +20,11 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `ZERO_INTRUSIVE_TENANT_RUNTIME_AND_ROUTING.md`
 - `ZERO_INTRUSIVE_TENANT_DEPLOYMENT_AND_OPERATIONS.md`
 - `ZERO_INTRUSIVE_KNOWLEDGE_GRAPH_TENANT_PLAN.md`
+- `ZERO_INTRUSIVE_SANDBOX_PREDICTION_EVIDENCE_V1.md`
+
+### Implementation Plans
+
+- `docs/superpowers/plans/2026-05-09-sandbox-prediction-evidence-v1.md`
 
 ### Userscript Bundle
 

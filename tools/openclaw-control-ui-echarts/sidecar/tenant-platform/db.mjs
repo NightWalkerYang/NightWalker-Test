@@ -553,6 +553,15 @@ function ensureDataSourceSchemaCompatibility(db) {
   if (!knownDataSourceColumns.has("status")) {
     db.exec("ALTER TABLE data_sources ADD COLUMN status TEXT NOT NULL DEFAULT 'active';");
   }
+  if (!knownDataSourceColumns.has("source_type")) {
+    db.exec("ALTER TABLE data_sources ADD COLUMN source_type TEXT NOT NULL DEFAULT 'kingdee_analytics';");
+  }
+  if (!knownDataSourceColumns.has("source_dbid")) {
+    db.exec("ALTER TABLE data_sources ADD COLUMN source_dbid TEXT;");
+  }
+  if (!knownDataSourceColumns.has("source_tenant_code")) {
+    db.exec("ALTER TABLE data_sources ADD COLUMN source_tenant_code TEXT;");
+  }
 
   const syncScheduleColumns = db.prepare("PRAGMA table_info(tenant_sync_schedules)").all();
   const knownSyncScheduleColumns = new Set(
@@ -859,8 +868,11 @@ function mapDataSourceRow(row) {
   return {
     id: String(row.id || "").trim(),
     name: String(row.name || "").trim(),
+    sourceType: String((row.sourceType ?? row.source_type) || "").trim(),
     status: normalizeDataSourceStatus(row.status),
     connectionJson: parseJsonObject(row.connectionJson ?? row.connection_json),
+    sourceDbid: String((row.sourceDbid ?? row.source_dbid) || "").trim() || null,
+    sourceTenantCode: String((row.sourceTenantCode ?? row.source_tenant_code) || "").trim() || null,
     k3cloudProfileJson: parseJsonObject(row.k3cloudProfileJson ?? row.k3cloud_profile_json),
     createdAt: String((row.createdAt ?? row.created_at) || "").trim(),
     updatedAt: String((row.updatedAt ?? row.updated_at) || "").trim(),
@@ -878,6 +890,119 @@ function mapTenantDataSourceBindingRow(row) {
     createdAt: String((row.createdAt ?? row.created_at) || "").trim(),
     updatedAt: String((row.updatedAt ?? row.updated_at) || "").trim(),
   };
+}
+
+function inferLegacyDataSourceTenantMetadata(dataSource) {
+  const connection = cloneJsonValue(dataSource?.connectionJson);
+  const profile = cloneJsonValue(dataSource?.k3cloudProfileJson);
+  const profileTenant = profile?.tenant && typeof profile.tenant === "object" ? profile.tenant : {};
+  return {
+    sourceType:
+      String(dataSource?.sourceType || "").trim() ||
+      String(connection?.sourceType || "").trim() ||
+      "kingdee_analytics",
+    sourceDbid:
+      String(dataSource?.sourceDbid || "").trim() ||
+      String(connection?.sourceDbid || "").trim() ||
+      String(profileTenant?.dbid || "").trim() ||
+      null,
+    sourceTenantCode:
+      String(dataSource?.sourceTenantCode || "").trim() ||
+      String(connection?.sourceTenantCode || "").trim() ||
+      String(profileTenant?.tenantId || "").trim() ||
+      String(profileTenant?.code || "").trim() ||
+      "demo-tenant",
+  };
+}
+
+function ensureDataSourceLegacyMetadata(db, dataSourceId) {
+  const dataSource = getDataSourceById(db, dataSourceId);
+  if (!dataSource) {
+    return null;
+  }
+  const inferred = inferLegacyDataSourceTenantMetadata(dataSource);
+  const needsUpdate =
+    String(dataSource.sourceType || "").trim() !== inferred.sourceType ||
+    String(dataSource.sourceDbid || "").trim() !== String(inferred.sourceDbid || "").trim() ||
+    String(dataSource.sourceTenantCode || "").trim() !==
+      String(inferred.sourceTenantCode || "").trim();
+  if (!needsUpdate) {
+    return dataSource;
+  }
+  db.prepare(
+    `UPDATE data_sources
+       SET source_type = @sourceType,
+           source_dbid = @sourceDbid,
+           source_tenant_code = @sourceTenantCode,
+           updated_at = @updatedAt
+     WHERE id = @id`,
+  ).run({
+    id: dataSource.id,
+    sourceType: inferred.sourceType,
+    sourceDbid: inferred.sourceDbid,
+    sourceTenantCode: inferred.sourceTenantCode,
+    updatedAt: nowIso(),
+  });
+  return getDataSourceById(db, dataSourceId);
+}
+
+function ensureTenantLegacyDefaultDataSourceBinding(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return null;
+  }
+  const existing = db
+    .prepare(
+      `SELECT tenant_id AS tenantId,
+              data_source_id AS dataSourceId,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+         FROM tenant_data_source_bindings
+        WHERE tenant_id = ?`,
+    )
+    .get(normalizedTenantId);
+  if (existing?.dataSourceId) {
+    return getTenantDataSourceBinding(db, normalizedTenantId);
+  }
+  const activeSources = db
+    .prepare(
+      `SELECT id
+         FROM data_sources
+        WHERE COALESCE(status, 'active') = 'active'
+        ORDER BY updated_at DESC, created_at DESC, id ASC`,
+    )
+    .all();
+  if (activeSources.length !== 1) {
+    return null;
+  }
+  const onlySourceId = String(activeSources[0]?.id || "").trim();
+  if (!onlySourceId) {
+    return null;
+  }
+  ensureDataSourceLegacyMetadata(db, onlySourceId);
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO tenant_data_source_bindings (
+       tenant_id,
+       data_source_id,
+       created_at,
+       updated_at
+     ) VALUES (
+       @tenantId,
+       @dataSourceId,
+       @createdAt,
+       @updatedAt
+     )
+     ON CONFLICT(tenant_id) DO UPDATE SET
+       data_source_id = excluded.data_source_id,
+       updated_at = excluded.updated_at`,
+  ).run({
+    tenantId: normalizedTenantId,
+    dataSourceId: onlySourceId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return getTenantDataSourceBinding(db, normalizedTenantId);
 }
 
 function mapTenantSyncScheduleRow(row) {
@@ -1035,6 +1160,29 @@ function syncTenantDerivedAgentProfiles(db, tenantId) {
     }
   }
   return changedCount;
+}
+
+export function resolveWorkspaceSandboxRunDir(workspaceDir, runId) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  const normalizedRunId = String(runId || "").trim();
+  if (!normalizedWorkspaceDir || !normalizedRunId) {
+    return "";
+  }
+  return path.join(normalizedWorkspaceDir, "Sandbox", "runs", normalizedRunId);
+}
+
+export function readWorkspaceSandboxRunJson(workspaceDir, runId, fileName, fallback = null) {
+  const runDir = resolveWorkspaceSandboxRunDir(workspaceDir, runId);
+  const normalizedFileName = String(fileName || "").trim();
+  if (!runDir || !normalizedFileName) {
+    return fallback;
+  }
+  try {
+    const targetPath = path.join(runDir, normalizedFileName);
+    return JSON.parse(fs.readFileSync(targetPath, "utf8"));
+  } catch {
+    return fallback;
+  }
 }
 
 function resolveConfiguredModelTokenPricing(params = {}) {
@@ -3814,8 +3962,11 @@ export function listDataSources(db, params = {}) {
     .prepare(
       `SELECT id,
               name,
+              source_type AS sourceType,
               status,
               connection_json AS connectionJson,
+              source_dbid AS sourceDbid,
+              source_tenant_code AS sourceTenantCode,
               k3cloud_profile_json AS k3cloudProfileJson,
               created_at AS createdAt,
               updated_at AS updatedAt
@@ -3837,8 +3988,11 @@ export function getDataSourceById(db, dataSourceId) {
       .prepare(
         `SELECT id,
                 name,
+                source_type AS sourceType,
                 status,
                 connection_json AS connectionJson,
+                source_dbid AS sourceDbid,
+                source_tenant_code AS sourceTenantCode,
                 k3cloud_profile_json AS k3cloudProfileJson,
                 created_at AS createdAt,
                 updated_at AS updatedAt
@@ -3921,7 +4075,7 @@ export function getTenantDataSourceBinding(db, tenantId) {
   if (!normalizedTenantId) {
     return null;
   }
-  return mapTenantDataSourceBindingRow(
+  const mapped = mapTenantDataSourceBindingRow(
     db
       .prepare(
         `SELECT b.tenant_id AS tenantId,
@@ -3935,6 +4089,13 @@ export function getTenantDataSourceBinding(db, tenantId) {
       )
       .get(normalizedTenantId),
   );
+  if (mapped?.dataSourceId) {
+    ensureDataSourceLegacyMetadata(db, mapped.dataSourceId);
+    return mapTenantDataSourceBindingRow({
+      ...mapped,
+    });
+  }
+  return ensureTenantLegacyDefaultDataSourceBinding(db, normalizedTenantId);
 }
 
 export function listTenantDataSourceBindings(db) {
@@ -5334,6 +5495,64 @@ export function listAssignedAgentVisualizationsForUser(db, params, configAgents 
       };
     }),
   );
+}
+
+function listWorkspaceSandboxFiles(workspaceDir) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir) {
+    return [];
+  }
+  const sandboxDir = path.join(normalizedWorkspaceDir, "Sandbox");
+  try {
+    if (!fs.existsSync(sandboxDir) || !fs.statSync(sandboxDir).isDirectory()) {
+      return [];
+    }
+    return fs
+      .readdirSync(sandboxDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /_sandbox\.json$/i.test(entry.name))
+      .map((entry) => entry.name)
+      .toSorted((left, right) => left.localeCompare(right, "zh-Hans-CN"))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function stripSandboxJsonSuffix(fileName) {
+  return String(fileName || "")
+    .trim()
+    .replace(/_sandbox\.json$/i, "");
+}
+
+const DEFAULT_SANDBOX_FILE_NAME = "采购沙盒模拟_sandbox.json";
+
+function createDefaultSandboxEntry(agent) {
+  const baseAgentId = String(agent?.baseAgentId || "").trim();
+  const sandboxName =
+    baseAgentId === "kingdee-cloud" ? "真实金蝶采购预测验证" : "采购沙盒模拟";
+  return {
+    ...agent,
+    sandboxFileName: DEFAULT_SANDBOX_FILE_NAME,
+    sandboxName,
+    sandboxRelativePath: path.posix.join("Sandbox", DEFAULT_SANDBOX_FILE_NAME),
+    isVirtualSandbox: true,
+  };
+}
+
+export function listAssignedAgentSandboxesForUser(db, params, configAgents = []) {
+  return listAssignedAgentsForUser(db, params, configAgents).flatMap((agent) => {
+    const sandboxFiles = listWorkspaceSandboxFiles(agent.derivedWorkspaceDir);
+    if (!sandboxFiles.length) {
+      return [createDefaultSandboxEntry(agent)];
+    }
+    return sandboxFiles.map((sandboxFileName) => ({
+      ...agent,
+      sandboxFileName,
+      sandboxName: stripSandboxJsonSuffix(sandboxFileName),
+      sandboxRelativePath: path.posix.join("Sandbox", sandboxFileName),
+      isVirtualSandbox: false,
+    }));
+  });
 }
 
 export function syncTenantUsageRecords(db, params) {

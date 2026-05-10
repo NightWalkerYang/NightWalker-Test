@@ -391,6 +391,8 @@ export function buildOverrideContent(extraMounts) {
     `      - ${tenantPlatformRuntimeNodeModulesHostMount}:${tenantPlatformRuntimeNodeModulesContainerPath}:ro`,
     `      - ${tenantPlatformRuntimePythonHostMount}:${tenantPlatformRuntimePythonContainerPath}:ro`,
     `      - ${sandboxSimulationStarterMount}`,
+    "    extra_hosts:",
+    '      - "host.docker.internal:host-gateway"',
     "    command:",
     "      [",
     '        "node",',

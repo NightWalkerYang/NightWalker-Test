@@ -17,8 +17,7 @@ body.oc-sandbox-view-state-body {
   box-sizing: border-box;
   background:
     linear-gradient(135deg, rgba(22, 163, 184, 0.14), transparent 34%),
-    linear-gradient(315deg, rgba(245, 158, 11, 0.12), transparent 30%),
-    #07111d;
+    linear-gradient(315deg, rgba(245, 158, 11, 0.12), transparent 30%), #07111d;
 }
 
 .oc-sandbox-view-shell--start {
@@ -349,8 +348,7 @@ body.oc-sandbox-view-state-body {
   border-radius: 8px;
   border: 1px solid rgba(45, 212, 191, 0.22);
   background:
-    linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(8, 19, 31, 0.94)),
-    rgba(8, 19, 31, 0.9);
+    linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(8, 19, 31, 0.94)), rgba(8, 19, 31, 0.9);
   color: #e8fffb;
   text-align: left;
 }
@@ -656,8 +654,7 @@ body.oc-sandbox-view-state-body {
   overflow: hidden;
   border: 1px solid rgba(143, 189, 219, 0.14);
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(10, 25, 39, 0.96), rgba(6, 15, 25, 0.97));
+  background: linear-gradient(180deg, rgba(10, 25, 39, 0.96), rgba(6, 15, 25, 0.97));
 }
 
 .oc-sandbox-view-graph-fallback {
@@ -714,6 +711,79 @@ body.oc-sandbox-view-state-body {
   color: #c8d6e4;
   font-size: 14px;
   line-height: 1.65;
+}
+
+.oc-sandbox-view-profile-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.oc-sandbox-view-profile-chip {
+  border: 1px solid rgba(143, 189, 219, 0.18);
+  border-radius: 999px;
+  background: rgba(10, 25, 39, 0.82);
+  color: #c8d6e4;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.oc-sandbox-view-profile-chip.is-active {
+  border-color: rgba(56, 189, 248, 0.66);
+  background: rgba(56, 189, 248, 0.14);
+  color: #f8fbff;
+}
+
+.oc-sandbox-view-evidence-more {
+  margin-top: 12px;
+}
+
+.oc-sandbox-view-evidence-panel {
+  margin-top: 16px;
+  border: 1px solid rgba(143, 189, 219, 0.14);
+  border-radius: 8px;
+  background: rgba(10, 25, 39, 0.82);
+  padding: 16px;
+}
+
+.oc-sandbox-view-evidence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.oc-sandbox-view-evidence-chart,
+.oc-sandbox-view-evidence-metrics {
+  border: 1px solid rgba(143, 189, 219, 0.12);
+  border-radius: 8px;
+  background: rgba(5, 17, 28, 0.72);
+  padding: 12px;
+}
+
+.oc-sandbox-view-evidence-mini-chart {
+  width: 100%;
+  min-height: 180px;
+}
+
+.oc-sandbox-view-evidence-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.oc-sandbox-view-evidence-metrics span {
+  display: block;
+  color: #9db8ce;
+  font-size: 12px;
+}
+
+.oc-sandbox-view-evidence-metrics strong {
+  display: block;
+  margin-top: 4px;
+  color: #f7fbff;
+  font-size: 16px;
 }
 
 .oc-sandbox-view-modal {
@@ -848,6 +918,10 @@ body.oc-sandbox-view-state-body {
 
   .oc-sandbox-view-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .oc-sandbox-view-evidence-grid {
+    grid-template-columns: 1fr;
   }
 }
 
