@@ -117,7 +117,7 @@ export function isRetryableAnalyticsConnectionError(error) {
   const code = readAnalyticsConnectionErrorCode(error);
   if (
     code &&
-    ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ETIMEDOUT", "ECONNRESET"].includes(code)
+    ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ETIMEDOUT", "ECONNRESET", "ENOENT"].includes(code)
   ) {
     return true;
   }
@@ -129,10 +129,12 @@ export function isRetryableAnalyticsConnectionError(error) {
   }
   return (
     message.includes("connect econnrefused") ||
+    message.includes("connect enoent") ||
     message.includes("getaddrinfo enotfound") ||
     message.includes("ehostunreach") ||
     message.includes("connect etimedout") ||
-    message.includes("connection terminated unexpectedly")
+    message.includes("connection terminated unexpectedly") ||
+    message.includes(".s.pgsql.5432")
   );
 }
 

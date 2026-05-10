@@ -10,7 +10,10 @@ import {
   buildTenantPlatformExtraDependencySpecs,
   buildTenantPlatformPythonRuntimeDockerArgs,
 } from "../../../tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs";
-import { buildAnalyticsConnectionCandidates } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs";
+import {
+  buildAnalyticsConnectionCandidates,
+  isRetryableAnalyticsConnectionError,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/data-source-client.mjs";
 
 describe("tenant platform runtime deps", () => {
   it("keeps pg in the zero-intrusive runtime dependency set", () => {
@@ -51,6 +54,7 @@ describe("tenant platform runtime deps", () => {
     expect(override).toContain(
       "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:ro",
     );
+    expect(override).toContain('      - "host.docker.internal:host-gateway"');
     expect(override).toContain("${OPENCLAW_WORKSPACE_DIR}:/srv/workspace-downloads:ro");
     expect(override).toContain(
       "${OPENCLAW_CONFIG_DIR}/workspace-agents:/srv/workspace-agent-downloads:ro",
@@ -121,5 +125,14 @@ describe("tenant platform runtime deps", () => {
         }),
       ]),
     );
+  });
+
+  it("treats unix-socket analytics connection misses as retryable inside containers", () => {
+    expect(isRetryableAnalyticsConnectionError({ code: "ENOENT" })).toBe(true);
+    expect(
+      isRetryableAnalyticsConnectionError({
+        message: "connect ENOENT /var/run/postgresql/.s.PGSQL.5432",
+      }),
+    ).toBe(true);
   });
 });
