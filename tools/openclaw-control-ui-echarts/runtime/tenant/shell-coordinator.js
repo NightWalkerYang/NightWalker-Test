@@ -1,9 +1,16 @@
 import {
   findBreadcrumb,
-  findChatSurface,
+  findContentRoot,
   findSidebar,
   findTopbarSearch,
 } from "../framework/dom-compat.js";
+
+const EMPTY_SHELL_READY = Object.freeze({
+  sidebar: false,
+  topbar: false,
+  breadcrumb: false,
+  content: false,
+});
 
 function getRoot(context) {
   if (context?.root instanceof Document || context?.root instanceof Element) {
@@ -21,9 +28,17 @@ function toShellReady(anchors) {
   };
 }
 
+function createSnapshot(shellReady) {
+  return {
+    shellReady: {
+      ...shellReady,
+    },
+  };
+}
+
 function applyShellReadyState(store, shellReady) {
   if (!store?.setState || !store?.getState) {
-    return shellReady;
+    return createSnapshot(shellReady);
   }
 
   const snapshot = store.getState();
@@ -43,20 +58,13 @@ export function createTenantShellCoordinator({ context, store, lifecycle } = {})
       sidebar: findSidebar(root),
       topbar: findTopbarSearch(root),
       breadcrumb: findBreadcrumb(root),
-      content: findChatSurface(root),
+      content: findContentRoot(root),
     };
   }
 
   function sync() {
     if (!active) {
-      return store?.getState?.() ?? {
-        shellReady: {
-          sidebar: false,
-          topbar: false,
-          breadcrumb: false,
-          content: false,
-        },
-      };
+      return store?.getState?.() ?? createSnapshot(EMPTY_SHELL_READY);
     }
 
     const anchors = resolveAnchors();
@@ -65,15 +73,10 @@ export function createTenantShellCoordinator({ context, store, lifecycle } = {})
 
   function cleanup() {
     if (!active) {
-      return store?.getState?.();
+      return store?.getState?.() ?? createSnapshot(EMPTY_SHELL_READY);
     }
     active = false;
-    return applyShellReadyState(store, {
-      sidebar: false,
-      topbar: false,
-      breadcrumb: false,
-      content: false,
-    });
+    return applyShellReadyState(store, EMPTY_SHELL_READY);
   }
 
   lifecycle?.addCleanup?.(cleanup);

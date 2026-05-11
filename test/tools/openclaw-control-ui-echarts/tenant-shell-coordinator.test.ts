@@ -31,7 +31,7 @@ function createShellMarkup() {
           <a href="/">Home</a>
         </nav>
       </header>
-      <main class="content--chat">
+      <main class="workspace-content">
         <section class="agent-chat__input">
           <textarea aria-label="消息输入"></textarea>
         </section>
@@ -60,7 +60,7 @@ describe("tenant shell coordinator", () => {
     expect(anchors.sidebar).toBe(document.querySelector(".sidebar-shell"));
     expect(anchors.topbar).toBe(document.querySelector(".topbar-search"));
     expect(anchors.breadcrumb).toBe(document.querySelector(".dashboard-header__breadcrumb"));
-    expect(anchors.content).toBe(document.querySelector(".content--chat"));
+    expect(anchors.content).toBe(document.querySelector(".workspace-content"));
   });
 
   it("creates and updates shell coordination state for sidebar and topbar readiness", () => {
@@ -99,7 +99,51 @@ describe("tenant shell coordinator", () => {
     });
   });
 
-  it("cleans up coordinator state and registered teardown behavior", () => {
+  it("returns a consistent shellReady snapshot for sync and cleanup without a store", () => {
+    createShellMarkup();
+    const lifecycle = createTenantLifecycle();
+    const coordinator = createTenantShellCoordinator({
+      context: createContext(),
+      lifecycle,
+    });
+
+    expect(coordinator.sync()).toEqual({
+      shellReady: {
+        sidebar: true,
+        topbar: true,
+        breadcrumb: true,
+        content: true,
+      },
+    });
+
+    expect(coordinator.cleanup()).toEqual({
+      shellReady: {
+        sidebar: false,
+        topbar: false,
+        breadcrumb: false,
+        content: false,
+      },
+    });
+
+    expect(coordinator.sync()).toEqual({
+      shellReady: {
+        sidebar: false,
+        topbar: false,
+        breadcrumb: false,
+        content: false,
+      },
+    });
+    expect(coordinator.cleanup()).toEqual({
+      shellReady: {
+        sidebar: false,
+        topbar: false,
+        breadcrumb: false,
+        content: false,
+      },
+    });
+  });
+
+  it("cleans up coordinator state through lifecycle-registered teardown behavior", () => {
     createShellMarkup();
     const store = createTenantRuntimeStore();
     const lifecycle = createTenantLifecycle();
@@ -114,8 +158,9 @@ describe("tenant shell coordinator", () => {
     coordinator.sync();
     expect(store.getState().shellReady.sidebar).toBe(true);
 
-    coordinator.cleanup();
+    const cleanupState = lifecycle.cleanup();
 
+    expect(cleanupState).toBeUndefined();
     expect(store.getState().shellReady).toEqual({
       sidebar: false,
       topbar: false,
@@ -134,5 +179,7 @@ describe("tenant shell coordinator", () => {
       breadcrumb: false,
       content: false,
     });
+
+    expect(coordinator.cleanup()).toEqual(store.getState());
   });
 });

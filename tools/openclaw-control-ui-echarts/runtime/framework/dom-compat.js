@@ -76,6 +76,13 @@ const CHAT_SURFACE_HINT_SELECTORS = [
   "main",
 ];
 
+const CONTENT_ROOT_HINT_SELECTORS = [
+  ".workspace-content",
+  "[data-testid*='content' i]",
+  "[role='main']",
+  "main",
+];
+
 const APP_HINT_SELECTORS = [
   OPENCLAW_APP_SELECTOR,
   "[data-openclaw-app]",
@@ -436,6 +443,26 @@ function scoreChatSurface(surface) {
   if (surface.matches(".content--chat")) {
     score += 220;
   }
+  return score;
+}
+
+function scoreContentRoot(candidate) {
+  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+    return -1000;
+  }
+  const signal = elementSignalText(candidate);
+  let score = 20;
+  if (candidate.matches(".workspace-content")) {
+    score += 260;
+  }
+  if (candidate.matches("[role='main']")) {
+    score += 120;
+  }
+  if (candidate.matches("main")) {
+    score += 100;
+  }
+  score += scoreByTokens(signal, ["content", "workspace", "main", "内容"], 12);
+  score -= scoreByTokens(signal, CHAT_SURFACE_TOKENS, 6);
   return score;
 }
 
@@ -840,6 +867,15 @@ export function findChatSurface(root = document) {
   }
 
   return pickBest(Array.from(candidates), (candidate) => scoreChatSurface(candidate)) ?? null;
+}
+
+export function findContentRoot(root = document) {
+  const searchRoot = toSearchRoot(root);
+  const candidates = queryAllBySelectors(searchRoot, CONTENT_ROOT_HINT_SELECTORS).filter(
+    (candidate) => candidate instanceof HTMLElement,
+  );
+  const match = pickBest(candidates, (candidate) => scoreContentRoot(candidate));
+  return match && scoreContentRoot(match) >= 40 ? match : null;
 }
 
 export function findClosestChatSurface(target) {
