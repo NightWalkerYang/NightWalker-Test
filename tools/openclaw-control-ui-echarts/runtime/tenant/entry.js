@@ -1,6 +1,5 @@
 import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { writeEchartsViewToken } from "../echarts-view/context.js";
-import { findSidebar, findSidebarUtilityGroup, findTopbarSearch } from "../framework/dom-compat.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import { SANDBOX_VIEW_ROUTE, isSandboxViewPublicPath, writeSandboxViewToken } from "../sandbox-view/context.js";
 import { createTenantApiClient } from "./api-client.js";
@@ -57,7 +56,11 @@ import {
 } from "./tenant-context.js";
 import { createTenantLifecycle } from "./lifecycle.js";
 import { createTenantRuntimeStore } from "./runtime-store.js";
-import { createTenantShellCoordinator } from "./shell-coordinator.js";
+import {
+  createTenantShellCoordinator,
+  findTenantShellTopbar,
+  listTenantShellSidebarRoots,
+} from "./shell-coordinator.js";
 import { bootUpdateLogDialogs, resetUpdateLogDialogsForTests } from "./update-log-dialog.js";
 import { createTenantViewRegistry } from "./view-registry.js";
 
@@ -469,64 +472,6 @@ function insertVisualizationSection(container, section) {
   container.insertBefore(section, firstSection ?? null);
 }
 
-function findTenantSidebar(scope = document) {
-  const compatSidebar = findSidebar(scope);
-  if (compatSidebar instanceof HTMLElement) {
-    return compatSidebar;
-  }
-  if (!(scope instanceof Element || scope instanceof Document)) {
-    return null;
-  }
-  return scope.querySelector(".sidebar-nav, aside[aria-label*='navigation' i], nav") ?? null;
-}
-
-function listTenantSidebarRoots(scope = document) {
-  if (!(scope instanceof Element || scope instanceof Document)) {
-    return [];
-  }
-  const roots = new Set();
-  const direct = findTenantSidebar(scope);
-  if (direct instanceof HTMLElement) {
-    roots.add(direct);
-  }
-  for (const candidate of scope.querySelectorAll(
-    ".sidebar-nav, aside[aria-label*='navigation' i], nav",
-  )) {
-    if (!(candidate instanceof HTMLElement)) {
-      continue;
-    }
-    const resolved = findTenantSidebar(candidate);
-    if (resolved instanceof HTMLElement && resolved === candidate) {
-      roots.add(candidate);
-    }
-  }
-  return Array.from(roots);
-}
-
-function findTenantSidebarUtility(scope = document) {
-  const compatUtility = findSidebarUtilityGroup(scope);
-  if (compatUtility instanceof HTMLElement) {
-    return compatUtility;
-  }
-  if (!(scope instanceof Element || scope instanceof Document)) {
-    return null;
-  }
-  return scope.querySelector(".sidebar-utility-group, .sidebar-shell__footer, footer") ?? null;
-}
-
-function findTenantTopbarSearch(scope = document) {
-  const compatSearch = findTopbarSearch(scope);
-  if (compatSearch instanceof HTMLElement) {
-    return compatSearch;
-  }
-  if (!(scope instanceof Element || scope instanceof Document)) {
-    return null;
-  }
-  return (
-    scope.querySelector(".topbar-search, [role='search'], button[aria-label*='搜索' i]") ?? null
-  );
-}
-
 function listDirectMemberVisualizationSections(container) {
   if (!(container instanceof HTMLElement)) {
     return [];
@@ -634,7 +579,7 @@ async function syncMemberVisualizationSection(container) {
 
 function syncAllMemberVisualizationSections(root = document) {
   const scope = root instanceof Element || root instanceof Document ? root : document;
-  for (const container of listTenantSidebarRoots(scope)) {
+  for (const container of listTenantShellSidebarRoots(scope)) {
     void syncMemberVisualizationSection(container);
   }
 }
@@ -765,7 +710,7 @@ async function syncMemberSandboxSection(container) {
 
 function syncAllMemberSandboxSections(root = document) {
   const scope = root instanceof Element || root instanceof Document ? root : document;
-  for (const container of listTenantSidebarRoots(scope)) {
+  for (const container of listTenantShellSidebarRoots(scope)) {
     void syncMemberSandboxSection(container);
   }
 }
@@ -1332,7 +1277,7 @@ function renderProfileDialog(session) {
 }
 
 function syncPlatformTopbarMeta(session) {
-  const search = findTenantTopbarSearch(document);
+  const search = findTenantShellTopbar(document);
   if (!(search instanceof HTMLElement)) {
     return;
   }
@@ -1376,7 +1321,7 @@ function syncPlatformTopbarMeta(session) {
 }
 
 function clearPlatformTopbarMeta() {
-  const search = findTenantTopbarSearch(document);
+  const search = findTenantShellTopbar(document);
   if (!(search instanceof HTMLElement)) {
     return;
   }
@@ -1524,7 +1469,7 @@ export function bootTenantEntry() {
   bootTenantRouteSync();
   tenantEntryLifecycle = createTenantLifecycle();
   const shellStore = createTenantRuntimeStore();
-  createTenantShellCoordinator({
+  const shellCoordinator = createTenantShellCoordinator({
     lifecycle: tenantEntryLifecycle,
     store: shellStore,
   });
@@ -1569,47 +1514,38 @@ export function bootTenantEntry() {
     }
     topbarRegistry.findMatchingView(context)?.render?.(context);
     if (!isAuthView && isShellRole) {
-      for (const container of listTenantSidebarRoots(scope)) {
-        ensureSidebarRouteHandlers(container);
-        ensureManagementSection(container);
-        syncSidebarNavForRole(container, role);
-        if (role === "member") {
-          void syncMemberVisualizationSection(container);
-          void syncMemberSandboxSection(container);
-        }
-      }
-    }
-
-    const directUtility = scope instanceof Element ? findTenantSidebarUtility(scope) : null;
-    if (directUtility instanceof HTMLElement && directUtility === scope) {
-      if (!role) {
-        ensureTenantUtilityLink(scope);
-      }
-      syncSidebarUtilityForRole(scope, role);
-    }
-    for (const container of scope.querySelectorAll("div, footer, section")) {
-      if (findTenantSidebarUtility(container) !== container) {
-        continue;
-      }
-      if (!role) {
-        ensureTenantUtilityLink(container);
-      }
-      syncSidebarUtilityForRole(container, role);
+      shellCoordinator.forEachShellSection(scope, {
+        onSidebar(container) {
+          ensureSidebarRouteHandlers(container);
+          ensureManagementSection(container);
+          syncSidebarNavForRole(container, role);
+          if (role === "member") {
+            void syncMemberVisualizationSection(container);
+            void syncMemberSandboxSection(container);
+          }
+        },
+        onUtility(container) {
+          if (!role) {
+            ensureTenantUtilityLink(container);
+          }
+          syncSidebarUtilityForRole(container, role);
+        },
+      });
+    } else {
+      shellCoordinator.forEachShellSection(scope, {
+        onUtility(container) {
+          if (!role) {
+            ensureTenantUtilityLink(container);
+          }
+          syncSidebarUtilityForRole(container, role);
+        },
+      });
     }
   };
   tenantEntryRouteCleanup = createTenantRouteDrivenScanner(scan, {
     root: document,
     observeTarget: document.documentElement,
-    isRelevantNode(node) {
-      return Boolean(
-        node.closest?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
-          findTenantSidebarUtility(node) ||
-          findTenantTopbarSearch(node) ||
-          node.querySelector?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
-          node.querySelector?.(".sidebar-utility-group, .sidebar-shell__footer, footer") ||
-          node.querySelector?.(".topbar-search, [role='search'], button[aria-label*='搜索' i]"),
-      );
-    },
+    isRelevantNode: shellCoordinator.isRelevantNode,
   });
   tenantEntryLifecycle.addCleanup(tenantEntryRouteCleanup);
   tenantEntryLifecycle.addCleanup(clearMemberVisualizationPolling);
