@@ -28,7 +28,7 @@ const sandboxSimulationStarterMount =
   "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro";
 const tenantPlatformRuntimePackageSpecs = Object.freeze(["pg@8.20.0"]);
 const tenantPlatformAptPackages =
-  "${OPENCLAW_DOCKER_APT_PACKAGES:-python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5}";
+  "python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5";
 const tenantPlatformHostPostgresSocketMount = fs.existsSync("/var/run/postgresql")
   ? "/var/run/postgresql:/var/run/postgresql:ro"
   : "";

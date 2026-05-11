@@ -46,7 +46,7 @@ describe("tenant platform runtime deps", () => {
       "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules:/app/tools/openclaw-control-ui-echarts/node_modules:ro",
     );
     expect(override).toContain(
-      "OPENCLAW_DOCKER_APT_PACKAGES: ${OPENCLAW_DOCKER_APT_PACKAGES:-python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5}",
+      "OPENCLAW_DOCKER_APT_PACKAGES: python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5",
     );
     expect(override).toContain(
       "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro",
