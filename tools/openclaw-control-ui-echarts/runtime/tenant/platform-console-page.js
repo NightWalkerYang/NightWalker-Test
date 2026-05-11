@@ -1,6 +1,7 @@
 import { createTenantApiClient } from "./api-client.js";
 import {
   createPlatformConsoleControllerState,
+  formatNumber,
   isLocalEdition,
   refreshPlatformConsole,
   resetPlatformSectionState,
@@ -270,16 +271,16 @@ async function revokeSelectedTenantAgents(root, controller) {
         setFeedback(
           root,
           refreshError instanceof Error
-            ? `已撤回租户“${tenantLabel}”的 ${revokedTenantAgentCount} 个 Agent，但列表刷新失败：${refreshError.message}`
-            : `已撤回租户“${tenantLabel}”的 ${revokedTenantAgentCount} 个 Agent，但列表刷新失败。`,
+            ? `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent，但列表刷新失败：${refreshError.message}`
+            : `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent，但列表刷新失败。`,
           true,
         );
         return;
       }
       const successMessage =
         revokedAssignmentCount > 0
-          ? `已撤回租户“${tenantLabel}”的 ${revokedTenantAgentCount} 个 Agent，并同步失效 ${revokedAssignmentCount} 条成员分配。`
-          : `已撤回租户“${tenantLabel}”的 ${revokedTenantAgentCount} 个 Agent。`;
+          ? `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent，并同步失效 ${formatNumber(revokedAssignmentCount)} 条成员分配。`
+          : `已撤回租户“${tenantLabel}”的 ${formatNumber(revokedTenantAgentCount)} 个 Agent。`;
       setFeedback(root, successMessage);
       return;
     }
@@ -955,13 +956,13 @@ async function handleSubmit(root, controller, event) {
           setFeedback(
             root,
             refreshError instanceof Error
-              ? `已向租户“${tenantLabel}”下发 ${assignedAgentCount} 个 Agent，但列表刷新失败：${refreshError.message}`
-              : `已向租户“${tenantLabel}”下发 ${assignedAgentCount} 个 Agent，但列表刷新失败。`,
+              ? `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent，但列表刷新失败：${refreshError.message}`
+              : `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent，但列表刷新失败。`,
             true,
           );
           return;
         }
-        setFeedback(root, `已向租户“${tenantLabel}”下发 ${assignedAgentCount} 个 Agent。`);
+        setFeedback(root, `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent。`);
         return;
       }
       const currentDialog = controller.assignTenantAgentDialog;
