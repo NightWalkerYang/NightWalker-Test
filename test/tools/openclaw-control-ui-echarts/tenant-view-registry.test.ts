@@ -4,26 +4,28 @@ import {
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/view-registry.js";
 
 describe("tenant view registry", () => {
-  it("creates a registry from registered views", () => {
-    const views = [
+  it("creates a registry that can find a registered matching view", () => {
+    const matchingView = {
+      id: "tenant-usage-stats",
+      match: () => true,
+      mount: vi.fn(),
+      unmount: vi.fn(),
+      sync: vi.fn(),
+    };
+
+    const registry = createTenantViewRegistry([
       {
         id: "tenant-overview",
         match: () => false,
         mount: vi.fn(),
         unmount: vi.fn(),
       },
-      {
-        id: "tenant-usage-stats",
-        match: () => true,
-        mount: vi.fn(),
-        unmount: vi.fn(),
-        sync: vi.fn(),
-      },
-    ];
+      matchingView,
+    ]);
 
-    const registry = createTenantViewRegistry(views);
-
-    expect(registry.views).toEqual(views);
+    expect(
+      registry.findMatchingView({ currentTenantView: "tenant-usage-stats" }),
+    ).toBe(matchingView);
   });
 
   it("rejects duplicate view ids", () => {

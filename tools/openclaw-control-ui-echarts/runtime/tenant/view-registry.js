@@ -10,7 +10,6 @@ export function createTenantViewRegistry(viewsInput) {
   }
 
   return {
-    views,
     findMatchingView(context) {
       for (const view of views) {
         if (view.match(context)) {
