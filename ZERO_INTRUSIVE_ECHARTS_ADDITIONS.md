@@ -26,6 +26,11 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `docs/superpowers/plans/2026-05-09-sandbox-prediction-evidence-v1.md`
 
+### Design Specs
+
+- `docs/superpowers/specs/2026-04-28-sandbox-v1-tenant-data-source-org-scope-design.md`
+- `docs/superpowers/specs/2026-05-11-tenant-runtime-structure-design.md`
+
 ### Userscript Bundle
 
 - `tools/openclaw-echarts-userscript/openclaw-echarts-renderer.user.js`
@@ -298,7 +303,6 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 ## Zero-Intrusive Docs And Task Notes
 
 - `docs/superpowers/plans/2026-04-28-tenant-data-source-org-scope-implementation.md`
-- `docs/superpowers/specs/2026-04-28-sandbox-v1-tenant-data-source-org-scope-design.md`
 - `sandbox-v1-tasks/_runtime-notes/d1-source-columns.md`
 - `sandbox-v1-tasks/_runtime-notes/d2-paired-issue.md`
 
