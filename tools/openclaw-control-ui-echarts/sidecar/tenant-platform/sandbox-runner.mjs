@@ -21,6 +21,12 @@ function nowIso() {
 }
 
 function buildAnalyticsDsn(connection) {
+  const explicitDsn = String(
+    connection?.analyticsPgDsn || connection?.pgDsn || connection?.dsn || "",
+  ).trim();
+  if (explicitDsn) {
+    return explicitDsn;
+  }
   const host = String(connection?.host || "").trim();
   const database = String(connection?.database || "").trim();
   const user = String(connection?.user || "").trim();
