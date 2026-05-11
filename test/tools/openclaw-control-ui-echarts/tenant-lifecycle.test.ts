@@ -67,6 +67,20 @@ describe("tenant lifecycle", () => {
     expect(cleanup).toHaveBeenCalledTimes(1);
   });
 
+  it("continues running later cleanup callbacks when an earlier one throws", () => {
+    const lifecycle = createTenantLifecycle();
+    const laterCleanup = vi.fn();
+
+    lifecycle.addCleanup(laterCleanup);
+    lifecycle.addCleanup(() => {
+      throw new Error("teardown failed");
+    });
+
+    lifecycle.cleanup();
+
+    expect(laterCleanup).toHaveBeenCalledTimes(1);
+  });
+
   it("resets cleanup state for tests", () => {
     const lifecycle = createTenantLifecycle();
     const staleCleanup = vi.fn();
