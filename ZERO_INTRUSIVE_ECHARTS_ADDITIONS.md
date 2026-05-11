@@ -25,6 +25,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Implementation Plans
 
 - `docs/superpowers/plans/2026-05-09-sandbox-prediction-evidence-v1.md`
+- `docs/superpowers/plans/2026-05-11-tenant-runtime-structure-refactor.md`
 
 ### Design Specs
 
