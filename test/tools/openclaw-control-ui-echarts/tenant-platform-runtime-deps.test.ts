@@ -46,6 +46,9 @@ describe("tenant platform runtime deps", () => {
       "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules:/app/tools/openclaw-control-ui-echarts/node_modules:ro",
     );
     expect(override).toContain(
+      "OPENCLAW_DOCKER_APT_PACKAGES: ${OPENCLAW_DOCKER_APT_PACKAGES:-python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5}",
+    );
+    expect(override).toContain(
       "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro",
     );
     expect(override).toContain(
@@ -100,6 +103,7 @@ describe("tenant platform runtime deps", () => {
     );
     expect(script).toContain("npm install --no-save --no-package-lock --ignore-scripts --prefix");
     expect(script).toContain("python3-pandas python3-sqlalchemy python3-psycopg2");
+    expect(script).toContain("/var/run/postgresql:/var/run/postgresql:ro");
   });
 
   it("builds host candidates from legacy analytics DSNs that point at unix sockets", () => {

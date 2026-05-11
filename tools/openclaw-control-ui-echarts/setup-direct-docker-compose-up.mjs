@@ -27,6 +27,11 @@ const tenantPlatformRuntimePythonContainerPath =
 const sandboxSimulationStarterMount =
   "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro";
 const tenantPlatformRuntimePackageSpecs = Object.freeze(["pg@8.20.0"]);
+const tenantPlatformAptPackages =
+  "${OPENCLAW_DOCKER_APT_PACKAGES:-python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5}";
+const tenantPlatformHostPostgresSocketMount = fs.existsSync("/var/run/postgresql")
+  ? "/var/run/postgresql:/var/run/postgresql:ro"
+  : "";
 const overridePath = path.join(repoRoot, "docker-compose.override.yml");
 const envFilePath = path.join(repoRoot, ".env");
 const dockerCommand = process.platform === "win32" ? "docker.exe" : "docker";
@@ -327,6 +332,9 @@ export function buildOverrideContent(extraMounts) {
     GENERATED_MARKER,
     "services:",
     "  openclaw-gateway:",
+    "    build:",
+    "      args:",
+    `        OPENCLAW_DOCKER_APT_PACKAGES: ${tenantPlatformAptPackages}`,
     "    ports: !override",
     '      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"',
     "    volumes:",
@@ -428,6 +436,13 @@ export function buildOverrideContent(extraMounts) {
     '      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"',
     "    restart: unless-stopped",
   );
+
+  if (tenantPlatformHostPostgresSocketMount) {
+    const runtimeMountIndex = lines.indexOf(`      - ${sandboxSimulationStarterMount}`);
+    if (runtimeMountIndex >= 0) {
+      lines.splice(runtimeMountIndex + 1, 0, `      - ${tenantPlatformHostPostgresSocketMount}`);
+    }
+  }
 
   if (extraMounts.length > 0) {
     lines.push("  openclaw-cli:");
