@@ -23,6 +23,118 @@ async function flush() {
 }
 
 describe("tenant surface", () => {
+  it("updates the mounted tenant section when the tenant route changes", async () => {
+    const requests = [];
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 2,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-agent-1",
+                    agentId: "subotech-finance",
+                    agentName: "苏博泰克财务分析助手",
+                    description: "财务分析与预算评估",
+                    status: "active",
+                    balancePoints: 128.5,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/wallet")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  summary: {
+                    walletBalance: 300,
+                  },
+                  orders: [],
+                  ledger: [],
+                  tenantAgents: [],
+                  payment: {
+                    providerName: "通联支付",
+                    enabled: true,
+                    channels: [],
+                  },
+                },
+              };
+            },
+          };
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: null,
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("members");
+    expect(requests.some((url) => url.includes("/tenant/admin/members"))).toBe(true);
+
+    window.history.pushState({}, "", "/?ocTenantView=tenant-owned-agents");
+    await flush();
+
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("owned-agents");
+    expect(requests.some((url) => url.includes("/tenant/admin/tenant-agents"))).toBe(true);
+    expect(requests.some((url) => url.includes("/tenant/admin/wallet"))).toBe(true);
+  });
+
   it("mounts the native members view into the control-ui content area", async () => {
     writeTenantSession({
       token: "tenant-token",

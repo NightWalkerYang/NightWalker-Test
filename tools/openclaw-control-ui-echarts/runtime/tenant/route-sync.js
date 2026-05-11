@@ -70,6 +70,64 @@ export function navigateTenantRoute(href, { replace = false } = {}) {
   window.history[replace ? "replaceState" : "pushState"]({}, "", target.href);
 }
 
+export function createTenantRouteDrivenScanner(scan, options = {}) {
+  if (typeof scan !== "function") {
+    return () => {};
+  }
+
+  const root = options.root instanceof Element || options.root instanceof Document ? options.root : document;
+  const observeTarget =
+    options.observeTarget instanceof Element || options.observeTarget instanceof Document
+      ? options.observeTarget
+      : document.documentElement;
+  const isRelevantNode =
+    typeof options.isRelevantNode === "function" ? options.isRelevantNode : () => false;
+
+  let scheduled = false;
+  const runScan = () => {
+    scan(root);
+  };
+  const scheduleScan = () => {
+    if (scheduled) {
+      return;
+    }
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      runScan();
+    });
+  };
+
+  runScan();
+  const cleanupRoute = onTenantRouteChange(() => {
+    runScan();
+  });
+
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (!(node instanceof Element)) {
+          continue;
+        }
+        if (isRelevantNode(node)) {
+          scheduleScan();
+          return;
+        }
+      }
+    }
+  });
+
+  observer.observe(observeTarget, {
+    subtree: true,
+    childList: true,
+  });
+
+  return () => {
+    cleanupRoute?.();
+    observer.disconnect();
+  };
+}
+
 export function resetTenantRouteSyncForTests() {
   if (typeof originalPushState === "function") {
     window.history.pushState = originalPushState;

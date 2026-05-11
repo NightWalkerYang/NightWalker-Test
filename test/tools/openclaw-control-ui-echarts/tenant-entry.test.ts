@@ -572,6 +572,61 @@ describe("zero-intrusive tenant entry", () => {
     expect(document.querySelector('[data-native-group="control"]')?.hidden).toBe(true);
   });
 
+  it("updates member shell sections when the tenant route changes", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+    stubVisualizationFetch([
+      {
+        id: "tenant-agent-1:销售数据可视化_index.html",
+        href: "/echarts-view/?token=member-visualization-token",
+        agentId: "tenant-agent-1",
+        agentName: "苏博泰克财务分析助手",
+        visualizationName: "销售数据可视化",
+        visualizationFileName: "销售数据可视化_index.html",
+        title: "销售数据可视化 · 苏博泰克财务分析助手",
+        token: "member-visualization-token",
+      },
+    ]);
+
+    bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
+
+    const selectorSection = document.querySelector(".oc-platform-management-section");
+    expect(selectorSection?.textContent).toContain("Agent选择");
+    expect(selectorSection?.querySelectorAll(".nav-item")).toHaveLength(1);
+
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      status: "active",
+    });
+    window.history.pushState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    await flushAsync();
+    await flushAsync();
+
+    expect(document.querySelector(".oc-platform-management-section")).toBeNull();
+    const visualizationSection = document.querySelector(".oc-member-visualization-section");
+    expect(visualizationSection).not.toBeNull();
+    expect(visualizationSection?.textContent).toContain("销售数据可视化");
+  });
+
   it("refreshes member visualizations without a full page reload", async () => {
     vi.useFakeTimers();
     writeTenantSession({

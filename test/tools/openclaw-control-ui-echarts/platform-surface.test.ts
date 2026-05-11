@@ -43,6 +43,95 @@ async function bootPlatformTenantManagement(fetchImpl, sessionOverrides = {}, vi
 }
 
 describe("platform surface", () => {
+  it("updates the mounted platform section when the tenant route changes", async () => {
+    const requests = [];
+    await bootPlatformTenantManagement(async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.includes("/platform/tenants")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data: [
+                {
+                  id: "tenant-1",
+                  code: "alpha",
+                  name: "租户 Alpha",
+                  deploymentMode: "cloud",
+                  memberCount: 2,
+                  walletBalance: 8,
+                  agentCount: 1,
+                  memberLimit: 10,
+                  licenseExpiresAt: null,
+                  status: "active",
+                },
+              ],
+            };
+          },
+        };
+      }
+      if (url.includes("/platform/catalog-agents")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data: [{ id: "finance", name: "财务分析助手" }],
+            };
+          },
+        };
+      }
+      if (url.includes("/platform/tenant-members")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data: [],
+            };
+          },
+        };
+      }
+      if (url.includes("/platform/tenant-agents")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data: [],
+            };
+          },
+        };
+      }
+      if (url.includes("/platform/nodes")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data: [],
+            };
+          },
+        };
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const root = document.querySelector("[data-oc-platform-surface-root]");
+    expect(root?.getAttribute("data-oc-platform-section")).toBe("tenants");
+    expect(requests.some((url) => url.includes("/platform/tenants"))).toBe(true);
+    expect(document.querySelector("[data-platform-open-create]")).not.toBeNull();
+
+    window.history.pushState({}, "", "/?ocTenantView=platform-agent-assignment");
+    await flush();
+
+    expect(root?.getAttribute("data-oc-platform-section")).toBe("agent-allocation");
+    expect(document.querySelector("[data-platform-open-create]")).toBeNull();
+    expect(root?.textContent).toContain("分配Agent");
+  });
+
   it("mounts the native single-entry platform management view into the content area", async () => {
     writeTenantSession({
       token: "platform-token",

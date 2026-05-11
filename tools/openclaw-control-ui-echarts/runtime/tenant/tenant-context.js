@@ -84,8 +84,28 @@ export function readTenantSession() {
   return readStoredSession(TENANT_SESSION_STORAGE_KEY);
 }
 
-export function readSessionForCurrentView() {
-  const view = readTenantView();
+export function isTenantShellRole(role) {
+  return role === "platform_admin" || role === "tenant_admin" || role === "member";
+}
+
+export function normalizeTenantPathname(pathname = window.location.pathname) {
+  const raw = String(pathname ?? "").trim() || "/";
+  const prefixed = raw.startsWith("/") ? raw : `/${raw}`;
+  const withoutIndex = prefixed.replace(/\/index\.html$/i, "");
+  if (withoutIndex.length > 1 && withoutIndex.endsWith("/")) {
+    return withoutIndex.slice(0, -1);
+  }
+  return withoutIndex;
+}
+
+export function isTenantPathActive(expectedPath, pathname = window.location.pathname) {
+  const normalizedExpected = normalizeTenantPathname(expectedPath);
+  const normalizedCurrent = normalizeTenantPathname(pathname);
+  return normalizedCurrent === normalizedExpected || normalizedCurrent.endsWith(normalizedExpected);
+}
+
+export function readSessionForCurrentView(locationHref = window.location.href) {
+  const view = readTenantView(locationHref);
   if (view === LOGIN_VIEW) {
     return readPlatformSession() || readTenantSession();
   }
@@ -116,6 +136,19 @@ export function readSessionForCurrentView() {
     return readTenantSession();
   }
   return readPlatformSession() || readTenantSession();
+}
+
+export function readTenantShellContext(locationHref = window.location.href) {
+  const view = readTenantView(locationHref);
+  const session = readSessionForCurrentView(locationHref);
+  const role = String(session?.session?.role || "").trim();
+  return {
+    view,
+    session,
+    role,
+    isAuthView: isTenantLoginView(view),
+    isShellRole: isTenantShellRole(role),
+  };
 }
 
 export function writeTenantSession(session) {
