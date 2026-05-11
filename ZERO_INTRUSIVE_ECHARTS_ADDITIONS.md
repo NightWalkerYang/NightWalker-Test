@@ -188,6 +188,11 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-layout.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-failsafe.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-history.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-route-state.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-sidebar.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-storage.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
@@ -198,6 +203,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-wallet-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-console-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-usage-sync.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/lifecycle.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/runtime-store.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/shell-coordinator.js`

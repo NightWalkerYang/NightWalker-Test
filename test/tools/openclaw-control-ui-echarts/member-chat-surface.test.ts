@@ -2206,6 +2206,79 @@ describe("member chat surface", () => {
     ).toBeTruthy();
   });
 
+  it("syncs the current session route when selecting another sidebar session", async () => {
+    installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "本周分析",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        },
+        {
+          openclawSessionKey: "agent:subotech-finance:tenant-tenant-agent-1",
+          title: "历史主会话",
+          updatedAt: new Date(Date.now() - 60_000).toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const sessionButtons = [
+      ...document.querySelectorAll<HTMLElement>("[data-member-chat-session]"),
+    ];
+    const historyButton = sessionButtons.find(
+      (button) =>
+        String(button.dataset.memberChatSession || "").trim().toLowerCase() ===
+        "agent:subotech-finance:tenant-tenant-agent-1",
+    );
+    expect(historyButton).not.toBeUndefined();
+
+    historyButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(app.sessionKey).toBe("agent:subotech-finance:tenant-tenant-agent-1");
+    expect(decodeURIComponent(window.location.search)).toContain(
+      "session=agent:subotech-finance:tenant-tenant-agent-1",
+    );
+    expect(
+      document.querySelector("[data-oc-member-chat-section]")?.getAttribute(
+        "data-oc-member-chat-active-session",
+      ),
+    ).toBe("agent:subotech-finance:tenant-tenant-agent-1");
+  });
+
   it("keeps the session when delete dialog is canceled", async () => {
     const apiState = installTenantApiFetchStub({
       sessions: [
