@@ -392,6 +392,130 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("re-syncs skills and hooks but preserves derived top-level md files after first bootstrap", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
+      fs.mkdirSync(path.join(baseWorkspace, "skills"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "hooks"), { recursive: true });
+      fs.writeFileSync(path.join(baseWorkspace, "AGENTS.md"), "# parent agents v1\n", "utf8");
+      fs.writeFileSync(path.join(baseWorkspace, "IDENTITY.md"), "# parent identity v1\n", "utf8");
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "README.md"),
+        "skill readme v1\n",
+        "utf8",
+      );
+      fs.writeFileSync(path.join(baseWorkspace, "skills", "alpha.md"), "alpha skill v1\n", "utf8");
+      fs.writeFileSync(path.join(baseWorkspace, "hooks", "README.md"), "hook readme v1\n", "utf8");
+
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+
+      const tenant = createTenantWithAdmin(db, {
+        code: "gamma",
+        name: "租户 Gamma",
+        adminUsername: "gamma-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析与报表问答",
+        rateMultiplier: 1.25,
+        balancePoints: 42,
+        status: "active",
+      });
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "AGENTS.md"), "utf8")).toContain(
+        "parent agents v1",
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
+        "skill readme v1",
+      );
+
+      fs.writeFileSync(path.join(derivedWorkspace, "AGENTS.md"), "# child agents custom\n", "utf8");
+      fs.writeFileSync(
+        path.join(derivedWorkspace, "IDENTITY.md"),
+        "# child identity custom\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(derivedWorkspace, "skills", "README.md"),
+        "child skill readme custom\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(derivedWorkspace, "hooks", "README.md"),
+        "child hook custom\n",
+        "utf8",
+      );
+
+      fs.writeFileSync(path.join(baseWorkspace, "AGENTS.md"), "# parent agents v2\n", "utf8");
+      fs.writeFileSync(path.join(baseWorkspace, "IDENTITY.md"), "# parent identity v2\n", "utf8");
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "README.md"),
+        "skill readme v2\n",
+        "utf8",
+      );
+      fs.writeFileSync(path.join(baseWorkspace, "skills", "alpha.md"), "alpha skill v2\n", "utf8");
+      fs.writeFileSync(path.join(baseWorkspace, "hooks", "README.md"), "hook readme v2\n", "utf8");
+
+      const assignedAgents = listAssignedAgentsForUser(
+        db,
+        {
+          tenantId: tenant.id,
+          userId: member.id,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(assignedAgents).toHaveLength(1);
+
+      expect(fs.readFileSync(path.join(derivedWorkspace, "AGENTS.md"), "utf8")).toContain(
+        "child agents custom",
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "IDENTITY.md"), "utf8")).toContain(
+        "child identity custom",
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
+        "skill readme v2",
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "alpha.md"), "utf8")).toContain(
+        "alpha skill v2",
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "hooks", "README.md"), "utf8")).toContain(
+        "hook readme v2",
+      );
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("falls back to OPENCLAW_WORKSPACE_DIR for split workspace deployments", () => {
     const sandbox = createTempSandbox();
     fs.writeFileSync(

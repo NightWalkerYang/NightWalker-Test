@@ -212,11 +212,12 @@
   - `workspace-agents/<derived-agent-id>`
 - 还会把派生 `agentId` 注册成 runtime config 里的真实 agent entry
 
-当前工作区初始化采用“部分模板继承”：
+当前工作区初始化采用“分层模板继承”：
 
-- 复制母 Agent 的关键 `.md`、`skills/`、`hooks/`
+- 首次分配时，派生工作区会复制母 Agent 的关键顶层 `.md`、`memory/`、`skills/`、`hooks/`
+- 后续再次命中派生工作区 ensure 时，只持续回刷 `skills/`、`hooks/`
+- 顶层 `AGENTS.md`、`IDENTITY.md`、`USER.md`、`TOOLS.md`、`SOUL.md`、`HEARTBEAT.md`、`BOOTSTRAP.md`、`MEMORY.md` 与 `memory/` 仅在缺失时补种子，不再按母 Agent 后续改动覆盖成员侧个性化内容
 - 不继承旧会话或其它运行时产物
-- 不覆盖成员后续个性化修改
 
 ## 14. bootstrap 过滤 hook 已落地
 

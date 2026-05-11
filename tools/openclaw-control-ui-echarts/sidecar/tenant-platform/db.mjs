@@ -12,7 +12,7 @@ const BILLING_RATES_PATH = new URL("./billing-rates.json5", import.meta.url);
 const LOCAL_BOOTSTRAP_TENANT_CODE = "local";
 const LOCAL_BOOTSTRAP_TENANT_NAME = "本地租户";
 const LOCAL_BOOTSTRAP_MEMBER_LIMIT = 999;
-const DERIVED_AGENT_TEMPLATE_ENTRIES = [
+const DERIVED_AGENT_SEED_ONCE_ENTRIES = [
   "AGENTS.md",
   "SOUL.md",
   "IDENTITY.md",
@@ -23,9 +23,8 @@ const DERIVED_AGENT_TEMPLATE_ENTRIES = [
   "MEMORY.md",
   "memory.md",
   "memory",
-  "skills",
-  "hooks",
 ];
+const DERIVED_AGENT_SYNC_ALWAYS_ENTRIES = ["skills", "hooks"];
 const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
 const DEFAULT_BILLING_CURRENCY = "CNY";
 const DEFAULT_CONFIG_PRICING_CURRENCY = "USD";
@@ -554,7 +553,9 @@ function ensureDataSourceSchemaCompatibility(db) {
     db.exec("ALTER TABLE data_sources ADD COLUMN status TEXT NOT NULL DEFAULT 'active';");
   }
   if (!knownDataSourceColumns.has("source_type")) {
-    db.exec("ALTER TABLE data_sources ADD COLUMN source_type TEXT NOT NULL DEFAULT 'kingdee_analytics';");
+    db.exec(
+      "ALTER TABLE data_sources ADD COLUMN source_type TEXT NOT NULL DEFAULT 'kingdee_analytics';",
+    );
   }
   if (!knownDataSourceColumns.has("source_dbid")) {
     db.exec("ALTER TABLE data_sources ADD COLUMN source_dbid TEXT;");
@@ -2022,6 +2023,22 @@ function copySeedEntry(source, target) {
   fs.copyFileSync(source, target);
 }
 
+function copySeedEntryIfMissing(source, target) {
+  if (!fs.existsSync(source) || fs.existsSync(target)) {
+    return;
+  }
+  const sourceStats = fs.statSync(source);
+  if (sourceStats.isDirectory()) {
+    fs.mkdirSync(target, { recursive: true });
+    for (const entry of fs.readdirSync(source)) {
+      copySeedEntryIfMissing(path.join(source, entry), path.join(target, entry));
+    }
+    return;
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+}
+
 function ensureDerivedWorkspaceAlias(aliasPath, targetPath) {
   try {
     if (fs.existsSync(aliasPath)) {
@@ -2054,11 +2071,16 @@ function ensureTenantDerivedWorkspace(params) {
 
   const canonicalWorkspace = buildDerivedAgentWorkspacePath({ ...params, derivedAgentId });
   const runtimeWorkspace = buildDerivedAgentRuntimeWorkspacePath({ ...params, derivedAgentId });
+  const canonicalWorkspaceExisted = fs.existsSync(canonicalWorkspace);
   fs.mkdirSync(canonicalWorkspace, { recursive: true });
 
   const sourceWorkspace = resolveBaseWorkspaceDir(params);
   if (sourceWorkspace) {
-    for (const entry of DERIVED_AGENT_TEMPLATE_ENTRIES) {
+    const seedMode = canonicalWorkspaceExisted ? copySeedEntryIfMissing : copySeedEntry;
+    for (const entry of DERIVED_AGENT_SEED_ONCE_ENTRIES) {
+      seedMode(path.join(sourceWorkspace, entry), path.join(canonicalWorkspace, entry));
+    }
+    for (const entry of DERIVED_AGENT_SYNC_ALWAYS_ENTRIES) {
       copySeedEntry(path.join(sourceWorkspace, entry), path.join(canonicalWorkspace, entry));
     }
   }
@@ -2087,7 +2109,10 @@ function ensureTenantDerivedWorkspace(params) {
   const linked = ensureDerivedWorkspaceAlias(runtimeWorkspace, canonicalWorkspace);
   if (!linked) {
     fs.mkdirSync(runtimeWorkspace, { recursive: true });
-    for (const entry of DERIVED_AGENT_TEMPLATE_ENTRIES) {
+    for (const entry of [
+      ...DERIVED_AGENT_SEED_ONCE_ENTRIES,
+      ...DERIVED_AGENT_SYNC_ALWAYS_ENTRIES,
+    ]) {
       copySeedEntry(path.join(canonicalWorkspace, entry), path.join(runtimeWorkspace, entry));
     }
   }
@@ -5528,8 +5553,7 @@ const DEFAULT_SANDBOX_FILE_NAME = "采购沙盒模拟_sandbox.json";
 
 function createDefaultSandboxEntry(agent) {
   const baseAgentId = String(agent?.baseAgentId || "").trim();
-  const sandboxName =
-    baseAgentId === "kingdee-cloud" ? "真实金蝶采购预测验证" : "采购沙盒模拟";
+  const sandboxName = baseAgentId === "kingdee-cloud" ? "真实金蝶采购预测验证" : "采购沙盒模拟";
   return {
     ...agent,
     sandboxFileName: DEFAULT_SANDBOX_FILE_NAME,
