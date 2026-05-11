@@ -191,6 +191,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-failsafe.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-history.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-route-state.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-session-title.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-sidebar.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-storage.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`

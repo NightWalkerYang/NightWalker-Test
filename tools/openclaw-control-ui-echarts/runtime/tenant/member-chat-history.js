@@ -1,5 +1,6 @@
 import { findChatSurface } from "../framework/dom-compat.js";
 import { createTenantApiClient } from "./api-client.js";
+import { isProvisionalSessionTitle, normalizeSessionTitleValue } from "./member-chat-session-title.js";
 
 export function findFirstUserMessageTitle(messages, buildSessionTitleFromText) {
   if (!Array.isArray(messages)) {
@@ -33,29 +34,6 @@ export function ensureVisibleCurrentSession(sessions, currentSessionKey) {
     { key: normalizedCurrent, label: "新会话", updatedAt: Date.now(), hasGatewaySession: false },
     ...sessions,
   ];
-}
-
-function normalizeSessionTitleValue(value) {
-  return String(value ?? "").trim();
-}
-
-function isGeneratedTimestampTitle(value) {
-  const normalized = normalizeSessionTitleValue(value);
-  if (!normalized) {
-    return false;
-  }
-  return (
-    /^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(normalized) ||
-    /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(normalized)
-  );
-}
-
-function isProvisionalSessionTitle(value) {
-  const normalized = normalizeSessionTitleValue(value);
-  if (!normalized) {
-    return true;
-  }
-  return normalized === "新会话" || isGeneratedTimestampTitle(normalized);
 }
 
 function findSessionRowByKey(sessions, sessionKey) {
@@ -320,7 +298,8 @@ async function maybeLoadOlderMemberHistory(controller, event = null, deps = {}) 
       limit: 200,
       cursor,
     });
-    const activeController = window._ocMemberChatSurfaceController;
+    const activeController =
+      typeof deps.getActiveController === "function" ? deps.getActiveController() : null;
     if (!activeController || activeController !== controller) {
       return;
     }
@@ -383,7 +362,9 @@ export function bindMemberHistoryPagination(controller, deps = {}) {
   }
   app.handleChatScroll = (event) => {
     app.__ocOriginalHandleChatScroll(event);
-    void maybeLoadOlderMemberHistory(window._ocMemberChatSurfaceController, event, deps);
+    const activeController =
+      typeof deps.getActiveController === "function" ? deps.getActiveController() : controller;
+    void maybeLoadOlderMemberHistory(activeController, event, deps);
   };
   app.__ocMemberHistoryHandleChatScrollPatched = true;
 }

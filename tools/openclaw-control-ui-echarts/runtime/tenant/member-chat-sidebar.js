@@ -1,17 +1,3 @@
-import { createTenantApiClient } from "./api-client.js";
-import { ensureVisibleCurrentSession, shouldSkipSessionHistoryHydration } from "./member-chat-history.js";
-import { isMemberDraftRouteLocked, resolveRouteSessionKey, syncRouteForSession } from "./member-chat-route-state.js";
-import {
-  clearMemberDraftRouteLock,
-  readMemberDraftRouteLock,
-  writeMemberDraftRouteLock,
-} from "./member-chat-storage.js";
-import {
-  TENANT_AGENT_SELECTOR_ROUTE,
-  createTenantMemberSessionKey,
-} from "./tenant-context.js";
-import { navigateTenantRoute } from "./route-sync.js";
-
 export const SECTION_ATTR = "data-oc-member-chat-section";
 export const TOP_ACTION_ATTR = "data-oc-member-chat-top-action";
 export const ACTIVE_SESSION_ATTR = "data-oc-member-chat-active-session";
@@ -170,48 +156,6 @@ function closeDialog(dialog) {
   dialog.removeAttribute("open");
 }
 
-async function applyHiddenDelete(controller, nextHiddenKey, deps) {
-  try {
-    await createTenantApiClient().hideMemberSession({ openclawSessionKey: nextHiddenKey });
-  } catch {
-    deps.showTransientToast(controller, "删除会话失败");
-    return;
-  }
-  controller.sessions = controller.sessions.filter(
-    (row) =>
-      String(row?.key || "")
-        .trim()
-        .toLowerCase() !== nextHiddenKey,
-  );
-  if (controller.currentSessionKey === nextHiddenKey) {
-    clearMemberDraftRouteLockForController(controller, nextHiddenKey);
-    const fallbackSessionKey =
-      controller.sessions[0]?.key?.trim().toLowerCase() ||
-      createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
-    controller.currentSessionKey = fallbackSessionKey;
-    controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
-    controller.hasDraftSession = isMemberDraftRouteLocked(
-      controller.session,
-      controller.selectedAgent,
-      fallbackSessionKey,
-    );
-    syncRouteForSession(
-      controller.selectedAgent,
-      resolveRouteSessionKey(
-        controller.sessions,
-        fallbackSessionKey,
-        shouldSkipSessionHistoryHydration,
-      ),
-      deps.routeSyncRef,
-      { replace: true },
-    );
-    deps.pinMemberChatSession(controller.app, fallbackSessionKey, {
-      skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, fallbackSessionKey),
-    });
-  }
-  renderSidebarSection(controller, deps);
-}
-
 export function ensureDeleteDialog(controller, deps) {
   let root = document.body.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`);
   if (!(root instanceof HTMLElement)) {
@@ -269,7 +213,7 @@ export function ensureDeleteDialog(controller, deps) {
       if (!nextHiddenKey || !activeController) {
         return;
       }
-      void applyHiddenDelete(activeController, nextHiddenKey, activeDeps);
+      void activeDeps.actions.deleteSession(activeController, nextHiddenKey);
     });
   }
   return root.querySelector(DELETE_DIALOG_SELECTOR);
@@ -283,59 +227,8 @@ export function closeAllDialogs() {
   }
 }
 
-export function clearMemberDraftRouteLockForController(controller, sessionKey = "") {
-  if (!controller?.session || !controller?.selectedAgent) {
-    return;
-  }
-  const activeDraftLock = readMemberDraftRouteLock(controller.session, controller.selectedAgent);
-  const normalizedSessionKey = String(sessionKey || controller.currentSessionKey || "")
-    .trim()
-    .toLowerCase();
-  if (!normalizedSessionKey || activeDraftLock === normalizedSessionKey) {
-    clearMemberDraftRouteLock(controller.session, controller.selectedAgent);
-  }
-}
-
 export function beginNewMemberDraftSession(controller, deps) {
-  if (!controller || !controller.selectedAgent?.id || !controller.session) {
-    return false;
-  }
-  if (controller.hasDraftSession) {
-    deps.showTransientToast(controller, "已经是新的会话了");
-    return true;
-  }
-  const nextSessionKey = createTenantMemberSessionKey(controller.session, controller.selectedAgent);
-  if (!nextSessionKey) {
-    return false;
-  }
-
-  createTenantApiClient()
-    .registerMemberSession({
-      tenantAgentId: controller.selectedAgent.id,
-      openclawSessionKey: nextSessionKey,
-      title: "新会话",
-    })
-    .catch(() => {});
-
-  controller.currentSessionKey = nextSessionKey;
-  controller.sessions = ensureVisibleCurrentSession(controller.sessions, nextSessionKey);
-  controller.hasDraftSession = true;
-  writeMemberDraftRouteLock(controller.session, controller.selectedAgent, nextSessionKey);
-  syncRouteForSession(
-    controller.selectedAgent,
-    resolveRouteSessionKey(
-      controller.sessions,
-      nextSessionKey,
-      shouldSkipSessionHistoryHydration,
-    ),
-    deps.routeSyncRef,
-    { replace: false },
-  );
-  deps.pinMemberChatSession(controller.app, nextSessionKey, {
-    skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, nextSessionKey),
-  });
-  renderSidebarSection(controller, deps);
-  return true;
+  return deps.actions.beginDraftSession(controller);
 }
 
 function attachSectionHandlers(section, controller, deps) {
@@ -366,37 +259,7 @@ function attachSectionHandlers(section, controller, deps) {
       if (!nextSessionKey || nextSessionKey === ctrl.currentSessionKey) {
         return;
       }
-
-      if (ctrl.hasDraftSession) {
-        void createTenantApiClient()
-          .deleteMemberSession({ openclawSessionKey: ctrl.currentSessionKey })
-          .catch(() => {});
-        ctrl.sessions = ctrl.sessions.filter(
-          (row) =>
-            String(row?.key || "")
-              .trim()
-              .toLowerCase() !== ctrl.currentSessionKey,
-        );
-        ctrl.hasDraftSession = false;
-        clearMemberDraftRouteLockForController(ctrl, ctrl.currentSessionKey);
-      }
-
-      ctrl.currentSessionKey = nextSessionKey;
-      ctrl.hasDraftSession = isMemberDraftRouteLocked(
-        ctrl.session,
-        ctrl.selectedAgent,
-        nextSessionKey,
-      );
-      syncRouteForSession(
-        ctrl.selectedAgent,
-        resolveRouteSessionKey(ctrl.sessions, nextSessionKey, shouldSkipSessionHistoryHydration),
-        activeDeps.routeSyncRef,
-        { replace: false },
-      );
-      activeDeps.pinMemberChatSession(ctrl.app, nextSessionKey, {
-        skipHydrateHistory: shouldSkipSessionHistoryHydration(ctrl.sessions, nextSessionKey),
-      });
-      renderSidebarSection(ctrl, activeDeps);
+      void activeDeps.actions.selectSession(ctrl, nextSessionKey);
       return;
     }
     const deleteButton = target.closest(`[${DELETE_ATTR}]`);
@@ -435,15 +298,7 @@ function attachTopActionHandlers(root) {
       return;
     }
     event.preventDefault();
-    if (window._ocMemberChatSurfaceController?.hasDraftSession) {
-      void createTenantApiClient()
-        .deleteMemberSession({
-          openclawSessionKey: window._ocMemberChatSurfaceController.currentSessionKey,
-        })
-        .catch(() => {});
-      clearMemberDraftRouteLockForController(window._ocMemberChatSurfaceController);
-    }
-    navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE);
+    root._ocDeps.actions.navigateBack(root._ocController);
   });
 }
 
@@ -461,6 +316,8 @@ export function renderTopAction(controller, deps) {
     return;
   }
   const root = ensureTopActionRow(controller.breadcrumb);
+  root._ocController = controller;
+  root._ocDeps = deps;
   root.innerHTML = buildTopActionMarkup(controller.selectedAgent, deps);
   attachTopActionHandlers(root);
 }

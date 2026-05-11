@@ -6,29 +6,7 @@ import {
   isTenantMemberSessionKey,
 } from "./tenant-context.js";
 import { clearMemberDraftRouteLock, readMemberDraftRouteLock } from "./member-chat-storage.js";
-
-function normalizeSessionTitleValue(value) {
-  return String(value ?? "").trim();
-}
-
-function isGeneratedTimestampTitle(value) {
-  const normalized = normalizeSessionTitleValue(value);
-  if (!normalized) {
-    return false;
-  }
-  return (
-    /^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(normalized) ||
-    /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(normalized)
-  );
-}
-
-function isProvisionalSessionTitle(value) {
-  const normalized = normalizeSessionTitleValue(value);
-  if (!normalized) {
-    return true;
-  }
-  return normalized === "新会话" || isGeneratedTimestampTitle(normalized);
-}
+import { isProvisionalSessionTitle, normalizeSessionTitleValue } from "./member-chat-session-title.js";
 
 function isDraftOnlySessionRow(row) {
   if (!row || row.hasGatewaySession !== false) {
@@ -38,7 +16,7 @@ function isDraftOnlySessionRow(row) {
   return isProvisionalSessionTitle(title);
 }
 
-function isPinnedDraftSessionStillActive(app, sessionKey) {
+function isPinnedDraftSessionStillActive(app, sessionKey, runtimeState = {}) {
   const normalizedSessionKey = String(sessionKey || "")
     .trim()
     .toLowerCase();
@@ -51,7 +29,7 @@ function isPinnedDraftSessionStillActive(app, sessionKey) {
   if (pinnedSessionKey !== normalizedSessionKey) {
     return false;
   }
-  const controller = window._ocMemberChatSurfaceController;
+  const controller = runtimeState.controller || null;
   const controllerSessionKey = String(controller?.currentSessionKey || "")
     .trim()
     .toLowerCase();
@@ -87,7 +65,7 @@ export function resolveRouteSessionKey(sessions, sessionKey, shouldSkipSessionHi
   return shouldSkipSessionHistoryHydration(sessions, sessionKey) ? "" : sessionKey;
 }
 
-export function findTargetSessionKey(app, selectedAgent, session, href, sessions) {
+export function findTargetSessionKey(app, selectedAgent, session, href, sessions, runtimeState = {}) {
   const url = new URL(href, document.baseURI);
   const resolveCandidate = (value) => {
     const normalized = String(value || "")
@@ -104,7 +82,7 @@ export function findTargetSessionKey(app, selectedAgent, session, href, sessions
     );
     if (
       isDraftOnlySessionRow(existingRow) &&
-      !isPinnedDraftSessionStillActive(app, normalized) &&
+      !isPinnedDraftSessionStillActive(app, normalized, runtimeState) &&
       !isMemberDraftRouteLocked(session, selectedAgent, normalized)
     ) {
       return "";

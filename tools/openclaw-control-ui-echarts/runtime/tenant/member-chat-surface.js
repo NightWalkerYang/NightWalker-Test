@@ -44,7 +44,12 @@ import {
 import {
   clearMemberDraftRouteLock,
   readMemberDraftRouteLock,
+  writeMemberDraftRouteLock,
 } from "./member-chat-storage.js";
+import {
+  isProvisionalSessionTitle,
+  normalizeSessionTitleValue,
+} from "./member-chat-session-title.js";
 import {
   scheduleMemberUsageSync,
   syncMemberUsageRecords,
@@ -53,6 +58,7 @@ import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from ".
 import { resetTenantRouteSyncForTests } from "./route-sync.js";
 import {
   TENANT_AGENT_SELECTOR_ROUTE,
+  createTenantMemberSessionKey,
   hasResolvedSelectedTenantAgent,
   isTenantMemberSessionKey,
   readSelectedTenantAgent,
@@ -128,20 +134,185 @@ function showTransientToast(controller, message, type = "info") {
   }, 2500);
 }
 
+function getActiveMemberChatController() {
+  return window._ocMemberChatSurfaceController || null;
+}
+
+function createRouteSyncRef() {
+  return {
+    get value() {
+      return memberChatSurfaceSuppressNextRouteSync;
+    },
+    set value(next) {
+      memberChatSurfaceSuppressNextRouteSync = next;
+    },
+  };
+}
+
+async function deleteDraftSessionIfNeeded(controller) {
+  if (!controller?.hasDraftSession) {
+    return;
+  }
+  void createTenantApiClient()
+    .deleteMemberSession({ openclawSessionKey: controller.currentSessionKey })
+    .catch(() => {});
+  controller.sessions = controller.sessions.filter(
+    (row) =>
+      String(row?.key || "")
+        .trim()
+        .toLowerCase() !== controller.currentSessionKey,
+  );
+  controller.hasDraftSession = false;
+}
+
+function clearMemberDraftRouteLockForController(controller, sessionKey = "") {
+  if (!controller?.session || !controller?.selectedAgent) {
+    return;
+  }
+  const activeDraftLock = readMemberDraftRouteLock(controller.session, controller.selectedAgent);
+  const normalizedSessionKey = String(sessionKey || controller.currentSessionKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedSessionKey || activeDraftLock === normalizedSessionKey) {
+    clearMemberDraftRouteLock(controller.session, controller.selectedAgent);
+  }
+}
+
 function createSidebarDeps() {
   return {
     escapeHtml,
     formatRelativeTime,
     pinMemberChatSession,
-    routeSyncRef: {
-      get value() {
-        return memberChatSurfaceSuppressNextRouteSync;
+    routeSyncRef: createRouteSyncRef(),
+    showTransientToast,
+    actions: {
+      beginDraftSession(controller) {
+        if (!controller || !controller.selectedAgent?.id || !controller.session) {
+          return false;
+        }
+        if (controller.hasDraftSession) {
+          showTransientToast(controller, "已经是新的会话了");
+          return true;
+        }
+        const nextSessionKey = createTenantMemberSessionKey(
+          controller.session,
+          controller.selectedAgent,
+        );
+        if (!nextSessionKey) {
+          return false;
+        }
+
+        createTenantApiClient()
+          .registerMemberSession({
+            tenantAgentId: controller.selectedAgent.id,
+            openclawSessionKey: nextSessionKey,
+            title: "新会话",
+          })
+          .catch(() => {});
+
+        controller.currentSessionKey = nextSessionKey;
+        controller.sessions = ensureVisibleCurrentSession(controller.sessions, nextSessionKey);
+        controller.hasDraftSession = true;
+        writeMemberDraftRouteLock(controller.session, controller.selectedAgent, nextSessionKey);
+        syncRouteForSession(
+          controller.selectedAgent,
+          resolveRouteSessionKey(
+            controller.sessions,
+            nextSessionKey,
+            shouldSkipSessionHistoryHydration,
+          ),
+          createRouteSyncRef(),
+          { replace: false },
+        );
+        pinMemberChatSession(controller.app, nextSessionKey, {
+          skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, nextSessionKey),
+        });
+        renderSidebarSection(controller, createSidebarDeps());
+        return true;
       },
-      set value(next) {
-        memberChatSurfaceSuppressNextRouteSync = next;
+      async selectSession(controller, nextSessionKey) {
+        if (controller.hasDraftSession) {
+          await deleteDraftSessionIfNeeded(controller);
+          clearMemberDraftRouteLockForController(controller, controller.currentSessionKey);
+        }
+
+        controller.currentSessionKey = nextSessionKey;
+        controller.hasDraftSession = isMemberDraftRouteLocked(
+          controller.session,
+          controller.selectedAgent,
+          nextSessionKey,
+        );
+        syncRouteForSession(
+          controller.selectedAgent,
+          resolveRouteSessionKey(
+            controller.sessions,
+            nextSessionKey,
+            shouldSkipSessionHistoryHydration,
+          ),
+          createRouteSyncRef(),
+          { replace: false },
+        );
+        pinMemberChatSession(controller.app, nextSessionKey, {
+          skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, nextSessionKey),
+        });
+        renderSidebarSection(controller, createSidebarDeps());
+      },
+      async deleteSession(controller, nextHiddenKey) {
+        try {
+          await createTenantApiClient().hideMemberSession({ openclawSessionKey: nextHiddenKey });
+        } catch {
+          showTransientToast(controller, "删除会话失败");
+          return;
+        }
+        controller.sessions = controller.sessions.filter(
+          (row) =>
+            String(row?.key || "")
+              .trim()
+              .toLowerCase() !== nextHiddenKey,
+        );
+        if (controller.currentSessionKey === nextHiddenKey) {
+          clearMemberDraftRouteLockForController(controller, nextHiddenKey);
+          const fallbackSessionKey =
+            controller.sessions[0]?.key?.trim().toLowerCase() ||
+            createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
+          controller.currentSessionKey = fallbackSessionKey;
+          controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
+          controller.hasDraftSession = isMemberDraftRouteLocked(
+            controller.session,
+            controller.selectedAgent,
+            fallbackSessionKey,
+          );
+          syncRouteForSession(
+            controller.selectedAgent,
+            resolveRouteSessionKey(
+              controller.sessions,
+              fallbackSessionKey,
+              shouldSkipSessionHistoryHydration,
+            ),
+            createRouteSyncRef(),
+            { replace: true },
+          );
+          pinMemberChatSession(controller.app, fallbackSessionKey, {
+            skipHydrateHistory: shouldSkipSessionHistoryHydration(
+              controller.sessions,
+              fallbackSessionKey,
+            ),
+          });
+        }
+        renderSidebarSection(controller, createSidebarDeps());
+      },
+      navigateBack(controller) {
+        if (controller?.hasDraftSession) {
+          void createTenantApiClient()
+            .deleteMemberSession({
+              openclawSessionKey: controller.currentSessionKey,
+            })
+            .catch(() => {});
+          clearMemberDraftRouteLockForController(controller);
+        }
+        navigateTenantRoute(TENANT_AGENT_SELECTOR_ROUTE);
       },
     },
-    showTransientToast,
   };
 }
 
@@ -168,29 +339,6 @@ function formatRelativeTime(value) {
   }
   const days = Math.round(hours / 24);
   return `${days} 天前`;
-}
-
-function normalizeSessionTitleValue(value) {
-  return String(value ?? "").trim();
-}
-
-function isGeneratedTimestampTitle(value) {
-  const normalized = normalizeSessionTitleValue(value);
-  if (!normalized) {
-    return false;
-  }
-  return (
-    /^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(normalized) ||
-    /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(normalized)
-  );
-}
-
-function isProvisionalSessionTitle(value) {
-  const normalized = normalizeSessionTitleValue(value);
-  if (!normalized) {
-    return true;
-  }
-  return normalized === "新会话" || isGeneratedTimestampTitle(normalized);
 }
 
 function extractTextFragments(value) {
@@ -457,7 +605,8 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
   }
   clearMemberDraftRouteLock(controller.session, controller.selectedAgent);
   renderSidebarSection(controller, createSidebarDeps());
-  if (window._ocMemberChatSurfaceController?.currentSessionKey === normalizedSessionKey) {
+  const activeController = getActiveMemberChatController();
+  if (activeController?.currentSessionKey === normalizedSessionKey) {
     syncRouteForSession(
       controller.selectedAgent,
       resolveRouteSessionKey(
@@ -465,7 +614,7 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
         normalizedSessionKey,
         shouldSkipSessionHistoryHydration,
       ),
-      createSidebarDeps().routeSyncRef,
+      createRouteSyncRef(),
       { replace: true },
     );
   }
@@ -530,7 +679,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
       const activeSessionKey =
         method === "chat.send"
           ? String(
-              window._ocMemberChatSurfaceController?.currentSessionKey ||
+              getActiveMemberChatController()?.currentSessionKey ||
                 app.__ocPinnedSessionKey ||
                 app.sessionKey ||
                 "",
@@ -552,7 +701,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           // Note: In most cases, the early interceptor in bootMemberChatSurface
           // will catch this before it reaches here.
           showTransientToast(
-            window._ocMemberChatSurfaceController,
+            getActiveMemberChatController(),
             "积分不足请联系管理员。",
             "danger",
           );
@@ -563,18 +712,19 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
       if (method === "chat.send") {
         scheduleChatLoadingFailsafe(app, activeSessionKey, {
           showTimeoutToast(message) {
-            showTransientToast(window._ocMemberChatSurfaceController, message, "danger");
+            showTransientToast(getActiveMemberChatController(), message, "danger");
           },
         });
-        if (window._ocMemberChatSurfaceController?.currentSessionKey) {
+        const activeController = getActiveMemberChatController();
+        if (activeController?.currentSessionKey) {
           void ensureMemberSessionTitle(
-            window._ocMemberChatSurfaceController,
-            window._ocMemberChatSurfaceController.currentSessionKey,
+            activeController,
+            activeController.currentSessionKey,
             params?.message,
           );
           scheduleMemberUsageSync(
-            window._ocMemberChatSurfaceController,
-            window._ocMemberChatSurfaceController.currentSessionKey,
+            activeController,
+            activeController.currentSessionKey,
           );
         }
         setTimeout(() => {
@@ -678,8 +828,9 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           clearChatLoadingFailsafe(app);
           app.__ocPinnedSessionHydratedKey = targetKey;
           app.requestUpdate?.();
-          if (window._ocMemberChatSurfaceController?.currentSessionKey === targetKey) {
-            void syncMemberUsageRecords(window._ocMemberChatSurfaceController, targetKey, msgs);
+          const activeController = getActiveMemberChatController();
+          if (activeController?.currentSessionKey === targetKey) {
+            void syncMemberUsageRecords(activeController, targetKey, msgs);
           }
         }
       })
@@ -803,9 +954,12 @@ async function syncMemberChatSurface() {
       session,
       window.location.href,
       sessionsFromGateway,
+      {
+        controller: getActiveMemberChatController(),
+      },
     );
 
-    unbindMemberHistoryPagination(window._ocMemberChatSurfaceController);
+    unbindMemberHistoryPagination(getActiveMemberChatController());
     const controller = {
       app,
       sidebar,
@@ -831,21 +985,17 @@ async function syncMemberChatSurface() {
         currentSessionKey,
         shouldSkipSessionHistoryHydration,
       ),
-      {
-        get value() {
-          return memberChatSurfaceSuppressNextRouteSync;
-        },
-        set value(next) {
-          memberChatSurfaceSuppressNextRouteSync = next;
-        },
-      },
+      createRouteSyncRef(),
       { replace: true },
     );
     pinMemberChatSession(app, currentSessionKey, {
       skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
     });
     window._ocMemberChatSurfaceController = controller;
-    bindMemberHistoryPagination(controller, { isAssistantSilentReply });
+    bindMemberHistoryPagination(controller, {
+      getActiveController: getActiveMemberChatController,
+      isAssistantSilentReply,
+    });
     void syncMemberUsageRecords(
       controller,
       currentSessionKey,
@@ -885,7 +1035,7 @@ export function bootMemberChatSurface() {
     }
     const balance = Number(agent?.balancePoints ?? 0);
     if (balance <= 0) {
-      showTransientToast(window._ocMemberChatSurfaceController, "积分不足请联系管理员。", "danger");
+      showTransientToast(getActiveMemberChatController(), "积分不足请联系管理员。", "danger");
       return false;
     }
     return true;
@@ -898,7 +1048,7 @@ export function bootMemberChatSurface() {
       return;
     }
     if (isMemberChatRoute()) {
-      const ctrl = window._ocMemberChatSurfaceController;
+      const ctrl = getActiveMemberChatController();
       const newSessionBtn = findClosestNewSessionButton(target);
       if (newSessionBtn && beginNewMemberDraftSession(ctrl, createSidebarDeps())) {
         event.stopImmediatePropagation();
@@ -974,7 +1124,7 @@ export function resetMemberChatSurfaceForTests() {
   memberChatSurfaceSyncing = false;
   memberChatSurfaceSyncQueued = false;
   memberChatSurfaceSuppressNextRouteSync = false;
-  unbindMemberHistoryPagination(window._ocMemberChatSurfaceController);
+  unbindMemberHistoryPagination(getActiveMemberChatController());
   if (typeof memberChatRouteCleanup === "function") {
     memberChatRouteCleanup();
   }
