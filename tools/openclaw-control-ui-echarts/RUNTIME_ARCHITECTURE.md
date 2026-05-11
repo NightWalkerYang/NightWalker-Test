@@ -90,6 +90,34 @@ The runtime also mounts a few route-scoped surfaces on top of the native Control
 
 These layers share route sync and content-area mounting, but each route keeps its own styles and cleanup rules.
 
+## 4. Tenant Runtime Layering
+
+The tenant runtime should follow the same split philosophy instead of growing a single large entrypoint.
+
+Primary tenant runtime files today:
+
+- `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/dom-compat.js`
+
+Target layered responsibilities:
+
+- state/context: shared route, session, selected-agent, and storage truth
+- navigation/lifecycle: route change wiring and shared cleanup registration
+- shell coordination: native Control UI shell takeover and synchronization
+- view/page/surface: page-specific controller, render, and interaction logic
+
+Governance rules:
+
+1. `runtime/tenant/entry.js` is assembly-only and should keep public boot/reset exports stable.
+2. New tenant pages or surfaces should be standalone modules registered through a registry path, not appended as page logic inside `entry.js`.
+3. Native shell DOM access should reuse `runtime/framework/dom-compat.js` instead of duplicating selectors in tenant files.
+4. Route/session/storage access should reuse shared tenant helpers such as `runtime/tenant/tenant-context.js` and `runtime/tenant/route-sync.js`.
+5. Timers, observers, and event listeners should register cleanup centrally instead of being scattered across page branches.
+
+See `tools/openclaw-control-ui-echarts/TENANT_RUNTIME_EXTENSION_GUIDE.md` for the operational extension rules.
+
 ## Current File Block Support
 
 The runtime now supports blocks like:

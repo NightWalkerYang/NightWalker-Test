@@ -78,6 +78,8 @@
   - 当前已经真实落地且验证通过的能力
 - `ZERO_INTRUSIVE_TENANT_OPEN_DECISIONS.md`
   - 还需要拍板或补材料的事项
+- `tools/openclaw-control-ui-echarts/TENANT_RUNTIME_EXTENSION_GUIDE.md`
+  - tenant runtime 扩展治理规则、文件职责边界、后续新增页面/壳层/共享状态的落点约束
 
 ## 设计前提
 
@@ -193,3 +195,15 @@
 1. 总览留在这里，细节放进对应模块文档。
 2. 当前实现一旦变化，优先更新模块文档和实施现状。
 3. 零侵入文件边界始终以 `ZERO_INTRUSIVE_ECHARTS_ADDITIONS.md` 为准。
+
+### Tenant Runtime 结构治理补充
+
+后续 tenant runtime 维护还要额外遵守下面约束：
+
+1. `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js` 只保留装配职责，不继续堆页面级逻辑。
+2. 新增 tenant 页面或 surface 时，优先做独立模块，并通过 registry 接入，而不是继续在入口文件里追加条件分发。
+3. 原生 Control UI 壳层 DOM 接管统一复用 `tools/openclaw-control-ui-echarts/runtime/framework/dom-compat.js`。
+4. route、session、selected-agent、storage 真值统一复用 tenant runtime 的共享 helper，例如 `runtime/tenant/tenant-context.js` 与 `runtime/tenant/route-sync.js`。
+5. polling、observer、事件监听等 cleanup 必须集中注册，不能把清理散落在入口分支或页面拼接逻辑里。
+
+具体落点和禁止模式，以 `tools/openclaw-control-ui-echarts/TENANT_RUNTIME_EXTENSION_GUIDE.md` 为准。

@@ -64,6 +64,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh`
 - `tools/openclaw-control-ui-echarts/README.md`
 - `tools/openclaw-control-ui-echarts/RUNTIME_ARCHITECTURE.md`
+- `tools/openclaw-control-ui-echarts/TENANT_RUNTIME_EXTENSION_GUIDE.md`
 - `tools/openclaw-control-ui-echarts/generated/.gitignore`
 
 ### Docker Local Proxy
