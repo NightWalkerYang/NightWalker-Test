@@ -77,18 +77,6 @@ export function createTenantDataSourceBindingDialogState() {
   };
 }
 
-export function createDataSourceDialogState() {
-  return {
-    id: "",
-    name: "",
-    status: "active",
-    connectionJson: "",
-    k3cloudProfileJson: "",
-    editing: false,
-    error: "",
-  };
-}
-
 export function getDataSourceCatalogDialog(controller) {
   if (
     !(
@@ -276,15 +264,6 @@ export function buildDataSourcePayloadFromDraft(draft) {
     sourceTenantCode: String(draft.sourceTenantCode || "").trim() || null,
     connection,
   };
-}
-
-export function bindingByTenantId(controller, tenantId) {
-  return (
-    (Array.isArray(controller.tenantDataSourceBindings)
-      ? controller.tenantDataSourceBindings
-      : []
-    ).find((item) => item.tenantId === tenantId) ?? null
-  );
 }
 
 export function filterDataSources(controller) {
@@ -549,4 +528,89 @@ export function renderTenantDataSourceBindingDialog(controller) {
       </div>
     </dialog>
   `;
+}
+
+export function openCreateDataSourceCatalogDialog(root, controller, helpers) {
+  const dialog = getDataSourceCatalogDialog(controller);
+  dialog.open = true;
+  dialog.busy = false;
+  dialog.error = "";
+  dialog.draft = createDataSourceDraft(null, resolveDefaultBoundTenantId(controller));
+  helpers.render(root, controller);
+}
+
+export function openEditDataSourceCatalogDialog(root, controller, dataSourceId, helpers) {
+  const current = dataSourceById(controller.dataSources, dataSourceId);
+  if (!current) {
+    helpers.setFeedback(root, "未找到数据源。", true);
+    return;
+  }
+  const dialog = getDataSourceCatalogDialog(controller);
+  dialog.open = true;
+  dialog.busy = false;
+  dialog.error = "";
+  dialog.draft = createDataSourceDraft(
+    current,
+    resolveDefaultBoundTenantId(controller, dataSourceId),
+  );
+  helpers.render(root, controller);
+}
+
+export async function openTenantDataSourceBindingDialog(root, controller, tenantId, helpers) {
+  const tenant = helpers.tenantById(controller, tenantId);
+  if (!tenant) {
+    return;
+  }
+
+  controller.activeTenant = tenant;
+  const previousToken = Number(controller.tenantDataSourceBindingDialog?.requestToken || 0);
+  controller.tenantDataSourceBindingDialog = {
+    ...createTenantDataSourceBindingDialogState(),
+    open: true,
+    loading: true,
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+    requestToken: previousToken + 1,
+  };
+  helpers.render(root, controller);
+
+  const requestToken = controller.tenantDataSourceBindingDialog.requestToken;
+  try {
+    const [dataSources, currentBinding] = await Promise.all([
+      controller.apiClient.listPlatformDataSources(),
+      controller.apiClient.getTenantDataSourceBinding(tenant.id),
+    ]);
+    const currentDialog = controller.tenantDataSourceBindingDialog;
+    if (
+      !currentDialog?.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    currentDialog.dataSources = Array.isArray(dataSources) ? dataSources : [];
+    currentDialog.currentBinding = currentBinding ?? null;
+    const activeDataSources = getActiveDataSources(currentDialog.dataSources);
+    const activeIds = new Set(activeDataSources.map((source) => String(source.id || "").trim()));
+    const currentBindingId = String(currentBinding?.dataSourceId || "").trim();
+    currentDialog.selectedDataSourceId = activeIds.has(currentBindingId)
+      ? currentBindingId
+      : String(activeDataSources[0]?.id || "");
+    currentDialog.loading = false;
+    currentDialog.error = "";
+    helpers.render(root, controller);
+  } catch (error) {
+    const currentDialog = controller.tenantDataSourceBindingDialog;
+    if (
+      !currentDialog?.open ||
+      currentDialog.requestToken !== requestToken ||
+      currentDialog.tenantId !== tenant.id
+    ) {
+      return;
+    }
+    currentDialog.loading = false;
+    currentDialog.error = error instanceof Error ? error.message : String(error);
+    helpers.render(root, controller);
+    helpers.setFeedback(root, currentDialog.error, true);
+  }
 }

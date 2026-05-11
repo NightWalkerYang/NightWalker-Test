@@ -10,19 +10,19 @@ import {
   updateSectionLinkState,
 } from "./platform-console-controller.js";
 import {
-  bindingByTenantId,
   buildDataSourcePayloadFromDraft,
   createDataSourceCatalogDialogState,
-  createDataSourceDialogState,
   createDataSourceDraft,
   createTenantDataSourceBindingDialogState,
   dataSourceById,
   describePlatformDataSourceError,
-  getActiveDataSources,
   getDataSourceCatalogDialog,
   getDataSourceDisplayName,
   getTenantDataSourceBindingDialog,
   getTenantDisplayName,
+  openCreateDataSourceCatalogDialog,
+  openEditDataSourceCatalogDialog,
+  openTenantDataSourceBindingDialog,
   resolveDefaultBoundTenantId,
   syncDataSourceDraftTenant,
   tenantByDataSourceId,
@@ -33,8 +33,10 @@ import {
   closeDialog,
   createAssignTenantAgentDialogState,
   createRevokeTenantAgentDialogState,
+  dismissPlatformDialog,
   getAssignTenantAgentDialog,
   getAssignablePlatformCatalogAgents,
+  handlePlatformDialogClosed,
   getRevokeTenantAgentDialog,
   getRevokeTenantAgentSelectableAgents,
   openDialog,
@@ -64,7 +66,6 @@ const PAGE_SELECTOR = "[data-oc-platform-tenant-console-page]";
 
 function render(root, controller) {
   renderPlatformConsole(root, controller, {
-    bindingByTenantId,
     openDialog,
   });
 }
@@ -322,65 +323,6 @@ async function revokeSelectedTenantAgents(root, controller) {
   }
 }
 
-async function openTenantDataSourceBindingDialog(root, controller, tenantId) {
-  const tenant = tenantById(controller, tenantId);
-  if (!tenant) {
-    return;
-  }
-
-  controller.activeTenant = tenant;
-  const previousToken = Number(controller.tenantDataSourceBindingDialog?.requestToken || 0);
-  controller.tenantDataSourceBindingDialog = {
-    ...createTenantDataSourceBindingDialogState(),
-    open: true,
-    loading: true,
-    tenantId: tenant.id,
-    tenantName: tenant.name,
-    requestToken: previousToken + 1,
-  };
-  render(root, controller);
-
-  const requestToken = controller.tenantDataSourceBindingDialog.requestToken;
-  try {
-    const [dataSources, currentBinding] = await Promise.all([
-      controller.apiClient.listPlatformDataSources(),
-      controller.apiClient.getTenantDataSourceBinding(tenant.id),
-    ]);
-    const currentDialog = controller.tenantDataSourceBindingDialog;
-    if (
-      !currentDialog?.open ||
-      currentDialog.requestToken !== requestToken ||
-      currentDialog.tenantId !== tenant.id
-    ) {
-      return;
-    }
-    currentDialog.dataSources = Array.isArray(dataSources) ? dataSources : [];
-    currentDialog.currentBinding = currentBinding ?? null;
-    const activeDataSources = getActiveDataSources(currentDialog.dataSources);
-    const activeIds = new Set(activeDataSources.map((source) => String(source.id || "").trim()));
-    const currentBindingId = String(currentBinding?.dataSourceId || "").trim();
-    currentDialog.selectedDataSourceId = activeIds.has(currentBindingId)
-      ? currentBindingId
-      : String(activeDataSources[0]?.id || "");
-    currentDialog.loading = false;
-    currentDialog.error = "";
-    render(root, controller);
-  } catch (error) {
-    const currentDialog = controller.tenantDataSourceBindingDialog;
-    if (
-      !currentDialog?.open ||
-      currentDialog.requestToken !== requestToken ||
-      currentDialog.tenantId !== tenant.id
-    ) {
-      return;
-    }
-    currentDialog.loading = false;
-    currentDialog.error = error instanceof Error ? error.message : String(error);
-    render(root, controller);
-    setFeedback(root, currentDialog.error, true);
-  }
-}
-
 function ensureController(root, session, apiClient) {
   if (root.__ocPlatformConsoleController) {
     root.__ocPlatformConsoleController.session = session;
@@ -392,7 +334,6 @@ function ensureController(root, session, apiClient) {
     createRevokeTenantAgentDialogState,
     createDataSourceCatalogDialogState,
     createTenantDataSourceBindingDialogState,
-    createDataSourceDialogState,
     createNodeDialogState,
     createBindNodeDialogState,
   };
@@ -411,45 +352,14 @@ function ensureController(root, session, apiClient) {
     if (!(event.target instanceof HTMLDialogElement)) {
       return;
     }
-    if (event.target.matches("[data-platform-create-dialog]")) {
-      controller.dialogs.createTenantOpen = false;
-    }
-    if (event.target.matches("[data-platform-member-limit-dialog]")) {
-      controller.dialogs.memberLimitOpen = false;
-    }
-    if (event.target.matches("[data-platform-assign-dialog]")) {
-      controller.dialogs.assignOpen = false;
-      controller.assignTenantAgentDialog = createAssignTenantAgentDialogState();
-    }
-    if (event.target.matches("[data-platform-rate-dialog]")) {
-      controller.dialogs.rateOpen = false;
-      controller.rateDialogAgents = [];
-    }
-    if (event.target.matches("[data-platform-local-license-dialog]")) {
-      controller.dialogs.localLicenseOpen = false;
-    }
-    if (event.target.matches("[data-platform-data-source-dialog]")) {
-      controller.dataSourceCatalogDialog = createDataSourceCatalogDialogState();
-    }
-    if (event.target.matches("[data-platform-binding-dialog]")) {
-      controller.tenantDataSourceBindingDialog = createTenantDataSourceBindingDialogState();
-    }
-    if (event.target.matches("[data-platform-node-dialog]")) {
-      controller.dialogs.nodeOpen = false;
-      controller.nodeDialog = createNodeDialogState();
-    }
-    if (event.target.matches("[data-platform-bind-node-dialog]")) {
-      controller.dialogs.bindNodeOpen = false;
-      controller.bindNodeDialog = createBindNodeDialogState();
-    }
-    if (event.target.matches("[data-platform-revoke-tenant-agent-dialog]")) {
-      controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
-    }
-    if (event.target.matches("[data-platform-revoke-confirm-dialog]")) {
-      const dialog = getRevokeTenantAgentDialog(controller);
-      dialog.confirmOpen = false;
-      dialog.confirmSelectedTenantAgentIds = [];
-    }
+    handlePlatformDialogClosed(controller, event.target, {
+      createAssignTenantAgentDialogState,
+      createRevokeTenantAgentDialogState,
+      createDataSourceCatalogDialogState,
+      createTenantDataSourceBindingDialogState,
+      createNodeDialogState,
+      createBindNodeDialogState,
+    });
     render(root, controller);
   });
   return controller;
@@ -477,91 +387,42 @@ async function handleClick(root, controller, event) {
   }
 
   if (target.closest("[data-platform-open-data-source-create]")) {
-    const dialog = getDataSourceCatalogDialog(controller);
-    dialog.open = true;
-    dialog.busy = false;
-    dialog.error = "";
-    dialog.draft = createDataSourceDraft(null, resolveDefaultBoundTenantId(controller));
-    render(root, controller);
+    openCreateDataSourceCatalogDialog(root, controller, { render });
     return;
   }
 
   const editDataSourceTrigger = target.closest("[data-platform-edit-data-source]");
   if (editDataSourceTrigger instanceof HTMLElement) {
-    const dataSourceId = editDataSourceTrigger.dataset.platformEditDataSource || "";
-    const current = dataSourceById(controller.dataSources, dataSourceId);
-    if (!current) {
-      setFeedback(root, "未找到数据源。", true);
-      return;
-    }
-    const dialog = getDataSourceCatalogDialog(controller);
-    dialog.open = true;
-    dialog.busy = false;
-    dialog.error = "";
-    dialog.draft = createDataSourceDraft(
-      current,
-      resolveDefaultBoundTenantId(controller, editDataSourceTrigger.dataset.platformEditDataSource),
+    openEditDataSourceCatalogDialog(
+      root,
+      controller,
+      editDataSourceTrigger.dataset.platformEditDataSource || "",
+      { render, setFeedback },
     );
-    render(root, controller);
     return;
   }
 
   const closeDialogTrigger = target.closest("[data-platform-close-dialog]");
   if (closeDialogTrigger instanceof HTMLElement) {
-    const dialogKind = closeDialogTrigger.dataset.platformCloseDialog || "";
-    if (dialogKind === "create") {
-      controller.dialogs.createTenantOpen = false;
-      closeDialog(root.querySelector("[data-platform-create-dialog]"));
+    if (
+      dismissPlatformDialog(
+        root,
+        controller,
+        closeDialogTrigger.dataset.platformCloseDialog || "",
+        {
+          closeDialog,
+          render,
+          createAssignTenantAgentDialogState,
+          createRevokeTenantAgentDialogState,
+          createDataSourceCatalogDialogState,
+          createTenantDataSourceBindingDialogState,
+          createNodeDialogState,
+          createBindNodeDialogState,
+        },
+      )
+    ) {
+      return;
     }
-    if (dialogKind === "member-limit") {
-      controller.dialogs.memberLimitOpen = false;
-      closeDialog(root.querySelector("[data-platform-member-limit-dialog]"));
-    }
-    if (dialogKind === "assign") {
-      controller.dialogs.assignOpen = false;
-      controller.assignTenantAgentDialog = createAssignTenantAgentDialogState();
-      closeDialog(root.querySelector("[data-platform-assign-dialog]"));
-    }
-    if (dialogKind === "rate") {
-      controller.dialogs.rateOpen = false;
-      controller.rateDialogAgents = [];
-      closeDialog(root.querySelector("[data-platform-rate-dialog]"));
-    }
-    if (dialogKind === "revoke") {
-      controller.revokeTenantAgentDialog = createRevokeTenantAgentDialogState();
-      closeDialog(root.querySelector("[data-platform-revoke-tenant-agent-dialog]"));
-    }
-    if (dialogKind === "revoke-confirm") {
-      const dialog = getRevokeTenantAgentDialog(controller);
-      dialog.confirmOpen = false;
-      dialog.confirmSelectedTenantAgentIds = [];
-      closeDialog(root.querySelector("[data-platform-revoke-confirm-dialog]"));
-    }
-    if (dialogKind === "local-license") {
-      controller.dialogs.localLicenseOpen = false;
-      closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
-    }
-    if (dialogKind === "binding") {
-      controller.tenantDataSourceBindingDialog = createTenantDataSourceBindingDialogState();
-      closeDialog(root.querySelector("[data-platform-binding-dialog]"));
-    }
-    if (dialogKind === "data-source") {
-      controller.dataSourceCatalogDialog = createDataSourceCatalogDialogState();
-      closeDialog(root.querySelector("[data-platform-data-source-dialog]"));
-    }
-    if (dialogKind === "node") {
-      controller.dialogs.nodeOpen = false;
-      controller.activeNode = null;
-      controller.nodeDialog = createNodeDialogState();
-      closeDialog(root.querySelector("[data-platform-node-dialog]"));
-    }
-    if (dialogKind === "bind-node") {
-      controller.dialogs.bindNodeOpen = false;
-      controller.bindNodeDialog = createBindNodeDialogState();
-      closeDialog(root.querySelector("[data-platform-bind-node-dialog]"));
-    }
-    render(root, controller);
-    return;
   }
 
   if (target.closest("[data-platform-open-node]")) {
@@ -610,6 +471,11 @@ async function handleClick(root, controller, event) {
       root,
       controller,
       bindingTrigger.dataset.platformOpenDataSourceBinding || "",
+      {
+        render,
+        setFeedback,
+        tenantById,
+      },
     );
     return;
   }

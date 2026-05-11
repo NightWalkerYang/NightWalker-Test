@@ -1,10 +1,8 @@
 import { showTransientFeedbackToast } from "./feedback-toast.js";
 import {
-  deploymentModeLabel,
   escapeHtml,
   formatDateTime,
   formatNumber,
-  getSearchValue,
   isLocalEdition,
   localLicenseStatusLabel,
 } from "./platform-console-controller.js";
@@ -229,193 +227,6 @@ export function pruneAssignTenantAgentSelection(controller) {
       dialog.selectedAgentIds.delete(agentId);
     }
   }
-}
-
-export function renderToolbar(controller) {
-  const isTenantSection = controller.section === "tenants";
-  const isDataSourceSection = controller.section === "data-sources";
-  const isNodeSection = controller.section === "nodes";
-  const localEdition = isLocalEdition(controller);
-  const placeholder = isDataSourceSection
-    ? "搜索数据源名称、编码或归属租户"
-    : isNodeSection
-      ? "搜索节点名称或标识"
-      : "搜索租户名称或编码";
-  return `
-    <div class="data-table-toolbar oc-platform-table-toolbar">
-      <label class="data-table-search">
-        <input
-          type="search"
-          placeholder="${placeholder}"
-          value="${escapeHtml(getSearchValue(controller))}"
-          data-platform-search
-        />
-      </label>
-      ${
-        isTenantSection
-          ? `<button class="btn primary" type="button" data-platform-open-create>创建租户</button>`
-          : ""
-      }
-      ${
-        isDataSourceSection
-          ? `<button class="btn primary" type="button" data-platform-open-data-source-create>创建数据源</button>`
-          : ""
-      }
-      ${
-        isNodeSection
-          ? `<button class="btn primary" type="button" data-platform-open-node>创建节点</button>`
-          : ""
-      }
-      ${
-        isTenantSection && localEdition
-          ? `<button class="btn" type="button" data-platform-open-local-license>授权管理</button>`
-          : ""
-      }
-    </div>
-  `;
-}
-
-export function renderTenantManagementTable(controller, rows, bindingByTenantId) {
-  const localEdition = isLocalEdition(controller);
-  return `
-    <div class="data-table-container">
-      <table class="data-table oc-platform-tenant-table">
-        <thead>
-          <tr>
-            <th>租户名称</th>
-            <th>租户编码</th>
-            <th>状态</th>
-            <th>成员数</th>
-            <th>人数上限</th>
-            <th>数据源</th>
-            ${localEdition ? "" : "<th>部署模式</th><th>受管节点</th><th>钱包积分</th><th>到期日期</th>"}
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            rows.length
-              ? rows
-                  .map(
-                    (tenant) => `
-                      ${(() => {
-                        const binding = bindingByTenantId(controller, tenant.id);
-                        return `
-                      <tr>
-                        <td>${escapeHtml(tenant.name)}</td>
-                        <td>${escapeHtml(tenant.code)}</td>
-                        <td><span class="data-table-badge data-table-badge--${tenant.status === "active" ? "direct" : "unknown"}">${escapeHtml(tenant.status)}</span></td>
-                        <td>${formatNumber(tenant.memberCount)}</td>
-                        <td>${formatNumber(tenant.memberLimit)}</td>
-                        <td>${escapeHtml(String(tenant.dataSourceName || binding?.dataSourceName || "未绑定").trim() || "未绑定")}</td>
-                        ${
-                          localEdition
-                            ? ""
-                            : `
-                              <td>${escapeHtml(deploymentModeLabel(tenant.deploymentMode))}</td>
-                              <td>${escapeHtml(String(tenant.boundNodeName || tenant.boundNodeId || "未绑定").trim() || "未绑定")}</td>
-                              <td>${formatNumber(tenant.walletBalance)}</td>
-                              <td>${escapeHtml(formatDateTime(tenant.licenseExpiresAt))}</td>
-                            `
-                        }
-                        <td>
-                          <div class="oc-platform-table-actions">
-                            <button class="btn" type="button" data-platform-open-member-limit="${escapeHtml(tenant.id)}">人数调整</button>
-                            <button class="btn" type="button" data-platform-open-data-source-binding="${escapeHtml(tenant.id)}">绑定数据源</button>
-                            ${
-                              localEdition
-                                ? ""
-                                : `<button class="btn" type="button" data-platform-open-bind-node="${escapeHtml(tenant.id)}">节点绑定</button>`
-                            }
-                          </div>
-                        </td>
-                      </tr>
-                    `})()}
-                    `,
-                  )
-                  .join("")
-              : `<tr><td colspan="${localEdition ? 7 : 11}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
-          }
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-export function renderAgentAssignmentTable(controller, rows) {
-  const localEdition = isLocalEdition(controller);
-  return `
-    <div class="data-table-container">
-      <table class="data-table oc-platform-agent-table">
-        <thead>
-          <tr>
-            <th>租户名称</th>
-            <th>租户编码</th>
-            <th>成员数</th>
-            <th>已分配 Agent</th>
-            ${localEdition ? "" : "<th>部署模式</th><th>钱包积分</th>"}
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            rows.length
-              ? rows
-                  .map(
-                    (tenant) => `
-                      <tr>
-                        <td>${escapeHtml(tenant.name)}</td>
-                        <td>${escapeHtml(tenant.code)}</td>
-                        <td>${formatNumber(tenant.memberCount)}</td>
-                        <td>${formatNumber(tenant.agentCount)}</td>
-                        ${
-                          localEdition
-                            ? ""
-                            : `
-                              <td>${escapeHtml(deploymentModeLabel(tenant.deploymentMode))}</td>
-                              <td>${formatNumber(tenant.walletBalance)}</td>
-                            `
-                        }
-                        <td><span class="data-table-badge data-table-badge--${tenant.status === "active" ? "direct" : "unknown"}">${escapeHtml(tenant.status)}</span></td>
-                        <td>
-                          <div class="oc-platform-table-actions">
-                            <button class="btn" type="button" data-platform-open-assign="${escapeHtml(tenant.id)}">分配Agent</button>
-                            <button
-                              class="btn oc-platform-destructive-action"
-                              type="button"
-                              data-platform-open-revoke="${escapeHtml(tenant.id)}"
-                              ${isTenantRevokeSelectionTarget(tenant) ? "" : "disabled"}
-                            >
-                              撤回分配
-                            </button>
-                            ${localEdition ? "" : `<button class="btn" type="button" data-platform-open-rate="${escapeHtml(tenant.id)}">倍率调整</button>`}
-                          </div>
-                        </td>
-                      </tr>
-                    `,
-                  )
-                  .join("")
-              : `<tr><td colspan="${localEdition ? 6 : 8}" class="oc-platform-table-empty">暂无租户数据</td></tr>`
-          }
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-export function renderPagination(controller, pagination) {
-  return `
-    <div class="data-table-pagination">
-      <div class="data-table-pagination__info">
-        共 ${formatNumber(pagination.totalItems)} 条，第 ${formatNumber(pagination.page)} / ${formatNumber(pagination.totalPages)} 页
-      </div>
-      <div class="data-table-pagination__controls">
-        <button type="button" data-platform-page="prev" ${pagination.page <= 1 ? "disabled" : ""}>上一页</button>
-        <button type="button" data-platform-page="next" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>下一页</button>
-      </div>
-    </div>
-  `;
 }
 
 export function renderCreateDialog(controller) {
@@ -897,4 +708,125 @@ export function renderLocalLicenseDialog(controller) {
       </div>
     </dialog>
   `;
+}
+
+export function dismissPlatformDialog(root, controller, dialogKind, helpers) {
+  if (dialogKind === "create") {
+    controller.dialogs.createTenantOpen = false;
+    helpers.closeDialog(root.querySelector("[data-platform-create-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "member-limit") {
+    controller.dialogs.memberLimitOpen = false;
+    helpers.closeDialog(root.querySelector("[data-platform-member-limit-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "assign") {
+    controller.dialogs.assignOpen = false;
+    controller.assignTenantAgentDialog = helpers.createAssignTenantAgentDialogState();
+    helpers.closeDialog(root.querySelector("[data-platform-assign-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "rate") {
+    controller.dialogs.rateOpen = false;
+    controller.rateDialogAgents = [];
+    helpers.closeDialog(root.querySelector("[data-platform-rate-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "revoke") {
+    controller.revokeTenantAgentDialog = helpers.createRevokeTenantAgentDialogState();
+    helpers.closeDialog(root.querySelector("[data-platform-revoke-tenant-agent-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "revoke-confirm") {
+    const dialog = getRevokeTenantAgentDialog(controller);
+    dialog.confirmOpen = false;
+    dialog.confirmSelectedTenantAgentIds = [];
+    helpers.closeDialog(root.querySelector("[data-platform-revoke-confirm-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "local-license") {
+    controller.dialogs.localLicenseOpen = false;
+    helpers.closeDialog(root.querySelector("[data-platform-local-license-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "binding") {
+    controller.tenantDataSourceBindingDialog =
+      helpers.createTenantDataSourceBindingDialogState();
+    helpers.closeDialog(root.querySelector("[data-platform-binding-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "data-source") {
+    controller.dataSourceCatalogDialog = helpers.createDataSourceCatalogDialogState();
+    helpers.closeDialog(root.querySelector("[data-platform-data-source-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "node") {
+    controller.dialogs.nodeOpen = false;
+    controller.activeNode = null;
+    controller.nodeDialog = helpers.createNodeDialogState();
+    helpers.closeDialog(root.querySelector("[data-platform-node-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "bind-node") {
+    controller.dialogs.bindNodeOpen = false;
+    controller.bindNodeDialog = helpers.createBindNodeDialogState();
+    helpers.closeDialog(root.querySelector("[data-platform-bind-node-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  return false;
+}
+
+export function handlePlatformDialogClosed(controller, dialogElement, helpers) {
+  if (dialogElement.matches("[data-platform-create-dialog]")) {
+    controller.dialogs.createTenantOpen = false;
+  }
+  if (dialogElement.matches("[data-platform-member-limit-dialog]")) {
+    controller.dialogs.memberLimitOpen = false;
+  }
+  if (dialogElement.matches("[data-platform-assign-dialog]")) {
+    controller.dialogs.assignOpen = false;
+    controller.assignTenantAgentDialog = helpers.createAssignTenantAgentDialogState();
+  }
+  if (dialogElement.matches("[data-platform-rate-dialog]")) {
+    controller.dialogs.rateOpen = false;
+    controller.rateDialogAgents = [];
+  }
+  if (dialogElement.matches("[data-platform-local-license-dialog]")) {
+    controller.dialogs.localLicenseOpen = false;
+  }
+  if (dialogElement.matches("[data-platform-data-source-dialog]")) {
+    controller.dataSourceCatalogDialog = helpers.createDataSourceCatalogDialogState();
+  }
+  if (dialogElement.matches("[data-platform-binding-dialog]")) {
+    controller.tenantDataSourceBindingDialog =
+      helpers.createTenantDataSourceBindingDialogState();
+  }
+  if (dialogElement.matches("[data-platform-node-dialog]")) {
+    controller.dialogs.nodeOpen = false;
+    controller.nodeDialog = helpers.createNodeDialogState();
+  }
+  if (dialogElement.matches("[data-platform-bind-node-dialog]")) {
+    controller.dialogs.bindNodeOpen = false;
+    controller.bindNodeDialog = helpers.createBindNodeDialogState();
+  }
+  if (dialogElement.matches("[data-platform-revoke-tenant-agent-dialog]")) {
+    controller.revokeTenantAgentDialog = helpers.createRevokeTenantAgentDialogState();
+  }
+  if (dialogElement.matches("[data-platform-revoke-confirm-dialog]")) {
+    const dialog = getRevokeTenantAgentDialog(controller);
+    dialog.confirmOpen = false;
+    dialog.confirmSelectedTenantAgentIds = [];
+  }
 }
