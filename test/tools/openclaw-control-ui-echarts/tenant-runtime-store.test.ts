@@ -77,6 +77,42 @@ describe("tenant runtime store", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("normalizes replacement state to preserve the intended shape", () => {
+    const store = createTenantRuntimeStore(createInitialState());
+
+    store.setState({
+      currentSession: undefined,
+      shellReady: {
+        sidebar: 1,
+      },
+      ignored: "value that should not be stored",
+    } as never);
+
+    expect(store.getState()).toEqual({
+      currentSession: null,
+      currentRole: null,
+      currentTenantView: null,
+      selectedTenantAgent: null,
+      shellReady: {
+        sidebar: true,
+        topbar: false,
+        breadcrumb: false,
+        content: false,
+      },
+    });
+  });
+
+  it("returns defensive snapshots so external mutation cannot affect stored state", () => {
+    const store = createTenantRuntimeStore(createInitialState());
+    const firstSnapshot = store.getState();
+
+    firstSnapshot.currentRole = "mutated-role";
+    firstSnapshot.shellReady.sidebar = true;
+
+    expect(store.getState()).toEqual(createInitialState());
+    expect(store.getState()).not.toBe(firstSnapshot);
+  });
+
   it("resets state for tests", () => {
     const initialState = createInitialState();
     const store = createTenantRuntimeStore(initialState);

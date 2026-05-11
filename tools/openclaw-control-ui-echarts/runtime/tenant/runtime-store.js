@@ -27,26 +27,82 @@ function cloneInitialState(initialState) {
   };
 }
 
+function cloneValue(value) {
+  if (value == null || typeof value !== "object") {
+    return value ?? null;
+  }
+  return structuredClone(value);
+}
+
+function cloneStateSnapshot(state) {
+  return {
+    currentSession: cloneValue(state.currentSession),
+    currentRole: state.currentRole,
+    currentTenantView: state.currentTenantView,
+    selectedTenantAgent: cloneValue(state.selectedTenantAgent),
+    shellReady: {
+      ...state.shellReady,
+    },
+  };
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object";
+}
+
+function isEqualValue(left, right) {
+  if (left === right) {
+    return true;
+  }
+  if (!isPlainObject(left) || !isPlainObject(right)) {
+    return false;
+  }
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => isEqualValue(left[key], right[key]));
+}
+
+function hasSameStateShape(left, right) {
+  return (
+    isEqualValue(left.currentSession, right.currentSession) &&
+    left.currentRole === right.currentRole &&
+    left.currentTenantView === right.currentTenantView &&
+    isEqualValue(left.selectedTenantAgent, right.selectedTenantAgent) &&
+    left.shellReady.sidebar === right.shellReady.sidebar &&
+    left.shellReady.topbar === right.shellReady.topbar &&
+    left.shellReady.breadcrumb === right.shellReady.breadcrumb &&
+    left.shellReady.content === right.shellReady.content
+  );
+}
+
 export function createTenantRuntimeStore(initialState) {
   const baselineState = cloneInitialState(initialState);
-  let state = baselineState;
+  let state = cloneStateSnapshot(baselineState);
   const listeners = new Set();
 
   function getState() {
-    return state;
+    return cloneStateSnapshot(state);
   }
 
   function setState(nextOrUpdater) {
     const nextState =
-      typeof nextOrUpdater === "function" ? nextOrUpdater(state) : nextOrUpdater;
-    if (nextState === state) {
+      typeof nextOrUpdater === "function"
+        ? nextOrUpdater(getState())
+        : nextOrUpdater;
+    const normalizedNextState = cloneInitialState(nextState);
+    if (hasSameStateShape(normalizedNextState, state)) {
       return state;
     }
-    state = nextState;
+    state = normalizedNextState;
     listeners.forEach((listener) => {
-      listener(state);
+      listener(getState());
     });
-    return state;
+    return getState();
   }
 
   function subscribe(listener) {
