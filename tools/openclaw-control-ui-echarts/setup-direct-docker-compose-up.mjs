@@ -519,6 +519,12 @@ function ensureGatewayServiceImageCurrent() {
 
   const result = spawnSync(dockerCommand, ["compose", "build", "openclaw-gateway"], {
     cwd: repoRoot,
+    env: {
+      ...process.env,
+      OPENCLAW_DOCKER_APT_PACKAGES:
+        process.env.OPENCLAW_DOCKER_APT_PACKAGES ||
+        "python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5",
+    },
     stdio: "inherit",
   });
   if (result.status !== 0) {
