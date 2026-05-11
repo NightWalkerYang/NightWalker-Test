@@ -1,0 +1,4 @@
+interface:
+  display_name: "Zero-Intrusive Tenant"
+  short_description: "Route OpenClaw zero-intrusive tenant work to the right docs"
+  default_prompt: "Use $zero-intrusive-tenant for OpenClaw zero-intrusive tenant work. Read the overview, inventory, and only the module docs needed for the task before changing zero-intrusive files."
