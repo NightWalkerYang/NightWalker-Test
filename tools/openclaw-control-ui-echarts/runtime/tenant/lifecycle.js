@@ -44,12 +44,12 @@ export function createTenantLifecycle() {
     return bucket.add(callback);
   }
 
-  function registerInterval(intervalId, clearIntervalFn = window.clearInterval.bind(window)) {
-    return addCleanup(() => clearIntervalFn(intervalId));
+  function registerInterval(intervalId) {
+    return addCleanup(() => window.clearInterval(intervalId));
   }
 
-  function registerTimeout(timeoutId, clearTimeoutFn = window.clearTimeout.bind(window)) {
-    return addCleanup(() => clearTimeoutFn(timeoutId));
+  function registerTimeout(timeoutId) {
+    return addCleanup(() => window.clearTimeout(timeoutId));
   }
 
   function registerEventListener(target, type, listener, options) {

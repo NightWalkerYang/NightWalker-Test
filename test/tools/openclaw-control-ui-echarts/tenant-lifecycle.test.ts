@@ -24,8 +24,8 @@ describe("tenant lifecycle", () => {
 
   it("registers timer, listener, and observer-style teardown callbacks", () => {
     const lifecycle = createTenantLifecycle();
-    const clearIntervalSpy = vi.fn();
-    const clearTimeoutSpy = vi.fn();
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
+    const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
     const listener = vi.fn();
     const addEventListener = vi.fn();
     const removeEventListener = vi.fn();
@@ -37,8 +37,8 @@ describe("tenant lifecycle", () => {
       disconnect: vi.fn(),
     };
 
-    lifecycle.registerInterval(11, clearIntervalSpy);
-    lifecycle.registerTimeout(22, clearTimeoutSpy);
+    lifecycle.registerInterval(11);
+    lifecycle.registerTimeout(22);
     lifecycle.registerEventListener(target, "click", listener, { capture: true });
     lifecycle.registerObserver(observer);
 
@@ -50,6 +50,9 @@ describe("tenant lifecycle", () => {
     expect(clearTimeoutSpy).toHaveBeenCalledWith(22);
     expect(removeEventListener).toHaveBeenCalledWith("click", listener, { capture: true });
     expect(observer.disconnect).toHaveBeenCalledTimes(1);
+
+    clearIntervalSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
   });
 
   it("runs cleanup once even when cleanup is called repeatedly", () => {
