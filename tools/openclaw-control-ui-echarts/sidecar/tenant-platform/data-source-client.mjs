@@ -852,6 +852,61 @@ async function queryRawRows(binding, sql, params = []) {
   throw new Error("data_catalog_unavailable");
 }
 
+async function queryRawRowsOrNull(binding, sql, params = []) {
+  try {
+    return await queryRawRows(binding, sql, params);
+  } catch {
+    return null;
+  }
+}
+
+function buildLegacyCurrentDatasetCatalog() {
+  return [
+    {
+      id: "sales_order",
+      label: "销售订单",
+      relationName: "sales_order_current",
+      objectCode: "sales_order",
+      storageRole: "current",
+      businessGrain: "line",
+      description: "销售订单分录、客户需求与订货节奏",
+      defaultSelected: true,
+      periodMode: "range",
+      dateColumn: "bill_date",
+      orgColumn: "sale_org_id",
+      hasUpdatedAt: true,
+    },
+    {
+      id: "sales_outbound",
+      label: "销售出库",
+      relationName: "sales_outstock_current",
+      objectCode: "sales_outstock",
+      storageRole: "current",
+      businessGrain: "line",
+      description: "实际出库、物料消耗与需求兑现情况",
+      defaultSelected: true,
+      periodMode: "range",
+      dateColumn: "bill_date",
+      orgColumn: "sale_org_id",
+      hasUpdatedAt: true,
+    },
+    {
+      id: "material_master",
+      label: "物料主数据",
+      relationName: "sales_outstock_current",
+      objectCode: "material_master_fallback",
+      storageRole: "current",
+      businessGrain: "line",
+      description: "从销售出库明细兜底提取物料编码和名称",
+      defaultSelected: true,
+      periodMode: "snapshot",
+      dateColumn: "",
+      orgColumn: "",
+      hasUpdatedAt: true,
+    },
+  ];
+}
+
 async function loadDatasetDictionary(binding) {
   const rows = await queryRawRows(
     binding,
@@ -1000,17 +1055,32 @@ export async function listSandboxDataCatalogForDataSource(binding, options = {})
   if (!isSupportedDataSourceType(readSourceType(binding))) {
     throw new Error("data_catalog_unavailable");
   }
-  const [coreDictionary, dynamicDictionary] = await Promise.all([
+  const dictionaryResults = await Promise.allSettled([
     loadDatasetDictionary(binding),
     loadDynamicDatasetDictionary(binding),
   ]);
+  const coreDictionary =
+    dictionaryResults[0]?.status === "fulfilled" ? dictionaryResults[0].value : new Map();
+  const dynamicDictionary =
+    dictionaryResults[1]?.status === "fulfilled" ? dictionaryResults[1].value : [];
+  const useLegacyFallback = coreDictionary.size === 0 && dynamicDictionary.length === 0;
+  const baseCatalog = useLegacyFallback
+    ? buildLegacyCurrentDatasetCatalog()
+    : SANDBOX_DATASET_CATALOG;
   const columnsByRelation = await loadDatasetColumns(
     binding,
-    dynamicDictionary.map((row) => row.relationName),
+    [
+      ...new Set(
+        [
+          ...baseCatalog.map((row) => row.relationName),
+          ...dynamicDictionary.map((row) => row.relationName),
+        ].filter(Boolean),
+      ),
+    ],
   );
   const dynamicByRelation = new Map(dynamicDictionary.map((row) => [row.relationName, row]));
   const catalog = [
-    ...SANDBOX_DATASET_CATALOG.map((dataset) => {
+    ...baseCatalog.map((dataset) => {
       const columns = columnsByRelation.get(dataset.relationName) || [];
       return {
         ...dataset,
@@ -1152,7 +1222,7 @@ export async function listSandboxMaterialCandidatesForDataSource(binding, option
   }
   params.push(SANDBOX_MATERIAL_LIMIT);
   const limitRef = `$${params.length}`;
-  const rows = await queryRawRows(
+  let rows = await queryRawRowsOrNull(
     binding,
     `WITH demand AS (
        SELECT
@@ -1192,6 +1262,47 @@ export async function listSandboxMaterialCandidatesForDataSource(binding, option
      LIMIT ${limitRef}`,
     params,
   );
+  if (!rows) {
+    const fallbackParams = [];
+    const fallbackWhere = ["base.material_number IS NOT NULL"];
+    if (inputStartDate) {
+      fallbackParams.push(inputStartDate);
+      fallbackWhere.push(`base.bill_date >= $${fallbackParams.length}::date`);
+    }
+    if (inputEndDate) {
+      fallbackParams.push(inputEndDate);
+      fallbackWhere.push(`base.bill_date <= $${fallbackParams.length}::date`);
+    }
+    if (allowedOrgIds.length > 0) {
+      fallbackParams.push(allowedOrgIds);
+      fallbackWhere.push(`base.sale_org_id = ANY($${fallbackParams.length}::text[])`);
+    }
+    let fallbackKeywordWhereSql = "";
+    if (keyword) {
+      fallbackParams.push(`%${keyword}%`);
+      fallbackKeywordWhereSql = `AND (
+        base.material_number ILIKE $${fallbackParams.length}
+        OR COALESCE(base.material_name, base.material_number) ILIKE $${fallbackParams.length}
+      )`;
+    }
+    fallbackParams.push(SANDBOX_MATERIAL_LIMIT);
+    const fallbackLimitRef = `$${fallbackParams.length}`;
+    rows = await queryRawRows(
+      binding,
+      `SELECT
+         base.material_number AS "materialId",
+         base.material_number AS "materialCode",
+         COALESCE(base.material_name, base.material_number) AS "materialName",
+         SUM(COALESCE(base.qty, 0))::numeric AS "activityQty"
+       FROM public.sales_outstock_current base
+       WHERE ${fallbackWhere.join(" AND ")}
+         ${fallbackKeywordWhereSql}
+       GROUP BY base.material_number, COALESCE(base.material_name, base.material_number)
+       ORDER BY SUM(COALESCE(base.qty, 0)) DESC, base.material_number
+       LIMIT ${fallbackLimitRef}`,
+      fallbackParams,
+    );
+  }
   return {
     dataSourceId: String(binding?.dataSourceId || binding?.id || "").trim(),
     dataSourceName: String(binding?.dataSourceName || binding?.name || "").trim(),
