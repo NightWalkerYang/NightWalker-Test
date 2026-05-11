@@ -562,6 +562,94 @@ function readTenantMemberOrgScope(db, tenantId, userId, dataSourceId) {
   };
 }
 
+function writeTenantMemberOrgScope(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const dataSourceId = String(params.dataSourceId || "").trim();
+  const scopeMode = normalizeMemberOrgScopeModeValue(params.scopeMode);
+  const sandboxEnabled = Boolean(params.sandboxEnabled);
+  const orgs = Array.isArray(params.orgs) ? params.orgs : [];
+  if (!tenantId || !userId || !dataSourceId) {
+    throw new Error("missing_fields");
+  }
+  if (scopeMode === "custom" && orgs.length === 0) {
+    throw new Error("org_scope_required");
+  }
+  const now = new Date().toISOString();
+  db.exec("BEGIN TRANSACTION");
+  try {
+    db.prepare(
+      `INSERT INTO tenant_member_source_policies (
+         tenant_id,
+         user_id,
+         data_source_id,
+         scope_mode,
+         sandbox_enabled,
+         created_at,
+         updated_at
+       ) VALUES (
+         @tenantId,
+         @userId,
+         @dataSourceId,
+         @scopeMode,
+         @sandboxEnabled,
+         @createdAt,
+         @updatedAt
+       )
+       ON CONFLICT(tenant_id, user_id, data_source_id) DO UPDATE SET
+         scope_mode = excluded.scope_mode,
+         sandbox_enabled = excluded.sandbox_enabled,
+         updated_at = excluded.updated_at`,
+    ).run({
+      tenantId,
+      userId,
+      dataSourceId,
+      scopeMode,
+      sandboxEnabled: sandboxEnabled ? 1 : 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.prepare(
+      `DELETE FROM tenant_member_org_scopes
+        WHERE tenant_id = ? AND user_id = ? AND data_source_id = ?`,
+    ).run(tenantId, userId, dataSourceId);
+    if (scopeMode === "custom") {
+      const insertScope = db.prepare(
+        `INSERT INTO tenant_member_org_scopes (
+           tenant_id,
+           user_id,
+           data_source_id,
+           org_id,
+           org_name_snapshot,
+           created_at
+         ) VALUES (
+           @tenantId,
+           @userId,
+           @dataSourceId,
+           @orgId,
+           @orgNameSnapshot,
+           @createdAt
+         )`,
+      );
+      for (const org of orgs) {
+        insertScope.run({
+          tenantId,
+          userId,
+          dataSourceId,
+          orgId: String(org?.orgId || "").trim(),
+          orgNameSnapshot: String(org?.orgName || org?.orgNameSnapshot || "").trim(),
+          createdAt: now,
+        });
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return readTenantMemberOrgScope(db, tenantId, userId, dataSourceId);
+}
+
 const MEMBER_SESSION_HISTORY_PAGE_TAIL_FACTOR = 20;
 const MEMBER_SESSION_HISTORY_PAGE_TAIL_PADDING = 20;
 const MEMBER_SESSION_HISTORY_MAX_PARSE_LINE_BYTES = 256 * 1024;
@@ -1947,10 +2035,8 @@ function resolveMemberSandboxForPayload(payload, deps, configAgents) {
 }
 
 function createVirtualSandboxPayload(sandbox) {
-  const sandboxName =
-    String(sandbox?.sandboxName || "").trim() || "采购沙盒模拟";
-  const agentName =
-    String(sandbox?.agentName || "").trim() || "沙盒模拟助手";
+  const sandboxName = String(sandbox?.sandboxName || "").trim() || "采购沙盒模拟";
+  const agentName = String(sandbox?.agentName || "").trim() || "沙盒模拟助手";
   return {
     sandboxName,
     agentName,
@@ -3144,6 +3230,136 @@ export function createTenantPlatformRouter(deps) {
         ok: true,
         data: listTenantAgents(deps.db, session.tenantId, configAgents),
       });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/data-source-binding") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: getTenantDataSourceBinding(deps.db, session.tenantId),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/orgs") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        if (!binding?.dataSourceId) {
+          sendJson(request, response, 200, { ok: true, data: [] });
+          return;
+        }
+        const dataSource = getDataSourceById(deps.db, binding.dataSourceId);
+        if (!dataSource) {
+          sendJson(request, response, 404, { ok: false, error: "data_source_not_found" });
+          return;
+        }
+        const orgs = await listOrganizationsForDataSource(dataSource);
+        sendJson(request, response, 200, { ok: true, data: Array.isArray(orgs) ? orgs : [] });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/member-org-scope") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      try {
+        const userId = String(url.searchParams.get("userId") || "").trim();
+        if (!userId) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        const dataSourceId = String(binding?.dataSourceId || "").trim();
+        sendJson(request, response, 200, {
+          ok: true,
+          data: readTenantMemberOrgScope(deps.db, session.tenantId, userId, dataSourceId),
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/member-org-scope") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const userId = String(body.userId || "").trim();
+        if (!userId) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        const binding = getTenantDataSourceBinding(deps.db, session.tenantId);
+        if (!binding?.dataSourceId) {
+          sendJson(request, response, 400, { ok: false, error: "tenant_data_source_unbound" });
+          return;
+        }
+        const dataSource = getDataSourceById(deps.db, binding.dataSourceId);
+        if (!dataSource) {
+          sendJson(request, response, 404, { ok: false, error: "data_source_not_found" });
+          return;
+        }
+        const scopeMode = normalizeMemberOrgScopeModeValue(body.scopeMode);
+        const orgIds = Array.isArray(body.orgIds) ? body.orgIds : [];
+        const orgs =
+          scopeMode === "custom" ? await validateOrganizationIds(dataSource, orgIds) : [];
+        if (scopeMode === "custom" && orgs.length !== orgIds.filter(Boolean).length) {
+          sendJson(request, response, 400, { ok: false, error: "invalid_org_ids" });
+          return;
+        }
+        const nextScope = writeTenantMemberOrgScope(deps.db, {
+          tenantId: session.tenantId,
+          userId,
+          dataSourceId: binding.dataSourceId,
+          scopeMode,
+          sandboxEnabled: body.sandboxEnabled,
+          orgs,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.member.org_scope.update",
+          resourceType: "member",
+          resourceId: userId,
+          payloadJson: {
+            userId,
+            dataSourceId: binding.dataSourceId,
+            scopeMode,
+            sandboxEnabled: Boolean(body.sandboxEnabled),
+            orgIds: nextScope.orgScopes.map((entry) => String(entry?.orgId || "").trim()),
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: nextScope });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 

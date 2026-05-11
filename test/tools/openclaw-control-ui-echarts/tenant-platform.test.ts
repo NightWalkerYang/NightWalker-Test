@@ -8,7 +8,10 @@ import {
   buildQrSvgDataUrl,
   resolveAllinpaySidecarConfig,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/allinpay.mjs";
-import { verifyPassword } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
+import {
+  issueSessionToken,
+  verifyPassword,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/auth.mjs";
 import {
   openTenantPlatformDb,
   closeTenantPlatformDb,
@@ -49,8 +52,12 @@ import {
   updateTenantMemberPassword,
   updateTenantMemberStatus,
   getTenantDataSourceBinding,
+  bindTenantDataSource,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
-import { rewriteVisualizationHtml } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
+import {
+  createTenantPlatformRouter,
+  rewriteVisualizationHtml,
+} from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/routes.mjs";
 
 const cleanupRoots = new Set();
 
@@ -122,6 +129,48 @@ function readConfigAgentIds(sandbox) {
   return Array.isArray(parsed?.agents?.list)
     ? parsed.agents.list.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
     : [];
+}
+
+function createJsonResponseRecorder() {
+  return {
+    statusCode: 0,
+    headers: {},
+    body: "",
+    writeHead(statusCode, headers = {}) {
+      this.statusCode = statusCode;
+      this.headers = headers;
+    },
+    end(body = "") {
+      this.body = typeof body === "string" ? body : String(body || "");
+    },
+  };
+}
+
+async function callTenantPlatformRoute(handler, { method = "GET", url, headers = {}, body = "" }) {
+  const request = {
+    method,
+    url,
+    headers,
+    on(event, callback) {
+      if (typeof callback !== "function") {
+        return this;
+      }
+      if (event === "data" && body) {
+        callback(Buffer.from(body));
+      }
+      if (event === "end") {
+        queueMicrotask(() => callback());
+      }
+      return this;
+    },
+  };
+  const response = createJsonResponseRecorder();
+  await handler(request, response);
+  return {
+    statusCode: response.statusCode,
+    headers: response.headers,
+    payload: response.body ? JSON.parse(response.body) : null,
+  };
 }
 
 afterEach(() => {
@@ -209,6 +258,170 @@ describe("tenant platform database foundation", () => {
         title: "更新日志中心热修复",
       });
       expect(listPlatformUpdateLogs(db)).toEqual([]);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("serves tenant member-management sidecar routes for binding and org scope", async () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "tenant-member-scope",
+        name: "租户 Member Scope",
+        adminUsername: "tenant-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "tenant-admin");
+      if (!tenantAdmin) {
+        throw new Error("Expected tenant admin to exist");
+      }
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+      db.prepare(
+        `INSERT INTO data_sources (
+           id,
+           code,
+           name,
+           source_type,
+           status,
+           connection_json,
+           created_at,
+           updated_at
+         ) VALUES (
+           'data-source-member-scope-1',
+           'member-scope-source',
+           '金蝶云星空',
+           'kingdee_k3cloud',
+           'active',
+           @connectionJson,
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        connectionJson: JSON.stringify({
+          ssh: {
+            host: "example.internal",
+          },
+        }),
+        createdAt: "2026-05-11T00:00:00.000Z",
+        updatedAt: "2026-05-11T00:00:00.000Z",
+      });
+      bindTenantDataSource(db, {
+        tenantId: tenant.id,
+        dataSourceId: "data-source-member-scope-1",
+      });
+      const sessionToken = issueSessionToken(
+        {
+          role: "tenant_admin",
+          userId: tenantAdmin.id,
+          username: tenantAdmin.username,
+          tenantId: tenant.id,
+          edition: tenant.deploymentMode,
+        },
+        "test-secret",
+      );
+      const handler = createTenantPlatformRouter({
+        db,
+        config: {
+          ...sandbox.config,
+          apiBasePath: "/tenant-platform-api/v1",
+          sessionSecret: "test-secret",
+          localEdition: false,
+        },
+      });
+
+      const bindingResponse = await callTenantPlatformRoute(handler, {
+        url: "/tenant-platform-api/v1/tenant/admin/data-source-binding",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(bindingResponse.statusCode).toBe(200);
+      expect(bindingResponse.payload?.ok).toBe(true);
+      expect(bindingResponse.payload?.data).toMatchObject({
+        tenantId: tenant.id,
+        dataSourceId: "data-source-member-scope-1",
+        dataSourceName: "金蝶云星空",
+      });
+
+      const orgsResponse = await callTenantPlatformRoute(handler, {
+        url: "/tenant-platform-api/v1/tenant/admin/orgs",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(orgsResponse.statusCode).toBe(400);
+
+      const initialScopeResponse = await callTenantPlatformRoute(handler, {
+        url: `/tenant-platform-api/v1/tenant/admin/member-org-scope?userId=${encodeURIComponent(member.id)}`,
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(initialScopeResponse.statusCode).toBe(200);
+      expect(initialScopeResponse.payload?.data).toMatchObject({
+        userId: member.id,
+        dataSourceId: "data-source-member-scope-1",
+        scopeMode: "none",
+        sandboxEnabled: false,
+        orgScopeCount: 0,
+      });
+
+      const saveScopeResponse = await callTenantPlatformRoute(handler, {
+        method: "POST",
+        url: "/tenant-platform-api/v1/tenant/admin/member-org-scope",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: member.id,
+          scopeMode: "all",
+          sandboxEnabled: true,
+        }),
+      });
+      expect(saveScopeResponse.statusCode).toBe(200);
+      expect(saveScopeResponse.payload?.ok).toBe(true);
+      expect(saveScopeResponse.payload?.data).toMatchObject({
+        userId: member.id,
+        dataSourceId: "data-source-member-scope-1",
+        scopeMode: "all",
+        sandboxEnabled: true,
+        orgScopeCount: 0,
+      });
+
+      const updatedScopeResponse = await callTenantPlatformRoute(handler, {
+        url: `/tenant-platform-api/v1/tenant/admin/member-org-scope?userId=${encodeURIComponent(member.id)}`,
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(updatedScopeResponse.statusCode).toBe(200);
+      expect(updatedScopeResponse.payload?.data).toMatchObject({
+        userId: member.id,
+        dataSourceId: "data-source-member-scope-1",
+        scopeMode: "all",
+        sandboxEnabled: true,
+        orgScopeCount: 0,
+      });
     } finally {
       closeTenantPlatformDb(db);
     }
