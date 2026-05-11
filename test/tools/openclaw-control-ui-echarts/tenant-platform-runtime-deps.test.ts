@@ -109,6 +109,7 @@ describe("tenant platform runtime deps", () => {
   it("builds host candidates from legacy analytics DSNs that point at unix sockets", () => {
     const candidates = buildAnalyticsConnectionCandidates({
       analyticsPgDsn: "postgresql:///kingdee_analytics?host=/var/run/postgresql",
+      analyticsProjectRoot: "/home/root-ai/apps/kingdee-analytics",
     });
     expect(candidates).toEqual(
       expect.arrayContaining([
@@ -116,16 +117,19 @@ describe("tenant platform runtime deps", () => {
           host: "/var/run/postgresql",
           port: 5432,
           database: "kingdee_analytics",
+          user: "root-ai",
         }),
         expect.objectContaining({
           host: "host.docker.internal",
           port: 5432,
           database: "kingdee_analytics",
+          user: "root-ai",
         }),
         expect.objectContaining({
           host: "172.18.0.1",
           port: 5432,
           database: "kingdee_analytics",
+          user: "root-ai",
         }),
       ]),
     );

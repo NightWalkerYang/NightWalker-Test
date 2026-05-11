@@ -173,6 +173,23 @@ function parseAnalyticsDsnCandidate(value) {
   }
 }
 
+function inferHostUserFromPath(value) {
+  const normalized = String(value || "").trim().replace(/\\/g, "/");
+  const match = normalized.match(/^\/home\/([^/]+)\//i);
+  return match?.[1]?.trim() || "";
+}
+
+function inferAnalyticsUnixSocketUser(connection) {
+  if (!connection || typeof connection !== "object" || Array.isArray(connection)) {
+    return "";
+  }
+  return (
+    inferHostUserFromPath(connection.analyticsProjectRoot) ||
+    inferHostUserFromPath(connection.tenantPlatformDbPath) ||
+    ""
+  );
+}
+
 export function buildAnalyticsConnectionCandidates(connection) {
   if (!connection || typeof connection !== "object" || Array.isArray(connection)) {
     return [];
@@ -197,7 +214,8 @@ export function buildAnalyticsConnectionCandidates(connection) {
       String(dsnCandidate?.database || "").trim(),
     user:
       String(connection.user || "").trim() ||
-      String(dsnCandidate?.user || "").trim(),
+      String(dsnCandidate?.user || "").trim() ||
+      inferAnalyticsUnixSocketUser(connection),
     password:
       String(connection.password || "").trim() ||
       String(dsnCandidate?.password || "").trim(),
