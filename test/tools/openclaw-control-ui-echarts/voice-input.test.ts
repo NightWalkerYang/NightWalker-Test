@@ -99,6 +99,9 @@ describe("zero-intrusive voice input bridge", () => {
     expect(
       document.querySelector("button")?.classList.contains("agent-chat__input-btn--recording"),
     ).toBe(true);
+    expect(document.querySelector("button")?.getAttribute("data-oc-chat-button-state")).toBe(
+      "recording",
+    );
 
     const resultEvent = new Event("result");
     Object.assign(resultEvent, {
@@ -123,6 +126,7 @@ describe("zero-intrusive voice input bridge", () => {
     expect(document.querySelector(".agent-chat__input")?.hasAttribute("data-oc-voice-state")).toBe(
       false,
     );
+    expect(document.querySelector("button")?.hasAttribute("data-oc-chat-button-state")).toBe(false);
   });
 
   it("shows a visible error when microphone permission is denied", async () => {

@@ -1,3 +1,4 @@
+import { observeMountTargets, resolvePrimaryMountRoot } from "../framework/mount-compat.js";
 import { mountMemberConsolePage } from "./member-console-page.js";
 import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
 import { TENANT_AGENT_SELECTOR_VIEW, readTenantSession, readTenantView } from "./tenant-context.js";
@@ -6,6 +7,7 @@ const ROOT_ATTR = "data-oc-member-surface-root";
 const STYLE_ATTR = "data-oc-member-surface-style";
 const ACTIVE_ATTR = "data-oc-member-surface-active";
 let memberSurfaceScanToken = 0;
+const MOUNT_SOURCE_TAG = "member-surface";
 
 function isRootControlPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
@@ -68,10 +70,7 @@ export async function bootMemberSurface() {
 
   const scan = async (scope = document) => {
     const scanToken = ++memberSurfaceScanToken;
-    const content =
-      scope instanceof Element && scope.matches(".content")
-        ? scope
-        : document.querySelector(".content");
+    const content = resolvePrimaryMountRoot(scope, "", MOUNT_SOURCE_TAG);
     if (!(content instanceof HTMLElement)) {
       return null;
     }
@@ -97,31 +96,16 @@ export async function bootMemberSurface() {
     void scan(document);
   });
 
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (!(node instanceof Element)) {
-          continue;
-        }
-        if (node.closest?.(`[${ROOT_ATTR}]`)) {
-          continue;
-        }
-        if (node.matches(".content")) {
-          void scan(node);
-          continue;
-        }
-        const nestedContent = node.querySelector?.(".content");
-        if (nestedContent instanceof Element) {
-          void scan(nestedContent);
-        }
+  observeMountTargets(
+    document,
+    ({ scope }) => {
+      if (scope instanceof Element && scope.closest?.(`[${ROOT_ATTR}]`)) {
+        return;
       }
-    }
-  });
-
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-  });
+      void scan(scope);
+    },
+    MOUNT_SOURCE_TAG,
+  );
 
   return scan(document);
 }

@@ -1,19 +1,20 @@
 import { bootChatAmbientBackground } from "./runtime/background/chat-ambient.js";
-import { bootBrandReplacer } from "./runtime/branding/brand-replacer.js";
 import { bootBrandPanel } from "./runtime/branding/brand-panel.js";
+import { bootBrandReplacer } from "./runtime/branding/brand-replacer.js";
 import { isEchartsViewPublicPath } from "./runtime/echarts-view/context.js";
 import { bootEchartsViewSurface } from "./runtime/echarts-view/surface.js";
 import { createEchartsAdapter } from "./runtime/echarts/adapter.js";
 import { createFileAdapter } from "./runtime/file/adapter.js";
+import { observeFrameworkDomMarkers } from "./runtime/framework/dom-compat.js";
 import { createFencedBlockRuntime } from "./runtime/framework/fenced-block-runtime.js";
 import { bootToolRunCluster } from "./runtime/framework/tool-run-cluster.js";
 import { bootVoiceInputBridge } from "./runtime/framework/voice-input.js";
 import { createImageUploadAdapter } from "./runtime/image-upload/adapter.js";
 import { bootKnowledgeGraphEntry } from "./runtime/knowledge-graph/entry.js";
-import { createSelectAdapter } from "./runtime/select/adapter.js";
 import { bootLufengSurface } from "./runtime/lufeng/surface.js";
 import { isSandboxViewPublicPath } from "./runtime/sandbox-view/context.js";
 import { bootSandboxViewSurface } from "./runtime/sandbox-view/surface.js";
+import { createSelectAdapter } from "./runtime/select/adapter.js";
 import { bootTenantAuthSurface } from "./runtime/tenant/auth-surface.js";
 import { bootTenantEntry } from "./runtime/tenant/entry.js";
 import { bootMemberChatSurface } from "./runtime/tenant/member-chat-surface.js";
@@ -54,6 +55,7 @@ function boot() {
     bootSandboxViewSurface();
     return;
   }
+  observeFrameworkDomMarkers(document);
   bootBrandReplacer();
   bootBrandPanel();
   bootChatAmbientBackground();

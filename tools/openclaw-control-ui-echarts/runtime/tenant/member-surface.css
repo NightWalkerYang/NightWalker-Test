@@ -1,3 +1,5 @@
+[data-oc-content-mount-root="true"][data-oc-member-surface-active="true"]
+  > :not([data-oc-member-surface-root]),
 .content[data-oc-member-surface-active="true"] > :not([data-oc-member-surface-root]) {
   display: none !important;
 }

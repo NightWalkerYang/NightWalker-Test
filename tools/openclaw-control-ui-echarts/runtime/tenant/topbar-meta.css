@@ -1,12 +1,25 @@
+[data-oc-topbar-search="true"][data-oc-platform-search-hidden="true"],
 .topbar-search[data-oc-platform-search-hidden="true"] {
   display: none !important;
 }
 
+:root[data-oc-tenant-role-context="tenant_admin"]
+  [data-oc-sidebar="true"]
+  [data-oc-nav-section="true"]:not([data-oc-role-nav]),
+:root[data-oc-tenant-role-context="member"]
+  [data-oc-sidebar="true"]
+  [data-oc-nav-section="true"]:not([data-oc-role-nav]),
 :root[data-oc-tenant-role-context="tenant_admin"] .sidebar-nav .nav-section:not([data-oc-role-nav]),
 :root[data-oc-tenant-role-context="member"] .sidebar-nav .nav-section:not([data-oc-role-nav]) {
   display: none !important;
 }
 
+:root[data-oc-tenant-role-context="tenant_admin"]
+  [data-oc-sidebar-utility="true"]
+  [data-oc-utility-hidden],
+:root[data-oc-tenant-role-context="member"]
+  [data-oc-sidebar-utility="true"]
+  [data-oc-utility-hidden],
 :root[data-oc-tenant-role-context="tenant_admin"] .sidebar-utility-group [data-oc-utility-hidden],
 :root[data-oc-tenant-role-context="member"] .sidebar-utility-group [data-oc-utility-hidden] {
   display: none !important;

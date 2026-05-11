@@ -1,7 +1,10 @@
+[data-oc-content-mount-root="true"][data-oc-tenant-surface-active="true"]
+  > :not([data-oc-tenant-surface-root]),
 .content[data-oc-tenant-surface-active="true"] > :not([data-oc-tenant-surface-root]) {
   display: none !important;
 }
 
+body[data-oc-tenant-surface-active="fallback"] > [data-oc-openclaw-app="true"],
 body[data-oc-tenant-surface-active="fallback"] > openclaw-app {
   display: none !important;
 }

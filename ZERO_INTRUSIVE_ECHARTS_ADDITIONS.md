@@ -111,9 +111,12 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Runtime: Framework
 
 - `tools/openclaw-control-ui-echarts/runtime/framework/adapter-registry.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/app-compat.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/chat-composer.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/dom-compat.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/fenced-block-runtime.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/mount-compat.js`
+- `tools/openclaw-control-ui-echarts/runtime/framework/rpc-compat.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/shared.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/styles.js`
 - `tools/openclaw-control-ui-echarts/runtime/framework/tool-run-cluster.js`
@@ -236,6 +239,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 ### Tests
 
 - `test/tools/openclaw-control-ui-echarts/adapter-registry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/app-compat.test.ts`
 - `test/tools/openclaw-control-ui-echarts/auto-token-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/brand-panel.test.ts`
 - `test/tools/openclaw-control-ui-echarts/brand-replacer.test.ts`
@@ -255,6 +259,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/lufeng-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/local-runtime-common.test.ts`
+- `test/tools/openclaw-control-ui-echarts/mount-compat.test.ts`
 - `test/tools/openclaw-control-ui-echarts/portable-config.test.ts`
 - `test/tools/openclaw-control-ui-echarts/member-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/feedback-toast.test.ts`
@@ -273,6 +278,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-platform-runtime-deps.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-access-guard.test.ts`
 - `test/tools/openclaw-control-ui-echarts/platform-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/rpc-compat.test.ts`
 - `test/tools/openclaw-control-ui-echarts/select-adapter.test.ts`
 - `test/tools/openclaw-control-ui-echarts/select-parser.test.ts`
 - `test/tools/openclaw-control-ui-echarts/image-upload-adapter.test.ts`
@@ -349,10 +355,11 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Shared runtime styles load at boot instead of waiting for a fenced block to appear.
 - Fenced-block adapters now warm their local libraries at boot and rescan only changed DOM roots, reducing the post-refresh delay before `echarts` and `file` cards appear.
 - Chat page visuals are customized through the injected framework styles layer. The zero-intrusive layer now restores a minimal visible shell for the native `/chat` composer when upstream chat-shell DOM drifts, while still avoiding the earlier pseudo-element redraw and toolbar-flattening path.
+- The shared DOM compat layer now also synchronizes stable `data-oc-*` markers onto the detected native Control UI shell nodes, and the framework/platform/tenant/lufeng style layers now prefer those compat markers before falling back to legacy upstream classes, so shell-class drift after future upstream syncs is more likely to be absorbed inside compat instead of breaking wide style regions directly.
 - The chat background uses an injected animated ambient layer, and that ambient sync now rechecks only the current or dirty chat surfaces instead of rescanning every `main` / `section` / `div` node on each DOM mutation.
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
-- Prompt-insertion helpers, member-chat send interception, native `New session` takeover, tenant shell trimming, lufeng shell trimming, brand breadcrumb replacement, and chat background mounting now all consume a shared zero-intrusive DOM compatibility contract (`runtime/framework/dom-compat.js`) instead of scattering direct upstream selectors across feature modules.
+- Prompt-insertion helpers, member-chat send interception, native `New session` takeover, tenant shell trimming, content mounting, chat control probing, and chat background mounting now use the shared zero-intrusive compatibility layers under `runtime/framework/` (`dom-compat.js`, `mount-compat.js`, `app-compat.js`, `rpc-compat.js`) as their main path. `runtime/lufeng/surface.js`, `runtime/tenant/member-chat-surface.js`, `runtime/tenant/platform-surface.js`, `runtime/tenant/member-surface.js`, `runtime/tenant/tenant-surface.js`, `runtime/tenant/entry.js`, `runtime/branding/brand-replacer.js`, and `runtime/knowledge-graph/entry.js` now route primarily through those compat layers; remaining fragility is concentrated inside compat-internal upstream assumptions and a reduced set of centralized app private-state access instead of scattered feature-local raw selectors and ad hoc monkey patches.
 - Tenant preboot now suppresses repeated native `control-ui.long-animation-frame` / `control-ui.longtask` console warnings after the first occurrence per type, so DevTools does not accumulate tens of thousands of identical responsiveness warnings during long streaming chats.
 - Member chat now uses a progress-aware idle failsafe instead of a fixed 75-second absolute timeout, so long ECharts/file-generation runs keep going while text or tool output is still advancing and only fail after a real stall.
 - Branding is customized through fixed brand slots, text logos, favicon replacement, and auto-token bootstrap that mirrors the gateway token into both the route scope and the root scope so public routes can reuse existing stored settings.

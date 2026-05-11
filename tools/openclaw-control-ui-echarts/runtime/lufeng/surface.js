@@ -1,4 +1,21 @@
-import { findSidebar, findTopbarSearch } from "../framework/dom-compat.js";
+import {
+  applySessionSettings,
+  forceChatTab,
+  patchClientRequest,
+  requestIdentityReload,
+  requestRender,
+  resolveOpenClawApp,
+  restorePatchedApp,
+  setPinnedSession,
+} from "../framework/app-compat.js";
+import {
+  findChatModelPicker,
+  findChatSessionPicker,
+  findSidebar,
+  findSidebarFooter,
+  findTopbarSearch,
+} from "../framework/dom-compat.js";
+import { patchSession } from "../framework/rpc-compat.js";
 import {
   LUFENG_ROUTE,
   LUFENG_SESSION_KEY,
@@ -7,14 +24,8 @@ import {
 } from "./context.js";
 
 const STYLE_ATTR = "data-oc-lufeng-style";
-const SIDEBAR_FOOTER_SELECTOR = ".sidebar-shell__footer";
 const LUFENG_MODEL_VALUE = "openai/gpt-5.4";
 const LUFENG_MODEL_LABEL = "GPT-5.4 · openai";
-const CHAT_SESSION_SELECTORS = [
-  ".chat-controls__session:not(.chat-controls__model)",
-  ".chat-mobile-controls-wrapper .chat-controls__session",
-];
-const CHAT_MODEL_SELECT_SELECTOR = 'select[data-chat-model-select="true"]';
 const LUFENG_PINNED_MODEL_ID = "gpt-5.4";
 const LUFENG_PINNED_MODEL_PROVIDER = "openai";
 const LUFENG_PINNED_MODEL_ENTRY = {
@@ -125,27 +136,21 @@ function clearTopbarSearch() {
 }
 
 function syncSessionControls() {
-  for (const selector of CHAT_SESSION_SELECTORS) {
-    for (const section of document.querySelectorAll(selector)) {
-      if (section instanceof HTMLElement) {
-        section.setAttribute("data-oc-lufeng-session", "hidden");
-      }
-    }
+  const section = findChatSessionPicker(document);
+  if (section instanceof HTMLElement) {
+    section.setAttribute("data-oc-lufeng-session", "hidden");
   }
 }
 
 function clearSessionControls() {
-  for (const selector of CHAT_SESSION_SELECTORS) {
-    for (const section of document.querySelectorAll(selector)) {
-      if (section instanceof HTMLElement) {
-        section.removeAttribute("data-oc-lufeng-session");
-      }
-    }
+  const section = findChatSessionPicker(document);
+  if (section instanceof HTMLElement) {
+    section.removeAttribute("data-oc-lufeng-session");
   }
 }
 
 function syncModelControl() {
-  const select = document.querySelector(CHAT_MODEL_SELECT_SELECTOR);
+  const select = findChatModelPicker(document);
   if (!(select instanceof HTMLSelectElement)) {
     return;
   }
@@ -159,7 +164,7 @@ function syncModelControl() {
 }
 
 function clearModelControl() {
-  const select = document.querySelector(CHAT_MODEL_SELECT_SELECTOR);
+  const select = findChatModelPicker(document);
   if (!(select instanceof HTMLSelectElement)) {
     return;
   }
@@ -203,40 +208,17 @@ function pinPublicChatSession(app) {
   if (!(app instanceof HTMLElement)) {
     return;
   }
-
-  if (!app.__openclawLufengPatched) {
-    if (typeof app.setTab === "function") {
-      const originalSetTab = app.setTab.bind(app);
-      app.setTab = () => originalSetTab("chat");
-    }
-    if (typeof app.applySettings === "function") {
-      const originalApplySettings = app.applySettings.bind(app);
-      app.applySettings = (next) =>
-        originalApplySettings({
-          ...next,
-          sessionKey: LUFENG_SESSION_KEY,
-          lastActiveSessionKey: LUFENG_SESSION_KEY,
-        });
-    }
-    app.__openclawLufengPatched = true;
-  }
-
-  if (typeof app.setTab === "function" && app.tab !== "chat") {
-    app.setTab("chat");
-  }
-
+  const previousResolvedSessionKey = String(app.sessionKey || "")
+    .trim()
+    .toLowerCase();
+  forceChatTab(app, "lufeng");
+  setPinnedSession(app, LUFENG_SESSION_KEY, "lufeng");
+  applySessionSettings(app, LUFENG_SESSION_KEY, "lufeng");
   if (app.sessionKey !== LUFENG_SESSION_KEY) {
     app.sessionKey = LUFENG_SESSION_KEY;
-    if (typeof app.applySettings === "function" && app.settings) {
-      app.applySettings({
-        ...app.settings,
-        sessionKey: LUFENG_SESSION_KEY,
-        lastActiveSessionKey: LUFENG_SESSION_KEY,
-      });
-    }
-    if (typeof app.loadAssistantIdentity === "function") {
-      void app.loadAssistantIdentity();
-    }
+  }
+  if (previousResolvedSessionKey !== LUFENG_SESSION_KEY) {
+    requestIdentityReload(app, "lufeng");
   }
 }
 
@@ -441,57 +423,48 @@ function setPinnedLufengModelOverride(app, override) {
     delete next[LUFENG_SESSION_KEY];
   }
   app.chatModelOverrides = next;
-  if (typeof app.requestUpdate === "function") {
-    app.requestUpdate();
-  }
+  requestRender(app, "lufeng");
 }
 
 function patchLufengClient(app) {
-  if (!(app instanceof HTMLElement)) {
-    return;
-  }
-  if (!app.client || typeof app.client.request !== "function") {
-    return;
-  }
-  if (app.__openclawLufengClientPatchedFor === app.client) {
-    return;
-  }
+  patchClientRequest(
+    app,
+    "lufeng",
+    async (originalRequest, method, params) => {
+      const onLufengRoute = isLufengPublicPath();
+      const nextParams =
+        onLufengRoute &&
+        method === "sessions.patch" &&
+        params &&
+        typeof params === "object" &&
+        String(params.key || "").trim() === LUFENG_SESSION_KEY
+          ? {
+              ...params,
+              key: LUFENG_SESSION_KEY,
+              model: LUFENG_MODEL_VALUE,
+            }
+          : params;
 
-  const originalRequest = app.client.request.bind(app.client);
-  app.client.request = async (method, params) => {
-    const onLufengRoute = isLufengPublicPath();
-    const nextParams =
-      onLufengRoute &&
-      method === "sessions.patch" &&
-      params &&
-      typeof params === "object" &&
-      String(params.key || "").trim() === LUFENG_SESSION_KEY
-        ? {
-            ...params,
-            key: LUFENG_SESSION_KEY,
-            model: LUFENG_MODEL_VALUE,
-          }
-        : params;
-
-    const result = await originalRequest(method, nextParams);
-    if (!onLufengRoute) {
+      const result = await originalRequest(method, nextParams);
+      if (!onLufengRoute) {
+        return result;
+      }
+      if (method === "models.list") {
+        return normalizeLufengModelsListResult(result);
+      }
+      if (method === "sessions.list") {
+        return normalizeLufengSessionsListResult(result);
+      }
+      if (method === "chat.history") {
+        return normalizeLufengChatHistoryResult(result);
+      }
+      if (method === "sessions.patch") {
+        return normalizeLufengSessionsPatchResult(result);
+      }
       return result;
-    }
-    if (method === "models.list") {
-      return normalizeLufengModelsListResult(result);
-    }
-    if (method === "sessions.list") {
-      return normalizeLufengSessionsListResult(result);
-    }
-    if (method === "chat.history") {
-      return normalizeLufengChatHistoryResult(result);
-    }
-    if (method === "sessions.patch") {
-      return normalizeLufengSessionsPatchResult(result);
-    }
-    return result;
-  };
-  app.__openclawLufengClientPatchedFor = app.client;
+    },
+    "lufeng",
+  );
 }
 
 function syncLufengChatModelCatalog(app) {
@@ -579,8 +552,8 @@ function syncLufengAppState(app) {
   const changedMessages = syncLufengChatMessages(app);
   const changedError = syncLufengLastError(app);
   const changed = changedCatalog || changedSessions || changedMessages || changedError;
-  if (changed && typeof app.requestUpdate === "function") {
-    app.requestUpdate();
+  if (changed) {
+    requestRender(app, "lufeng");
   }
 }
 
@@ -606,10 +579,14 @@ async function ensurePinnedLufengModel(app) {
   });
 
   try {
-    await app.client.request("sessions.patch", {
-      key: LUFENG_SESSION_KEY,
-      model: LUFENG_MODEL_VALUE,
-    });
+    await patchSession(
+      app,
+      {
+        key: LUFENG_SESSION_KEY,
+        model: LUFENG_MODEL_VALUE,
+      },
+      "lufeng",
+    );
     app.__openclawLufengModelPinnedFor = app.client;
   } catch {
     setPinnedLufengModelOverride(app, previousOverride);
@@ -627,10 +604,15 @@ function syncLufengSurface() {
         clearSidebarSync(candidate);
       }
     }
-    document.querySelectorAll(SIDEBAR_FOOTER_SELECTOR).forEach(clearFooterSync);
+    const footer = findSidebarFooter(document);
+    clearFooterSync(footer);
     clearTopbarSearch();
     clearSessionControls();
     clearModelControl();
+    const app = resolveOpenClawApp(document, "lufeng");
+    if (app instanceof HTMLElement) {
+      restorePatchedApp(app, "lufeng", "lufeng");
+    }
     document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
     return;
   }
@@ -644,15 +626,14 @@ function syncLufengSurface() {
       syncSidebar(candidate);
     }
   }
-  document.querySelectorAll(SIDEBAR_FOOTER_SELECTOR).forEach((footer) => {
-    if (footer instanceof HTMLElement) {
-      footer.setAttribute("data-oc-lufeng-footer", "hidden");
-    }
-  });
+  const footer = findSidebarFooter(document);
+  if (footer instanceof HTMLElement) {
+    footer.setAttribute("data-oc-lufeng-footer", "hidden");
+  }
   syncTopbarSearch();
   syncSessionControls();
   syncModelControl();
-  const app = document.querySelector("openclaw-app");
+  const app = resolveOpenClawApp(document, "lufeng");
   pinPublicChatSession(app);
   patchLufengClient(app);
   void ensurePinnedLufengModel(app);

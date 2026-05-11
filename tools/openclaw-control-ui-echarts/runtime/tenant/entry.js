@@ -1,8 +1,17 @@
 import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { writeEchartsViewToken } from "../echarts-view/context.js";
-import { findSidebar, findSidebarUtilityGroup, findTopbarSearch } from "../framework/dom-compat.js";
+import {
+  findSidebar,
+  findSidebarUtilityGroup,
+  findSidebarFooter,
+  findTopbarSearch,
+} from "../framework/dom-compat.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
-import { SANDBOX_VIEW_ROUTE, isSandboxViewPublicPath, writeSandboxViewToken } from "../sandbox-view/context.js";
+import {
+  SANDBOX_VIEW_ROUTE,
+  isSandboxViewPublicPath,
+  writeSandboxViewToken,
+} from "../sandbox-view/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
   bootTenantRouteSync,
@@ -516,10 +525,8 @@ function findTenantSidebarUtility(scope = document) {
   if (compatUtility instanceof HTMLElement) {
     return compatUtility;
   }
-  if (!(scope instanceof Element || scope instanceof Document)) {
-    return null;
-  }
-  return scope.querySelector(".sidebar-utility-group, .sidebar-shell__footer, footer") ?? null;
+  const compatFooter = findSidebarFooter(scope);
+  return compatFooter instanceof HTMLElement ? compatFooter : null;
 }
 
 function findTenantTopbarSearch(scope = document) {
@@ -527,12 +534,7 @@ function findTenantTopbarSearch(scope = document) {
   if (compatSearch instanceof HTMLElement) {
     return compatSearch;
   }
-  if (!(scope instanceof Element || scope instanceof Document)) {
-    return null;
-  }
-  return (
-    scope.querySelector(".topbar-search, [role='search'], button[aria-label*='搜索' i]") ?? null
-  );
+  return null;
 }
 
 function listDirectMemberVisualizationSections(container) {
@@ -1607,8 +1609,8 @@ export function bootTenantEntry() {
             findTenantSidebarUtility(node) ||
             findTenantTopbarSearch(node) ||
             node.querySelector?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
-            node.querySelector?.(".sidebar-utility-group, .sidebar-shell__footer, footer") ||
-            node.querySelector?.(".topbar-search, [role='search'], button[aria-label*='搜索' i]");
+            findTenantSidebarUtility(node) ||
+            findTenantTopbarSearch(node);
           if (relevantRoot instanceof Element) {
             scheduleScan(document);
             return;
