@@ -21,11 +21,12 @@ Future tenant runtime changes must preserve these expectations:
 Allowed responsibilities:
 
 - keep public boot and reset exports stable
-- assemble route sync, shell coordination, page registry, and shared cleanup wiring
-- trigger runtime-wide scans or boot order only at the top level
+- limit edits to import wiring, registry registration, boot sequencing of already-defined shared modules, and global lifecycle hookup only
+- assemble route sync, shell coordination, page registry, and shared cleanup wiring without adding feature-specific discovery or page logic
 
 Not allowed:
 
+- vague orchestration that hides feature-specific discovery, route branching, or page logic
 - page-specific render logic
 - page-specific API orchestration
 - page-specific form state
@@ -142,14 +143,14 @@ Future runtime features must register cleanup centrally so:
 
 ## Required Tests And Docs For Future Runtime Features
 
-Every future runtime feature should update both behavior coverage and governance docs.
+Every future runtime feature should update behavior coverage. Governance docs only need updates when structure, layering, contracts, or extension rules change.
 
 Required follow-up:
 
 - add or update focused tenant runtime tests for the new shared helper, registry behavior, or cleanup path
 - keep behavior-level coverage for the affected page or shell flow
-- update `RUNTIME_ARCHITECTURE.md` when the runtime layering changes
-- update `ZERO_INTRUSIVE_TENANT_SYSTEM_PLAN.md` if the maintenance guidance changes
+- update `RUNTIME_ARCHITECTURE.md` when runtime structure, layering, or shared contracts change
+- update `ZERO_INTRUSIVE_TENANT_SYSTEM_PLAN.md` if the maintenance guidance or extension governance changes
 - update `ZERO_INTRUSIVE_ECHARTS_ADDITIONS.md` whenever a new zero-intrusive file is added
 
 If the implementation and docs drift, update the docs to match the runnable zero-intrusive implementation.

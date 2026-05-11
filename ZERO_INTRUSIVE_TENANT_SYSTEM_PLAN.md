@@ -201,6 +201,7 @@
 后续 tenant runtime 维护还要额外遵守下面约束：
 
 1. `tools/openclaw-control-ui-echarts/runtime/tenant/entry.js` 只保留装配职责，不继续堆页面级逻辑。
+   - 允许的改动范围只包括 import 接线、registry 注册、既有共享模块的 boot 顺序编排、全局 lifecycle 挂接。
 2. 新增 tenant 页面或 surface 时，优先做独立模块，并通过 registry 接入，而不是继续在入口文件里追加条件分发。
 3. 原生 Control UI 壳层 DOM 接管统一复用 `tools/openclaw-control-ui-echarts/runtime/framework/dom-compat.js`。
 4. route、session、selected-agent、storage 真值统一复用 tenant runtime 的共享 helper，例如 `runtime/tenant/tenant-context.js` 与 `runtime/tenant/route-sync.js`。

@@ -111,6 +111,7 @@ Target layered responsibilities:
 Governance rules:
 
 1. `runtime/tenant/entry.js` is assembly-only and should keep public boot/reset exports stable.
+   Allowed edits stay limited to import wiring, registry registration, boot sequencing of shared modules, and global lifecycle hookup.
 2. New tenant pages or surfaces should be standalone modules registered through a registry path, not appended as page logic inside `entry.js`.
 3. Native shell DOM access should reuse `runtime/framework/dom-compat.js` instead of duplicating selectors in tenant files.
 4. Route/session/storage access should reuse shared tenant helpers such as `runtime/tenant/tenant-context.js` and `runtime/tenant/route-sync.js`.
