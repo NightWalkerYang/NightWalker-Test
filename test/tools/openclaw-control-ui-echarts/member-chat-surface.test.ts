@@ -463,6 +463,59 @@ describe("member chat surface", () => {
     expect(requestedMethods.filter((method) => method === "chat.history")).toHaveLength(1);
   });
 
+  it("does not resync member chat when transcript nodes are appended inside the chat app", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    const thread = attachChatThread(app);
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+    await flush();
+
+    thread.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="chat-group assistant">
+          <div class="chat-group-messages">
+            <div class="chat-bubble"><div class="chat-text">新的回复</div></div>
+          </div>
+        </div>
+      `,
+    );
+    await flush();
+    await flush();
+
+    const requestedMethods = app.client.request.mock.calls.map(([method]) => method);
+    expect(requestedMethods.filter((method) => method === "sessions.list")).toHaveLength(1);
+    expect(requestedMethods.filter((method) => method === "chat.history")).toHaveLength(1);
+  });
+
   it("reuses the native sessions cache before asking the gateway again", async () => {
     installTenantApiFetchStub({
       sessions: [
@@ -2260,8 +2313,9 @@ describe("member chat surface", () => {
     ];
     const historyButton = sessionButtons.find(
       (button) =>
-        String(button.dataset.memberChatSession || "").trim().toLowerCase() ===
-        "agent:subotech-finance:tenant-tenant-agent-1",
+        String(button.dataset.memberChatSession || "")
+          .trim()
+          .toLowerCase() === "agent:subotech-finance:tenant-tenant-agent-1",
     );
     expect(historyButton).not.toBeUndefined();
 
@@ -2273,9 +2327,9 @@ describe("member chat surface", () => {
       "session=agent:subotech-finance:tenant-tenant-agent-1",
     );
     expect(
-      document.querySelector("[data-oc-member-chat-section]")?.getAttribute(
-        "data-oc-member-chat-active-session",
-      ),
+      document
+        .querySelector("[data-oc-member-chat-section]")
+        ?.getAttribute("data-oc-member-chat-active-session"),
     ).toBe("agent:subotech-finance:tenant-tenant-agent-1");
   });
 

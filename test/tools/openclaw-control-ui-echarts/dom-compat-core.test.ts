@@ -446,6 +446,57 @@ describe("framework dom compatibility contract", () => {
     expect(queryCount).toBe(0);
   });
 
+  it("ignores chat transcript subtree mutations when observing framework markers", async () => {
+    document.body.innerHTML = `
+      <aside class="sidebar-nav">
+        <section class="nav-section"><a class="nav-item" href="/chat">Chat</a></section>
+      </aside>
+      <main class="content--chat">
+        <section class="agent-chat__input">
+          <textarea></textarea>
+          <div class="agent-chat__toolbar">
+            <button type="submit" aria-label="发送消息">发送</button>
+          </div>
+        </section>
+        <section class="chat-transcript">
+          <div class="chat-group assistant">
+            <div class="chat-group-messages">
+              <div class="chat-bubble"><div class="chat-text">hello</div></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const disconnect = observeFrameworkDomMarkers(document);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const originalQuerySelectorAll = document.querySelectorAll.bind(document);
+    let queryCount = 0;
+    document.querySelectorAll = ((selectors) => {
+      queryCount += 1;
+      return originalQuerySelectorAll(selectors);
+    }) as typeof document.querySelectorAll;
+
+    const transcript = document.querySelector(".chat-transcript");
+    transcript?.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="chat-group user">
+          <div class="chat-group-messages">
+            <div class="chat-bubble"><div class="chat-text">new message</div></div>
+          </div>
+        </div>
+      `,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    document.querySelectorAll = originalQuerySelectorAll;
+    disconnect?.disconnect?.();
+    expect(queryCount).toBe(0);
+  });
+
   it("prefers a header-mounted topbar search over sidebar search-like utilities", () => {
     document.body.innerHTML = `
       <div class="shell">

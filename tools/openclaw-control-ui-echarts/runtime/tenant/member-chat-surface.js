@@ -13,6 +13,7 @@ import {
   findClosestComposerTextarea,
   findClosestNewSessionButton,
   findClosestSendButton,
+  findOpenClawApp,
   findSidebar,
   isSendButtonElement,
   isStopButtonElement,
@@ -664,6 +665,21 @@ function isMemberChatSelfMutation(node) {
   );
 }
 
+function isMemberChatShellAnchor(node) {
+  return Boolean(
+    (node instanceof Element && findOpenClawApp(node) === node) ||
+    findSidebar(node) === node ||
+    findBreadcrumb(node) === node,
+  );
+}
+
+function subtreeContainsMemberChatShellAnchor(node) {
+  if (!(node instanceof Element) || isMemberChatSelfMutation(node)) {
+    return false;
+  }
+  return Boolean(findOpenClawApp(node) || findSidebar(node) || findBreadcrumb(node));
+}
+
 function pinMemberChatSession(app, sessionKey, options = {}) {
   if (!(app instanceof HTMLElement) || !sessionKey) {
     return;
@@ -1119,18 +1135,11 @@ export function bootMemberChatSurface() {
         if (!(node instanceof Element)) {
           continue;
         }
-        if (isMemberChatSelfMutation(node)) {
-          continue;
-        }
-        if (
-          resolveOpenClawApp(node, "member-chat") === node ||
-          findSidebar(node) === node ||
-          findBreadcrumb(node) === node
-        ) {
+        if (isMemberChatShellAnchor(node)) {
           void syncMemberChatSurface();
           return;
         }
-        if (resolveOpenClawApp(node, "member-chat") || findSidebar(node) || findBreadcrumb(node)) {
+        if (subtreeContainsMemberChatShellAnchor(node)) {
           void syncMemberChatSurface();
           return;
         }

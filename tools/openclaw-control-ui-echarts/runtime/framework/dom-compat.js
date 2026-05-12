@@ -236,15 +236,6 @@ const FRAMEWORK_OBSERVER_RELEVANT_SELECTOR = [
   ".sidebar-brand__logo",
   ".login-gate__title",
   ".login-gate__logo",
-  ".chat-group",
-  ".chat-bubble",
-  ".chat-avatar",
-  ".chat-group-messages",
-  ".chat-group-footer",
-  ".chat-text",
-  ".chat-tools-summary",
-  ".chat-tool-msg-summary",
-  ".agent-chat__welcome",
   `[${DOM_COMPAT_MARKER_ATTR}]`,
 ].join(", ");
 const FRAMEWORK_DOM_MARKER_ATTRS = [
@@ -1134,11 +1125,13 @@ function subtreeContainsFrameworkObserverRelevantElement(element) {
 function mutationTouchesFrameworkStructure(mutations) {
   for (const mutation of mutations) {
     const target = asElement(mutation.target);
-    if (
-      isFrameworkObserverRelevantElement(target) ||
-      isFrameworkObserverRelevantElement(target?.parentElement)
-    ) {
-      return true;
+    if (mutation.type === "attributes") {
+      if (
+        isFrameworkObserverRelevantElement(target) ||
+        isFrameworkObserverRelevantElement(target?.parentElement)
+      ) {
+        return true;
+      }
     }
     for (const node of mutation.addedNodes) {
       const element = asElement(node);
