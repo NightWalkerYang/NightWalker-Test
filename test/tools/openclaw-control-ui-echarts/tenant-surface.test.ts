@@ -224,7 +224,9 @@ describe("tenant surface", () => {
     expect(noneButton?.textContent).toContain("选择组织范围");
     expect(noneButton?.hasAttribute("disabled")).toBe(false);
 
-    const allButton = surfaceRoot?.querySelector("[data-tenant-open-member-org-scope='member-all']");
+    const allButton = surfaceRoot?.querySelector(
+      "[data-tenant-open-member-org-scope='member-all']",
+    );
     expect(allButton?.hasAttribute("disabled")).toBe(false);
   });
 
@@ -302,9 +304,9 @@ describe("tenant surface", () => {
       ?.closest("tr");
     expect(memberRow?.textContent).toContain("未绑定数据源");
     expect(
-      document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.hasAttribute(
-        "disabled",
-      ),
+      document
+        .querySelector("[data-tenant-open-member-org-scope='member-1']")
+        ?.hasAttribute("disabled"),
     ).toBe(true);
   });
 
@@ -455,7 +457,9 @@ describe("tenant surface", () => {
     expect(allRadio).not.toBeNull();
     expect(sandboxCheckbox).not.toBeNull();
     expect(noneRadio instanceof HTMLInputElement ? noneRadio.checked : false).toBe(true);
-    expect(sandboxCheckbox instanceof HTMLInputElement ? sandboxCheckbox.checked : true).toBe(false);
+    expect(sandboxCheckbox instanceof HTMLInputElement ? sandboxCheckbox.checked : true).toBe(
+      false,
+    );
 
     if (customRadio instanceof HTMLInputElement) {
       customRadio.checked = true;
@@ -464,16 +468,14 @@ describe("tenant surface", () => {
     const refreshedSandboxCheckbox = document.querySelector("[data-tenant-member-sandbox-enabled]");
     if (refreshedSandboxCheckbox instanceof HTMLInputElement) {
       refreshedSandboxCheckbox.checked = true;
-      refreshedSandboxCheckbox.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+      refreshedSandboxCheckbox.dispatchEvent(
+        new Event("input", { bubbles: true, cancelable: true }),
+      );
     }
     await flush();
 
-    expect(
-      document.querySelector("[data-tenant-member-org-scope-org='1001']"),
-    ).not.toBeNull();
-    expect(
-      document.querySelector("[data-tenant-member-org-scope-org='1002']"),
-    ).not.toBeNull();
+    expect(document.querySelector("[data-tenant-member-org-scope-org='1001']")).not.toBeNull();
+    expect(document.querySelector("[data-tenant-member-org-scope-org='1002']")).not.toBeNull();
 
     const initialOrgScopeForm = document.querySelector("[data-tenant-member-org-scope-form]");
     initialOrgScopeForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -540,12 +542,14 @@ describe("tenant surface", () => {
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")?.textContent).toContain(
       "组织范围已更新。",
     );
-    expect(document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")?.textContent).toContain(
-      "1 个组织",
-    );
-    expect(document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")?.textContent).toContain(
-      "已启用",
-    );
+    expect(
+      document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")
+        ?.textContent,
+    ).toContain("1 个组织");
+    expect(
+      document.querySelector("[data-tenant-open-member-org-scope='member-1']")?.closest("tr")
+        ?.textContent,
+    ).toContain("已启用");
   });
 
   it("filters custom org scope choices by search text and scopes select-all to visible organizations", async () => {
@@ -681,9 +685,7 @@ describe("tenant surface", () => {
 
     expect(document.querySelector("[data-tenant-member-org-scope-org='1001']")).toBeNull();
     expect(document.querySelector("[data-tenant-member-org-scope-org='2001']")).toBeNull();
-    expect(
-      document.querySelector("[data-tenant-member-org-scope-org='1002']"),
-    ).not.toBeNull();
+    expect(document.querySelector("[data-tenant-member-org-scope-org='1002']")).not.toBeNull();
 
     const selectAll = document.querySelector("[data-tenant-member-org-scope-select-all]");
     if (selectAll instanceof HTMLInputElement) {
@@ -1565,9 +1567,7 @@ describe("tenant surface", () => {
           }
           return okJson({
             assignmentIds: tenantAgentIds.map((tenantAgentId, index) => `assignment-${index + 2}`),
-            derivedAgentIds: tenantAgentIds.map(
-              (tenantAgentId) => `${tenantAgentId}-derived`,
-            ),
+            derivedAgentIds: tenantAgentIds.map((tenantAgentId) => `${tenantAgentId}-derived`),
             assignedAssignmentCount: tenantAgentIds.length,
             affectedUserIds: body.userId ? [body.userId] : [],
             affectedMemberCount: body.userId ? 1 : 0,
@@ -1588,7 +1588,9 @@ describe("tenant surface", () => {
 
     const assignDialog = document.querySelector("[data-tenant-assign-dialog]");
     expect(assignDialog?.open).toBe(true);
-    expect(assignDialog?.querySelector("[data-tenant-assign-agent-select='tenant-agent-1']")).toBeNull();
+    expect(
+      assignDialog?.querySelector("[data-tenant-assign-agent-select='tenant-agent-1']"),
+    ).toBeNull();
     expect(
       assignDialog?.querySelector("[data-tenant-assign-agent-select='tenant-agent-2']"),
     ).not.toBeNull();
@@ -1781,7 +1783,90 @@ describe("tenant surface", () => {
     expect(fallbackShell).not.toBeNull();
     expect(fallbackShell?.classList.contains("content")).toBe(true);
     expect(document.body.getAttribute("data-oc-tenant-surface-active")).toBe("fallback");
+    expect(document.querySelector("openclaw-app")).not.toBeNull();
     expect(document.querySelector("[data-oc-tenant-surface-root]")?.textContent).toContain("alice");
+  });
+
+  it("recovers from fallback to native content when the tenant shell arrives late", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-members&session=main");
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/tenant/admin/data-source-binding")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: {
+                  tenantId: "tenant-1",
+                  dataSourceId: "ds-1",
+                  dataSourceName: "主账套",
+                },
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 0,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                    orgScopeMode: "custom",
+                    orgScopeCount: 2,
+                    boundDataSourceName: "主账套",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    expect(document.body.getAttribute("data-oc-tenant-surface-active")).toBe("fallback");
+
+    const nativeContent = document.createElement("main");
+    nativeContent.className = "content";
+    document.querySelector("openclaw-app")?.prepend(nativeContent);
+    await flush();
+    await flush();
+
+    expect(document.body.getAttribute("data-oc-tenant-surface-active")).toBeNull();
+    expect(document.querySelector("[data-oc-tenant-surface-fallback]")).toBeNull();
+    expect(nativeContent.getAttribute("data-oc-tenant-surface-active")).toBe("true");
+    expect(nativeContent.querySelector("[data-oc-tenant-surface-root]")?.textContent).toContain(
+      "alice",
+    );
   });
 
   it("mounts the native tenant owned-agents view and opens the detail dialog", async () => {
@@ -2016,9 +2101,9 @@ describe("tenant surface", () => {
     await flush();
 
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
-    expect(requests.some((url) => url.includes("/tenant/admin/payment-orders?page=1&pageSize=8"))).toBe(
-      true,
-    );
+    expect(
+      requests.some((url) => url.includes("/tenant/admin/payment-orders?page=1&pageSize=8")),
+    ).toBe(true);
     expect(surfaceRoot?.textContent).toContain("充值订单");
     expect(surfaceRoot?.textContent).toContain("payment-1");
     expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
@@ -2082,9 +2167,9 @@ describe("tenant surface", () => {
     await flush();
 
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
-    expect(requests.some((url) => url.includes("/tenant/admin/wallet-ledger?page=1&pageSize=8"))).toBe(
-      true,
-    );
+    expect(
+      requests.some((url) => url.includes("/tenant/admin/wallet-ledger?page=1&pageSize=8")),
+    ).toBe(true);
     expect(surfaceRoot?.textContent).toContain("模型耗用");
     expect(surfaceRoot?.textContent).toContain("模型扣费");
     expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
@@ -2148,9 +2233,9 @@ describe("tenant surface", () => {
     await flush();
 
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
-    expect(requests.some((url) => url.includes("/tenant/admin/wallet-flow?page=1&pageSize=8"))).toBe(
-      true,
-    );
+    expect(
+      requests.some((url) => url.includes("/tenant/admin/wallet-flow?page=1&pageSize=8")),
+    ).toBe(true);
     expect(surfaceRoot?.textContent).toContain("钱包流水");
     expect(surfaceRoot?.textContent).toContain("Agent 撤回回退");
     expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
@@ -2254,13 +2339,17 @@ describe("tenant surface", () => {
     expect(agentCard?.textContent).not.toContain("计费倍率");
     expect(agentCard?.querySelector("[data-tenant-agent-transfer-form]")).toBeNull();
 
-    const transferDialogBeforeClick = surfaceRoot?.querySelector("[data-tenant-agent-transfer-dialog]");
-    expect(transferDialogBeforeClick?.querySelector("[data-tenant-agent-transfer-form]")).toBeNull();
+    const transferDialogBeforeClick = surfaceRoot?.querySelector(
+      "[data-tenant-agent-transfer-dialog]",
+    );
+    expect(
+      transferDialogBeforeClick?.querySelector("[data-tenant-agent-transfer-form]"),
+    ).toBeNull();
 
     (
-      surfaceRoot?.querySelector("[data-tenant-open-agent-transfer='tenant-agent-1']") as
-        | HTMLButtonElement
-        | null
+      surfaceRoot?.querySelector(
+        "[data-tenant-open-agent-transfer='tenant-agent-1']",
+      ) as HTMLButtonElement | null
     )?.click();
     await flush();
 

@@ -2,20 +2,18 @@ body[data-oc-tenant-auth-active="true"] {
   overflow: hidden;
 }
 
-body[data-oc-tenant-auth-active="true"] openclaw-app {
-  display: none !important;
-}
-
 .oc-tenant-auth-root {
   position: fixed;
   inset: 0;
   z-index: 999;
+  pointer-events: none;
 }
 
 .oc-tenant-login-gate {
   position: fixed;
   inset: 0;
   z-index: 999;
+  pointer-events: auto;
 }
 
 .oc-tenant-login-card {

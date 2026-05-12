@@ -1,7 +1,7 @@
 import {
-  ensureFallbackMountRoot,
   observeMountTargets,
-  resolvePrimaryMountRoot,
+  resolveMountState,
+  resolveMountStateWithRetry,
 } from "../framework/mount-compat.js";
 import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
 import { mountTenantConsolePage } from "./tenant-console-page.js";
@@ -119,7 +119,12 @@ function ensureFallbackContent() {
   if (content instanceof HTMLElement) {
     return content;
   }
-  content = ensureFallbackMountRoot(document, "tenant-surface", MOUNT_SOURCE_TAG);
+  const state = resolveMountState(document, {
+    featureKind: "tenant-surface",
+    sourceTag: MOUNT_SOURCE_TAG,
+    createFallback: true,
+  });
+  content = state.fallbackRoot;
   if (content instanceof HTMLElement) {
     content.setAttribute(FALLBACK_ATTR, "true");
   }
@@ -131,37 +136,48 @@ function removeFallbackContent() {
 }
 
 function clearMountedSurface(content) {
+  document.querySelectorAll(`[${ROOT_ATTR}]`).forEach((node) => node.remove());
+  cleanupStateAttributes();
   if (content instanceof HTMLElement && !isFallbackContent(content)) {
     content.removeAttribute(ACTIVE_ATTR);
-    content.querySelector(`[${ROOT_ATTR}]`)?.remove();
   }
   removeFallbackContent();
-  document.body.removeAttribute(ACTIVE_ATTR);
   document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
 }
 
-async function mountCurrentSurface(content) {
+function cleanupStateAttributes() {
+  document.body.removeAttribute(ACTIVE_ATTR);
+  document
+    .querySelectorAll(`[${ACTIVE_ATTR}]`)
+    .forEach((node) => node.removeAttribute(ACTIVE_ATTR));
+}
+
+async function mountCurrentSurface(state) {
   if (!isTenantManagementRoute()) {
-    clearMountedSurface(content);
+    clearMountedSurface(state?.primary);
     return null;
   }
 
   const session = readTenantSession();
   if (session?.session?.role !== "tenant_admin") {
-    clearMountedSurface(content);
+    clearMountedSurface(state?.primary);
     return null;
   }
 
-  const host = content instanceof HTMLElement ? content : ensureFallbackContent();
+  const host =
+    state?.mode === "native" && state.primary instanceof HTMLElement
+      ? state.primary
+      : ensureFallbackContent();
   if (!(host instanceof HTMLElement)) {
     return null;
   }
   ensureStyle();
   if (isFallbackContent(host)) {
+    cleanupStateAttributes();
     document.body.setAttribute(ACTIVE_ATTR, "fallback");
   } else {
     removeFallbackContent();
-    document.body.removeAttribute(ACTIVE_ATTR);
+    cleanupStateAttributes();
     host.setAttribute(ACTIVE_ATTR, "true");
   }
   const root = ensureRoot(host);
@@ -179,33 +195,47 @@ async function mountCurrentSurface(content) {
 export async function bootTenantSurface() {
   bootTenantRouteSync();
 
-  const scan = async (scope = document) => {
-    const content =
-      resolvePrimaryMountRoot(scope, "", MOUNT_SOURCE_TAG) ||
-      document.querySelector(`[${FALLBACK_ATTR}]`);
-    return mountCurrentSurface(content);
+  const scan = async ({ preferNative = false } = {}) => {
+    const isActiveRoute = isTenantManagementRoute();
+    const isTenantAdmin = readTenantSession()?.session?.role === "tenant_admin";
+    if (!isActiveRoute || !isTenantAdmin) {
+      return mountCurrentSurface(
+        resolveMountState(document, {
+          featureKind: "tenant-surface",
+          sourceTag: MOUNT_SOURCE_TAG,
+        }),
+      );
+    }
+    const allowFallback = true;
+    const state = await resolveMountStateWithRetry(document, {
+      routeKind: "root-shell",
+      featureKind: "tenant-surface",
+      sourceTag: MOUNT_SOURCE_TAG,
+      allowFallback,
+      preferNative,
+    });
+    return mountCurrentSurface(state);
   };
 
-  const initial = await scan(document);
   if (window.__openclawTenantSurfaceBooted) {
-    return initial;
+    return scan({ preferNative: true });
   }
   window.__openclawTenantSurfaceBooted = true;
 
-  onTenantRouteChange(() => {
-    void scan(document);
-  });
-
   observeMountTargets(
     document,
-    ({ scope }) => {
+    ({ mode, scope }) => {
       if (scope instanceof Element && scope.closest?.(`[${ROOT_ATTR}]`)) {
         return;
       }
-      void scan(scope);
+      void scan({ preferNative: mode !== "native" });
     },
     MOUNT_SOURCE_TAG,
   );
 
-  return initial;
+  onTenantRouteChange(() => {
+    void scan({ preferNative: true });
+  });
+
+  return scan({ preferNative: true });
 }

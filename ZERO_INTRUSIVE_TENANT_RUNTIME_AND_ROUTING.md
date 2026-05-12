@@ -31,11 +31,30 @@
 - 平台管理员、租户管理员、租户成员共用登录入口
 - 平台守卫、角色回首页、退出登录等内部跳转统一走同页 `navigateTenantRoute(...)`
 - `auth-surface` 自己订阅租户路由变化
+- 登录遮罩只允许在真实 login route 上激活；一旦 same-page route 离开登录视图，`auth-surface` 必须立即清理 `data-oc-tenant-auth-active` 与 auth root，不能继续把整个原生壳隐藏掉
 
 原因：
 
 - 不能继续依赖内部同源跳转触发整页刷新完成挂载/卸载
 - 否则会出现登录后重复请求、壳层残留、成员欢迎页链路被打断
+
+## 平台/租户管理挂载规则
+
+当前平台管理员页和租户管理员页的内容区挂载，已经统一经由 `runtime/framework/mount-compat.js`：
+
+- compat 会统一返回 `mode: "native" | "fallback" | "missing"`、`primary`、`appRoot`
+- `platform-surface` 与 `tenant-surface` 只消费这套 mount 状态，不再各自拿 `findContentMountRoot() === null` 就直接判失败
+- observer 现在先安装，再做首轮扫描
+- 首轮扫描会做同步检查、`queueMicrotask`、两次 `requestAnimationFrame` 重试，优先等待原生 `.content` 晚到
+- 如果原生 content 仍未出现，才允许进入 fallback
+- 进入 fallback 后仍持续监听；只要原生 content 之后出现，必须自动卸载 fallback 并回切到 native mount
+
+当前 fallback 语义也已经收紧：
+
+- fallback 只允许作为“内容区降级容器”
+- fallback 不允许再隐藏整个 `openclaw-app`
+- 平台、租户、成员选择、成员聊天等依赖原生壳的路由上，顶部和侧边原生壳必须保持可见
+- compat 失败时必须进入可识别降级态，不能静默白屏
 
 ## 成员路由预处理
 

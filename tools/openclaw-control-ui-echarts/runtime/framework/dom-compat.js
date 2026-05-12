@@ -673,6 +673,14 @@ function scoreContentMountRoot(candidate) {
   if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
     return -1000;
   }
+  if (
+    candidate.hasAttribute("data-oc-fallback-mount-root") ||
+    candidate
+      .getAttributeNames()
+      .some((name) => name === "data-oc-fallback-mount-root" || /data-oc-.*-fallback/.test(name))
+  ) {
+    return -1000;
+  }
   if (candidate.closest("aside, nav, footer, dialog")) {
     return -1000;
   }

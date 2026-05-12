@@ -2,6 +2,7 @@ import { findContentMountRoot, findOpenClawApp } from "./dom-compat.js";
 
 export const MOUNT_COMPAT_CONTRACT_VERSION = "mount-compat-v1";
 const COMPAT_LOG_PREFIX = "[oc.mount-compat]";
+const FALLBACK_ROOT_ATTR = "data-oc-fallback-mount-root";
 
 function normalizeRouteKind(routeKind = "") {
   return String(routeKind || "")
@@ -9,12 +10,29 @@ function normalizeRouteKind(routeKind = "") {
     .toLowerCase();
 }
 
+function toSearchRoot(root) {
+  if (root instanceof Document || root instanceof Element) {
+    return root;
+  }
+  return document;
+}
+
+function toOwnerDocument(root) {
+  if (root instanceof Document) {
+    return root;
+  }
+  if (root instanceof Node && root.ownerDocument instanceof Document) {
+    return root.ownerDocument;
+  }
+  return document;
+}
+
 function resolveFallbackAttr(featureKind = "") {
   const normalized = String(featureKind || "")
     .trim()
     .toLowerCase();
   if (!normalized) {
-    return "data-oc-fallback-mount-root";
+    return FALLBACK_ROOT_ATTR;
   }
   return `data-oc-${normalized.replace(/[^a-z0-9-]+/g, "-")}-fallback`;
 }
@@ -35,9 +53,77 @@ function safeLog(kind, sourceTag, message, details = null) {
   logger(`${COMPAT_LOG_PREFIX} ${sourceTag}: ${message}`);
 }
 
+function isFallbackMountRoot(candidate) {
+  return candidate instanceof HTMLElement && candidate.hasAttribute(FALLBACK_ROOT_ATTR);
+}
+
+function findExistingFallbackMountRoot(root = document, featureKind = "") {
+  const searchRoot = toSearchRoot(root);
+  const attr = resolveFallbackAttr(featureKind);
+  if (searchRoot instanceof HTMLElement && searchRoot.hasAttribute(attr)) {
+    return searchRoot;
+  }
+  if (searchRoot instanceof HTMLElement && searchRoot.hasAttribute(FALLBACK_ROOT_ATTR)) {
+    return searchRoot;
+  }
+  const existing =
+    searchRoot.querySelector?.(`[${attr}]`) ??
+    searchRoot.querySelector?.(`[${FALLBACK_ROOT_ATTR}]`) ??
+    null;
+  return existing instanceof HTMLElement ? existing : null;
+}
+
+function findAppRoot(root = document) {
+  const searchRoot = toSearchRoot(root);
+  const ownerDocument = toOwnerDocument(searchRoot);
+  return findOpenClawApp(searchRoot) || findOpenClawApp(ownerDocument);
+}
+
+function findNativePrimaryMountRoot(root = document) {
+  const searchRoot = toSearchRoot(root);
+  const ownerDocument = toOwnerDocument(searchRoot);
+  const match = findContentMountRoot(searchRoot) || findContentMountRoot(ownerDocument);
+  return isFallbackMountRoot(match) ? null : match;
+}
+
+function createMountState(primary, appRoot, fallbackRoot = null) {
+  if (primary instanceof HTMLElement) {
+    return {
+      mode: "native",
+      primary,
+      appRoot: appRoot instanceof HTMLElement ? appRoot : null,
+      fallbackRoot: fallbackRoot instanceof HTMLElement ? fallbackRoot : null,
+    };
+  }
+  if (fallbackRoot instanceof HTMLElement) {
+    return {
+      mode: "fallback",
+      primary: fallbackRoot,
+      appRoot: appRoot instanceof HTMLElement ? appRoot : null,
+      fallbackRoot,
+    };
+  }
+  return {
+    mode: "missing",
+    primary: null,
+    appRoot: appRoot instanceof HTMLElement ? appRoot : null,
+    fallbackRoot: null,
+  };
+}
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => {
+    const schedule =
+      typeof window.requestAnimationFrame === "function"
+        ? window.requestAnimationFrame.bind(window)
+        : (callback) => window.setTimeout(() => callback(Date.now()), 0);
+    schedule(() => resolve());
+  });
+}
+
 export function resolvePrimaryMountRoot(root = document, routeKind = "", sourceTag = "mount") {
   try {
-    const contentRoot = findContentMountRoot(root);
+    const contentRoot = findNativePrimaryMountRoot(root);
     if (contentRoot instanceof HTMLElement) {
       return contentRoot;
     }
@@ -53,21 +139,25 @@ export function resolvePrimaryMountRoot(root = document, routeKind = "", sourceT
 
 export function ensureFallbackMountRoot(root = document, featureKind = "", sourceTag = "mount") {
   try {
-    const scope = root instanceof Document ? root : document;
+    const searchRoot = toSearchRoot(root);
+    const ownerDocument = toOwnerDocument(searchRoot);
     const attr = resolveFallbackAttr(featureKind);
-    const existing = scope.querySelector(`[${attr}]`);
+    const existing = findExistingFallbackMountRoot(searchRoot, featureKind);
     if (existing instanceof HTMLElement) {
+      existing.setAttribute(FALLBACK_ROOT_ATTR, "true");
+      existing.setAttribute(attr, "true");
       return existing;
     }
-    const app = findOpenClawApp(scope);
+    const app = findAppRoot(searchRoot);
     if (!(app instanceof HTMLElement)) {
       safeLog("warn", sourceTag, "fallback_mount_skipped_missing_app");
       return null;
     }
-    const mount = document.createElement("main");
+    const mount = ownerDocument.createElement("main");
     mount.className = `content ${resolveFallbackClass(featureKind)}`;
+    mount.setAttribute(FALLBACK_ROOT_ATTR, "true");
     mount.setAttribute(attr, "true");
-    document.body.append(mount);
+    app.append(mount);
     return mount;
   } catch (error) {
     safeLog("warn", sourceTag, "ensureFallbackMountRoot_failed", error);
@@ -75,34 +165,176 @@ export function ensureFallbackMountRoot(root = document, featureKind = "", sourc
   }
 }
 
+export function resolveMountState(
+  root = document,
+  { routeKind = "", featureKind = "", sourceTag = "mount", createFallback = false } = {},
+) {
+  try {
+    const primary = resolvePrimaryMountRoot(root, routeKind, sourceTag);
+    const appRoot = findAppRoot(root);
+    if (primary instanceof HTMLElement) {
+      return createMountState(primary, appRoot, null);
+    }
+    const fallbackRoot = findExistingFallbackMountRoot(root, featureKind);
+    if (fallbackRoot instanceof HTMLElement) {
+      return createMountState(null, appRoot, fallbackRoot);
+    }
+    if (createFallback) {
+      const createdFallback = ensureFallbackMountRoot(root, featureKind, sourceTag);
+      if (createdFallback instanceof HTMLElement) {
+        return createMountState(null, appRoot || findAppRoot(root), createdFallback);
+      }
+    }
+    return createMountState(null, appRoot, null);
+  } catch (error) {
+    safeLog("warn", sourceTag, "resolveMountState_failed", error);
+    return createMountState(null, null, null);
+  }
+}
+
+export async function resolveMountStateWithRetry(
+  root = document,
+  {
+    routeKind = "",
+    featureKind = "",
+    sourceTag = "mount",
+    allowFallback = false,
+    preferNative = false,
+  } = {},
+) {
+  let state = resolveMountState(root, {
+    routeKind,
+    featureKind,
+    sourceTag,
+    createFallback: false,
+  });
+  if (state.mode === "native") {
+    return state;
+  }
+  if (preferNative) {
+    await Promise.resolve();
+    state = resolveMountState(root, {
+      routeKind,
+      featureKind,
+      sourceTag,
+      createFallback: false,
+    });
+    if (state.mode === "native") {
+      return state;
+    }
+    await nextAnimationFrame();
+    state = resolveMountState(root, {
+      routeKind,
+      featureKind,
+      sourceTag,
+      createFallback: false,
+    });
+    if (state.mode === "native") {
+      return state;
+    }
+    await nextAnimationFrame();
+    state = resolveMountState(root, {
+      routeKind,
+      featureKind,
+      sourceTag,
+      createFallback: false,
+    });
+    if (state.mode === "native") {
+      return state;
+    }
+  }
+  if (allowFallback) {
+    return resolveMountState(root, {
+      routeKind,
+      featureKind,
+      sourceTag,
+      createFallback: true,
+    });
+  }
+  return state;
+}
+
+function collectMutationScopes(mutations, ownerDocument) {
+  const scopes = new Set([ownerDocument]);
+  for (const mutation of mutations) {
+    if (mutation.target instanceof Element) {
+      let current = mutation.target;
+      let depth = 0;
+      while (current && depth < 5) {
+        scopes.add(current);
+        current = current.parentElement;
+        depth += 1;
+      }
+    }
+    for (const node of mutation.addedNodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      scopes.add(node);
+      let current = node.parentElement;
+      let depth = 0;
+      while (current && depth < 5) {
+        scopes.add(current);
+        current = current.parentElement;
+        depth += 1;
+      }
+    }
+  }
+  return Array.from(scopes);
+}
+
 export function observeMountTargets(root = document, callback, sourceTag = "mount") {
   if (typeof callback !== "function") {
     return () => {};
   }
-  const scan = (scope) => {
-    const primary = resolvePrimaryMountRoot(scope, "", sourceTag);
+  const searchRoot = toSearchRoot(root);
+  const ownerDocument = toOwnerDocument(searchRoot);
+  let lastMode = "";
+  let lastPrimary = null;
+  let lastAppRoot = null;
+  let disconnected = false;
+
+  const emit = (scope) => {
+    if (disconnected) {
+      return;
+    }
+    const state = resolveMountState(searchRoot, { sourceTag });
+    if (state.mode === lastMode && state.primary === lastPrimary && state.appRoot === lastAppRoot) {
+      return;
+    }
+    lastMode = state.mode;
+    lastPrimary = state.primary;
+    lastAppRoot = state.appRoot;
     callback({
-      primary,
-      scope: scope instanceof Element || scope instanceof Document ? scope : document,
+      mode: state.mode,
+      primary: state.primary,
+      appRoot: state.appRoot,
+      fallbackRoot: state.fallbackRoot,
+      scope: scope instanceof Element || scope instanceof Document ? scope : ownerDocument,
     });
   };
 
-  scan(root);
-
   const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node instanceof Element) {
-          scan(node);
-        }
-      }
+    const scopes = collectMutationScopes(mutations, ownerDocument);
+    for (const scope of scopes) {
+      emit(scope);
     }
   });
 
-  observer.observe(document.documentElement, {
+  observer.observe(ownerDocument.documentElement, {
     subtree: true,
     childList: true,
+    attributes: true,
+    attributeFilter: ["class", "hidden", "aria-hidden", "data-testid"],
   });
 
-  return () => observer.disconnect();
+  emit(searchRoot);
+  queueMicrotask(() => emit(ownerDocument));
+  void nextAnimationFrame().then(() => emit(ownerDocument));
+  void nextAnimationFrame().then(() => nextAnimationFrame().then(() => emit(ownerDocument)));
+
+  return () => {
+    disconnected = true;
+    observer.disconnect();
+  };
 }

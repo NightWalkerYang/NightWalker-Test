@@ -1,7 +1,7 @@
 import {
-  ensureFallbackMountRoot,
   observeMountTargets,
-  resolvePrimaryMountRoot,
+  resolveMountState,
+  resolveMountStateWithRetry,
 } from "../framework/mount-compat.js";
 import { mountPlatformConsolePage } from "./platform-console-page.js";
 import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
@@ -20,6 +20,7 @@ const ACTIVE_ATTR = "data-oc-platform-surface-active";
 const SECTION_ATTR = "data-oc-platform-section";
 const FALLBACK_ATTR = "data-oc-platform-surface-fallback";
 const MOUNT_SOURCE_TAG = "platform-surface";
+
 function isPlatformManagementView(view) {
   return (
     view === PLATFORM_TENANTS_VIEW ||
@@ -93,7 +94,12 @@ function ensureFallbackContent() {
   if (content instanceof HTMLElement) {
     return content;
   }
-  content = ensureFallbackMountRoot(document, "platform-surface", MOUNT_SOURCE_TAG);
+  const state = resolveMountState(document, {
+    featureKind: "platform-surface",
+    sourceTag: MOUNT_SOURCE_TAG,
+    createFallback: true,
+  });
+  content = state.fallbackRoot;
   if (content instanceof HTMLElement) {
     content.setAttribute(FALLBACK_ATTR, "true");
   }
@@ -105,37 +111,48 @@ function removeFallbackContent() {
 }
 
 function clearMountedSurface(content) {
+  document.querySelectorAll(`[${ROOT_ATTR}]`).forEach((node) => node.remove());
+  cleanupStateAttributes();
   if (content instanceof HTMLElement && !isFallbackContent(content)) {
     content.removeAttribute(ACTIVE_ATTR);
-    content.querySelector(`[${ROOT_ATTR}]`)?.remove();
   }
   removeFallbackContent();
-  document.body.removeAttribute(ACTIVE_ATTR);
   document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
 }
 
-async function mountCurrentSurface(content) {
+function cleanupStateAttributes() {
+  document.body.removeAttribute(ACTIVE_ATTR);
+  document
+    .querySelectorAll(`[${ACTIVE_ATTR}]`)
+    .forEach((node) => node.removeAttribute(ACTIVE_ATTR));
+}
+
+async function mountCurrentSurface(state) {
   if (!isPlatformManagementRoute()) {
-    clearMountedSurface(content);
+    clearMountedSurface(state?.primary);
     return null;
   }
 
   const session = readPlatformSession();
   if (session?.session?.role !== "platform_admin") {
-    clearMountedSurface(content);
+    clearMountedSurface(state?.primary);
     return null;
   }
 
-  const host = content instanceof HTMLElement ? content : ensureFallbackContent();
+  const host =
+    state?.mode === "native" && state.primary instanceof HTMLElement
+      ? state.primary
+      : ensureFallbackContent();
   if (!(host instanceof HTMLElement)) {
     return null;
   }
   ensureStyle();
   if (isFallbackContent(host)) {
+    cleanupStateAttributes();
     document.body.setAttribute(ACTIVE_ATTR, "fallback");
   } else {
     removeFallbackContent();
-    document.body.removeAttribute(ACTIVE_ATTR);
+    cleanupStateAttributes();
     host.setAttribute(ACTIVE_ATTR, "true");
   }
   const root = ensureRoot(host);
@@ -154,30 +171,45 @@ async function mountCurrentSurface(content) {
 export async function bootPlatformSurface() {
   bootTenantRouteSync();
 
-  const scan = async (scope = document) => {
-    const content = resolvePrimaryMountRoot(scope, "", MOUNT_SOURCE_TAG);
-    return mountCurrentSurface(content);
+  const scan = async ({ preferNative = false } = {}) => {
+    const isActiveRoute = isPlatformManagementRoute();
+    const isPlatformAdmin = readPlatformSession()?.session?.role === "platform_admin";
+    if (!isActiveRoute || !isPlatformAdmin) {
+      return mountCurrentSurface(
+        resolveMountState(document, {
+          featureKind: "platform-surface",
+          sourceTag: MOUNT_SOURCE_TAG,
+        }),
+      );
+    }
+    const allowFallback = true;
+    const state = await resolveMountStateWithRetry(document, {
+      routeKind: "root-shell",
+      featureKind: "platform-surface",
+      sourceTag: MOUNT_SOURCE_TAG,
+      allowFallback,
+      preferNative,
+    });
+    return mountCurrentSurface(state);
   };
 
-  const initial = await scan(document);
   if (window.__openclawPlatformSurfaceBooted) {
-    return initial;
+    return scan({ preferNative: true });
   }
   window.__openclawPlatformSurfaceBooted = true;
-  onTenantRouteChange(() => {
-    void scan(document);
-  });
-
   observeMountTargets(
     document,
-    ({ scope: nextScope }) => {
+    ({ mode, scope: nextScope }) => {
       if (nextScope instanceof Element && nextScope.closest?.(`[${ROOT_ATTR}]`)) {
         return;
       }
-      void scan(nextScope);
+      void scan({ preferNative: mode !== "native" });
     },
     MOUNT_SOURCE_TAG,
   );
+  onTenantRouteChange(() => {
+    void scan({ preferNative: true });
+  });
 
-  return initial;
+  return scan({ preferNative: true });
 }

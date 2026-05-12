@@ -21,7 +21,11 @@ async function flush() {
   await Promise.resolve();
 }
 
-async function bootPlatformTenantManagement(fetchImpl, sessionOverrides = {}, view = "platform-tenants") {
+async function bootPlatformTenantManagement(
+  fetchImpl,
+  sessionOverrides = {},
+  view = "platform-tenants",
+) {
   writeTenantSession({
     token: "platform-token",
     session: {
@@ -393,7 +397,9 @@ describe("platform surface", () => {
     const editDialog = document.querySelector("[data-platform-node-dialog]");
     const editNameInput = editDialog?.querySelector('input[name="name"]');
     expect(editDialog?.open).toBe(true);
-    expect(editNameInput instanceof HTMLInputElement ? editNameInput.value : "").toBe("上海受管节点");
+    expect(editNameInput instanceof HTMLInputElement ? editNameInput.value : "").toBe(
+      "上海受管节点",
+    );
   });
 
   it("opens an assign dialog and batch-assigns selectable catalog agents", async () => {
@@ -511,7 +517,9 @@ describe("platform surface", () => {
           if (tenant) {
             tenant.agentCount = state.tenantAgents[tenantId].length;
           }
-          return okJson(state.tenantAgents[tenantId][state.tenantAgents[tenantId].length - 1] || null);
+          return okJson(
+            state.tenantAgents[tenantId][state.tenantAgents[tenantId].length - 1] || null,
+          );
         }
         throw new Error(`unexpected request: ${url}`);
       }),
@@ -577,9 +585,8 @@ describe("platform surface", () => {
         : "",
     ).toBe("批量下发");
     expect(
-      rerenderedAssignDialog?.querySelector(
-        "[data-platform-assign-rate-multiplier]",
-      ) instanceof HTMLInputElement
+      rerenderedAssignDialog?.querySelector("[data-platform-assign-rate-multiplier]") instanceof
+        HTMLInputElement
         ? (
             rerenderedAssignDialog?.querySelector(
               "[data-platform-assign-rate-multiplier]",
@@ -588,9 +595,8 @@ describe("platform surface", () => {
         : "",
     ).toBe("1.5");
     expect(
-      rerenderedAssignDialog?.querySelector(
-        "[data-platform-assign-balance-points]",
-      ) instanceof HTMLInputElement
+      rerenderedAssignDialog?.querySelector("[data-platform-assign-balance-points]") instanceof
+        HTMLInputElement
         ? (
             rerenderedAssignDialog?.querySelector(
               "[data-platform-assign-balance-points]",
@@ -1012,57 +1018,62 @@ describe("platform surface", () => {
       createCalls: [] as Array<Record<string, unknown>>,
       bindingCalls: [] as Array<Record<string, unknown>>,
     };
-    await bootPlatformTenantManagement(async (input, options = {}) => {
-      const url = String(input);
-      const method = String(options.method || "GET").toUpperCase();
-      const body = options.body ? JSON.parse(String(options.body)) : {};
-      const okJson = (data: unknown) => ({
-        ok: true,
-        async json() {
-          return {
-            ok: true,
-            data,
-          };
-        },
-      });
-      if (url.includes("/platform/tenants") && method === "GET") {
-        return okJson(state.tenants);
-      }
-      if (url.includes("/platform/catalog-agents") && method === "GET") {
-        return okJson([]);
-      }
-      if (url.includes("/platform/data-sources") && method === "GET") {
-        return okJson(state.dataSources);
-      }
-      if (url.endsWith("/platform/data-sources") && method === "POST") {
-        state.createCalls.push(body);
-        const created = {
-          id: "ds-created",
-          ...body,
-        };
-        state.dataSources = [created];
-        return okJson(created);
-      }
-      if (url.endsWith("/platform/tenant-data-source-binding") && method === "POST") {
-        state.bindingCalls.push(body);
-        const dataSource = state.dataSources.find((item) => item.id === body.dataSourceId) || null;
-        state.tenants = state.tenants.map((tenant) =>
-          tenant.id === body.tenantId
-            ? {
-                ...tenant,
-                dataSourceId: body.dataSourceId,
-                dataSourceName: dataSource?.name ?? null,
-              }
-            : tenant,
-        );
-        return okJson({
-          tenantId: body.tenantId,
-          dataSourceId: body.dataSourceId,
-          dataSourceName: dataSource?.name ?? null,
+    await bootPlatformTenantManagement(
+      async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data: unknown) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
         });
-      }
-      throw new Error(`unexpected request: ${url}`);
-    }, {}, "platform-data-sources");
+        if (url.includes("/platform/tenants") && method === "GET") {
+          return okJson(state.tenants);
+        }
+        if (url.includes("/platform/catalog-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.includes("/platform/data-sources") && method === "GET") {
+          return okJson(state.dataSources);
+        }
+        if (url.endsWith("/platform/data-sources") && method === "POST") {
+          state.createCalls.push(body);
+          const created = {
+            id: "ds-created",
+            ...body,
+          };
+          state.dataSources = [created];
+          return okJson(created);
+        }
+        if (url.endsWith("/platform/tenant-data-source-binding") && method === "POST") {
+          state.bindingCalls.push(body);
+          const dataSource =
+            state.dataSources.find((item) => item.id === body.dataSourceId) || null;
+          state.tenants = state.tenants.map((tenant) =>
+            tenant.id === body.tenantId
+              ? {
+                  ...tenant,
+                  dataSourceId: body.dataSourceId,
+                  dataSourceName: dataSource?.name ?? null,
+                }
+              : tenant,
+          );
+          return okJson({
+            tenantId: body.tenantId,
+            dataSourceId: body.dataSourceId,
+            dataSourceName: dataSource?.name ?? null,
+          });
+        }
+        throw new Error(`unexpected request: ${url}`);
+      },
+      {},
+      "platform-data-sources",
+    );
 
     const page = document.querySelector(".oc-platform-data-source-page");
     const toolbarButton = document.querySelector("[data-platform-open-data-source-create]");
@@ -1200,42 +1211,46 @@ describe("platform surface", () => {
       ],
       updateCalls: [] as Array<Record<string, unknown>>,
     };
-    await bootPlatformTenantManagement(async (input, options = {}) => {
-      const url = String(input);
-      const method = String(options.method || "GET").toUpperCase();
-      const body = options.body ? JSON.parse(String(options.body)) : {};
-      const okJson = (data: unknown) => ({
-        ok: true,
-        async json() {
-          return {
-            ok: true,
-            data,
-          };
-        },
-      });
-      if (url.includes("/platform/tenants") && method === "GET") {
-        return okJson(state.tenants);
-      }
-      if (url.includes("/platform/catalog-agents") && method === "GET") {
-        return okJson([]);
-      }
-      if (url.includes("/platform/data-sources") && method === "GET") {
-        return okJson(state.dataSources);
-      }
-      if (url.endsWith("/platform/data-sources") && method === "PUT") {
-        state.updateCalls.push(body);
-        state.dataSources = state.dataSources.map((item) =>
-          item.id === body.id
-            ? {
-                ...item,
-                ...body,
-              }
-            : item,
-        );
-        return okJson(state.dataSources[0]);
-      }
-      throw new Error(`unexpected request: ${url}`);
-    }, {}, "platform-data-sources");
+    await bootPlatformTenantManagement(
+      async (input, options = {}) => {
+        const url = String(input);
+        const method = String(options.method || "GET").toUpperCase();
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        const okJson = (data: unknown) => ({
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              data,
+            };
+          },
+        });
+        if (url.includes("/platform/tenants") && method === "GET") {
+          return okJson(state.tenants);
+        }
+        if (url.includes("/platform/catalog-agents") && method === "GET") {
+          return okJson([]);
+        }
+        if (url.includes("/platform/data-sources") && method === "GET") {
+          return okJson(state.dataSources);
+        }
+        if (url.endsWith("/platform/data-sources") && method === "PUT") {
+          state.updateCalls.push(body);
+          state.dataSources = state.dataSources.map((item) =>
+            item.id === body.id
+              ? {
+                  ...item,
+                  ...body,
+                }
+              : item,
+          );
+          return okJson(state.dataSources[0]);
+        }
+        throw new Error(`unexpected request: ${url}`);
+      },
+      {},
+      "platform-data-sources",
+    );
 
     const editButton = document.querySelector("[data-platform-edit-data-source='ds-1']");
     expect(editButton?.textContent).toContain("编辑");
@@ -1547,7 +1562,9 @@ describe("platform surface", () => {
     window.history.pushState({}, "", "/chat");
 
     expect(document.querySelector("[data-oc-platform-surface-root]")).toBeNull();
-    expect(document.querySelector(".content")?.getAttribute("data-oc-platform-surface-active")).toBeNull();
+    expect(
+      document.querySelector(".content")?.getAttribute("data-oc-platform-surface-active"),
+    ).toBeNull();
   });
 
   it("mounts a fallback management shell when the native content area is unavailable", async () => {
@@ -1611,7 +1628,81 @@ describe("platform surface", () => {
     expect(fallbackShell).not.toBeNull();
     expect(fallbackShell?.classList.contains("content")).toBe(true);
     expect(document.body.getAttribute("data-oc-platform-surface-active")).toBe("fallback");
+    expect(document.querySelector("openclaw-app")).not.toBeNull();
     expect(document.querySelector("[data-oc-platform-surface-root]")?.textContent).toContain(
+      "租户 Alpha",
+    );
+  });
+
+  it("recovers from fallback to native content when the upstream shell arrives late", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=platform-tenants&session=main");
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/platform/tenants")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-1",
+                    code: "alpha",
+                    name: "租户 Alpha",
+                    deploymentMode: "cloud",
+                    memberCount: 2,
+                    walletBalance: 8,
+                    agentCount: 1,
+                    memberLimit: 10,
+                    licenseExpiresAt: null,
+                    status: "active",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (
+          url.includes("/platform/catalog-agents") ||
+          url.includes("/platform/tenant-members") ||
+          url.includes("/platform/tenant-agents")
+        ) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootPlatformSurface();
+    await flush();
+
+    expect(document.body.getAttribute("data-oc-platform-surface-active")).toBe("fallback");
+
+    const nativeContent = document.createElement("main");
+    nativeContent.className = "content";
+    document.querySelector("openclaw-app")?.prepend(nativeContent);
+    await flush();
+    await flush();
+
+    expect(document.body.getAttribute("data-oc-platform-surface-active")).toBeNull();
+    expect(document.querySelector("[data-oc-platform-surface-fallback]")).toBeNull();
+    expect(nativeContent.getAttribute("data-oc-platform-surface-active")).toBe("true");
+    expect(nativeContent.querySelector("[data-oc-platform-surface-root]")?.textContent).toContain(
       "租户 Alpha",
     );
   });
