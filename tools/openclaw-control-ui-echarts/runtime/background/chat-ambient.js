@@ -1,6 +1,22 @@
 import { findChatSurface } from "../framework/dom-compat.js";
 
 const HOST_CLASS = "oc-chat-ambient";
+const CHAT_OBSERVER_RELEVANT_SELECTOR = [
+  ".content--chat",
+  ".agent-chat__input",
+  "textarea",
+  ".chat-group",
+  ".chat-bubble",
+  ".chat-message",
+  ".chat-group-messages",
+  ".chat-group-footer",
+  ".chat-tools-collapse",
+  ".chat-tool-msg-collapse",
+  "[data-oc-chat-surface]",
+  "[data-oc-chat-composer]",
+  "[data-oc-chat-group]",
+  "[data-oc-chat-bubble]",
+].join(", ");
 
 let ambientIdCounter = 0;
 
@@ -128,8 +144,69 @@ function findDirectAmbientHost(surface) {
   );
 }
 
+function isChatObserverRelevantElement(element) {
+  return element instanceof Element && element.matches(CHAT_OBSERVER_RELEVANT_SELECTOR);
+}
+
+function subtreeContainsChatObserverRelevantElement(element) {
+  if (!(element instanceof Element)) {
+    return false;
+  }
+  return Boolean(element.querySelector(CHAT_OBSERVER_RELEVANT_SELECTOR));
+}
+
+function mutationTouchesChatStructure(mutations) {
+  for (const mutation of mutations) {
+    const target = mutation.target instanceof Element ? mutation.target : null;
+    if (
+      isChatObserverRelevantElement(target) ||
+      isChatObserverRelevantElement(target?.parentElement)
+    ) {
+      return true;
+    }
+    for (const node of mutation.addedNodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (
+        isChatObserverRelevantElement(node) ||
+        subtreeContainsChatObserverRelevantElement(node) ||
+        isChatObserverRelevantElement(node.parentElement)
+      ) {
+        return true;
+      }
+    }
+    for (const node of mutation.removedNodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (isChatObserverRelevantElement(node) || subtreeContainsChatObserverRelevantElement(node)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function surfaceHasChatSignals(surface) {
+  if (!(surface instanceof HTMLElement)) {
+    return false;
+  }
+  if (surface.matches(".content--chat, [data-oc-chat-surface]")) {
+    return true;
+  }
+  return Boolean(
+    surface.querySelector(
+      "textarea, .chat-group, .chat-bubble, .chat-message, [data-oc-chat-group], [data-oc-chat-bubble]",
+    ),
+  );
+}
+
 function ensureAmbientHost(surface) {
   if (!surface || !surface.isConnected) {
+    return;
+  }
+  if (!surfaceHasChatSignals(surface)) {
     return;
   }
   if (findDirectAmbientHost(surface)) {
@@ -141,7 +218,10 @@ function ensureAmbientHost(surface) {
 
 function pruneOrphanHosts() {
   for (const host of document.querySelectorAll(`.${HOST_CLASS}`)) {
-    if (findChatSurface(host.parentElement || undefined) !== host.parentElement) {
+    if (
+      !surfaceHasChatSignals(host.parentElement) ||
+      findChatSurface(host.parentElement || undefined) !== host.parentElement
+    ) {
       host.remove();
     }
   }
@@ -188,13 +268,13 @@ export function bootChatAmbientBackground() {
 
     const surfaces = new Set();
     const rootSurface = findChatSurface(document);
-    if (rootSurface instanceof HTMLElement) {
+    if (surfaceHasChatSignals(rootSurface)) {
       surfaces.add(rootSurface);
     }
 
     for (const root of pendingRoots) {
       const surface = findChatSurface(root);
-      if (surface instanceof HTMLElement) {
+      if (surfaceHasChatSignals(surface)) {
         surfaces.add(surface);
       }
     }
@@ -216,6 +296,9 @@ export function bootChatAmbientBackground() {
   sync();
 
   const observer = new MutationObserver((mutations) => {
+    if (!mutationTouchesChatStructure(mutations)) {
+      return;
+    }
     for (const mutation of mutations) {
       if (mutation.target instanceof Element) {
         schedule(mutation.target);

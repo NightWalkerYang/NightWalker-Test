@@ -64,4 +64,38 @@ describe("zero-intrusive chat ambient background", () => {
     expect(document.querySelectorAll(".oc-chat-ambient")).toHaveLength(1);
     expect(document.querySelectorAll(".conversation-stage > .oc-chat-ambient")).toHaveLength(1);
   });
+
+  it("ignores non-chat tooltip churn and does not mis-mount onto overview content", async () => {
+    document.body.innerHTML = `
+      <main class="content">
+        <section class="oc-tenant-overview">
+          <div class="oc-block-renderer__chart"></div>
+        </section>
+      </main>
+    `;
+
+    bootChatAmbientBackground();
+    await Promise.resolve();
+
+    expect(document.querySelector(".oc-chat-ambient")).toBeNull();
+
+    const originalRaf = globalThis.requestAnimationFrame;
+    const callbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    }) as typeof globalThis.requestAnimationFrame;
+
+    try {
+      document
+        .querySelector(".oc-tenant-overview")
+        ?.insertAdjacentHTML("beforeend", `<div class="echarts-tooltip">tooltip</div>`);
+
+      await Promise.resolve();
+      expect(callbacks).toHaveLength(0);
+      expect(document.querySelector(".oc-chat-ambient")).toBeNull();
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+    }
+  });
 });

@@ -64,7 +64,9 @@ describe("zero-intrusive tool run cluster", () => {
     const clusters = Array.from(document.querySelectorAll(".chat-thread > .oc-tool-run-cluster"));
     expect(clusters).toHaveLength(2);
 
-    const firstClusterGroups = Array.from(clusters[0]?.querySelectorAll(":scope > .chat-group") || []);
+    const firstClusterGroups = Array.from(
+      clusters[0]?.querySelectorAll(":scope > .chat-group") || [],
+    );
     expect(firstClusterGroups).toHaveLength(4);
     expect(firstClusterGroups[0]?.getAttribute("data-oc-tool-run")).toBe("start");
     expect(firstClusterGroups[1]?.getAttribute("data-oc-tool-run")).toBe("mid");
@@ -79,7 +81,9 @@ describe("zero-intrusive tool run cluster", () => {
     expect(firstClusterGroups[2]?.hidden).toBe(true);
     expect(firstClusterGroups[3]?.hidden).toBe(false);
 
-    const secondClusterGroups = Array.from(clusters[1]?.querySelectorAll(":scope > .chat-group") || []);
+    const secondClusterGroups = Array.from(
+      clusters[1]?.querySelectorAll(":scope > .chat-group") || [],
+    );
     expect(secondClusterGroups).toHaveLength(2);
     expect(secondClusterGroups[0]?.getAttribute("data-oc-tool-run")).toBe("start");
     expect(secondClusterGroups[1]?.getAttribute("data-oc-tool-run")).toBe("end");
@@ -254,5 +258,36 @@ describe("zero-intrusive tool run cluster", () => {
     expect(entries[0]?.hidden).toBe(true);
     expect(entries[1]?.hidden).toBe(false);
     expect(entries[1]?.querySelector(".oc-tool-run-cluster__toggle")).toBeTruthy();
+  });
+
+  it("ignores unrelated tooltip churn outside chat groups", async () => {
+    document.body.innerHTML = `
+      <main class="content">
+        <section class="oc-tenant-overview">
+          <div class="oc-block-renderer__chart"></div>
+        </section>
+      </main>
+    `;
+
+    bootToolRunCluster();
+
+    const originalRaf = globalThis.requestAnimationFrame;
+    const callbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    }) as typeof globalThis.requestAnimationFrame;
+
+    try {
+      document
+        .querySelector(".oc-tenant-overview")
+        ?.insertAdjacentHTML("beforeend", `<div class="echarts-tooltip">tooltip</div>`);
+
+      await Promise.resolve();
+      expect(callbacks).toHaveLength(0);
+      expect(document.querySelector(".oc-tool-run-cluster")).toBeNull();
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+    }
   });
 });

@@ -9,9 +9,68 @@ const STACK_ATTR = "data-oc-tool-run-stack";
 const STACK_ENTRY_ATTR = "data-oc-tool-run-entry";
 const STACK_ENTRY_HIDDEN_ATTR = "data-oc-tool-run-entry-hidden";
 const TOOL_ENTRY_SELECTOR = ".chat-bubble, .chat-tools-collapse, .chat-tool-msg-collapse";
+const TOOL_RUN_OBSERVER_RELEVANT_SELECTOR = [
+  GROUP_SELECTOR,
+  ".chat-group-messages",
+  ".chat-bubble",
+  ".chat-tools-collapse",
+  ".chat-tool-msg-collapse",
+  ".chat-group-footer",
+  ".chat-text",
+  ".content--chat",
+  "[data-oc-chat-group]",
+  "[data-oc-chat-bubble]",
+].join(", ");
 
 function isElement(node) {
   return node && node.nodeType === Node.ELEMENT_NODE;
+}
+
+function isToolRunObserverRelevantElement(element) {
+  return element instanceof Element && element.matches(TOOL_RUN_OBSERVER_RELEVANT_SELECTOR);
+}
+
+function subtreeContainsToolRunObserverRelevantElement(element) {
+  if (!(element instanceof Element)) {
+    return false;
+  }
+  return Boolean(element.querySelector(TOOL_RUN_OBSERVER_RELEVANT_SELECTOR));
+}
+
+function mutationTouchesToolRunStructure(mutations) {
+  for (const mutation of mutations) {
+    const target = mutation.target instanceof Element ? mutation.target : null;
+    if (
+      isToolRunObserverRelevantElement(target) ||
+      isToolRunObserverRelevantElement(target?.parentElement)
+    ) {
+      return true;
+    }
+    for (const node of mutation.addedNodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (
+        isToolRunObserverRelevantElement(node) ||
+        subtreeContainsToolRunObserverRelevantElement(node) ||
+        isToolRunObserverRelevantElement(node.parentElement)
+      ) {
+        return true;
+      }
+    }
+    for (const node of mutation.removedNodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (
+        isToolRunObserverRelevantElement(node) ||
+        subtreeContainsToolRunObserverRelevantElement(node)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function isToolCallOnlyAssistantGroup(group) {
@@ -257,10 +316,9 @@ function setStackExpanded(group, expanded) {
 }
 
 function mountStackToggle(group, lastEntry) {
-  const target =
-    lastEntry.matches?.(".chat-bubble")
-      ? lastEntry
-      : lastEntry.querySelector(".chat-tools-summary, .chat-tool-msg-summary");
+  const target = lastEntry.matches?.(".chat-bubble")
+    ? lastEntry
+    : lastEntry.querySelector(".chat-tools-summary, .chat-tool-msg-summary");
   if (!target) {
     return;
   }
@@ -320,7 +378,10 @@ export function bootToolRunCluster() {
   let syncing = false;
   let observing = false;
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((mutations) => {
+    if (!mutationTouchesToolRunStructure(mutations)) {
+      return;
+    }
     if (syncing) {
       return;
     }

@@ -204,9 +204,11 @@ function applyOverviewChartDefaults(el, option) {
 
   if (option.tooltip && typeof option.tooltip === "object") {
     option.tooltip = {
-      confine: true,
-      transitionDuration: 0,
       ...option.tooltip,
+      confine: true,
+      enterable: false,
+      renderMode: "richText",
+      transitionDuration: 0,
     };
     if (option.tooltip.axisPointer && typeof option.tooltip.axisPointer === "object") {
       option.tooltip.axisPointer = {

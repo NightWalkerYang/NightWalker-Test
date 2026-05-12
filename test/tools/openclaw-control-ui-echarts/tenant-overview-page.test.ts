@@ -148,6 +148,13 @@ describe("tenant overview page", () => {
     }
 
     const option = agentsChart.option as {
+      tooltip?: {
+        trigger?: string;
+        renderMode?: string;
+        confine?: boolean;
+        enterable?: boolean;
+        transitionDuration?: number;
+      };
       legend?: { orient?: string; left?: string; top?: string };
       series?: Array<{
         label?: { show?: boolean; position?: string; formatter?: string };
@@ -155,6 +162,13 @@ describe("tenant overview page", () => {
       }>;
     };
 
+    expect(option.tooltip).toMatchObject({
+      trigger: "item",
+      renderMode: "richText",
+      confine: true,
+      enterable: false,
+      transitionDuration: 0,
+    });
     expect(option.legend).toMatchObject({
       orient: "vertical",
       left: "left",
