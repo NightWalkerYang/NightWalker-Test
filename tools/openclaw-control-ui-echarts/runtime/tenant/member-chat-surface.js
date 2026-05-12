@@ -40,6 +40,16 @@ import {
   updateMemberHistoryPaginationFromMessages,
 } from "./member-chat-history.js";
 import {
+  findTargetSessionKey,
+  isMemberDraftRouteLocked,
+  resolveRouteSessionKey,
+  syncRouteForSession,
+} from "./member-chat-route-state.js";
+import {
+  isProvisionalSessionTitle,
+  normalizeSessionTitleValue,
+} from "./member-chat-session-title.js";
+import {
   beginNewMemberDraftSession,
   closeAllDialogs,
   DELETE_DIALOG_ROOT_ATTR,
@@ -50,24 +60,11 @@ import {
   TOAST_ROOT_ATTR,
 } from "./member-chat-sidebar.js";
 import {
-  findTargetSessionKey,
-  isMemberDraftRouteLocked,
-  resolveRouteSessionKey,
-  syncRouteForSession,
-} from "./member-chat-route-state.js";
-import {
   clearMemberDraftRouteLock,
   readMemberDraftRouteLock,
   writeMemberDraftRouteLock,
 } from "./member-chat-storage.js";
-import {
-  isProvisionalSessionTitle,
-  normalizeSessionTitleValue,
-} from "./member-chat-session-title.js";
-import {
-  scheduleMemberUsageSync,
-  syncMemberUsageRecords,
-} from "./member-chat-usage-sync.js";
+import { scheduleMemberUsageSync, syncMemberUsageRecords } from "./member-chat-usage-sync.js";
 import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
 import { resetTenantRouteSyncForTests } from "./route-sync.js";
 import {
@@ -106,6 +103,15 @@ function isMemberChatRoute(pathname = window.location.pathname, href = window.lo
   }
   const selectedAgent = readSelectedTenantAgent(href);
   return Boolean(selectedAgent?.id);
+}
+
+function isLoginViewRoute(href = window.location.href) {
+  try {
+    const url = new URL(href, document.baseURI);
+    return (url.searchParams.get("ocTenantView") || "").trim() === "login";
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(value) {
@@ -239,7 +245,10 @@ function createSidebarDeps() {
           { replace: false },
         );
         pinMemberChatSession(controller.app, nextSessionKey, {
-          skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, nextSessionKey),
+          skipHydrateHistory: shouldSkipSessionHistoryHydration(
+            controller.sessions,
+            nextSessionKey,
+          ),
         });
         renderSidebarSection(controller, createSidebarDeps());
         return true;
@@ -267,7 +276,10 @@ function createSidebarDeps() {
           { replace: false },
         );
         pinMemberChatSession(controller.app, nextSessionKey, {
-          skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, nextSessionKey),
+          skipHydrateHistory: shouldSkipSessionHistoryHydration(
+            controller.sessions,
+            nextSessionKey,
+          ),
         });
         renderSidebarSection(controller, createSidebarDeps());
       },
@@ -288,9 +300,15 @@ function createSidebarDeps() {
           clearMemberDraftRouteLockForController(controller, nextHiddenKey);
           const fallbackSessionKey =
             controller.sessions[0]?.key?.trim().toLowerCase() ||
-            createTenantMemberSessionKey(controller.session, controller.selectedAgent).toLowerCase();
+            createTenantMemberSessionKey(
+              controller.session,
+              controller.selectedAgent,
+            ).toLowerCase();
           controller.currentSessionKey = fallbackSessionKey;
-          controller.sessions = ensureVisibleCurrentSession(controller.sessions, fallbackSessionKey);
+          controller.sessions = ensureVisibleCurrentSession(
+            controller.sessions,
+            fallbackSessionKey,
+          );
           controller.hasDraftSession = isMemberDraftRouteLocked(
             controller.session,
             controller.selectedAgent,
@@ -695,11 +713,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           hasResolvedSelectedTenantAgent(agent) &&
           balance <= 0
         ) {
-          showTransientToast(
-            getActiveMemberChatController(),
-            "积分不足请联系管理员。",
-            "danger",
-          );
+          showTransientToast(getActiveMemberChatController(), "积分不足请联系管理员。", "danger");
           return { ok: false, error: "insufficient_balance" };
         }
       }
@@ -717,10 +731,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
             activeController.currentSessionKey,
             params?.message,
           );
-          scheduleMemberUsageSync(
-            activeController,
-            activeController.currentSessionKey,
-          );
+          scheduleMemberUsageSync(activeController, activeController.currentSessionKey);
         }
         setTimeout(() => {
           void syncMemberChatSurface();
@@ -893,11 +904,33 @@ async function syncMemberChatSurface() {
   }
   memberChatSurfaceSyncing = true;
   try {
-    if (!isMemberChatRoute()) {
+    const loginViewRoute = isLoginViewRoute();
+    if (!isMemberChatRoute() || loginViewRoute) {
       unbindMemberHistoryPagination(window._ocMemberChatSurfaceController);
       const app = resolveOpenClawApp(document, "member-chat");
       if (app instanceof HTMLElement) {
         clearChatLoadingFailsafe(app);
+        if (loginViewRoute) {
+          replaceChatHydrationState(
+            app,
+            {
+              chatMessages: [],
+              chatQueue: [],
+              chatLoading: false,
+              chatRunId: null,
+              chatStream: null,
+              chatStreamStartedAt: null,
+              lastError: null,
+              chatToolMessages: [],
+              chatStreamSegments: [],
+              resetChatScroll: true,
+            },
+            "member-chat",
+          );
+          app.sessionKey = "";
+          app.chatSending = false;
+          app.__ocPinnedSessionKey = "";
+        }
         delete app.__ocPinnedSessionHydratedKey;
         delete app.__ocPinnedSessionHydratingKey;
       }

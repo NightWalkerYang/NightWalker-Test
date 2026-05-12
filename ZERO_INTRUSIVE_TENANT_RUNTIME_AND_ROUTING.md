@@ -33,6 +33,7 @@
 - `auth-surface` 自己订阅租户路由变化
 - 登录遮罩只允许在真实 login route 上激活；一旦 same-page route 离开登录视图，`auth-surface` 必须立即清理 `data-oc-tenant-auth-active` 与 auth root，不能继续把整个原生壳隐藏掉
 - 登录态还会把底层原生 `openclaw-app`/`[data-openclaw-app]` 标记为 `data-oc-tenant-auth-hidden="true"`，避免登录页表面可见时，左下角或背景里仍能看到聊天壳继续渲染
+- 登录视图还会显式阻止成员聊天 surface 进入会话同步和历史加载分支，避免登录页虽然不可见但仍预热 `sessions.list` / `chat.history`
 
 原因：
 

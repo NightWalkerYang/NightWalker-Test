@@ -8,6 +8,10 @@ import {
   resetTenantAuthSurfaceForTests,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js";
 import {
+  bootMemberChatSurface,
+  resetMemberChatSurfaceForTests,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js";
+import {
   navigateTenantRoute,
   resetTenantRouteSyncForTests,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/route-sync.js";
@@ -23,6 +27,7 @@ afterEach(() => {
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
   resetTenantAuthSurfaceForTests();
+  resetMemberChatSurfaceForTests();
   resetTenantRouteSyncForTests();
   vi.unstubAllGlobals();
 });
@@ -219,6 +224,112 @@ describe("tenant auth surface", () => {
     expect(document.querySelector("openclaw-app")?.hasAttribute("data-oc-tenant-auth-hidden")).toBe(
       false,
     );
+  });
+
+  it("does not load member chat history while on the login view", async () => {
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    window.history.replaceState(
+      {},
+      "",
+      "/?ocTenantView=login&tenantAgentId=tenant-agent-1&session=agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        tenantId: "tenant-1",
+        userId: "user-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "finance-agent",
+      agentName: "财务助手",
+    });
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input?.url || input || "");
+      if (url.includes("/tenant-platform-api/v1/member/sessions")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { ok: true, data: [] };
+          },
+        };
+      }
+      if (url.includes("chat.history")) {
+        throw new Error("unexpected chat history load");
+      }
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { ok: true, data: {} };
+        },
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    bootMemberChatSurface();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input?.url || input || "").includes("chat.history"),
+      ),
+    ).toBe(false);
+  });
+
+  it("clears member chat hydration state while on the login view", async () => {
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    window.history.replaceState({}, "", "/?ocTenantView=login");
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        tenantId: "tenant-1",
+        userId: "user-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "finance-agent",
+      agentName: "财务助手",
+    });
+    const app = document.querySelector("openclaw-app");
+    if (app instanceof HTMLElement) {
+      app.sessionKey =
+        "agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+      app.chatMessages = [{ role: "assistant", content: "old history" }];
+      app.chatQueue = [{ role: "user", content: "pending" }];
+      app.chatLoading = true;
+      app.chatRunId = "run-1";
+      app.chatStream = "streaming";
+      app.chatStreamStartedAt = Date.now();
+      app.lastError = new Error("old error");
+      app.chatToolMessages = [{ content: "tool" }];
+      app.chatStreamSegments = [{ content: "segment" }];
+      app.chatSending = true;
+      app.__ocPinnedSessionKey =
+        "agent:finance-agent:tenant:tenant-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    }
+
+    bootMemberChatSurface();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(app instanceof HTMLElement ? app.sessionKey : "").toBe("");
+    expect(app instanceof HTMLElement ? app.chatMessages : []).toEqual([]);
+    expect(app instanceof HTMLElement ? app.chatQueue : []).toEqual([]);
+    expect(app instanceof HTMLElement ? app.chatLoading : null).toBe(false);
+    expect(app instanceof HTMLElement ? app.chatRunId : null).toBeNull();
+    expect(app instanceof HTMLElement ? app.chatStream : null).toBeNull();
+    expect(app instanceof HTMLElement ? app.chatToolMessages : []).toEqual([]);
+    expect(app instanceof HTMLElement ? app.chatStreamSegments : []).toEqual([]);
+    expect(app instanceof HTMLElement ? app.chatSending : null).toBe(false);
   });
 
   it("does not reactivate auth overlay after route leaves login during async bootstrap", async () => {
