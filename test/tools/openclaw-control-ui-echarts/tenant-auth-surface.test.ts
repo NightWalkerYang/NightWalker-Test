@@ -158,7 +158,9 @@ describe("tenant auth surface", () => {
 
     expect(document.querySelector("[data-tenant-setup-form]")).toBeNull();
     expect(document.querySelector("[data-tenant-login-form]")?.hasAttribute("hidden")).toBe(false);
-    expect(document.querySelector("openclaw-app")).not.toBeNull();
+    expect(document.querySelector("openclaw-app")?.getAttribute("data-oc-tenant-auth-hidden")).toBe(
+      "true",
+    );
   });
 
   it("unmounts the login shell after same-page navigation leaves the tenant login view", async () => {
@@ -186,6 +188,37 @@ describe("tenant auth surface", () => {
 
     expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBeNull();
     expect(document.querySelector("[data-oc-tenant-auth-root]")).toBeNull();
+  });
+
+  it("restores native app visibility after leaving login", async () => {
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    window.history.replaceState({}, "", "/login");
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          data: { initialized: true, edition: "cloud" },
+        };
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await bootTenantAuthSurface();
+
+    expect(document.querySelector("openclaw-app")?.getAttribute("data-oc-tenant-auth-hidden")).toBe(
+      "true",
+    );
+
+    navigateTenantRoute("/?ocTenantView=tenant-agent-selector");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBeNull();
+    expect(document.querySelector("openclaw-app")?.hasAttribute("data-oc-tenant-auth-hidden")).toBe(
+      false,
+    );
   });
 
   it("does not reactivate auth overlay after route leaves login during async bootstrap", async () => {

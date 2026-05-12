@@ -2,6 +2,14 @@ body[data-oc-tenant-auth-active="true"] {
   overflow: hidden;
 }
 
+body[data-oc-tenant-auth-active="true"] openclaw-app,
+body[data-oc-tenant-auth-active="true"] [data-openclaw-app],
+openclaw-app[data-oc-tenant-auth-hidden="true"],
+[data-openclaw-app][data-oc-tenant-auth-hidden="true"] {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .oc-tenant-auth-root {
   position: fixed;
   inset: 0;

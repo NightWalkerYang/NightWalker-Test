@@ -14,6 +14,20 @@ import {
 const ROOT_ATTR = "data-oc-tenant-auth-root";
 const ACTIVE_ATTR = "data-oc-tenant-auth-active";
 const STYLE_ATTR = "data-oc-tenant-auth-style";
+const HIDDEN_APP_ATTR = "data-oc-tenant-auth-hidden";
+
+function syncUnderlyingAppVisibility(hidden) {
+  for (const app of document.querySelectorAll("openclaw-app, [data-openclaw-app]")) {
+    if (!(app instanceof HTMLElement)) {
+      continue;
+    }
+    if (hidden) {
+      app.setAttribute(HIDDEN_APP_ATTR, "true");
+    } else {
+      app.removeAttribute(HIDDEN_APP_ATTR);
+    }
+  }
+}
 
 function ensureStyle() {
   let link = document.head.querySelector(`[${STYLE_ATTR}]`);
@@ -43,6 +57,7 @@ function ensureRoot() {
 
 function clearAuthSurface() {
   document.body.removeAttribute(ACTIVE_ATTR);
+  syncUnderlyingAppVisibility(false);
   document.querySelector(`[${ROOT_ATTR}]`)?.remove();
   document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
 }
@@ -116,6 +131,7 @@ async function syncTenantAuthSurface() {
     }
 
     document.body.setAttribute(ACTIVE_ATTR, "true");
+    syncUnderlyingAppVisibility(true);
     ensureStyle();
     const root = ensureRoot();
     const result = await mountTenantLoginPage(root);
