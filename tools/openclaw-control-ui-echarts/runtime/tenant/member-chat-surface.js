@@ -1,13 +1,27 @@
 import {
+  applySessionSettings,
+  bindMemberHistoryScroll,
+  forceChatTab,
+  patchClientRequest,
+  replaceChatHydrationState,
+  requestIdentityReload,
+  resolveOpenClawApp,
+  setPinnedSession,
+} from "../framework/app-compat.js";
+import {
   findBreadcrumb,
   findClosestComposerTextarea,
   findClosestNewSessionButton,
   findClosestSendButton,
-  findOpenClawApp,
   findSidebar,
   isSendButtonElement,
   isStopButtonElement,
 } from "../framework/dom-compat.js";
+import {
+  listSessions,
+  loadChatHistory,
+  loadSessionUsageTimeseries,
+} from "../framework/rpc-compat.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
   awaitWithTimeout,
@@ -424,7 +438,7 @@ async function loadMemberSessions(app, selectedAgent, session) {
     try {
       rows = normalizeSessionRows(
         await awaitWithTimeout(
-          app.client.request("sessions.list", {}),
+          listSessions(app, {}, "member-chat"),
           MEMBER_SESSION_LIST_TIMEOUT_MS,
           "gateway.sessions.list",
         ),
@@ -457,10 +471,14 @@ async function loadMemberSessions(app, selectedAgent, session) {
       keysToHydrateFromHistory.map(async (key) => {
         try {
           const historyResp = await awaitWithTimeout(
-            app.client.request("chat.history", {
-              sessionKey: key,
-              limit: 200,
-            }),
+            loadChatHistory(
+              app,
+              {
+                sessionKey: key,
+                limit: 200,
+              },
+              "member-chat",
+            ),
             MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS,
             "gateway.chat.history.title",
           );
@@ -633,6 +651,9 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
     return;
   }
   const skipHydrateHistory = options.skipHydrateHistory === true;
+  const previousResolvedSessionKey = String(app.sessionKey || "")
+    .trim()
+    .toLowerCase();
 
   const previousSessionKey = String(app.__ocPinnedSessionKey || "")
     .trim()
@@ -645,37 +666,13 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
   }
 
   // Always update the mutable pinned key reference FIRST
-  app.__ocPinnedSessionKey = sessionKey;
+  setPinnedSession(app, sessionKey, "member-chat");
+  forceChatTab(app, "member-chat");
 
-  if (!app.__openclawTenantMemberPatched) {
-    if (typeof app.setTab === "function") {
-      const originalSetTab = app.setTab.bind(app);
-      app.__openclawTenantMemberOriginalSetTab = originalSetTab;
-      app.setTab = () => originalSetTab("chat");
-    }
-    if (typeof app.applySettings === "function") {
-      const originalApplySettings = app.applySettings.bind(app);
-      app.__openclawTenantMemberOriginalApplySettings = originalApplySettings;
-      // Use app.__ocPinnedSessionKey (mutable) so switching sessions works correctly.
-      // Do NOT capture `sessionKey` from the closure here - it would be stale on re-calls.
-      app.applySettings = (next) =>
-        originalApplySettings({
-          ...next,
-          sessionKey: app.__ocPinnedSessionKey,
-          lastActiveSessionKey: app.__ocPinnedSessionKey,
-        });
-    }
-    app.__openclawTenantMemberPatched = true;
-  }
-
-  if (typeof app.setTab === "function" && app.tab !== "chat") {
-    app.setTab("chat");
-  }
-
-  if (!app.__openclawClientPatched && app.client && typeof app.client.request === "function") {
-    const originalRequest = app.client.request;
-    const boundOriginalRequest = originalRequest.bind(app.client);
-    const wrappedRequest = async (method, params) => {
+  patchClientRequest(
+    app,
+    "member-chat",
+    async (originalRequest, method, params) => {
       const activeSessionKey =
         method === "chat.send"
           ? String(
@@ -698,8 +695,6 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           hasResolvedSelectedTenantAgent(agent) &&
           balance <= 0
         ) {
-          // Note: In most cases, the early interceptor in bootMemberChatSurface
-          // will catch this before it reaches here.
           showTransientToast(
             getActiveMemberChatController(),
             "积分不足请联系管理员。",
@@ -708,7 +703,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           return { ok: false, error: "insufficient_balance" };
         }
       }
-      const result = await boundOriginalRequest(method, params);
+      const result = await originalRequest(method, params);
       if (method === "chat.send") {
         scheduleChatLoadingFailsafe(app, activeSessionKey, {
           showTimeoutToast(message) {
@@ -732,13 +727,9 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
         }, 1200);
       }
       return result;
-    };
-    if (originalRequest && typeof originalRequest === "function" && "mock" in originalRequest) {
-      wrappedRequest.mock = originalRequest.mock;
-    }
-    app.client.request = wrappedRequest;
-    app.__openclawClientPatched = true;
-  }
+    },
+    "member-chat",
+  );
 
   const shouldHydrateHistory =
     app.sessionKey !== sessionKey ||
@@ -747,32 +738,27 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
 
   if (shouldHydrateHistory) {
     // Reset session-scoped view state before rehydrating persisted history.
-    app.chatMessages = [];
-    if (Array.isArray(app.chatQueue)) {
-      app.chatQueue = [];
-    }
-    app.chatThinkingLevel = null;
-    app.chatRunId = null;
-    app.chatStreamStartedAt = null;
-    app.chatStream = null;
-    app.lastError = null;
-    if (typeof app.resetToolStream === "function") {
-      app.resetToolStream();
-    }
+    replaceChatHydrationState(
+      app,
+      {
+        chatMessages: [],
+        chatQueue: [],
+        chatThinkingLevel: null,
+        chatRunId: null,
+        chatStreamStartedAt: null,
+        chatStream: null,
+        lastError: null,
+        requestUpdate: false,
+      },
+      "member-chat",
+    );
 
     if (app.sessionKey !== sessionKey) {
-      app.sessionKey = sessionKey;
-      if (typeof app.applySettings === "function" && app.settings) {
-        app.applySettings({
-          ...app.settings,
-          sessionKey,
-          lastActiveSessionKey: sessionKey,
-        });
-      }
+      applySessionSettings(app, sessionKey, "member-chat");
     }
 
-    if (typeof app.loadAssistantIdentity === "function") {
-      void app.loadAssistantIdentity();
+    if (previousResolvedSessionKey !== normalizedSessionKey) {
+      requestIdentityReload(app, "member-chat");
     }
 
     if (skipHydrateHistory) {
@@ -784,20 +770,18 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
       });
       app.__ocPinnedSessionHydratingKey = "";
       app.__ocPinnedSessionHydratedKey = sessionKey;
-      app.chatLoading = false;
+      replaceChatHydrationState(app, { chatLoading: false }, "member-chat");
       clearChatLoadingFailsafe(app);
-      app.requestUpdate?.();
       return;
     }
 
-    app.chatLoading = true;
-    app.requestUpdate?.();
+    replaceChatHydrationState(app, { chatLoading: true }, "member-chat");
     app.__ocPinnedSessionHydratingKey = sessionKey;
 
     // Load chat history for the pinned session directly via the client.
     const targetKey = sessionKey;
     awaitWithTimeout(
-      app.client.request("chat.history", { sessionKey: targetKey, limit: 200 }),
+      loadChatHistory(app, { sessionKey: targetKey, limit: 200 }, "member-chat"),
       MEMBER_CHAT_HISTORY_TIMEOUT_MS,
       "gateway.chat.history.bootstrap",
     )
@@ -807,24 +791,26 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
         }
         if (app.__ocPinnedSessionKey === targetKey) {
           const msgs = Array.isArray(res?.messages) ? res.messages : [];
-          app.chatMessages = msgs.filter((message) => !isAssistantSilentReply(message));
+          const nextMessages = msgs.filter((message) => !isAssistantSilentReply(message));
+          replaceChatHydrationState(
+            app,
+            {
+              chatMessages: nextMessages,
+              chatThinkingLevel: res?.thinkingLevel ?? null,
+              chatRunId: null,
+              chatStream: null,
+              chatStreamStartedAt: null,
+              chatLoading: false,
+              resetChatScroll: typeof app.resetChatScroll === "function",
+            },
+            "member-chat",
+          );
           updateMemberHistoryPaginationFromMessages(app, targetKey, app.chatMessages, {
             hasMore: true,
             nextCursor: "",
             checkedOlder: false,
             loadingOlder: false,
           });
-          app.chatThinkingLevel = res?.thinkingLevel ?? null;
-          app.chatRunId = null;
-          app.chatStream = null;
-          app.chatStreamStartedAt = null;
-          if (typeof app.resetToolStream === "function") {
-            app.resetToolStream();
-          }
-          if (typeof app.resetChatScroll === "function") {
-            app.resetChatScroll();
-          }
-          app.chatLoading = false;
           clearChatLoadingFailsafe(app);
           app.__ocPinnedSessionHydratedKey = targetKey;
           app.requestUpdate?.();
@@ -839,25 +825,30 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
           app.__ocPinnedSessionHydratingKey = "";
         }
         if (app.__ocPinnedSessionKey === targetKey) {
-          app.chatMessages = [];
+          replaceChatHydrationState(
+            app,
+            {
+              chatMessages: [],
+              chatThinkingLevel: null,
+              chatLoading: false,
+            },
+            "member-chat",
+          );
           updateMemberHistoryPaginationFromMessages(app, targetKey, [], {
             hasMore: false,
             nextCursor: "",
             checkedOlder: false,
             loadingOlder: false,
           });
-          app.chatThinkingLevel = null;
           app.__ocPinnedSessionHydratedKey = "";
-          app.chatLoading = false;
           clearChatLoadingFailsafe(app);
-          app.requestUpdate?.();
         }
       });
   }
 }
 
 function resolveMemberChatShell() {
-  const app = findOpenClawApp(document);
+  const app = resolveOpenClawApp(document, "member-chat");
   const sidebar = findSidebar(document);
   const breadcrumb = findBreadcrumb(document);
   return {
@@ -904,7 +895,7 @@ async function syncMemberChatSurface() {
   try {
     if (!isMemberChatRoute()) {
       unbindMemberHistoryPagination(window._ocMemberChatSurfaceController);
-      const app = findOpenClawApp(document);
+      const app = resolveOpenClawApp(document, "member-chat");
       if (app instanceof HTMLElement) {
         clearChatLoadingFailsafe(app);
         delete app.__ocPinnedSessionHydratedKey;
@@ -1099,14 +1090,14 @@ export function bootMemberChatSurface() {
           continue;
         }
         if (
-          findOpenClawApp(node) === node ||
+          resolveOpenClawApp(node, "member-chat") === node ||
           findSidebar(node) === node ||
           findBreadcrumb(node) === node
         ) {
           void syncMemberChatSurface();
           return;
         }
-        if (findOpenClawApp(node) || findSidebar(node) || findBreadcrumb(node)) {
+        if (resolveOpenClawApp(node, "member-chat") || findSidebar(node) || findBreadcrumb(node)) {
           void syncMemberChatSurface();
           return;
         }

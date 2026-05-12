@@ -1,3 +1,8 @@
+import {
+  ensureFallbackMountRoot,
+  observeMountTargets,
+  resolvePrimaryMountRoot,
+} from "../framework/mount-compat.js";
 import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
 import { mountTenantConsolePage } from "./tenant-console-page.js";
 import {
@@ -19,6 +24,7 @@ const STYLE_ATTR = "data-oc-tenant-surface-style";
 const ACTIVE_ATTR = "data-oc-tenant-surface-active";
 const SECTION_ATTR = "data-oc-tenant-section";
 const FALLBACK_ATTR = "data-oc-tenant-surface-fallback";
+const MOUNT_SOURCE_TAG = "tenant-surface";
 
 function isTenantManagementView(view) {
   return (
@@ -109,17 +115,14 @@ function isFallbackContent(content) {
 }
 
 function ensureFallbackContent() {
-  if (!(document.querySelector("openclaw-app") instanceof HTMLElement)) {
-    return null;
-  }
   let content = document.querySelector(`[${FALLBACK_ATTR}]`);
   if (content instanceof HTMLElement) {
     return content;
   }
-  content = document.createElement("main");
-  content.className = "content oc-tenant-surface-fallback";
-  content.setAttribute(FALLBACK_ATTR, "true");
-  document.body.append(content);
+  content = ensureFallbackMountRoot(document, "tenant-surface", MOUNT_SOURCE_TAG);
+  if (content instanceof HTMLElement) {
+    content.setAttribute(FALLBACK_ATTR, "true");
+  }
   return content;
 }
 
@@ -178,10 +181,8 @@ export async function bootTenantSurface() {
 
   const scan = async (scope = document) => {
     const content =
-      scope instanceof Element && scope.matches(".content")
-        ? scope
-        : document.querySelector(".content") ||
-          document.querySelector(`[${FALLBACK_ATTR}]`);
+      resolvePrimaryMountRoot(scope, "", MOUNT_SOURCE_TAG) ||
+      document.querySelector(`[${FALLBACK_ATTR}]`);
     return mountCurrentSurface(content);
   };
 
@@ -195,30 +196,16 @@ export async function bootTenantSurface() {
     void scan(document);
   });
 
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node instanceof Element) {
-          if (node.closest?.(`[${ROOT_ATTR}]`)) {
-            continue;
-          }
-          if (node.matches(".content")) {
-            void scan(node);
-            continue;
-          }
-          const nestedContent = node.querySelector?.(".content");
-          if (nestedContent instanceof Element) {
-            void scan(nestedContent);
-          }
-        }
+  observeMountTargets(
+    document,
+    ({ scope }) => {
+      if (scope instanceof Element && scope.closest?.(`[${ROOT_ATTR}]`)) {
+        return;
       }
-    }
-  });
-
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-  });
+      void scan(scope);
+    },
+    MOUNT_SOURCE_TAG,
+  );
 
   return initial;
 }

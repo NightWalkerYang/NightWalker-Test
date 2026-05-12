@@ -1,4 +1,9 @@
-import { findBreadcrumb } from "../framework/dom-compat.js";
+import {
+  describeBrandLogoSlot,
+  findBrandLogoSlots,
+  findBrandTitleSlots,
+  findBreadcrumb,
+} from "../framework/dom-compat.js";
 import {
   bootBrandStateSync,
   getCurrentBrandState,
@@ -7,18 +12,6 @@ import {
 } from "./brand-state.js";
 import { getBrandFaviconAsset } from "./favicon.js";
 
-const BRAND_TEXT_SELECTOR = [
-  ".sidebar-brand__title",
-  ".login-gate__title",
-  ".dashboard-header__breadcrumb-link",
-].join(", ");
-const LOGO_SELECTOR = [
-  ".sidebar-brand__logo",
-  ".login-gate__logo",
-  ".agent-chat__avatar--logo",
-  ".chat-avatar--logo",
-  ".agent-chat__badge img",
-].join(", ");
 const INJECTED_TEXT_LOGO_SELECTOR = ".oc-text-logo";
 const INJECTED_IMAGE_LOGO_SELECTOR = ".oc-image-logo";
 const FAVICON_LINKS = [{ rel: "icon" }, { rel: "shortcut icon" }, { rel: "apple-touch-icon" }];
@@ -112,8 +105,9 @@ function replaceLogoElement(element, logoText, imageSrc) {
     return;
   }
   const imageMode = isImageLogoMode();
+  const variant = describeBrandLogoSlot(element);
 
-  if (element.matches(".agent-chat__badge img")) {
+  if (variant === "badge") {
     if (
       element.parentElement?.querySelector(
         imageMode ? ".oc-image-logo--badge" : ".oc-text-logo--badge",
@@ -130,7 +124,7 @@ function replaceLogoElement(element, logoText, imageSrc) {
     return;
   }
 
-  if (element.matches(".agent-chat__avatar--logo")) {
+  if (variant === "hero") {
     if (imageMode) {
       const existingImageLogo = element.querySelector(".oc-image-logo--hero img");
       if (existingImageLogo instanceof HTMLImageElement) {
@@ -155,7 +149,7 @@ function replaceLogoElement(element, logoText, imageSrc) {
     return;
   }
 
-  if (element.matches(".sidebar-brand__logo")) {
+  if (variant === "sidebar") {
     replaceNode(
       element,
       imageMode ? createImageLogo("sidebar", imageSrc) : createTextLogo("sidebar", logoText),
@@ -163,7 +157,7 @@ function replaceLogoElement(element, logoText, imageSrc) {
     return;
   }
 
-  if (element.matches(".login-gate__logo")) {
+  if (variant === "login") {
     replaceNode(
       element,
       imageMode ? createImageLogo("login", imageSrc) : createTextLogo("login", logoText),
@@ -171,7 +165,7 @@ function replaceLogoElement(element, logoText, imageSrc) {
     return;
   }
 
-  if (element.matches(".chat-avatar--logo")) {
+  if (variant === "avatar") {
     replaceNode(
       element,
       imageMode ? createImageLogo("avatar", imageSrc) : createTextLogo("avatar", logoText),
@@ -185,12 +179,7 @@ function processLogoSubtree(root, logoText) {
   }
 
   const imageSrc = getResolvedLogoImageSrc();
-
-  if (root.matches(LOGO_SELECTOR)) {
-    replaceLogoElement(root, logoText, imageSrc);
-  }
-
-  for (const element of root.querySelectorAll(LOGO_SELECTOR)) {
+  for (const element of findBrandLogoSlots(root)) {
     replaceLogoElement(element, logoText, imageSrc);
   }
 
@@ -252,12 +241,7 @@ function processBrandTextSubtree(root, brandName) {
   if (breadcrumbLink instanceof HTMLElement) {
     processBrandTextElement(breadcrumbLink, brandName);
   }
-
-  if (root.matches(BRAND_TEXT_SELECTOR)) {
-    processBrandTextElement(root, brandName);
-  }
-
-  for (const element of root.querySelectorAll(BRAND_TEXT_SELECTOR)) {
+  for (const element of findBrandTitleSlots(root)) {
     processBrandTextElement(element, brandName);
   }
 }
@@ -345,7 +329,8 @@ export function bootBrandReplacer() {
           return;
         }
 
-        const brandTarget = parent.closest(BRAND_TEXT_SELECTOR);
+        const brandTarget =
+          findBrandTitleSlots(parent).find((candidate) => candidate === parent) || null;
         if (brandTarget instanceof HTMLElement) {
           processBrandTextElement(brandTarget, getResolvedBrandName());
         }

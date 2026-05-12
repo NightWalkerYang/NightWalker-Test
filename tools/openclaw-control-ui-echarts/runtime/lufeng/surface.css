@@ -1,15 +1,30 @@
+html[data-oc-lufeng-route="true"]
+  [data-oc-sidebar="true"]
+  > [data-oc-nav-section="true"][data-oc-lufeng-nav="hidden"],
 html[data-oc-lufeng-route="true"] .sidebar-nav > .nav-section[data-oc-lufeng-nav="hidden"],
+html[data-oc-lufeng-route="true"] [data-oc-sidebar-footer="true"][data-oc-lufeng-footer="hidden"],
 html[data-oc-lufeng-route="true"] .sidebar-shell__footer[data-oc-lufeng-footer="hidden"],
+html[data-oc-lufeng-route="true"] [data-oc-topbar-search="true"][data-oc-lufeng-search="hidden"],
 html[data-oc-lufeng-route="true"] .topbar-search[data-oc-lufeng-search="hidden"],
 html[data-oc-lufeng-route="true"] [data-oc-lufeng-session="hidden"] {
   display: none !important;
 }
 
+html[data-oc-lufeng-route="true"]
+  [data-oc-sidebar="true"]
+  > [data-oc-nav-section="true"][data-oc-lufeng-nav="chat"],
 html[data-oc-lufeng-route="true"] .sidebar-nav > .nav-section[data-oc-lufeng-nav="chat"] {
   display: block !important;
 }
 
-html[data-oc-lufeng-route="true"] .sidebar-nav > .nav-section[data-oc-lufeng-nav="chat"] .nav-section__items {
+html[data-oc-lufeng-route="true"]
+  [data-oc-sidebar="true"]
+  > [data-oc-nav-section="true"][data-oc-lufeng-nav="chat"]
+  .nav-section__items,
+html[data-oc-lufeng-route="true"]
+  .sidebar-nav
+  > .nav-section[data-oc-lufeng-nav="chat"]
+  .nav-section__items {
   display: block !important;
 }
 
@@ -19,10 +34,18 @@ html[data-oc-lufeng-route="true"] select[data-oc-lufeng-model="locked"] {
   opacity: 1;
 }
 
+html[data-oc-lufeng-route="true"]
+  [data-oc-chat-group-role="assistant"]
+  [data-oc-chat-avatar="true"],
 html[data-oc-lufeng-route="true"] .chat-group.assistant .chat-avatar {
   display: none !important;
 }
 
+html[data-oc-lufeng-route="true"]
+  [data-oc-chat-group-role="assistant"]
+  [data-oc-chat-avatar-role="assistant"],
+html[data-oc-lufeng-route="true"] [data-oc-chat-group-role="assistant"] > .oc-text-logo--avatar,
+html[data-oc-lufeng-route="true"] [data-oc-chat-welcome-avatar="true"],
 html[data-oc-lufeng-route="true"] .chat-group.assistant .chat-avatar--logo,
 html[data-oc-lufeng-route="true"] .chat-group.assistant .chat-avatar.assistant,
 html[data-oc-lufeng-route="true"] .chat-group.assistant > .oc-text-logo--avatar,
@@ -32,6 +55,7 @@ html[data-oc-lufeng-route="true"] .agent-chat__welcome .agent-chat__avatar--logo
   display: none !important;
 }
 
+html[data-oc-lufeng-route="true"] [data-oc-chat-group-role="assistant"],
 html[data-oc-lufeng-route="true"] .chat-group.assistant {
   gap: 0 !important;
 }

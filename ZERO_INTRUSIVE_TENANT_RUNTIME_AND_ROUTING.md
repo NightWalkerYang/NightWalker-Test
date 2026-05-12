@@ -131,9 +131,11 @@
 
 实现约束补充：
 
-- 成员聊天页对输入框、发送按钮、原生 `New session`、侧边栏、面包屑、顶栏搜索位等原生 DOM 壳节点的定位，必须统一经由 `runtime/framework/dom-compat.js`
-- 这层 `dom-compat` 不是只给成员聊天发送链路使用；租户入口挂载、聊天 ambient、品牌面包屑替换、路丰公共壳裁剪、顶栏搜索位与 utility/footer 分组定位，也都必须复用这层兼容契约
-- 功能文件不应再直接把这些上游 class selector 散落在各自模块里，否则上游 Control UI 一次结构同步就会把登录壳、成员聊天、公共页裁剪、品牌替换等多条零侵入链路同时打断
+- 成员聊天页对输入框、发送按钮、停止按钮、原生 `New session`、侧边栏、面包屑、顶栏搜索位、session/model picker、brand slots、content root 等原生 DOM 壳节点的定位，当前主链路已经统一经由 `runtime/framework/dom-compat.js`
+- `runtime/framework/dom-compat.js` 现在不只负责“找节点”，还会统一给 chat surface / composer / toolbar / send-stop-new-voice / sidebar / utility / footer / content root / brand slots 等关键壳节点同步稳定的 `data-oc-*` 标记，供零侵入样式层和运行时消费
+- 当前零侵入运行时已经拆成四层兼容契约：`runtime/framework/dom-compat.js`、`runtime/framework/mount-compat.js`、`runtime/framework/app-compat.js`、`runtime/framework/rpc-compat.js`
+- 这四层兼容契约不只给成员聊天发送链路使用；`runtime/lufeng/surface.js`、平台/租户/成员 surface、tenant entry 的 utility/search 探测、品牌替换、知识图谱入口，也已经把 DOM/mount/app/RPC 的高脆弱依赖收口到这四层
+- `runtime/framework/styles.js` 与 platform/member/tenant/topbar/lufeng 相关样式现在已经开始优先消费这些 `data-oc-*` 标记，并把旧 upstream class 仅保留为兼容兜底；当前剩余脆弱点主要集中在 compat 内部仍需跟随 upstream 演进维护的壳结构假设、少量聊天内容区内部 class 语义，以及成员聊天里尚未完全去私有化、但已集中封装的少量 `openclaw-app` 私有状态访问
 
 当前成员聊天历史加载规则已经调整为：
 

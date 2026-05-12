@@ -10,6 +10,7 @@ import {
 const STATUS_SELECTOR = ".oc-voice-status";
 const RECORDING_ATTR = "data-oc-voice-recording";
 const VOICE_STATE_ATTR = "data-oc-voice-state";
+const BUTTON_STATE_ATTR = "data-oc-chat-button-state";
 
 function getSpeechRecognitionCtor() {
   if (!supportsSpeechRecognition()) {
@@ -78,6 +79,13 @@ function applyButtonState(mode) {
   const active = mode === "starting" || mode === "recording";
   button.classList.toggle("agent-chat__input-btn--recording", active);
   button.classList.toggle("agent-chat__input-btn--pending", mode === "starting");
+  if (mode === "starting") {
+    button.setAttribute(BUTTON_STATE_ATTR, "pending");
+  } else if (mode === "recording") {
+    button.setAttribute(BUTTON_STATE_ATTR, "recording");
+  } else {
+    button.removeAttribute(BUTTON_STATE_ATTR);
+  }
   button.setAttribute("title", active ? "Stop recording" : "Voice input");
   button.setAttribute("aria-label", active ? "Stop recording" : "Voice input");
 }

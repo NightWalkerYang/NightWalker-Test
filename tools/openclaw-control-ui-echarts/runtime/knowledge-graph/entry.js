@@ -1,7 +1,7 @@
+import { findSidebarUtilityGroup } from "../framework/dom-compat.js";
 import { readSessionForCurrentView } from "../tenant/tenant-context.js";
 
 const LINK_SELECTOR = ".oc-brand-settings-link";
-const SIDEBAR_UTILITY_SELECTOR = ".sidebar-utility-group";
 const BRAND_ICON = `
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M12 3.5a3.5 3.5 0 0 1 3.47 3H19a1 1 0 1 1 0 2h-3.53A3.5 3.5 0 1 1 12 3.5Zm-6 8A3.5 3.5 0 0 1 9.47 15H19a1 1 0 1 1 0 2H9.47A3.5 3.5 0 1 1 6 11.5Z"></path>
@@ -43,11 +43,9 @@ export function bootKnowledgeGraphEntry() {
 
   const scan = (root = document) => {
     const scope = root instanceof Element || root instanceof Document ? root : document;
-    if (scope instanceof Element && scope.matches(SIDEBAR_UTILITY_SELECTOR)) {
-      ensureBrandSettingsLink(scope);
-    }
-    for (const container of scope.querySelectorAll(SIDEBAR_UTILITY_SELECTOR)) {
-      ensureBrandSettingsLink(container);
+    const direct = findSidebarUtilityGroup(scope);
+    if (direct instanceof HTMLElement) {
+      ensureBrandSettingsLink(direct);
     }
   };
 

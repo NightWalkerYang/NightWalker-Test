@@ -1,7 +1,11 @@
 import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/context.js";
 import { writeEchartsViewToken } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
-import { SANDBOX_VIEW_ROUTE, isSandboxViewPublicPath, writeSandboxViewToken } from "../sandbox-view/context.js";
+import {
+  SANDBOX_VIEW_ROUTE,
+  isSandboxViewPublicPath,
+  writeSandboxViewToken,
+} from "../sandbox-view/context.js";
 import { createTenantApiClient } from "./api-client.js";
 import {
   bootTenantRouteSync,
@@ -1551,6 +1555,7 @@ export function bootTenantEntry() {
   tenantEntryLifecycle.addCleanup(clearMemberVisualizationPolling);
   tenantEntryLifecycle.addCleanup(clearMemberSandboxPolling);
 }
+
 
 export function resetTenantEntryForTests() {
   tenantEntryLifecycle?.cleanup?.();

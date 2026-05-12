@@ -29,6 +29,10 @@ const CHAT_SURFACE_TOKENS = ["chat", "conversation", "消息", "聊天", "会话
 const APP_TOKENS = ["openclaw", "gateway", "control ui"];
 const TOPBAR_SEARCH_TOKENS = ["search", "搜索", "find", "查找"];
 const UTILITY_TOKENS = ["utility", "快捷", "帮助", "docs", "文档", "version", "版本"];
+const CONTENT_TOKENS = ["content", "workspace", "surface", "main", "内容", "页面"];
+const SESSION_TOKENS = ["session", "conversation", "thread", "会话", "聊天"];
+const MODEL_TOKENS = ["model", "provider", "模型", "引擎"];
+const FOOTER_TOKENS = ["footer", "docs", "version", "底部", "文档", "版本"];
 
 const BUTTON_LIKE_SELECTOR =
   "button, [role='button'], a, summary, [type='button'], [type='submit']";
@@ -114,6 +118,134 @@ const SIDEBAR_UTILITY_HINT_SELECTORS = [
   ".sidebar-shell__footer",
   "[class*='utility-group']",
   "[class*='sidebar-utility']",
+];
+
+const CONTENT_MOUNT_HINT_SELECTORS = [
+  ".content",
+  "main.content",
+  "main[class*='content']",
+  "main[class*='workspace']",
+  "[data-testid*='content' i]",
+  "[class*='workspace-content']",
+  "[class*='content']",
+  "main",
+];
+
+const CHAT_SESSION_PICKER_HINT_SELECTORS = [
+  ".chat-controls__session:not(.chat-controls__model)",
+  ".chat-mobile-controls-wrapper .chat-controls__session",
+  "[data-testid*='session' i]",
+  "[class*='chat-controls__session']",
+  "label",
+  "section",
+  "div",
+];
+
+const CHAT_MODEL_PICKER_HINT_SELECTORS = [
+  "select[data-chat-model-select='true']",
+  "select[name*='model' i]",
+  "select[aria-label*='model' i]",
+  "select[title*='model' i]",
+  "select",
+];
+
+const SIDEBAR_FOOTER_HINT_SELECTORS = [
+  ".sidebar-shell__footer",
+  "footer",
+  "[class*='sidebar-shell__footer']",
+  "[class*='footer']",
+  "[class*='utility-group']",
+];
+
+const BRAND_TITLE_HINT_SELECTORS = [
+  ".sidebar-brand__title",
+  ".login-gate__title",
+  ".dashboard-header__breadcrumb-link",
+  "[class*='brand__title']",
+  "[class*='login-gate__title']",
+  "[data-testid*='brand-title' i]",
+];
+
+const BRAND_LOGO_HINT_SELECTORS = [
+  ".sidebar-brand__logo",
+  ".login-gate__logo",
+  ".agent-chat__avatar--logo",
+  ".chat-avatar--logo",
+  ".agent-chat__badge img",
+  "[class*='brand__logo']",
+  "[class*='avatar--logo']",
+  "[data-testid*='brand-logo' i]",
+];
+
+const DOM_COMPAT_MARKER_ATTR = "data-oc-dom-compat-marker";
+const CHAT_SURFACE_MARKER_ATTR = "data-oc-chat-surface";
+const CHAT_COMPOSER_MARKER_ATTR = "data-oc-chat-composer";
+const CHAT_TEXTAREA_MARKER_ATTR = "data-oc-chat-textarea";
+const CHAT_TOOLBAR_MARKER_ATTR = "data-oc-chat-toolbar";
+const CHAT_ACTION_BUTTON_MARKER_ATTR = "data-oc-chat-action-button";
+const CHAT_SEND_BUTTON_MARKER_ATTR = "data-oc-chat-send-button";
+const CHAT_STOP_BUTTON_MARKER_ATTR = "data-oc-chat-stop-button";
+const CHAT_NEW_SESSION_BUTTON_MARKER_ATTR = "data-oc-chat-new-session-button";
+const CHAT_VOICE_BUTTON_MARKER_ATTR = "data-oc-chat-voice-button";
+const SIDEBAR_MARKER_ATTR = "data-oc-sidebar";
+const NAV_SECTION_MARKER_ATTR = "data-oc-nav-section";
+const BREADCRUMB_MARKER_ATTR = "data-oc-breadcrumb";
+const TOPBAR_SEARCH_MARKER_ATTR = "data-oc-topbar-search";
+const SIDEBAR_UTILITY_MARKER_ATTR = "data-oc-sidebar-utility";
+const SIDEBAR_FOOTER_MARKER_ATTR = "data-oc-sidebar-footer";
+const CONTENT_ROOT_MARKER_ATTR = "data-oc-content-mount-root";
+const APP_ROOT_MARKER_ATTR = "data-oc-openclaw-app";
+const SESSION_PICKER_MARKER_ATTR = "data-oc-chat-session-picker";
+const MODEL_PICKER_MARKER_ATTR = "data-oc-chat-model-picker";
+const BRAND_TITLE_MARKER_ATTR = "data-oc-brand-title-slot";
+const BRAND_LOGO_MARKER_ATTR = "data-oc-brand-logo-slot";
+const CHAT_GROUP_MARKER_ATTR = "data-oc-chat-group";
+const CHAT_GROUP_ROLE_MARKER_ATTR = "data-oc-chat-group-role";
+const CHAT_BUBBLE_MARKER_ATTR = "data-oc-chat-bubble";
+const CHAT_AVATAR_MARKER_ATTR = "data-oc-chat-avatar";
+const CHAT_AVATAR_ROLE_MARKER_ATTR = "data-oc-chat-avatar-role";
+const CHAT_GROUP_MESSAGES_MARKER_ATTR = "data-oc-chat-group-messages";
+const CHAT_GROUP_FOOTER_MARKER_ATTR = "data-oc-chat-group-footer";
+const CHAT_TEXT_MARKER_ATTR = "data-oc-chat-text";
+const CHAT_TOOLS_SUMMARY_MARKER_ATTR = "data-oc-chat-tools-summary";
+const CHAT_TOOL_MESSAGE_SUMMARY_MARKER_ATTR = "data-oc-chat-tool-msg-summary";
+const CHAT_WELCOME_MARKER_ATTR = "data-oc-chat-welcome";
+const CHAT_WELCOME_AVATAR_MARKER_ATTR = "data-oc-chat-welcome-avatar";
+const FRAMEWORK_DOM_MARKER_ATTRS = [
+  DOM_COMPAT_MARKER_ATTR,
+  CHAT_SURFACE_MARKER_ATTR,
+  CHAT_COMPOSER_MARKER_ATTR,
+  CHAT_TEXTAREA_MARKER_ATTR,
+  CHAT_TOOLBAR_MARKER_ATTR,
+  CHAT_ACTION_BUTTON_MARKER_ATTR,
+  CHAT_SEND_BUTTON_MARKER_ATTR,
+  CHAT_STOP_BUTTON_MARKER_ATTR,
+  CHAT_NEW_SESSION_BUTTON_MARKER_ATTR,
+  CHAT_VOICE_BUTTON_MARKER_ATTR,
+  SIDEBAR_MARKER_ATTR,
+  NAV_SECTION_MARKER_ATTR,
+  BREADCRUMB_MARKER_ATTR,
+  TOPBAR_SEARCH_MARKER_ATTR,
+  SIDEBAR_UTILITY_MARKER_ATTR,
+  SIDEBAR_FOOTER_MARKER_ATTR,
+  CONTENT_ROOT_MARKER_ATTR,
+  APP_ROOT_MARKER_ATTR,
+  SESSION_PICKER_MARKER_ATTR,
+  MODEL_PICKER_MARKER_ATTR,
+  BRAND_TITLE_MARKER_ATTR,
+  BRAND_LOGO_MARKER_ATTR,
+  CHAT_GROUP_MARKER_ATTR,
+  CHAT_GROUP_ROLE_MARKER_ATTR,
+  CHAT_BUBBLE_MARKER_ATTR,
+  CHAT_AVATAR_MARKER_ATTR,
+  CHAT_AVATAR_ROLE_MARKER_ATTR,
+  CHAT_GROUP_MESSAGES_MARKER_ATTR,
+  CHAT_GROUP_FOOTER_MARKER_ATTR,
+  CHAT_TEXT_MARKER_ATTR,
+  CHAT_TOOLS_SUMMARY_MARKER_ATTR,
+  CHAT_TOOL_MESSAGE_SUMMARY_MARKER_ATTR,
+  CHAT_WELCOME_MARKER_ATTR,
+  CHAT_WELCOME_AVATAR_MARKER_ATTR,
 ];
 
 function asElement(value) {
@@ -560,6 +692,101 @@ function scoreSidebarUtility(candidate) {
   return score;
 }
 
+function scoreContentMountRoot(candidate) {
+  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+    return -1000;
+  }
+  if (candidate.closest("aside, nav, footer, dialog")) {
+    return -1000;
+  }
+  const signal = elementSignalText(candidate);
+  let score = 0;
+  if (candidate.matches(".content")) {
+    score += 280;
+  }
+  if (candidate.tagName.toLowerCase() === "main") {
+    score += 100;
+  }
+  score += scoreByTokens(signal, CONTENT_TOKENS, 24);
+  if (candidate.querySelector(".chat-thread, textarea, [data-tenant-section-body]")) {
+    score += 24;
+  }
+  if (candidate.querySelector("[data-platform-section-body], [data-member-open-chat]")) {
+    score += 24;
+  }
+  if (candidate.querySelector(".nav-section, .nav-item")) {
+    score -= 120;
+  }
+  return score;
+}
+
+function normalizeControlContainer(candidate) {
+  if (!(candidate instanceof HTMLElement)) {
+    return null;
+  }
+  const container =
+    candidate.closest(".chat-controls__session, label, section, div") ?? candidate.parentElement;
+  return container instanceof HTMLElement ? container : candidate;
+}
+
+function scoreChatSessionPicker(candidate) {
+  const container = normalizeControlContainer(candidate);
+  if (!(container instanceof HTMLElement) || isHidden(container)) {
+    return -1000;
+  }
+  const signal = elementSignalText(container);
+  const select = container.querySelector("select");
+  let score = select instanceof HTMLSelectElement ? 60 : 0;
+  score += scoreByTokens(signal, SESSION_TOKENS, 42);
+  score -= scoreByTokens(signal, MODEL_TOKENS, 96);
+  if (container.matches(".chat-controls__session")) {
+    score += 220;
+  }
+  if (container.matches(".chat-controls__model") || container.className.includes("model")) {
+    score -= 260;
+  }
+  if (container.querySelector("select[data-chat-model-select='true']")) {
+    score -= 320;
+  }
+  return score;
+}
+
+function scoreChatModelPicker(candidate) {
+  if (!(candidate instanceof HTMLSelectElement) || isHidden(candidate)) {
+    return -1000;
+  }
+  const signal = `${elementSignalText(candidate)} ${elementSignalText(candidate.parentElement)}`;
+  let score = 40;
+  score += scoreByTokens(signal, MODEL_TOKENS, 48);
+  score -= scoreByTokens(signal, SESSION_TOKENS, 22);
+  if (candidate.matches("select[data-chat-model-select='true']")) {
+    score += 240;
+  }
+  if (candidate.parentElement?.matches(".chat-controls__model")) {
+    score += 160;
+  }
+  return score;
+}
+
+function scoreSidebarFooter(candidate) {
+  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+    return -1000;
+  }
+  const signal = elementSignalText(candidate);
+  let score = scoreByTokens(signal, FOOTER_TOKENS, 24);
+  score += scoreByTokens(signal, UTILITY_TOKENS, 18);
+  if (candidate.matches(".sidebar-shell__footer")) {
+    score += 220;
+  }
+  if (candidate.tagName.toLowerCase() === "footer") {
+    score += 60;
+  }
+  if (findSidebar(candidate.parentElement ?? document)) {
+    score += 12;
+  }
+  return score;
+}
+
 function scoreSendButton(button, context = {}) {
   if (!(button instanceof HTMLElement) || isHidden(button)) {
     return -1000;
@@ -667,7 +894,190 @@ function buttonLikeAncestor(target) {
   return null;
 }
 
-export const DOM_COMPAT_CONTRACT_VERSION = "dom-compat-v1";
+function dedupeElements(elements) {
+  return Array.from(new Set(elements.filter((element) => element instanceof HTMLElement)));
+}
+
+function clearFrameworkMarkers(root = document) {
+  const searchRoot = toSearchRoot(root);
+  for (const attr of FRAMEWORK_DOM_MARKER_ATTRS) {
+    for (const element of queryAll(searchRoot, `[${attr}]`)) {
+      if (element instanceof HTMLElement) {
+        element.removeAttribute(attr);
+      }
+    }
+  }
+}
+
+function markElement(element, attr, value = "true") {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+  element.setAttribute(attr, value);
+  element.setAttribute(DOM_COMPAT_MARKER_ATTR, "true");
+}
+
+function markChatStructure(root) {
+  const searchRoot = toSearchRoot(root);
+
+  const composer = findChatComposer(searchRoot);
+  const app = findOpenClawApp(searchRoot);
+  const textarea = findChatComposerTextarea(searchRoot);
+  const toolbar = findChatToolbar(searchRoot, { composer });
+  const chatSurface = findChatSurface(searchRoot);
+  const sendButton = findChatSendButton(searchRoot, { composer, toolbar });
+  const stopButton = findChatStopButton(searchRoot, { composer, toolbar });
+  const newSessionButton = findChatNewSessionButton(searchRoot, { composer, toolbar });
+  const voiceButton = findChatVoiceButton(searchRoot, { composer, toolbar });
+  const sidebar = findSidebar(searchRoot);
+  const breadcrumb = findBreadcrumb(searchRoot);
+  const topbarSearch = findTopbarSearch(searchRoot);
+  const sidebarUtility = findSidebarUtilityGroup(searchRoot);
+  const sidebarFooter = findSidebarFooter(searchRoot);
+  const contentMountRoot = findContentMountRoot(searchRoot);
+  const sessionPicker = findChatSessionPicker(searchRoot);
+  const modelPicker = findChatModelPicker(searchRoot);
+
+  markElement(chatSurface, CHAT_SURFACE_MARKER_ATTR);
+  markElement(composer, CHAT_COMPOSER_MARKER_ATTR);
+  markElement(textarea, CHAT_TEXTAREA_MARKER_ATTR);
+  markElement(toolbar, CHAT_TOOLBAR_MARKER_ATTR);
+  markElement(sendButton, CHAT_SEND_BUTTON_MARKER_ATTR);
+  markElement(stopButton, CHAT_STOP_BUTTON_MARKER_ATTR);
+  markElement(newSessionButton, CHAT_NEW_SESSION_BUTTON_MARKER_ATTR);
+  markElement(voiceButton, CHAT_VOICE_BUTTON_MARKER_ATTR);
+  markElement(sidebar, SIDEBAR_MARKER_ATTR);
+  markElement(breadcrumb, BREADCRUMB_MARKER_ATTR);
+  markElement(topbarSearch, TOPBAR_SEARCH_MARKER_ATTR);
+  markElement(sidebarUtility, SIDEBAR_UTILITY_MARKER_ATTR);
+  markElement(sidebarFooter, SIDEBAR_FOOTER_MARKER_ATTR);
+  markElement(contentMountRoot, CONTENT_ROOT_MARKER_ATTR);
+  markElement(app, APP_ROOT_MARKER_ATTR);
+  markElement(sessionPicker, SESSION_PICKER_MARKER_ATTR);
+  markElement(modelPicker, MODEL_PICKER_MARKER_ATTR);
+
+  for (const element of [sendButton, stopButton, newSessionButton, voiceButton]) {
+    markElement(element, CHAT_ACTION_BUTTON_MARKER_ATTR);
+  }
+
+  if (sidebar instanceof HTMLElement) {
+    for (const section of sidebar.querySelectorAll(":scope > .nav-section")) {
+      markElement(section, NAV_SECTION_MARKER_ATTR);
+    }
+  }
+
+  for (const titleSlot of findBrandTitleSlots(searchRoot)) {
+    markElement(titleSlot, BRAND_TITLE_MARKER_ATTR);
+  }
+  for (const logoSlot of findBrandLogoSlots(searchRoot)) {
+    markElement(logoSlot, BRAND_LOGO_MARKER_ATTR, describeBrandLogoSlot(logoSlot) || "true");
+  }
+
+  if (chatSurface instanceof HTMLElement) {
+    for (const group of chatSurface.querySelectorAll(".chat-group")) {
+      markElement(group, CHAT_GROUP_MARKER_ATTR);
+      if (group.classList.contains("assistant")) {
+        markElement(group, CHAT_GROUP_ROLE_MARKER_ATTR, "assistant");
+      } else if (group.classList.contains("user")) {
+        markElement(group, CHAT_GROUP_ROLE_MARKER_ATTR, "user");
+      } else if (group.classList.contains("tool")) {
+        markElement(group, CHAT_GROUP_ROLE_MARKER_ATTR, "tool");
+      }
+    }
+    for (const bubble of chatSurface.querySelectorAll(".chat-bubble")) {
+      markElement(bubble, CHAT_BUBBLE_MARKER_ATTR);
+    }
+    for (const avatar of chatSurface.querySelectorAll(".chat-avatar")) {
+      markElement(avatar, CHAT_AVATAR_MARKER_ATTR);
+      if (
+        avatar.classList.contains("assistant") ||
+        avatar.classList.contains("chat-avatar--logo")
+      ) {
+        markElement(avatar, CHAT_AVATAR_ROLE_MARKER_ATTR, "assistant");
+      } else if (avatar.classList.contains("user")) {
+        markElement(avatar, CHAT_AVATAR_ROLE_MARKER_ATTR, "user");
+      }
+    }
+    for (const element of chatSurface.querySelectorAll(".chat-group-messages")) {
+      markElement(element, CHAT_GROUP_MESSAGES_MARKER_ATTR);
+    }
+    for (const element of chatSurface.querySelectorAll(".chat-group-footer")) {
+      markElement(element, CHAT_GROUP_FOOTER_MARKER_ATTR);
+    }
+    for (const element of chatSurface.querySelectorAll(".chat-text")) {
+      markElement(element, CHAT_TEXT_MARKER_ATTR);
+    }
+    for (const element of chatSurface.querySelectorAll(".chat-tools-summary")) {
+      markElement(element, CHAT_TOOLS_SUMMARY_MARKER_ATTR);
+    }
+    for (const element of chatSurface.querySelectorAll(".chat-tool-msg-summary")) {
+      markElement(element, CHAT_TOOL_MESSAGE_SUMMARY_MARKER_ATTR);
+    }
+    for (const element of chatSurface.querySelectorAll(".agent-chat__welcome")) {
+      markElement(element, CHAT_WELCOME_MARKER_ATTR);
+      for (const avatar of element.querySelectorAll(
+        "img, .agent-chat__avatar, .agent-chat__avatar--logo",
+      )) {
+        markElement(avatar, CHAT_WELCOME_AVATAR_MARKER_ATTR);
+      }
+    }
+  }
+}
+
+export function syncFrameworkDomMarkers(root = document) {
+  clearFrameworkMarkers(root);
+  markChatStructure(root);
+}
+
+export function observeFrameworkDomMarkers(root = document) {
+  const searchRoot = toSearchRoot(root);
+  syncFrameworkDomMarkers(searchRoot);
+  if (searchRoot instanceof Document) {
+    if (searchRoot.defaultView?.__ocFrameworkDomMarkerObserverBooted) {
+      return null;
+    }
+    if (searchRoot.defaultView) {
+      searchRoot.defaultView.__ocFrameworkDomMarkerObserverBooted = true;
+    }
+  }
+  const observer = new MutationObserver(() => {
+    syncFrameworkDomMarkers(searchRoot);
+  });
+  observer.observe(searchRoot instanceof Document ? searchRoot.documentElement : searchRoot, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "aria-label", "title", "data-testid", "hidden"],
+  });
+  return observer;
+}
+
+function collectBrandTitleSlots(root) {
+  const searchRoot = toSearchRoot(root);
+  const slots = queryAllBySelectors(searchRoot, BRAND_TITLE_HINT_SELECTORS).filter(
+    (candidate) => candidate instanceof HTMLElement,
+  );
+  const breadcrumb = findBreadcrumb(searchRoot);
+  if (breadcrumb instanceof HTMLElement) {
+    const breadcrumbLink =
+      breadcrumb.querySelector(".dashboard-header__breadcrumb-link") ||
+      breadcrumb.querySelector("a, button, [role='link']");
+    if (breadcrumbLink instanceof HTMLElement) {
+      slots.push(breadcrumbLink);
+    }
+  }
+  return dedupeElements(slots);
+}
+
+function collectBrandLogoSlots(root) {
+  const searchRoot = toSearchRoot(root);
+  const slots = queryAllBySelectors(searchRoot, BRAND_LOGO_HINT_SELECTORS).filter(
+    (candidate) => candidate instanceof HTMLElement,
+  );
+  return dedupeElements(slots);
+}
+
+export const DOM_COMPAT_CONTRACT_VERSION = "dom-compat-v2";
 
 export function supportsSpeechRecognition() {
   return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -776,6 +1186,23 @@ export function findChatVoiceButton(root = document, options = {}) {
 
   const global = bestButtonMatch(searchRoot, scoreVoiceButton, context);
   return global && scoreVoiceButton(global, context) >= 40 ? global : null;
+}
+
+export function findChatStopButton(root = document, options = {}) {
+  const searchRoot = toSearchRoot(root);
+  const composer = options.composer ?? findChatComposer(searchRoot);
+  const toolbar = options.toolbar ?? findChatToolbar(searchRoot, { composer });
+  const context = { composer, toolbar };
+
+  const scoped =
+    (toolbar instanceof Element && bestButtonMatch(toolbar, scoreStopButton, context)) ||
+    (composer instanceof Element && bestButtonMatch(composer, scoreStopButton, context));
+  if (scoped && scoreStopButton(scoped) >= 60) {
+    return scoped;
+  }
+
+  const global = bestButtonMatch(searchRoot, scoreStopButton, context);
+  return global && scoreStopButton(global) >= 60 ? global : null;
 }
 
 export function findClosestSendButton(target) {
@@ -910,6 +1337,113 @@ export function findSidebarUtilityGroup(root = document) {
   return pickBest(candidates, (candidate) => scoreSidebarUtility(candidate)) ?? null;
 }
 
+export function findContentMountRoot(root = document) {
+  const searchRoot = toSearchRoot(root);
+  const candidates = queryAllBySelectors(searchRoot, CONTENT_MOUNT_HINT_SELECTORS).filter(
+    (candidate) => candidate instanceof HTMLElement,
+  );
+  const match = pickBest(candidates, (candidate) => scoreContentMountRoot(candidate));
+  return match && scoreContentMountRoot(match) >= 40 ? match : null;
+}
+
+export function findChatSessionPicker(root = document) {
+  const searchRoot = toSearchRoot(root);
+  const candidates = queryAllBySelectors(searchRoot, CHAT_SESSION_PICKER_HINT_SELECTORS).filter(
+    (candidate) => candidate instanceof HTMLElement,
+  );
+  const match = pickBest(candidates, (candidate) => scoreChatSessionPicker(candidate));
+  const normalized = normalizeControlContainer(match);
+  return normalized && scoreChatSessionPicker(normalized) >= 40 ? normalized : null;
+}
+
+export function findChatModelPicker(root = document) {
+  const searchRoot = toSearchRoot(root);
+  const candidates = queryAllBySelectors(searchRoot, CHAT_MODEL_PICKER_HINT_SELECTORS).filter(
+    (candidate) => candidate instanceof HTMLSelectElement,
+  );
+  const match = pickBest(candidates, (candidate) => scoreChatModelPicker(candidate));
+  return match && scoreChatModelPicker(match) >= 40 ? match : null;
+}
+
+export function findSidebarFooter(root = document) {
+  const searchRoot = toSearchRoot(root);
+  const candidates = queryAllBySelectors(searchRoot, SIDEBAR_FOOTER_HINT_SELECTORS).filter(
+    (candidate) => candidate instanceof HTMLElement,
+  );
+  const match = pickBest(candidates, (candidate) => scoreSidebarFooter(candidate));
+  return match && scoreSidebarFooter(match) >= 40 ? match : null;
+}
+
+export function findBrandTitleSlots(root = document) {
+  return collectBrandTitleSlots(root);
+}
+
+export function findBrandLogoSlots(root = document) {
+  return collectBrandLogoSlots(root);
+}
+
+export function describeBrandLogoSlot(element) {
+  if (!(element instanceof HTMLElement)) {
+    return "";
+  }
+  if (element.matches(".agent-chat__badge img")) {
+    return "badge";
+  }
+  if (element.matches(".agent-chat__avatar--logo")) {
+    return "hero";
+  }
+  if (element.matches(".sidebar-brand__logo")) {
+    return "sidebar";
+  }
+  if (element.matches(".login-gate__logo")) {
+    return "login";
+  }
+  if (element.matches(".chat-avatar--logo")) {
+    return "avatar";
+  }
+  return "";
+}
+
+export function describeCompatCapabilities(root = document) {
+  const composer = findChatComposer(root);
+  const toolbar = findChatToolbar(root, { composer });
+  const textarea = findChatComposerTextarea(root);
+  const chatSurface = findChatSurface(root);
+  const sendButton = findChatSendButton(root, { composer, toolbar });
+  const stopButton = findChatStopButton(root, { composer, toolbar });
+  const newSessionButton = findChatNewSessionButton(root, { composer, toolbar });
+  const voiceButton = findChatVoiceButton(root, { composer, toolbar });
+  const contentMountRoot = findContentMountRoot(root);
+  const sessionPicker = findChatSessionPicker(root);
+  const modelPicker = findChatModelPicker(root);
+  const sidebar = findSidebar(root);
+  const breadcrumb = findBreadcrumb(root);
+  const topbarSearch = findTopbarSearch(root);
+  const sidebarUtility = findSidebarUtilityGroup(root);
+  const sidebarFooter = findSidebarFooter(root);
+  return {
+    hasComposer: Boolean(composer && textarea),
+    hasSendButton: Boolean(sendButton),
+    hasStopButton: Boolean(stopButton),
+    hasNewSessionButton: Boolean(newSessionButton),
+    hasVoiceButton: Boolean(voiceButton),
+    hasSidebar: Boolean(sidebar),
+    hasBreadcrumb: Boolean(breadcrumb),
+    hasChatSurface: Boolean(chatSurface),
+    hasTopbarSearch: Boolean(topbarSearch),
+    hasSidebarUtility: Boolean(sidebarUtility),
+    hasSidebarFooter: Boolean(sidebarFooter),
+    hasSessionPicker: Boolean(sessionPicker),
+    hasModelPicker: Boolean(modelPicker),
+    hasBrandTitleSlots: findBrandTitleSlots(root).length > 0,
+    hasBrandLogoSlots: findBrandLogoSlots(root).length > 0,
+    canMountNativeContent: Boolean(contentMountRoot),
+    supportsSpeechRecognition: supportsSpeechRecognition(),
+    supportsAbortBinding: Boolean(stopButton || sendButton),
+    supportsPinnedSessionRouting: Boolean(sessionPicker || modelPicker),
+  };
+}
+
 export function getFrameworkDomCompat(root = document) {
   const app = findOpenClawApp(root);
   const composer = findChatComposer(root);
@@ -918,31 +1452,33 @@ export function getFrameworkDomCompat(root = document) {
   const chatSurface = findChatSurface(root);
   const topbarSearch = findTopbarSearch(root);
   const sidebarUtility = findSidebarUtilityGroup(root);
+  const contentMountRoot = findContentMountRoot(root);
+  const sidebarFooter = findSidebarFooter(root);
+  const sessionPicker = findChatSessionPicker(root);
+  const modelPicker = findChatModelPicker(root);
+  const brandTitleSlots = findBrandTitleSlots(root);
+  const brandLogoSlots = findBrandLogoSlots(root);
   return {
     contractVersion: DOM_COMPAT_CONTRACT_VERSION,
     app,
     chatSurface,
     composer,
+    contentMountRoot,
     textarea,
     toolbar,
     topbarSearch,
     sidebarUtility,
+    sidebarFooter,
+    sessionPicker,
+    modelPicker,
+    brandTitleSlots,
+    brandLogoSlots,
     sendButton: findChatSendButton(root, { composer, toolbar }),
+    stopButton: findChatStopButton(root, { composer, toolbar }),
     newSessionButton: findChatNewSessionButton(root, { composer, toolbar }),
     voiceButton: findChatVoiceButton(root, { composer, toolbar }),
     sidebar: findSidebar(root),
     breadcrumb: findBreadcrumb(root),
-    capabilities: {
-      hasComposer: Boolean(composer && textarea),
-      hasSendButton: Boolean(findChatSendButton(root, { composer, toolbar })),
-      hasNewSessionButton: Boolean(findChatNewSessionButton(root, { composer, toolbar })),
-      hasVoiceButton: Boolean(findChatVoiceButton(root, { composer, toolbar })),
-      hasSidebar: Boolean(findSidebar(root)),
-      hasBreadcrumb: Boolean(findBreadcrumb(root)),
-      hasChatSurface: Boolean(chatSurface),
-      hasTopbarSearch: Boolean(topbarSearch),
-      hasSidebarUtility: Boolean(sidebarUtility),
-      supportsSpeechRecognition: supportsSpeechRecognition(),
-    },
+    capabilities: describeCompatCapabilities(root),
   };
 }

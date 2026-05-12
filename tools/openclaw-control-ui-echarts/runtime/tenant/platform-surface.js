@@ -1,4 +1,10 @@
+import {
+  ensureFallbackMountRoot,
+  observeMountTargets,
+  resolvePrimaryMountRoot,
+} from "../framework/mount-compat.js";
 import { mountPlatformConsolePage } from "./platform-console-page.js";
+import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
 import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_DATA_SOURCES_VIEW,
@@ -7,16 +13,13 @@ import {
   readPlatformSession,
   readTenantView,
 } from "./tenant-context.js";
-import {
-  bootTenantRouteSync,
-  onTenantRouteChange,
-} from "./route-sync.js";
 
 const ROOT_ATTR = "data-oc-platform-surface-root";
 const STYLE_ATTR = "data-oc-platform-surface-style";
 const ACTIVE_ATTR = "data-oc-platform-surface-active";
 const SECTION_ATTR = "data-oc-platform-section";
 const FALLBACK_ATTR = "data-oc-platform-surface-fallback";
+const MOUNT_SOURCE_TAG = "platform-surface";
 function isPlatformManagementView(view) {
   return (
     view === PLATFORM_TENANTS_VIEW ||
@@ -86,17 +89,14 @@ function isFallbackContent(content) {
 }
 
 function ensureFallbackContent() {
-  if (!(document.querySelector("openclaw-app") instanceof HTMLElement)) {
-    return null;
-  }
   let content = document.querySelector(`[${FALLBACK_ATTR}]`);
   if (content instanceof HTMLElement) {
     return content;
   }
-  content = document.createElement("main");
-  content.className = "content oc-platform-surface-fallback";
-  content.setAttribute(FALLBACK_ATTR, "true");
-  document.body.append(content);
+  content = ensureFallbackMountRoot(document, "platform-surface", MOUNT_SOURCE_TAG);
+  if (content instanceof HTMLElement) {
+    content.setAttribute(FALLBACK_ATTR, "true");
+  }
   return content;
 }
 
@@ -155,10 +155,7 @@ export async function bootPlatformSurface() {
   bootTenantRouteSync();
 
   const scan = async (scope = document) => {
-    const content =
-      scope instanceof Element && scope.matches(".content")
-        ? scope
-        : document.querySelector(".content");
+    const content = resolvePrimaryMountRoot(scope, "", MOUNT_SOURCE_TAG);
     return mountCurrentSurface(content);
   };
 
@@ -171,30 +168,16 @@ export async function bootPlatformSurface() {
     void scan(document);
   });
 
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node instanceof Element) {
-          if (node.closest?.(`[${ROOT_ATTR}]`)) {
-            continue;
-          }
-          if (node.matches(".content")) {
-            void scan(node);
-            continue;
-          }
-          const nestedContent = node.querySelector?.(".content");
-          if (nestedContent instanceof Element) {
-            void scan(nestedContent);
-          }
-        }
+  observeMountTargets(
+    document,
+    ({ scope: nextScope }) => {
+      if (nextScope instanceof Element && nextScope.closest?.(`[${ROOT_ATTR}]`)) {
+        return;
       }
-    }
-  });
-
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-  });
+      void scan(nextScope);
+    },
+    MOUNT_SOURCE_TAG,
+  );
 
   return initial;
 }
