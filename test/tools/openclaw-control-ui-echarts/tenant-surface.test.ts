@@ -1375,6 +1375,10 @@ describe("tenant surface", () => {
     await bootTenantSurface();
 
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.textContent).toContain("成员");
+    expect(surfaceRoot?.textContent).toContain("已分配 Agent");
+    expect(surfaceRoot?.textContent).toContain("创建时间");
+    expect(surfaceRoot?.textContent).toContain("alice");
     expect(surfaceRoot?.querySelector("[data-tenant-open-assign]")?.textContent).toContain(
       "分配Agent",
     );
@@ -1808,6 +1812,7 @@ describe("tenant surface", () => {
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
     expect(surfaceRoot?.querySelector(".oc-tenant-list-view--scrollable")).not.toBeNull();
     expect(surfaceRoot?.querySelector(".oc-tenant-usage-summary")).toBeNull();
+    expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
     expect(surfaceRoot?.textContent).toContain("成员");
     expect(surfaceRoot?.textContent).toContain("Agent");
     expect(surfaceRoot?.textContent).toContain("耗用总token");
@@ -1969,6 +1974,7 @@ describe("tenant surface", () => {
     await flush();
 
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
     expect(surfaceRoot?.textContent).toContain("苏博泰克财务分析助手");
     expect(surfaceRoot?.textContent).toContain("财务分析与预算评估");
     expect(surfaceRoot?.textContent).toContain("128.5");
@@ -2064,6 +2070,7 @@ describe("tenant surface", () => {
     const surfaceRoot = document.querySelector("[data-oc-tenant-surface-root]");
     expect(surfaceRoot?.textContent).toContain("在线充值");
     expect(surfaceRoot?.textContent).toContain("钱包余额");
+    expect(surfaceRoot?.textContent).toContain("待处理订单");
     expect(surfaceRoot?.querySelector("[data-tenant-wallet-recharge-form]")).not.toBeNull();
     expect(surfaceRoot?.textContent).not.toContain("充值订单");
     expect(surfaceRoot?.textContent).not.toContain("钱包流水");
@@ -2132,6 +2139,7 @@ describe("tenant surface", () => {
       true,
     );
     expect(surfaceRoot?.textContent).toContain("充值订单");
+    expect(surfaceRoot?.textContent).toContain("订单号");
     expect(surfaceRoot?.textContent).toContain("payment-1");
     expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-page='prev']")).not.toBeNull();
@@ -2198,6 +2206,7 @@ describe("tenant surface", () => {
       true,
     );
     expect(surfaceRoot?.textContent).toContain("模型耗用");
+    expect(surfaceRoot?.textContent).toContain("关联");
     expect(surfaceRoot?.textContent).toContain("模型扣费");
     expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-page='prev']")).not.toBeNull();
@@ -2264,6 +2273,7 @@ describe("tenant surface", () => {
       true,
     );
     expect(surfaceRoot?.textContent).toContain("钱包流水");
+    expect(surfaceRoot?.textContent).toContain("关联");
     expect(surfaceRoot?.textContent).toContain("Agent 撤回回退");
     expect(surfaceRoot?.querySelector("[data-tenant-search]")).not.toBeNull();
     expect(surfaceRoot?.querySelector("[data-tenant-page='prev']")).not.toBeNull();
