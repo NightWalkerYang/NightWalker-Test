@@ -116,24 +116,23 @@ describe("tenant auth surface", () => {
   it("shows only the setup form when the platform is not initialized", async () => {
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     window.history.replaceState({}, "", "/login");
-    const fetchMock = vi.fn(async () =>
-      ({
-        ok: true,
-        status: 200,
-        async json() {
-          return {
-            ok: true,
-            data: { initialized: false },
-          };
-        },
-      })
-    );
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          data: { initialized: false },
+        };
+      },
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
     await bootTenantAuthSurface();
 
     expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBe("true");
     expect(document.querySelector("[data-oc-tenant-auth-root]")).not.toBeNull();
+    expect(document.querySelector("openclaw-app")).not.toBeNull();
     expect(document.querySelector(".login-gate__title")?.textContent).toContain("统一登录");
     expect(document.querySelector("[data-tenant-setup-form]")?.hasAttribute("hidden")).toBe(false);
     expect(document.querySelector("[data-tenant-login-form]")?.hasAttribute("hidden")).toBe(true);
@@ -143,24 +142,23 @@ describe("tenant auth surface", () => {
   it("shows only the login form when the platform is already initialized", async () => {
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     window.history.replaceState({}, "", "/login");
-    const fetchMock = vi.fn(async () =>
-      ({
-        ok: true,
-        status: 200,
-        async json() {
-          return {
-            ok: true,
-            data: { initialized: true },
-          };
-        },
-      })
-    );
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          data: { initialized: true },
+        };
+      },
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
     await bootTenantAuthSurface();
 
     expect(document.querySelector("[data-tenant-setup-form]")).toBeNull();
     expect(document.querySelector("[data-tenant-login-form]")?.hasAttribute("hidden")).toBe(false);
+    expect(document.querySelector("openclaw-app")).not.toBeNull();
   });
 
   it("unmounts the login shell after same-page navigation leaves the tenant login view", async () => {
@@ -188,5 +186,47 @@ describe("tenant auth surface", () => {
 
     expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBeNull();
     expect(document.querySelector("[data-oc-tenant-auth-root]")).toBeNull();
+  });
+
+  it("does not reactivate auth overlay after route leaves login during async bootstrap", async () => {
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    window.history.replaceState({}, "", "/?ocTenantView=login");
+    let resolveBootstrap;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveBootstrap = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const bootPromise = bootTenantAuthSurface();
+    await Promise.resolve();
+
+    expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBe("true");
+    navigateTenantRoute("/?ocTenantView=tenant-members");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBeNull();
+    expect(document.querySelector("[data-oc-tenant-auth-root]")).toBeNull();
+
+    resolveBootstrap?.({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          data: { initialized: true, edition: "cloud" },
+        };
+      },
+    });
+    await bootPromise;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBeNull();
+    expect(document.querySelector("[data-oc-tenant-auth-root]")).toBeNull();
+    expect(document.querySelector("openclaw-app")).not.toBeNull();
   });
 });

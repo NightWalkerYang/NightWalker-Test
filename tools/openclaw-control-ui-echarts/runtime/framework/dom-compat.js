@@ -531,8 +531,12 @@ function scoreSidebar(sidebar) {
   const items = sidebar.querySelectorAll(".nav-item, [role='link'], [role='menuitem'], a, button");
   let score = Math.min(12, items.length) * 12;
   score += scoreByTokens(signal, SIDEBAR_TOKENS, 28);
-  if (sidebar.matches(".sidebar-nav, .sidebar-shell, aside")) {
+  if (sidebar.matches(".sidebar-nav")) {
+    score += 220;
+  } else if (sidebar.matches(".sidebar-shell")) {
     score += 80;
+  } else if (sidebar.matches("aside")) {
+    score += 60;
   }
   if (items.length === 0) {
     score -= 60;
@@ -694,6 +698,14 @@ function scoreSidebarUtility(candidate) {
 
 function scoreContentMountRoot(candidate) {
   if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+    return -1000;
+  }
+  if (
+    candidate.hasAttribute("data-oc-fallback-mount-root") ||
+    candidate
+      .getAttributeNames()
+      .some((name) => name === "data-oc-fallback-mount-root" || /data-oc-.*-fallback/.test(name))
+  ) {
     return -1000;
   }
   if (candidate.closest("aside, nav, footer, dialog")) {

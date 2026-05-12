@@ -4,14 +4,9 @@
   display: none !important;
 }
 
-body[data-oc-platform-surface-active="fallback"] > [data-oc-openclaw-app="true"],
-body[data-oc-platform-surface-active="fallback"] > openclaw-app {
-  display: none !important;
-}
-
 .oc-platform-surface-fallback {
   width: min(1440px, calc(100vw - 32px));
-  margin: 0 auto;
+  margin: 24px auto 0;
   padding: 24px 16px 40px;
   box-sizing: border-box;
 }

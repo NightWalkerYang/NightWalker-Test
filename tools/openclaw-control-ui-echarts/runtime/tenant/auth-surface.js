@@ -91,6 +91,11 @@ function recoverAuthenticatedChatRoute(view = readTenantView()) {
 let authSurfaceSyncing = false;
 let authSurfaceSyncQueued = false;
 let authSurfaceRouteCleanup = null;
+let authSurfaceRunId = 0;
+
+function isActiveRun(runId) {
+  return runId === authSurfaceRunId;
+}
 
 async function syncTenantAuthSurface() {
   if (authSurfaceSyncing) {
@@ -98,6 +103,7 @@ async function syncTenantAuthSurface() {
     return null;
   }
   authSurfaceSyncing = true;
+  const runId = ++authSurfaceRunId;
   try {
     const view = readTenantView();
     if (!isTenantLoginView(view)) {
@@ -113,6 +119,10 @@ async function syncTenantAuthSurface() {
     ensureStyle();
     const root = ensureRoot();
     const result = await mountTenantLoginPage(root);
+    if (!isActiveRun(runId)) {
+      clearAuthSurface();
+      return null;
+    }
     if (!isTenantLoginView(readTenantView())) {
       clearAuthSurface();
       return null;
@@ -131,20 +141,24 @@ async function syncTenantAuthSurface() {
 
 export async function bootTenantAuthSurface() {
   bootTenantRouteSync();
-  const initial = await syncTenantAuthSurface();
   if (window.__openclawTenantAuthSurfaceBooted) {
-    return initial;
+    return syncTenantAuthSurface();
   }
   window.__openclawTenantAuthSurfaceBooted = true;
   authSurfaceRouteCleanup = onTenantRouteChange(() => {
+    authSurfaceRunId += 1;
+    if (!isTenantLoginView(readTenantView())) {
+      clearAuthSurface();
+    }
     void syncTenantAuthSurface();
   });
-  return initial;
+  return syncTenantAuthSurface();
 }
 
 export function resetTenantAuthSurfaceForTests() {
   authSurfaceSyncing = false;
   authSurfaceSyncQueued = false;
+  authSurfaceRunId += 1;
   if (typeof authSurfaceRouteCleanup === "function") {
     authSurfaceRouteCleanup();
   }

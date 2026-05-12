@@ -136,6 +136,34 @@ describe("framework dom compatibility contract", () => {
     expect(breadcrumb).toBeInstanceOf(HTMLElement);
   });
 
+  it("prefers the native sidebar nav inside wrapped shell structures", () => {
+    document.body.innerHTML = `
+      <aside class="sidebar" aria-label="primary navigation sidebar">
+        <div class="sidebar-shell">
+          <div class="sidebar-shell__header">
+            <button type="button">toggle</button>
+          </div>
+          <div class="sidebar-shell__body">
+            <nav class="sidebar-nav">
+              <section class="nav-section">
+                <a class="nav-item" href="/chat">Chat</a>
+              </section>
+            </nav>
+          </div>
+          <div class="sidebar-shell__footer">
+            <div class="sidebar-utility-group">
+              <a class="sidebar-utility-link" href="/docs">文档</a>
+            </div>
+          </div>
+        </div>
+      </aside>
+    `;
+
+    const sidebar = findSidebar();
+
+    expect(sidebar).toBe(document.querySelector(".sidebar-nav"));
+  });
+
   it("reports consolidated compat capabilities for tenant/chat callers", () => {
     document.body.innerHTML = `
       <openclaw-app></openclaw-app>
