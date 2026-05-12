@@ -18,14 +18,29 @@ const overviewMocks = vi.hoisted(() => {
     setOption: (option: unknown) => void;
     resize: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
   };
 
   const charts = new Map<string, FakeChart>();
+  const chartInstances = new Map<HTMLElement, FakeChart>();
+  const resizeObservers: FakeResizeObserver[] = [];
+
+  class FakeResizeObserver {
+    callback: ResizeObserverCallback;
+    observe = vi.fn();
+    disconnect = vi.fn();
+
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+      resizeObservers.push(this);
+    }
+  }
 
   const echarts = {
     graphic: {
       LinearGradient: FakeLinearGradient,
     },
+    getInstanceByDom: vi.fn((el: HTMLElement) => chartInstances.get(el) || null),
     init: vi.fn((el: HTMLElement) => {
       const chart: FakeChart = {
         option: null,
@@ -34,13 +49,17 @@ const overviewMocks = vi.hoisted(() => {
         },
         resize: vi.fn(),
         on: vi.fn(),
+        dispose: vi.fn(() => {
+          chartInstances.delete(el);
+        }),
       };
       charts.set(el.getAttribute("data-oc-overview-chart") || "", chart);
+      chartInstances.set(el, chart);
       return chart;
     }),
   };
 
-  return { charts, echarts };
+  return { charts, chartInstances, echarts, FakeResizeObserver, resizeObservers };
 });
 
 vi.mock("../../../tools/openclaw-control-ui-echarts/runtime/echarts/libraries.js", () => ({
@@ -51,6 +70,7 @@ vi.mock("../../../tools/openclaw-control-ui-echarts/runtime/echarts/libraries.js
 }));
 
 import {
+  disposeTenantOverviewCharts,
   initTenantOverviewCharts,
   renderTenantOverview,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-overview-page.js";
@@ -59,6 +79,8 @@ afterEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   overviewMocks.charts.clear();
+  overviewMocks.chartInstances.clear();
+  overviewMocks.resizeObservers.length = 0;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -71,6 +93,8 @@ async function flush() {
 
 describe("tenant overview page", () => {
   it("renders Agent display names in the consumption distribution chart", async () => {
+    vi.stubGlobal("ResizeObserver", overviewMocks.FakeResizeObserver as typeof ResizeObserver);
+
     const controller = {
       session: {
         session: {
@@ -152,5 +176,62 @@ describe("tenant overview page", () => {
     ]);
     expect(root.textContent).not.toContain("库加载");
     expect(root.textContent).not.toContain("图表初始化");
+  });
+
+  it("reuses live chart instances on repeat init and disposes them on cleanup", async () => {
+    vi.stubGlobal("ResizeObserver", overviewMocks.FakeResizeObserver as typeof ResizeObserver);
+
+    const controller = {
+      overviewData: {
+        summary: {
+          totalTokens: 1000,
+          inputTokens: 400,
+          outputTokens: 600,
+          activeUsers: 2,
+          activeAgents: 2,
+          memberCount: 3,
+          consumedCredits: 8,
+        },
+        trend: [
+          { day: "2026-05-01", tokens: 100 },
+          { day: "2026-05-02", tokens: 120 },
+        ],
+        topMembers: [{ username: "alice", tokens: 200 }],
+        topAgents: [{ tokens: 180, displayName: "财务分析助手" }],
+      },
+    };
+
+    const root = document.createElement("main");
+    root.dataset.ocTenantSection = "statistics-overview";
+    root.innerHTML = renderTenantOverview(controller);
+    document.body.append(root);
+
+    await initTenantOverviewCharts(root, controller);
+    await flush();
+
+    expect(overviewMocks.echarts.init).toHaveBeenCalledTimes(3);
+    expect(overviewMocks.resizeObservers).toHaveLength(3);
+
+    const firstTrendEl = root.querySelector('[data-oc-overview-chart="trend"]') as HTMLElement;
+    const firstTrendChart = overviewMocks.chartInstances.get(firstTrendEl);
+    if (!firstTrendChart) {
+      throw new Error("Expected the trend chart to exist after first init");
+    }
+
+    await initTenantOverviewCharts(root, controller);
+    await flush();
+
+    expect(overviewMocks.echarts.init).toHaveBeenCalledTimes(3);
+    expect(overviewMocks.echarts.getInstanceByDom).toHaveBeenCalled();
+    expect(overviewMocks.resizeObservers).toHaveLength(3);
+
+    disposeTenantOverviewCharts(root);
+
+    expect(firstTrendChart.dispose).toHaveBeenCalledTimes(1);
+    expect(
+      overviewMocks.resizeObservers.every(
+        (observer) => observer.disconnect.mock.calls.length === 1,
+      ),
+    ).toBe(true);
   });
 });

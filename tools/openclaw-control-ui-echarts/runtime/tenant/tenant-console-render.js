@@ -1,4 +1,10 @@
 import {
+  filterTenantAgents,
+  renderAgentDetailDialog,
+  renderAgentTransferDialog,
+  renderOwnedAgentsCards,
+} from "./tenant-console-agents.js";
+import {
   filterMembers,
   getPageValue,
   getSearchValue,
@@ -8,16 +14,7 @@ import {
   escapeHtml,
   formatNumber,
 } from "./tenant-console-controller.js";
-import {
-  initTenantOverviewCharts,
-  renderTenantOverview,
-} from "./tenant-overview-page.js";
-import {
-  renderTenantWalletPage,
-} from "./tenant-wallet-page.js";
-import {
-  openDialog,
-} from "./tenant-console-dialogs.js";
+import { openDialog } from "./tenant-console-dialogs.js";
 import {
   clearAssignAgentSelection,
   clearRevokeAssignmentSelection,
@@ -36,20 +33,18 @@ import {
   syncMemberOrgScopeSelectionState,
   syncRevokeAssignmentSelectionState,
 } from "./tenant-console-members.js";
+import { renderUsageList } from "./tenant-console-usage.js";
 import {
   renderWalletFlowList,
   renderWalletLedgerList,
   renderWalletOrdersList,
 } from "./tenant-console-wallet.js";
 import {
-  filterTenantAgents,
-  renderAgentDetailDialog,
-  renderAgentTransferDialog,
-  renderOwnedAgentsCards,
-} from "./tenant-console-agents.js";
-import {
-  renderUsageList,
-} from "./tenant-console-usage.js";
+  disposeTenantOverviewCharts,
+  initTenantOverviewCharts,
+  renderTenantOverview,
+} from "./tenant-overview-page.js";
+import { renderTenantWalletPage } from "./tenant-wallet-page.js";
 
 function renderPagination(pagination) {
   return `
@@ -225,6 +220,10 @@ export function renderTenantConsole(root, controller) {
     pruneAssignAgentSelection(controller);
   }
 
+  if (!isOverview) {
+    disposeTenantOverviewCharts(root);
+  }
+
   const pagination =
     isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow
       ? null
@@ -267,6 +266,7 @@ export function renderTenantConsole(root, controller) {
                 `;
 
   root.dataset.ocTenantEmbedded = "true";
+  root.dataset.ocTenantSection = controller.section;
   root.innerHTML = `
     <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
@@ -285,7 +285,14 @@ export function renderTenantConsole(root, controller) {
     void initTenantOverviewCharts(root, controller);
   }
 
-  if (!isUsageStats && !isOverview && !isWallet && !isWalletOrders && !isWalletLedger && !isWalletFlow) {
+  if (
+    !isUsageStats &&
+    !isOverview &&
+    !isWallet &&
+    !isWalletOrders &&
+    !isWalletLedger &&
+    !isWalletFlow
+  ) {
     if (isOwnedAgents && controller.agentDetailDialog?.open) {
       openDialog(root.querySelector("[data-tenant-agent-detail-dialog]"));
     }
