@@ -56,6 +56,17 @@
 - 平台、租户、成员选择、成员聊天等依赖原生壳的路由上，顶部和侧边原生壳必须保持可见
 - compat 失败时必须进入可识别降级态，不能静默白屏
 
+当前 compat observer 还必须继续遵守一条性能边界：
+
+- `runtime/framework/dom-compat.js` 与 `runtime/framework/mount-compat.js` 的 document 级 observer 只允许响应“壳相关 DOM 变化”
+- 图表 tooltip、页面业务区表格刷新、弹窗正文、非壳 overlay 子树等高频局部 DOM 抖动，不能再被当成壳重建信号
+- observer 必须合并同一轮 mutation 批次，避免一次局部 hover 或 tooltip 更新触发多次 document 级 compat 重扫
+
+原因：
+
+- 零侵入统计页、更新日志、知识图谱、成员业务页面都会产生大量局部 DOM 变化
+- 如果 compat 把这些变化错误放大成整页壳扫描，就会表现成 hover 卡顿、控制台高频 long frame/violation、甚至误进 fallback 或误修剪原生壳
+
 ## 原生壳识别边界规则
 
 当前 `runtime/framework/dom-compat.js` 对原生壳节点的识别，必须显式排除非壳 overlay 子树：

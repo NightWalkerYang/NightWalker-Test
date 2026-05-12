@@ -195,6 +195,11 @@ async function mountCurrentSurface(state) {
 export async function bootTenantSurface() {
   bootTenantRouteSync();
 
+  const shouldReactToMountMutation = () =>
+    isTenantManagementRoute() ||
+    document.querySelector(`[${ROOT_ATTR}]`) instanceof HTMLElement ||
+    document.querySelector(`[${FALLBACK_ATTR}]`) instanceof HTMLElement;
+
   const scan = async ({ preferNative = false } = {}) => {
     const isActiveRoute = isTenantManagementRoute();
     const isTenantAdmin = readTenantSession()?.session?.role === "tenant_admin";
@@ -226,6 +231,9 @@ export async function bootTenantSurface() {
     document,
     ({ mode, scope }) => {
       if (scope instanceof Element && scope.closest?.(`[${ROOT_ATTR}]`)) {
+        return;
+      }
+      if (!shouldReactToMountMutation()) {
         return;
       }
       void scan({ preferNative: mode !== "native" });

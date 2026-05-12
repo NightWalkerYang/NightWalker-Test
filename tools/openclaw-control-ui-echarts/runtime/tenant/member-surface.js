@@ -68,6 +68,9 @@ async function mountCurrentSurface(content) {
 export async function bootMemberSurface() {
   bootTenantRouteSync();
 
+  const shouldReactToMountMutation = () =>
+    isMemberAgentRoute() || document.querySelector(`[${ROOT_ATTR}]`) instanceof HTMLElement;
+
   const scan = async (scope = document) => {
     const scanToken = ++memberSurfaceScanToken;
     const content = resolvePrimaryMountRoot(scope, "", MOUNT_SOURCE_TAG);
@@ -100,6 +103,9 @@ export async function bootMemberSurface() {
     document,
     ({ scope }) => {
       if (scope instanceof Element && scope.closest?.(`[${ROOT_ATTR}]`)) {
+        return;
+      }
+      if (!shouldReactToMountMutation()) {
         return;
       }
       void scan(scope);

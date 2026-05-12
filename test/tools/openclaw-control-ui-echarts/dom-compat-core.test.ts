@@ -35,6 +35,7 @@ import {
   isSendButtonElement,
   isStopButtonElement,
   isVoiceButtonElement,
+  observeFrameworkDomMarkers,
   syncFrameworkDomMarkers,
   supportsSpeechRecognition,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/framework/dom-compat.js";
@@ -409,6 +410,40 @@ describe("framework dom compatibility contract", () => {
     expect(capabilities.canMountNativeContent).toBe(false);
     expect(capabilities.hasSidebar).toBe(true);
     expect(capabilities.hasSidebarFooter).toBe(true);
+  });
+
+  it("ignores non-shell chart subtree mutations when observing framework markers", async () => {
+    document.body.innerHTML = `
+      <aside class="sidebar-nav">
+        <section class="nav-section"><a class="nav-item" href="/chat">Chat</a></section>
+      </aside>
+      <main class="content">
+        <section class="oc-tenant-surface-root">
+          <div class="oc-block-renderer--echarts">
+            <div class="oc-block-renderer__chart" data-oc-overview-chart="trend"></div>
+          </div>
+        </section>
+      </main>
+    `;
+    const disconnect = observeFrameworkDomMarkers(document);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const originalQuerySelectorAll = document.querySelectorAll.bind(document);
+    let queryCount = 0;
+    document.querySelectorAll = ((selectors) => {
+      queryCount += 1;
+      return originalQuerySelectorAll(selectors);
+    }) as typeof document.querySelectorAll;
+
+    const chart = document.querySelector('[data-oc-overview-chart="trend"]');
+    chart?.append(document.createElement("span"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    document.querySelectorAll = originalQuerySelectorAll;
+    disconnect?.disconnect?.();
+    expect(queryCount).toBe(0);
   });
 
   it("prefers a header-mounted topbar search over sidebar search-like utilities", () => {

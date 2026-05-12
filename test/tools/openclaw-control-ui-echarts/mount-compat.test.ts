@@ -71,4 +71,38 @@ describe("mount compat", () => {
     expect(fallback).not.toBe(nativeContent);
     disconnect();
   });
+
+  it("ignores page-local chart subtree churn after native mount is stable", async () => {
+    document.body.innerHTML = `
+      <openclaw-app>
+        <main class="content">
+          <section data-oc-tenant-surface-root="true">
+            <div class="oc-block-renderer--echarts">
+              <div data-oc-overview-chart="trend"></div>
+            </div>
+          </section>
+        </main>
+      </openclaw-app>
+    `;
+    const callback = vi.fn();
+    const disconnect = observeMountTargets(document, callback, "test");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const originalQuerySelectorAll = document.querySelectorAll.bind(document);
+    let queryCount = 0;
+    document.querySelectorAll = ((selectors) => {
+      queryCount += 1;
+      return originalQuerySelectorAll(selectors);
+    }) as typeof document.querySelectorAll;
+
+    const chart = document.querySelector("[data-oc-overview-chart='trend']");
+    chart?.append(document.createElement("span"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    document.querySelectorAll = originalQuerySelectorAll;
+    expect(queryCount).toBe(0);
+    disconnect();
+  });
 });

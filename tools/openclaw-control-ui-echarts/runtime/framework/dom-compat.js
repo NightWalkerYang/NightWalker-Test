@@ -214,6 +214,39 @@ const CHAT_TOOLS_SUMMARY_MARKER_ATTR = "data-oc-chat-tools-summary";
 const CHAT_TOOL_MESSAGE_SUMMARY_MARKER_ATTR = "data-oc-chat-tool-msg-summary";
 const CHAT_WELCOME_MARKER_ATTR = "data-oc-chat-welcome";
 const CHAT_WELCOME_AVATAR_MARKER_ATTR = "data-oc-chat-welcome-avatar";
+const FRAMEWORK_OBSERVER_RELEVANT_SELECTOR = [
+  OPENCLAW_APP_SELECTOR,
+  "[data-openclaw-app]",
+  ".content",
+  "main",
+  "[role='main']",
+  ".workspace-content",
+  ".content--chat",
+  ".agent-chat__input",
+  ".agent-chat__toolbar",
+  ".sidebar-nav",
+  ".sidebar-shell",
+  ".dashboard-header__breadcrumb",
+  ".topbar-search",
+  ".sidebar-utility-group",
+  ".sidebar-shell__footer",
+  ".chat-controls__session",
+  "select[data-chat-model-select='true']",
+  ".sidebar-brand__title",
+  ".sidebar-brand__logo",
+  ".login-gate__title",
+  ".login-gate__logo",
+  ".chat-group",
+  ".chat-bubble",
+  ".chat-avatar",
+  ".chat-group-messages",
+  ".chat-group-footer",
+  ".chat-text",
+  ".chat-tools-summary",
+  ".chat-tool-msg-summary",
+  ".agent-chat__welcome",
+  `[${DOM_COMPAT_MARKER_ATTR}]`,
+].join(", ");
 const FRAMEWORK_DOM_MARKER_ATTRS = [
   DOM_COMPAT_MARKER_ATTR,
   CHAT_SURFACE_MARKER_ATTR,
@@ -1083,6 +1116,53 @@ function markChatStructure(root) {
   }
 }
 
+function isFrameworkObserverRelevantElement(element) {
+  return (
+    element instanceof HTMLElement &&
+    !isShellExcludedElement(element) &&
+    element.matches(FRAMEWORK_OBSERVER_RELEVANT_SELECTOR)
+  );
+}
+
+function subtreeContainsFrameworkObserverRelevantElement(element) {
+  if (!(element instanceof Element) || isShellExcludedElement(element)) {
+    return false;
+  }
+  return Boolean(element.querySelector(FRAMEWORK_OBSERVER_RELEVANT_SELECTOR));
+}
+
+function mutationTouchesFrameworkStructure(mutations) {
+  for (const mutation of mutations) {
+    const target = asElement(mutation.target);
+    if (
+      isFrameworkObserverRelevantElement(target) ||
+      isFrameworkObserverRelevantElement(target?.parentElement)
+    ) {
+      return true;
+    }
+    for (const node of mutation.addedNodes) {
+      const element = asElement(node);
+      if (
+        isFrameworkObserverRelevantElement(element) ||
+        subtreeContainsFrameworkObserverRelevantElement(element) ||
+        isFrameworkObserverRelevantElement(element?.parentElement)
+      ) {
+        return true;
+      }
+    }
+    for (const node of mutation.removedNodes) {
+      const element = asElement(node);
+      if (
+        isFrameworkObserverRelevantElement(element) ||
+        subtreeContainsFrameworkObserverRelevantElement(element)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function syncFrameworkDomMarkers(root = document) {
   clearFrameworkMarkers(root);
   markChatStructure(root);
@@ -1099,8 +1179,22 @@ export function observeFrameworkDomMarkers(root = document) {
       searchRoot.defaultView.__ocFrameworkDomMarkerObserverBooted = true;
     }
   }
-  const observer = new MutationObserver(() => {
-    syncFrameworkDomMarkers(searchRoot);
+  let syncQueued = false;
+  const queueSync = () => {
+    if (syncQueued) {
+      return;
+    }
+    syncQueued = true;
+    queueMicrotask(() => {
+      syncQueued = false;
+      syncFrameworkDomMarkers(searchRoot);
+    });
+  };
+  const observer = new MutationObserver((mutations) => {
+    if (!mutationTouchesFrameworkStructure(mutations)) {
+      return;
+    }
+    queueSync();
   });
   observer.observe(searchRoot instanceof Document ? searchRoot.documentElement : searchRoot, {
     childList: true,

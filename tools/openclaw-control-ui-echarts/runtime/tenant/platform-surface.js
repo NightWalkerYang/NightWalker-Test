@@ -171,6 +171,11 @@ async function mountCurrentSurface(state) {
 export async function bootPlatformSurface() {
   bootTenantRouteSync();
 
+  const shouldReactToMountMutation = () =>
+    isPlatformManagementRoute() ||
+    document.querySelector(`[${ROOT_ATTR}]`) instanceof HTMLElement ||
+    document.querySelector(`[${FALLBACK_ATTR}]`) instanceof HTMLElement;
+
   const scan = async ({ preferNative = false } = {}) => {
     const isActiveRoute = isPlatformManagementRoute();
     const isPlatformAdmin = readPlatformSession()?.session?.role === "platform_admin";
@@ -201,6 +206,9 @@ export async function bootPlatformSurface() {
     document,
     ({ mode, scope: nextScope }) => {
       if (nextScope instanceof Element && nextScope.closest?.(`[${ROOT_ATTR}]`)) {
+        return;
+      }
+      if (!shouldReactToMountMutation()) {
         return;
       }
       void scan({ preferNative: mode !== "native" });

@@ -3,6 +3,23 @@ import { findContentMountRoot, findOpenClawApp } from "./dom-compat.js";
 export const MOUNT_COMPAT_CONTRACT_VERSION = "mount-compat-v1";
 const COMPAT_LOG_PREFIX = "[oc.mount-compat]";
 const FALLBACK_ROOT_ATTR = "data-oc-fallback-mount-root";
+const MOUNT_OBSERVER_RELEVANT_SELECTOR = [
+  "openclaw-app",
+  "[data-openclaw-app]",
+  `[${FALLBACK_ROOT_ATTR}]`,
+  "[data-oc-platform-surface-fallback]",
+  "[data-oc-tenant-surface-fallback]",
+  "[data-oc-member-surface-root]",
+  "[data-oc-platform-surface-root]",
+  "[data-oc-tenant-surface-root]",
+  ".content",
+  "main.content",
+  "main[class*='content']",
+  "main[class*='workspace']",
+  ".workspace-content",
+  "[role='main']",
+  "[data-testid*='content' i]",
+].join(", ");
 
 function normalizeRouteKind(routeKind = "") {
   return String(routeKind || "")
@@ -254,33 +271,53 @@ export async function resolveMountStateWithRetry(
   return state;
 }
 
-function collectMutationScopes(mutations, ownerDocument) {
-  const scopes = new Set([ownerDocument]);
+function isMountObserverRelevantElement(element) {
+  return element instanceof Element && element.matches(MOUNT_OBSERVER_RELEVANT_SELECTOR);
+}
+
+function subtreeContainsMountObserverRelevantElement(element) {
+  if (!(element instanceof Element)) {
+    return false;
+  }
+  return Boolean(element.querySelector(MOUNT_OBSERVER_RELEVANT_SELECTOR));
+}
+
+function resolveRelevantMutationScope(mutations, ownerDocument) {
   for (const mutation of mutations) {
-    if (mutation.target instanceof Element) {
-      let current = mutation.target;
-      let depth = 0;
-      while (current && depth < 5) {
-        scopes.add(current);
-        current = current.parentElement;
-        depth += 1;
-      }
+    const target = mutation.target instanceof Element ? mutation.target : null;
+    if (isMountObserverRelevantElement(target)) {
+      return target;
+    }
+    if (isMountObserverRelevantElement(target?.parentElement)) {
+      return target.parentElement;
     }
     for (const node of mutation.addedNodes) {
       if (!(node instanceof Element)) {
         continue;
       }
-      scopes.add(node);
-      let current = node.parentElement;
-      let depth = 0;
-      while (current && depth < 5) {
-        scopes.add(current);
-        current = current.parentElement;
-        depth += 1;
+      if (isMountObserverRelevantElement(node)) {
+        return node;
+      }
+      if (subtreeContainsMountObserverRelevantElement(node)) {
+        return node;
+      }
+      if (isMountObserverRelevantElement(node.parentElement)) {
+        return node.parentElement;
+      }
+    }
+    for (const node of mutation.removedNodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (
+        isMountObserverRelevantElement(node) ||
+        subtreeContainsMountObserverRelevantElement(node)
+      ) {
+        return target || ownerDocument;
       }
     }
   }
-  return Array.from(scopes);
+  return null;
 }
 
 export function observeMountTargets(root = document, callback, sourceTag = "mount") {
@@ -293,6 +330,8 @@ export function observeMountTargets(root = document, callback, sourceTag = "moun
   let lastPrimary = null;
   let lastAppRoot = null;
   let disconnected = false;
+  let queuedScope = ownerDocument;
+  let emitQueued = false;
 
   const emit = (scope) => {
     if (disconnected) {
@@ -314,11 +353,25 @@ export function observeMountTargets(root = document, callback, sourceTag = "moun
     });
   };
 
-  const observer = new MutationObserver((mutations) => {
-    const scopes = collectMutationScopes(mutations, ownerDocument);
-    for (const scope of scopes) {
-      emit(scope);
+  const queueEmit = (scope) => {
+    queuedScope = scope instanceof Element || scope instanceof Document ? scope : ownerDocument;
+    if (emitQueued) {
+      return;
     }
+    emitQueued = true;
+    queueMicrotask(() => {
+      emitQueued = false;
+      emit(queuedScope);
+      queuedScope = ownerDocument;
+    });
+  };
+
+  const observer = new MutationObserver((mutations) => {
+    const scope = resolveRelevantMutationScope(mutations, ownerDocument);
+    if (!scope) {
+      return;
+    }
+    queueEmit(scope);
   });
 
   observer.observe(ownerDocument.documentElement, {
