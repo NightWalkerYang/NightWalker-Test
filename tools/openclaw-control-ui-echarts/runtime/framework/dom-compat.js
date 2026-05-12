@@ -157,6 +157,9 @@ const SIDEBAR_FOOTER_HINT_SELECTORS = [
   "[class*='utility-group']",
 ];
 
+const SHELL_EXCLUDED_ROOT_SELECTOR =
+  "dialog, [role='dialog'], [aria-modal='true'], [data-oc-update-log-root], .oc-update-log-dialog";
+
 const BRAND_TITLE_HINT_SELECTORS = [
   ".sidebar-brand__title",
   ".login-gate__title",
@@ -327,6 +330,26 @@ function isHidden(element) {
   const inlineDisplay = normalizeSignalText(element.style?.display);
   const inlineVisibility = normalizeSignalText(element.style?.visibility);
   return inlineDisplay === "none" || inlineVisibility === "hidden";
+}
+
+function hasOcDialogAttribute(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+  return element
+    .getAttributeNames()
+    .some((name) => name.startsWith("data-oc-") && name.endsWith("-dialog"));
+}
+
+function isShellExcludedElement(element) {
+  let current = asElement(element);
+  while (current) {
+    if (current.matches(SHELL_EXCLUDED_ROOT_SELECTOR) || hasOcDialogAttribute(current)) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
 }
 
 function toSearchRoot(root) {
@@ -524,7 +547,7 @@ function scoreToolbar(toolbar) {
 }
 
 function scoreSidebar(sidebar) {
-  if (!(sidebar instanceof HTMLElement) || isHidden(sidebar)) {
+  if (!(sidebar instanceof HTMLElement) || isHidden(sidebar) || isShellExcludedElement(sidebar)) {
     return -1000;
   }
   const signal = elementSignalText(sidebar);
@@ -545,7 +568,11 @@ function scoreSidebar(sidebar) {
 }
 
 function scoreBreadcrumb(breadcrumb) {
-  if (!(breadcrumb instanceof HTMLElement) || isHidden(breadcrumb)) {
+  if (
+    !(breadcrumb instanceof HTMLElement) ||
+    isHidden(breadcrumb) ||
+    isShellExcludedElement(breadcrumb)
+  ) {
     return -1000;
   }
   const signal = elementSignalText(breadcrumb);
@@ -583,7 +610,11 @@ function scoreChatSurface(surface) {
 }
 
 function scoreContentRoot(candidate) {
-  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+  if (
+    !(candidate instanceof HTMLElement) ||
+    isHidden(candidate) ||
+    isShellExcludedElement(candidate)
+  ) {
     return -1000;
   }
   const signal = elementSignalText(candidate);
@@ -623,7 +654,11 @@ function scoreAppRoot(candidate) {
 }
 
 function scoreTopbarSearch(candidate) {
-  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+  if (
+    !(candidate instanceof HTMLElement) ||
+    isHidden(candidate) ||
+    isShellExcludedElement(candidate)
+  ) {
     return -1000;
   }
   const signal = elementSignalText(candidate);
@@ -683,7 +718,11 @@ function collectTopbarSearchCandidates(root) {
 }
 
 function scoreSidebarUtility(candidate) {
-  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+  if (
+    !(candidate instanceof HTMLElement) ||
+    isHidden(candidate) ||
+    isShellExcludedElement(candidate)
+  ) {
     return -1000;
   }
   const signal = elementSignalText(candidate);
@@ -697,7 +736,11 @@ function scoreSidebarUtility(candidate) {
 }
 
 function scoreContentMountRoot(candidate) {
-  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+  if (
+    !(candidate instanceof HTMLElement) ||
+    isHidden(candidate) ||
+    isShellExcludedElement(candidate)
+  ) {
     return -1000;
   }
   if (
@@ -781,7 +824,11 @@ function scoreChatModelPicker(candidate) {
 }
 
 function scoreSidebarFooter(candidate) {
-  if (!(candidate instanceof HTMLElement) || isHidden(candidate)) {
+  if (
+    !(candidate instanceof HTMLElement) ||
+    isHidden(candidate) ||
+    isShellExcludedElement(candidate)
+  ) {
     return -1000;
   }
   const signal = elementSignalText(candidate);
@@ -1253,7 +1300,8 @@ export function findSidebar(root = document) {
   const candidates = queryAllBySelectors(searchRoot, SIDEBAR_HINT_SELECTORS).filter(
     (candidate) => candidate instanceof HTMLElement,
   );
-  return pickBest(candidates, (candidate) => scoreSidebar(candidate)) ?? null;
+  const match = pickBest(candidates, (candidate) => scoreSidebar(candidate));
+  return match && scoreSidebar(match) >= 20 ? match : null;
 }
 
 export function findClosestSidebar(target) {
@@ -1266,7 +1314,8 @@ export function findBreadcrumb(root = document) {
   const candidates = queryAllBySelectors(searchRoot, BREADCRUMB_HINT_SELECTORS).filter(
     (candidate) => candidate instanceof HTMLElement,
   );
-  return pickBest(candidates, (candidate) => scoreBreadcrumb(candidate)) ?? null;
+  const match = pickBest(candidates, (candidate) => scoreBreadcrumb(candidate));
+  return match && scoreBreadcrumb(match) >= 20 ? match : null;
 }
 
 export function findClosestBreadcrumb(target) {
@@ -1346,7 +1395,8 @@ export function findSidebarUtilityGroup(root = document) {
   const candidates = queryAllBySelectors(searchRoot, SIDEBAR_UTILITY_HINT_SELECTORS).filter(
     (candidate) => candidate instanceof HTMLElement,
   );
-  return pickBest(candidates, (candidate) => scoreSidebarUtility(candidate)) ?? null;
+  const match = pickBest(candidates, (candidate) => scoreSidebarUtility(candidate));
+  return match && scoreSidebarUtility(match) >= 30 ? match : null;
 }
 
 export function findContentMountRoot(root = document) {

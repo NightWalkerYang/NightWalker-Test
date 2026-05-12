@@ -56,6 +56,31 @@
 - 平台、租户、成员选择、成员聊天等依赖原生壳的路由上，顶部和侧边原生壳必须保持可见
 - compat 失败时必须进入可识别降级态，不能静默白屏
 
+## 原生壳识别边界规则
+
+当前 `runtime/framework/dom-compat.js` 对原生壳节点的识别，必须显式排除非壳 overlay 子树：
+
+- `dialog`
+- `role="dialog"`
+- `aria-modal="true"`
+- `data-oc-update-log-root`
+- 更新日志弹窗内部节点
+
+这条规则至少覆盖：
+
+- sidebar
+- breadcrumb
+- topbar search
+- sidebar utility
+- sidebar footer
+- content mount root
+
+原因：
+
+- 更新日志、确认框、管理弹窗等 overlay 会复用 `aside`、`search`、`footer` 一类通用 DOM 结构
+- 如果 compat 把这些 overlay 子树误认成原生壳，就会导致 document-global observer 或 tenant shell trim 链路错误接管壳节点
+- 即使原生 `.sidebar-nav` 因 rerender 时序短暂进入 `hidden` / `aria-hidden` / `display:none`，document 级 `findSidebar()` 也不能回退改选更新日志弹窗左栏这类 overlay `aside`
+
 ## 成员路由预处理
 
 成员路由修正不能只依赖后续 `pushState/replaceState`。

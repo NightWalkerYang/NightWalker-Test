@@ -164,6 +164,64 @@ describe("framework dom compatibility contract", () => {
     expect(sidebar).toBe(document.querySelector(".sidebar-nav"));
   });
 
+  it("does not treat the update-log dialog sidebar as the native sidebar", () => {
+    document.body.innerHTML = `
+      <div data-oc-update-log-root="true">
+        <dialog class="oc-update-log-dialog" data-oc-update-log-history-dialog open>
+          <div class="oc-update-log-dialog__panel oc-update-log-dialog__panel--wide">
+            <div class="oc-update-log-dialog__body oc-update-log-dialog__body--split">
+              <aside class="oc-update-log-dialog__sidebar">
+                <label class="oc-update-log-dialog__search">
+                  <span>搜索历史</span>
+                  <input type="search" placeholder="搜索版本、标题或内容" />
+                </label>
+                <div class="oc-update-log-dialog__list">
+                  <button type="button">v2026.4.23</button>
+                </div>
+              </aside>
+              <section class="oc-update-log-dialog__detail">detail</section>
+            </div>
+          </div>
+        </dialog>
+      </div>
+    `;
+
+    const updateLogRoot = document.querySelector("[data-oc-update-log-root]");
+
+    expect(findSidebar(updateLogRoot)).toBeNull();
+    expect(findSidebar()).toBeNull();
+  });
+
+  it("does not fall back to the update-log dialog when the native sidebar is temporarily hidden", () => {
+    document.body.innerHTML = `
+      <nav class="sidebar-nav" hidden>
+        <section class="nav-section">
+          <a class="nav-item" href="/chat">Chat</a>
+        </section>
+      </nav>
+      <div data-oc-update-log-root="true">
+        <dialog class="oc-update-log-dialog" data-oc-update-log-history-dialog open>
+          <div class="oc-update-log-dialog__panel oc-update-log-dialog__panel--wide">
+            <div class="oc-update-log-dialog__body oc-update-log-dialog__body--split">
+              <aside class="oc-update-log-dialog__sidebar">
+                <label class="oc-update-log-dialog__search">
+                  <span>搜索历史</span>
+                  <input type="search" placeholder="搜索版本、标题或内容" />
+                </label>
+                <div class="oc-update-log-dialog__list">
+                  <button type="button">v2026.4.23</button>
+                </div>
+              </aside>
+              <section class="oc-update-log-dialog__detail">detail</section>
+            </div>
+          </div>
+        </dialog>
+      </div>
+    `;
+
+    expect(findSidebar(document)).toBeNull();
+  });
+
   it("reports consolidated compat capabilities for tenant/chat callers", () => {
     document.body.innerHTML = `
       <openclaw-app></openclaw-app>

@@ -1040,6 +1040,60 @@ describe("zero-intrusive tenant entry", () => {
     expect(manageButton?.textContent ?? "").toBe("");
   });
 
+  it("does not inject tenant-entry sidebar sections into the update-log dialog subtree", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+        userId: "tenant-admin-id",
+        tenantId: "tenant-alpha",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.23</a>
+      </div>
+    `;
+    stubUpdateLogCrud([
+      {
+        id: "update-1",
+        versionLabel: "v2026.4.23",
+        title: "更新日志展示上线",
+        content: "1. 登录后自动弹窗。\n2. 支持右下角版本查看历史。",
+        excerpt: "1. 登录后自动弹窗。 2. 支持右下角版本查看历史。",
+        createdByUsername: "platform-root",
+        publishedAt: "2026-04-23T07:00:00.000Z",
+        createdAt: "2026-04-23T07:00:00.000Z",
+        updatedAt: "2026-04-23T07:00:00.000Z",
+      },
+    ]);
+
+    bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
+
+    const versionLink = document.querySelector("[data-oc-utility-version]");
+    versionLink?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    const updateLogRoot = document.querySelector("[data-oc-update-log-root]");
+    expect(updateLogRoot).not.toBeNull();
+    expect(updateLogRoot?.querySelector(".oc-platform-management-section")).toBeNull();
+    expect(updateLogRoot?.querySelector(".oc-tenant-agent-section")).toBeNull();
+    expect(updateLogRoot?.querySelector(".oc-tenant-stats-section")).toBeNull();
+    expect(updateLogRoot?.querySelector(".oc-tenant-wallet-section")).toBeNull();
+  });
+
   it("lets platform admins create, edit, and delete update logs from the version dialog", async () => {
     writeTenantSession({
       token: "platform-token",
