@@ -19,7 +19,9 @@
     "[openclaw] control-ui.long-animation-frame",
     "[openclaw] control-ui.longtask",
   ]);
+  const DEBUG_WARNINGS = new Set(["[openclaw] control-ui.rpc"]);
   const RESPONSIVENESS_WARN_STATE_KEY = "__openclawControlUiResponsivenessWarnCounts";
+  const DEBUG_WARN_STATE_KEY = "__openclawControlUiDebugWarnCounts";
   const RESPONSIVENESS_WARN_PATCH_FLAG = "__OPENCLAW_TENANT_PREBOOT_WARN_PATCHED__";
   const CONTROL_UI_TAB_PATHS = new Set([
     "/agents",
@@ -82,16 +84,27 @@
         ? window[RESPONSIVENESS_WARN_STATE_KEY]
         : Object.create(null);
     window[RESPONSIVENESS_WARN_STATE_KEY] = counts;
+    const debugCounts =
+      window[DEBUG_WARN_STATE_KEY] && typeof window[DEBUG_WARN_STATE_KEY] === "object"
+        ? window[DEBUG_WARN_STATE_KEY]
+        : Object.create(null);
+    window[DEBUG_WARN_STATE_KEY] = debugCounts;
 
     try {
+      const shouldSuppressRepeatedWarning = (message, store) => {
+        const nextCount = Number(store[message] || 0) + 1;
+        store[message] = nextCount;
+        return nextCount > 1;
+      };
       console.warn = (...args) => {
         const message = typeof args[0] === "string" ? args[0].trim() : "";
         if (RESPONSIVENESS_WARNINGS.has(message)) {
-          const nextCount = Number(counts[message] || 0) + 1;
-          counts[message] = nextCount;
-          if (nextCount > 1) {
+          if (shouldSuppressRepeatedWarning(message, counts)) {
             return;
           }
+        }
+        if (DEBUG_WARNINGS.has(message) && shouldSuppressRepeatedWarning(message, debugCounts)) {
+          return;
         }
         return originalWarn.apply(console, args);
       };

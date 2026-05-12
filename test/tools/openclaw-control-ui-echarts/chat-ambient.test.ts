@@ -65,6 +65,30 @@ describe("zero-intrusive chat ambient background", () => {
     expect(document.querySelectorAll(".conversation-stage > .oc-chat-ambient")).toHaveLength(1);
   });
 
+  it("skips and prunes ambient hosts while the member chat route performance mode is active", async () => {
+    document.body.innerHTML = `<main class="content content--chat"><section class="chat"></section></main>`;
+
+    bootChatAmbientBackground();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(document.querySelectorAll(".content--chat > .oc-chat-ambient")).toHaveLength(1);
+
+    document.documentElement.setAttribute("data-oc-member-chat-route", "true");
+    await Promise.resolve();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(document.querySelector(".oc-chat-ambient")).toBeNull();
+
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<main class="conversation-stage"><textarea aria-label="发送消息"></textarea></main>`,
+    );
+    await Promise.resolve();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(document.querySelector(".conversation-stage > .oc-chat-ambient")).toBeNull();
+  });
+
   it("ignores non-chat tooltip churn and does not mis-mount onto overview content", async () => {
     document.body.innerHTML = `
       <main class="content">

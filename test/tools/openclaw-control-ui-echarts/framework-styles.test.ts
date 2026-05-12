@@ -18,6 +18,13 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".oc-chat-ambient__svg");
     expect(styles).toContain("@keyframes oc-chat-ambient-sway");
     expect(styles).toContain("@keyframes oc-chat-ambient-trace");
+    expect(styles).toContain(':root[data-oc-member-chat-route="true"] .oc-chat-ambient');
+    expect(styles).toContain(
+      ':root[data-oc-member-chat-route="true"] :is([data-oc-chat-surface="true"], .content--chat, .shell--chat-focus .content)',
+    );
+    expect(styles).toContain(
+      ':root[data-oc-member-chat-route="true"] :is([data-oc-chat-composer="true"], .agent-chat__input)',
+    );
     expect(styles).toContain(".oc-text-logo");
     expect(styles).toContain(".oc-text-logo--sidebar");
     expect(styles).toContain(".oc-text-logo--badge");

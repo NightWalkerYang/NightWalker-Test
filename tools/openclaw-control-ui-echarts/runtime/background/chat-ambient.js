@@ -1,6 +1,7 @@
 import { findChatSurface } from "../framework/dom-compat.js";
 
 const HOST_CLASS = "oc-chat-ambient";
+const MEMBER_CHAT_ROUTE_ATTR = "data-oc-member-chat-route";
 const CHAT_OBSERVER_RELEVANT_SELECTOR = [
   ".content--chat",
   ".agent-chat__input",
@@ -16,6 +17,8 @@ const CHAT_OBSERVER_RELEVANT_SELECTOR = [
   "[data-oc-chat-composer]",
   "[data-oc-chat-group]",
   "[data-oc-chat-bubble]",
+  `html[${MEMBER_CHAT_ROUTE_ATTR}="true"]`,
+  `body[${MEMBER_CHAT_ROUTE_ATTR}="true"]`,
 ].join(", ");
 
 let ambientIdCounter = 0;
@@ -159,6 +162,13 @@ function mutationTouchesChatStructure(mutations) {
   for (const mutation of mutations) {
     const target = mutation.target instanceof Element ? mutation.target : null;
     if (
+      mutation.type === "attributes" &&
+      mutation.attributeName === MEMBER_CHAT_ROUTE_ATTR &&
+      target instanceof HTMLElement
+    ) {
+      return true;
+    }
+    if (
       isChatObserverRelevantElement(target) ||
       isChatObserverRelevantElement(target?.parentElement)
     ) {
@@ -188,6 +198,13 @@ function mutationTouchesChatStructure(mutations) {
   return false;
 }
 
+function isMemberChatRouteActive() {
+  return (
+    document.documentElement?.getAttribute(MEMBER_CHAT_ROUTE_ATTR) === "true" ||
+    document.body?.getAttribute(MEMBER_CHAT_ROUTE_ATTR) === "true"
+  );
+}
+
 function surfaceHasChatSignals(surface) {
   if (!(surface instanceof HTMLElement)) {
     return false;
@@ -202,11 +219,15 @@ function surfaceHasChatSignals(surface) {
   );
 }
 
+function surfaceAllowsAmbient(surface) {
+  return surfaceHasChatSignals(surface) && !isMemberChatRouteActive();
+}
+
 function ensureAmbientHost(surface) {
   if (!surface || !surface.isConnected) {
     return;
   }
-  if (!surfaceHasChatSignals(surface)) {
+  if (!surfaceAllowsAmbient(surface)) {
     return;
   }
   if (findDirectAmbientHost(surface)) {
@@ -219,7 +240,7 @@ function ensureAmbientHost(surface) {
 function pruneOrphanHosts() {
   for (const host of document.querySelectorAll(`.${HOST_CLASS}`)) {
     if (
-      !surfaceHasChatSignals(host.parentElement) ||
+      !surfaceAllowsAmbient(host.parentElement) ||
       findChatSurface(host.parentElement || undefined) !== host.parentElement
     ) {
       host.remove();
@@ -268,13 +289,13 @@ export function bootChatAmbientBackground() {
 
     const surfaces = new Set();
     const rootSurface = findChatSurface(document);
-    if (surfaceHasChatSignals(rootSurface)) {
+    if (surfaceAllowsAmbient(rootSurface)) {
       surfaces.add(rootSurface);
     }
 
     for (const root of pendingRoots) {
       const surface = findChatSurface(root);
-      if (surfaceHasChatSignals(surface)) {
+      if (surfaceAllowsAmbient(surface)) {
         surfaces.add(surface);
       }
     }
@@ -300,6 +321,9 @@ export function bootChatAmbientBackground() {
       return;
     }
     for (const mutation of mutations) {
+      if (mutation.type === "attributes" && mutation.target instanceof Element) {
+        schedule(mutation.target);
+      }
       if (mutation.target instanceof Element) {
         schedule(mutation.target);
       }
@@ -310,9 +334,11 @@ export function bootChatAmbientBackground() {
       }
     }
   });
-  observer.observe(document.body, {
+  observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
+    attributes: true,
+    attributeFilter: [MEMBER_CHAT_ROUTE_ATTR],
   });
 
   window.addEventListener("pageshow", () => schedule(document));

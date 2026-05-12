@@ -60,6 +60,7 @@ afterEach(() => {
   delete window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__;
   delete window.__OPENCLAW_TENANT_PREBOOT_WARN_PATCHED__;
   delete window.__openclawControlUiResponsivenessWarnCounts;
+  delete window.__openclawControlUiDebugWarnCounts;
   delete window.__OPENCLAW_CONTROL_UI_BASE_PATH__;
   delete window.__openclawPlatformAccessGuardBooted;
   document.documentElement.removeAttribute("data-oc-tenant-preboot");
@@ -451,6 +452,27 @@ describe("platform access guard", () => {
     expect(window.__openclawControlUiResponsivenessWarnCounts).toMatchObject({
       "[openclaw] control-ui.long-animation-frame": 2,
       "[openclaw] control-ui.longtask": 1,
+    });
+  });
+
+  it("suppresses repeated control-ui rpc debug warnings after the first occurrence", async () => {
+    const warnings = [];
+    console.warn = (...args) => {
+      warnings.push(args);
+    };
+
+    await importTenantPreboot();
+
+    console.warn("[openclaw] control-ui.rpc", { method: "chat.history", durationMs: 12 });
+    console.warn("[openclaw] control-ui.rpc", { method: "chat.history", durationMs: 13 });
+    console.warn("plain warning", { ok: true });
+
+    expect(warnings).toEqual([
+      ["[openclaw] control-ui.rpc", { method: "chat.history", durationMs: 12 }],
+      ["plain warning", { ok: true }],
+    ]);
+    expect(window.__openclawControlUiDebugWarnCounts).toMatchObject({
+      "[openclaw] control-ui.rpc": 2,
     });
   });
 

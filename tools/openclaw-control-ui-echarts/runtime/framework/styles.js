@@ -1,8 +1,11 @@
 export function getFrameworkStyles() {
+  const memberChatRouteRoot = ':root[data-oc-member-chat-route="true"]';
   const chatSurfaceRoot =
     ':is([data-oc-chat-surface="true"], .content--chat, .shell--chat-focus .content)';
   const chatSurfaceContent = `${chatSurfaceRoot} > :not(.oc-chat-ambient)`;
+  const memberChatSurfaceRoot = `${memberChatRouteRoot} ${chatSurfaceRoot}`;
   const composerRoot = ':is([data-oc-chat-composer="true"], .agent-chat__input)';
+  const memberChatComposerRoot = `${memberChatRouteRoot} ${composerRoot}`;
   const toolbarRoot = ':is([data-oc-chat-toolbar="true"], .agent-chat__toolbar)';
   const actionButtonRoot =
     ':is([data-oc-chat-action-button="true"], .agent-chat__input-btn, .agent-chat__toolbar .btn--ghost)';
@@ -115,6 +118,15 @@ export function getFrameworkStyles() {
       --oc-chat-trace-warm-end: rgba(252, 238, 207, 0.68);
       --oc-chat-orbit: rgba(255, 244, 221, 0.3);
       --oc-chat-orbit-soft: rgba(152, 204, 235, 0.22);
+    }
+
+    ${memberChatSurfaceRoot} {
+      --oc-chat-user-bubble-shadow: 0 6px 16px rgba(40, 64, 92, 0.06);
+      background: linear-gradient(180deg, var(--oc-chat-surface-top), var(--oc-chat-surface-bottom));
+    }
+
+    ${memberChatRouteRoot} .oc-chat-ambient {
+      display: none !important;
     }
 
     ${chatSurfaceContent} {
@@ -421,6 +433,13 @@ export function getFrameworkStyles() {
         0 10px 24px color-mix(in srgb, var(--bg, #020617) 5%, transparent);
     }
 
+    ${memberChatSurfaceRoot} ${chatGroupRoot}[data-oc-tool-run] [data-oc-chat-bubble="true"],
+    ${memberChatSurfaceRoot} ${chatGroupRoot}[data-oc-tool-run] .chat-bubble {
+      box-shadow:
+        inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
+        0 4px 12px color-mix(in srgb, var(--bg, #020617) 4%, transparent);
+    }
+
     ${chatSurfaceRoot} ${chatGroupRoot}[data-oc-tool-run="start"] [data-oc-chat-bubble="true"],
     ${chatSurfaceRoot} ${chatGroupRoot}[data-oc-tool-run="start"] .chat-bubble {
       border-bottom-left-radius: 8px;
@@ -585,6 +604,12 @@ export function getFrameworkStyles() {
         inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
     }
 
+    ${memberChatComposerRoot} {
+      box-shadow:
+        0 10px 24px color-mix(in srgb, var(--bg, #020617) 8%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+    }
+
     ${composerRoot}[data-oc-voice-recording="true"] {
       --ring: rgba(126, 170, 212, 0.52);
     }
@@ -615,6 +640,13 @@ export function getFrameworkStyles() {
         0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
         0 18px 36px color-mix(in srgb, var(--accent) 12%, transparent),
         inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
+    }
+
+    ${memberChatComposerRoot}:focus-within {
+      box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent),
+        0 12px 28px color-mix(in srgb, var(--accent) 10%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
     }
 
     .agent-chat__composer-combobox > textarea {
