@@ -212,6 +212,9 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-dialogs.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-members.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-wallet.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-agents.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-usage.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-console-events.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-usage-stats-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-overview-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/tenant-wallet-page.js`

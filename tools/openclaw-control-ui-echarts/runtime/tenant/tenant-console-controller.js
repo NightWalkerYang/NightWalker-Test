@@ -186,6 +186,13 @@ export function paginate(items, page) {
   };
 }
 
+export function totalUsagePages(controller) {
+  return Math.max(
+    1,
+    Math.ceil((Number(controller.usageTotal || 0) || 0) / (controller.usagePageSize || PAGE_SIZE)),
+  );
+}
+
 export function ensureTenantConsoleController(root, session, apiClient, stateFactories) {
   if (root.__ocTenantConsoleController) {
     root.__ocTenantConsoleController.session = session;

@@ -32,20 +32,24 @@ import {
   renderMembersTable,
   renderRevokeAssignmentConfirmDialog,
   renderRevokeAssignmentDialog,
-  renderUsageList,
   syncAssignAgentSelectionState,
   syncMemberOrgScopeSelectionState,
   syncRevokeAssignmentSelectionState,
 } from "./tenant-console-members.js";
 import {
-  filterTenantAgents,
-  renderAgentDetailDialog,
-  renderAgentTransferDialog,
-  renderOwnedAgentsCards,
   renderWalletFlowList,
   renderWalletLedgerList,
   renderWalletOrdersList,
 } from "./tenant-console-wallet.js";
+import {
+  filterTenantAgents,
+  renderAgentDetailDialog,
+  renderAgentTransferDialog,
+  renderOwnedAgentsCards,
+} from "./tenant-console-agents.js";
+import {
+  renderUsageList,
+} from "./tenant-console-usage.js";
 
 function renderPagination(pagination) {
   return `
