@@ -1257,4 +1257,51 @@ describe("zero-intrusive tenant entry", () => {
       "tenant_admin",
     );
   });
+
+  it("injects tenant-admin sections into the native sidebar nav inside the upstream shell wrapper", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+        edition: "cloud",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <aside class="sidebar" aria-label="primary navigation sidebar">
+        <div class="sidebar-shell">
+          <div class="sidebar-shell__header">
+            <button type="button">toggle</button>
+          </div>
+          <div class="sidebar-shell__body">
+            <nav class="sidebar-nav">
+              <section class="nav-section" data-native-group="chat"></section>
+              <section class="nav-section" data-native-group="control"></section>
+            </nav>
+          </div>
+          <div class="sidebar-shell__footer">
+            <div class="sidebar-utility-group">
+              <a class="sidebar-utility-link">文档</a>
+              <a class="sidebar-utility-link">版本 v2026.4.1</a>
+            </div>
+          </div>
+        </div>
+      </aside>
+    `;
+
+    bootTenantEntry();
+    await flushAsync();
+
+    const sidebarNav = document.querySelector(".sidebar-nav");
+    const sidebarShell = document.querySelector(".sidebar-shell");
+    expect(sidebarNav?.querySelector(":scope > .oc-platform-management-section")).not.toBeNull();
+    expect(sidebarNav?.querySelector(":scope > .oc-tenant-agent-section")).not.toBeNull();
+    expect(sidebarNav?.querySelector(":scope > .oc-tenant-stats-section")).not.toBeNull();
+    expect(sidebarNav?.querySelector(":scope > .oc-tenant-wallet-section")).not.toBeNull();
+    expect(sidebarShell?.querySelector(":scope > .oc-platform-management-section")).toBeNull();
+    expect(
+      document.querySelector(".sidebar-shell__header + .oc-platform-management-section"),
+    ).toBeNull();
+  });
 });
