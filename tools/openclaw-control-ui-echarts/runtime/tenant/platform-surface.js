@@ -10,6 +10,7 @@ import {
   PLATFORM_DATA_SOURCES_VIEW,
   PLATFORM_NODE_MANAGEMENT_VIEW,
   PLATFORM_TENANTS_VIEW,
+  clearPersistedControlUiSession,
   readPlatformSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -32,7 +33,7 @@ function isPlatformManagementView(view) {
 
 function isRootControlPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
-  return normalized === "/" || normalized === "/chat" || normalized.endsWith("/index.html");
+  return normalized === "/" || normalized.endsWith("/index.html");
 }
 
 function isPlatformManagementRoute() {
@@ -147,6 +148,7 @@ async function mountCurrentSurface(state) {
     return null;
   }
   ensureStyle();
+  clearPersistedControlUiSession(window.location.href);
   if (isFallbackContent(host)) {
     cleanupStateAttributes();
     document.body.setAttribute(ACTIVE_ATTR, "fallback");

@@ -261,6 +261,64 @@ function normalizePathname(pathname) {
   return normalized.replace(/\/+$/, "") || "/";
 }
 
+function normalizeGatewayScope(gatewayUrl) {
+  const trimmed = String(gatewayUrl || "").trim();
+  if (!trimmed) {
+    return "default";
+  }
+  try {
+    const parsed = new URL(trimmed, `${window.location.protocol}//${window.location.host}/`);
+    const pathname =
+      parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "") || parsed.pathname;
+    return `${parsed.protocol}//${parsed.host}${pathname}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+function inferBasePathFromPathname(pathname) {
+  let normalized = normalizeTenantPathname(pathname);
+  if (normalized === "/") {
+    return "";
+  }
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length === 0) {
+    return "";
+  }
+  const controlUiTabPaths = new Set([
+    "/agents",
+    "/overview",
+    "/channels",
+    "/instances",
+    "/sessions",
+    "/usage",
+    "/cron",
+    "/skills",
+    "/nodes",
+    "/chat",
+    "/config",
+    "/communications",
+    "/appearance",
+    "/automation",
+    "/infrastructure",
+    "/ai-agents",
+    "/debug",
+    "/logs",
+  ]);
+  for (let index = 0; index < segments.length; index += 1) {
+    const candidate = `/${segments.slice(index).join("/")}`.toLowerCase();
+    if (controlUiTabPaths.has(candidate)) {
+      const prefix = segments.slice(0, index);
+      return prefix.length > 0 ? `/${prefix.join("/")}` : "";
+    }
+  }
+  return `/${segments.join("/")}`;
+}
+
+function buildSettingsStorageKey(gatewayUrl) {
+  return `openclaw.control.settings.v1:${normalizeGatewayScope(gatewayUrl)}`;
+}
+
 export function readTenantView(locationHref = window.location.href) {
   const url = new URL(locationHref, document.baseURI);
   if (normalizePathname(url.pathname) === LOGIN_PATHNAME) {
@@ -334,6 +392,89 @@ export function writeSelectedTenantAgent(agent) {
 
 export function clearSelectedTenantAgent() {
   clearStoredSession(TENANT_SELECTED_AGENT_STORAGE_KEY);
+}
+
+export function clearPersistedControlUiSession(routeLike = window.location.href) {
+  const routeUrl = routeLike instanceof URL ? routeLike : new URL(routeLike, window.location.href);
+  const proto = routeUrl.protocol === "https:" ? "wss" : "ws";
+  const rootGatewayUrl = `${proto}://${routeUrl.host}`;
+  const basePath = inferBasePathFromPathname(routeUrl.pathname);
+  const gatewayScopeUrl = `${proto}://${routeUrl.host}${basePath}`;
+  const rootScope = normalizeGatewayScope(rootGatewayUrl);
+  const scope = normalizeGatewayScope(gatewayScopeUrl);
+  const storage = safeStorage();
+  if (!storage) {
+    return;
+  }
+  for (const key of new Set([
+    buildSettingsStorageKey(rootGatewayUrl),
+    buildSettingsStorageKey(gatewayScopeUrl),
+  ])) {
+    const existing = readStoredSession(key);
+    if (!existing || typeof existing !== "object") {
+      continue;
+    }
+    const next = { ...existing };
+    delete next.sessionKey;
+    delete next.lastActiveSessionKey;
+    if (next.sessionsByGateway && typeof next.sessionsByGateway === "object") {
+      const sessionsByGateway = { ...next.sessionsByGateway };
+      for (const sessionScope of new Set([rootScope, scope])) {
+        const scopedValue = sessionsByGateway[sessionScope];
+        if (!scopedValue || typeof scopedValue !== "object") {
+          continue;
+        }
+        const nextScopedValue = { ...scopedValue };
+        delete nextScopedValue.sessionKey;
+        delete nextScopedValue.lastActiveSessionKey;
+        if (Object.keys(nextScopedValue).length > 0) {
+          sessionsByGateway[sessionScope] = nextScopedValue;
+        } else {
+          delete sessionsByGateway[sessionScope];
+        }
+      }
+      if (Object.keys(sessionsByGateway).length > 0) {
+        next.sessionsByGateway = sessionsByGateway;
+      } else {
+        delete next.sessionsByGateway;
+      }
+    }
+    if (Object.keys(next).length > 0) {
+      safeStorage()?.setItem(key, JSON.stringify(next));
+    } else {
+      safeStorage()?.removeItem(key);
+    }
+  }
+}
+
+export function clearOpenClawChatState(app) {
+  if (!(app instanceof HTMLElement)) {
+    return false;
+  }
+  app.sessionKey = "";
+  app.chatMessages = [];
+  app.chatQueue = [];
+  app.chatLoading = false;
+  app.chatRunId = null;
+  app.chatStream = null;
+  app.chatStreamStartedAt = null;
+  app.lastError = null;
+  app.chatToolMessages = [];
+  app.chatStreamSegments = [];
+  app.chatSending = false;
+  delete app.__ocPinnedSessionKey;
+  delete app.__ocPinnedSessionHydratedKey;
+  delete app.__ocPinnedSessionHydratingKey;
+  if (typeof app.resetToolStream === "function") {
+    app.resetToolStream();
+  }
+  if (typeof app.resetChatScroll === "function") {
+    app.resetChatScroll();
+  }
+  if (typeof app.requestUpdate === "function") {
+    app.requestUpdate();
+  }
+  return true;
 }
 
 export function buildTenantMemberChatRoute(tenantAgentId, sessionKey = "") {

@@ -2,6 +2,8 @@ import { mountTenantLoginPage } from "./login-page.js";
 import { bootTenantRouteSync, navigateTenantRoute, onTenantRouteChange } from "./route-sync.js";
 import {
   buildTenantMemberChatRoute,
+  clearOpenClawChatState,
+  clearPersistedControlUiSession,
   isTenantLoginView,
   isTenantMemberSessionKey,
   readPlatformSession,
@@ -60,6 +62,13 @@ function clearAuthSurface() {
   syncUnderlyingAppVisibility(false);
   document.querySelector(`[${ROOT_ATTR}]`)?.remove();
   document.head.querySelector(`[${STYLE_ATTR}]`)?.remove();
+}
+
+function clearUnderlyingNativeChatState() {
+  clearPersistedControlUiSession(window.location.href);
+  for (const app of document.querySelectorAll("openclaw-app, [data-openclaw-app]")) {
+    clearOpenClawChatState(app);
+  }
 }
 
 function normalizePathname(pathname = window.location.pathname) {
@@ -132,6 +141,7 @@ async function syncTenantAuthSurface() {
 
     document.body.setAttribute(ACTIVE_ATTR, "true");
     syncUnderlyingAppVisibility(true);
+    clearUnderlyingNativeChatState();
     ensureStyle();
     const root = ensureRoot();
     const result = await mountTenantLoginPage(root);

@@ -224,6 +224,32 @@ describe("tenant surface", () => {
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")).toBeNull();
   });
 
+  it("does not mount tenant management on malformed /chat routes", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-members&session=main");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await bootTenantSurface();
+
+    expect(document.querySelector("[data-oc-tenant-surface-root]")).toBeNull();
+    expect(
+      document.querySelector(".content")?.getAttribute("data-oc-tenant-surface-active"),
+    ).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("renders 组织范围 state from the current tenant binding instead of stale member metadata", async () => {
     writeTenantSession({
       token: "tenant-token",
@@ -1838,7 +1864,7 @@ describe("tenant surface", () => {
         username: "tenant-admin",
       },
     });
-    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-members&session=main");
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     vi.stubGlobal(
       "fetch",
@@ -1912,7 +1938,7 @@ describe("tenant surface", () => {
         username: "tenant-admin",
       },
     });
-    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-members&session=main");
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     vi.stubGlobal(
       "fetch",

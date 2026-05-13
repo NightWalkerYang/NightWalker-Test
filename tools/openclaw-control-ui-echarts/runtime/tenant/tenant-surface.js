@@ -15,6 +15,7 @@ import {
   TENANT_WALLET_ORDERS_VIEW,
   TENANT_WALLET_LEDGER_VIEW,
   TENANT_WALLET_FLOW_VIEW,
+  clearPersistedControlUiSession,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -42,7 +43,7 @@ function isTenantManagementView(view) {
 
 function isRootControlPath(pathname = window.location.pathname) {
   const normalized = String(pathname || "/").trim() || "/";
-  return normalized === "/" || normalized === "/chat" || normalized.endsWith("/index.html");
+  return normalized === "/" || normalized.endsWith("/index.html");
 }
 
 function isTenantManagementRoute() {
@@ -172,6 +173,7 @@ async function mountCurrentSurface(state) {
     return null;
   }
   ensureStyle();
+  clearPersistedControlUiSession(window.location.href);
   if (isFallbackContent(host)) {
     cleanupStateAttributes();
     document.body.setAttribute(ACTIVE_ATTR, "fallback");

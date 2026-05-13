@@ -173,6 +173,38 @@ describe("platform access guard", () => {
     ).toBe("skip");
   });
 
+  it("preboot normalizes malformed /chat platform management routes back to the root host", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=platform-tenants&session=main");
+
+    await importTenantPreboot();
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("?ocTenantView=platform-tenants");
+  });
+
+  it("preboot normalizes malformed /chat tenant management routes back to the root host", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/chat?ocTenantView=tenant-members&session=main");
+
+    await importTenantPreboot();
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("?ocTenantView=tenant-members");
+  });
+
   it("allows tenant admins only on tenant management views", () => {
     expect(
       resolvePlatformAccessDecision({

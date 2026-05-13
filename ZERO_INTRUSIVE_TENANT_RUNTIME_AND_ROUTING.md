@@ -34,6 +34,7 @@
 - 登录遮罩只允许在真实 login route 上激活；一旦 same-page route 离开登录视图，`auth-surface` 必须立即清理 `data-oc-tenant-auth-active` 与 auth root，不能继续把整个原生壳隐藏掉
 - 登录态还会把底层原生 `openclaw-app`/`[data-openclaw-app]` 标记为 `data-oc-tenant-auth-hidden="true"`，避免登录页表面可见时，左下角或背景里仍能看到聊天壳继续渲染
 - 登录视图还会显式阻止成员聊天 surface 进入会话同步和历史加载分支，避免登录页虽然不可见但仍预热 `sessions.list` / `chat.history`
+- 登录视图还会主动清掉原生 Control UI 本地 `sessionKey` / `lastActiveSessionKey` 恢复值，并清空底层 `openclaw-app` 已挂载的聊天 hydration 状态，避免“登录页可见，但底层旧聊天 DOM / 会话状态还残留在不可见层里”
 
 原因：
 
@@ -57,6 +58,8 @@
 - fallback 不允许再隐藏整个 `openclaw-app`
 - 平台、租户、成员选择、成员聊天等依赖原生壳的路由上，顶部和侧边原生壳必须保持可见
 - compat 失败时必须进入可识别降级态，不能静默白屏
+- 平台管理员和租户管理员这些 root-only 管理视图，不允许再把 `/chat` 当宿主路径
+- 如果命中 `/chat?ocTenantView=platform-*` 或 `/chat?ocTenantView=tenant-*` 这类脏地址，preboot 必须先把它改回 `/?ocTenantView=...`，不能先让原生聊天页和会话恢复链路启动，再被零侵入管理页覆盖隐藏
 
 当前 compat observer 还必须继续遵守一条性能边界：
 

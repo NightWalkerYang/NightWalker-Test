@@ -1656,7 +1656,7 @@ describe("platform surface", () => {
     ).toBeNull();
   });
 
-  it("mounts a fallback management shell when the native content area is unavailable", async () => {
+  it("does not mount platform management on malformed /chat routes", async () => {
     writeTenantSession({
       token: "platform-token",
       session: {
@@ -1665,6 +1665,33 @@ describe("platform surface", () => {
       },
     });
     window.history.replaceState({}, "", "/chat?ocTenantView=platform-tenants&session=main");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await bootPlatformSurface();
+
+    expect(document.querySelector("[data-oc-platform-surface-root]")).toBeNull();
+    expect(
+      document.querySelector(".content")?.getAttribute("data-oc-platform-surface-active"),
+    ).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("mounts a fallback management shell when the native content area is unavailable", async () => {
+    writeTenantSession({
+      token: "platform-token",
+      session: {
+        role: "platform_admin",
+        username: "platform-root",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=platform-tenants");
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     vi.stubGlobal(
       "fetch",
@@ -1731,7 +1758,7 @@ describe("platform surface", () => {
         username: "platform-root",
       },
     });
-    window.history.replaceState({}, "", "/chat?ocTenantView=platform-tenants&session=main");
+    window.history.replaceState({}, "", "/?ocTenantView=platform-tenants");
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     vi.stubGlobal(
       "fetch",

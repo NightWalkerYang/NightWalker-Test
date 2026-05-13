@@ -15,6 +15,21 @@
   const TENANT_VIEW_QUERY_KEY = "ocTenantView";
   const LOGIN_VIEW = "login";
   const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
+  const ROOT_ONLY_TENANT_VIEWS = new Set([
+    "platform-tenants",
+    "platform-agent-assignment",
+    "platform-data-sources",
+    "platform-nodes",
+    "tenant-members",
+    "tenant-agent-assignment",
+    "tenant-owned-agents",
+    "tenant-usage-stats",
+    "tenant-statistics-overview",
+    "tenant-wallet",
+    "tenant-wallet-orders",
+    "tenant-wallet-ledger",
+    "tenant-wallet-flow",
+  ]);
   const RESPONSIVENESS_WARNINGS = new Set([
     "[openclaw] control-ui.long-animation-frame",
     "[openclaw] control-ui.longtask",
@@ -174,6 +189,12 @@
 
   const buildTenantLoginRouteUrl = () =>
     new URL(`./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`, document.baseURI);
+
+  const buildRootTenantViewRouteUrl = (view) =>
+    new URL(
+      `./?${TENANT_VIEW_QUERY_KEY}=${encodeURIComponent(String(view || "").trim())}`,
+      document.baseURI,
+    );
 
   const resolveTenantSessionAgentIds = (selectedAgent) => {
     const primary = normalizeTenantValue(selectedAgent?.agentId);
@@ -536,6 +557,9 @@
     const targetTenantView = url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "";
     if (normalizedPath === "/chat" && targetTenantView === LOGIN_VIEW) {
       return buildTenantLoginRouteUrl();
+    }
+    if (normalizedPath === "/chat" && ROOT_ONLY_TENANT_VIEWS.has(targetTenantView)) {
+      return buildRootTenantViewRouteUrl(targetTenantView);
     }
     if (normalizedPath !== "/chat") {
       return url;

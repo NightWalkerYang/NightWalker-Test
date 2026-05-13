@@ -332,6 +332,41 @@ describe("tenant auth surface", () => {
     expect(app instanceof HTMLElement ? app.chatSending : null).toBe(false);
   });
 
+  it("clears persisted native chat session recovery state while the login view is active", async () => {
+    document.body.innerHTML = "<openclaw-app></openclaw-app>";
+    window.history.replaceState({}, "", "/?ocTenantView=login");
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    const storageKey = `openclaw.control.settings.v1:${proto}://${window.location.host}`;
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        sessionKey: "stale-session",
+        lastActiveSessionKey: "stale-session",
+        sessionsByGateway: {
+          [`${proto}://${window.location.host}`]: {
+            sessionKey: "stale-session",
+            lastActiveSessionKey: "stale-session",
+          },
+        },
+      }),
+    );
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          data: { initialized: true, edition: "cloud" },
+        };
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await bootTenantAuthSurface();
+
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+  });
+
   it("does not reactivate auth overlay after route leaves login during async bootstrap", async () => {
     document.body.innerHTML = "<openclaw-app></openclaw-app>";
     window.history.replaceState({}, "", "/?ocTenantView=login");
