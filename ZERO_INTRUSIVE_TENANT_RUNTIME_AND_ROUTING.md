@@ -196,7 +196,7 @@
 - 当前零侵入运行时已经拆成四层兼容契约：`runtime/framework/dom-compat.js`、`runtime/framework/mount-compat.js`、`runtime/framework/app-compat.js`、`runtime/framework/rpc-compat.js`
 - 这四层兼容契约不只给成员聊天发送链路使用；`runtime/lufeng/surface.js`、平台/租户/成员 surface、tenant entry 的 utility/search 探测、品牌替换、知识图谱入口，也已经把 DOM/mount/app/RPC 的高脆弱依赖收口到这四层
 - `runtime/framework/styles.js` 与 platform/member/tenant/topbar/lufeng 相关样式现在已经开始优先消费这些 `data-oc-*` 标记，并把旧 upstream class 仅保留为兼容兜底；当前剩余脆弱点主要集中在 compat 内部仍需跟随 upstream 演进维护的壳结构假设、少量聊天内容区内部 class 语义，以及成员聊天里尚未完全去私有化、但已集中封装的少量 `openclaw-app` 私有状态访问
-- 成员聊天路由当前还启用 route-scoped 低重绘样式：`data-oc-member-chat-route="true"` 生效时，零侵入层会停用 `oc-chat-ambient` 的整屏 SVG / blur / 持续动画背景，并把输入区、消息气泡、tool run 卡片阴影收敛到较轻量级别，优先保证长聊天滚动时的帧稳定性
+- 当前聊天壳已经彻底移除旧的 `oc-chat-ambient` 整屏 SVG / blur / 持续动画背景；成员聊天路由仍保留更轻量的输入区、消息气泡、tool run 卡片阴影收敛，优先保证长聊天滚动时的帧稳定性
 
 当前成员聊天历史加载规则已经调整为：
 

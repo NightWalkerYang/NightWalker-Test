@@ -2,7 +2,6 @@ export function getFrameworkStyles() {
   const memberChatRouteRoot = ':root[data-oc-member-chat-route="true"]';
   const chatSurfaceRoot =
     ':is([data-oc-chat-surface="true"], .content--chat, .shell--chat-focus .content)';
-  const chatSurfaceContent = `${chatSurfaceRoot} > :not(.oc-chat-ambient)`;
   const memberChatSurfaceRoot = `${memberChatRouteRoot} ${chatSurfaceRoot}`;
   const composerRoot = ':is([data-oc-chat-composer="true"], .agent-chat__input)';
   const memberChatComposerRoot = `${memberChatRouteRoot} ${composerRoot}`;
@@ -73,26 +72,8 @@ export function getFrameworkStyles() {
 
     ${chatSurfaceRoot} {
       position: relative;
-      isolation: isolate;
-      overflow: hidden;
       --oc-chat-surface-top: #f8fbff;
       --oc-chat-surface-bottom: #eef3fa;
-      --oc-chat-haze-a: rgba(121, 170, 219, 0.18);
-      --oc-chat-haze-b: rgba(128, 200, 205, 0.16);
-      --oc-chat-band-a-start: rgba(116, 177, 238, 0.12);
-      --oc-chat-band-a-mid: rgba(123, 192, 248, 0.52);
-      --oc-chat-band-a-end: rgba(223, 243, 255, 0.18);
-      --oc-chat-band-b-start: rgba(102, 190, 202, 0.1);
-      --oc-chat-band-b-mid: rgba(144, 227, 224, 0.4);
-      --oc-chat-band-b-end: rgba(215, 247, 236, 0.14);
-      --oc-chat-band-c-start: rgba(194, 165, 108, 0.08);
-      --oc-chat-band-c-end: rgba(245, 226, 183, 0.24);
-      --oc-chat-trace-soft: rgba(150, 196, 236, 0.34);
-      --oc-chat-trace-bright: rgba(241, 248, 255, 0.96);
-      --oc-chat-trace-warm-start: rgba(236, 217, 177, 0.18);
-      --oc-chat-trace-warm-end: rgba(255, 243, 215, 0.82);
-      --oc-chat-orbit: rgba(255, 245, 228, 0.44);
-      --oc-chat-orbit-soft: rgba(172, 216, 240, 0.3);
       background:
         radial-gradient(circle at 14% 84%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 24%),
         radial-gradient(circle at 82% 34%, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 24%),
@@ -102,140 +83,11 @@ export function getFrameworkStyles() {
     :root[data-theme-mode="dark"] ${chatSurfaceRoot} {
       --oc-chat-surface-top: #111b27;
       --oc-chat-surface-bottom: #142033;
-      --oc-chat-haze-a: rgba(77, 134, 200, 0.2);
-      --oc-chat-haze-b: rgba(81, 185, 177, 0.18);
-      --oc-chat-band-a-start: rgba(94, 149, 214, 0.14);
-      --oc-chat-band-a-mid: rgba(123, 188, 255, 0.44);
-      --oc-chat-band-a-end: rgba(211, 234, 255, 0.16);
-      --oc-chat-band-b-start: rgba(72, 165, 171, 0.12);
-      --oc-chat-band-b-mid: rgba(118, 224, 214, 0.34);
-      --oc-chat-band-b-end: rgba(205, 246, 231, 0.12);
-      --oc-chat-band-c-start: rgba(169, 143, 92, 0.1);
-      --oc-chat-band-c-end: rgba(243, 220, 167, 0.18);
-      --oc-chat-trace-soft: rgba(141, 183, 223, 0.28);
-      --oc-chat-trace-bright: rgba(227, 242, 255, 0.84);
-      --oc-chat-trace-warm-start: rgba(229, 210, 170, 0.14);
-      --oc-chat-trace-warm-end: rgba(252, 238, 207, 0.68);
-      --oc-chat-orbit: rgba(255, 244, 221, 0.3);
-      --oc-chat-orbit-soft: rgba(152, 204, 235, 0.22);
     }
 
     ${memberChatSurfaceRoot} {
       --oc-chat-user-bubble-shadow: 0 6px 16px rgba(40, 64, 92, 0.06);
       background: linear-gradient(180deg, var(--oc-chat-surface-top), var(--oc-chat-surface-bottom));
-    }
-
-    ${memberChatRouteRoot} .oc-chat-ambient {
-      display: none !important;
-    }
-
-    ${chatSurfaceContent} {
-      position: relative;
-      z-index: 1;
-    }
-
-    .oc-chat-ambient {
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-      overflow: hidden;
-      pointer-events: none;
-      filter: saturate(1.08);
-    }
-
-    .oc-chat-ambient__svg {
-      width: 100%;
-      height: 100%;
-      display: block;
-      opacity: 0.99;
-    }
-
-    .oc-chat-ambient__wash {
-      opacity: 0.94;
-      filter: blur(34px);
-      animation: oc-chat-ambient-breathe 20s ease-in-out infinite alternate;
-    }
-
-    .oc-chat-ambient__bands {
-      transform-origin: 50% 62%;
-      will-change: transform, opacity, filter;
-    }
-
-    .oc-chat-ambient__bands--back {
-      opacity: 0.98;
-      filter: blur(30px) saturate(1.08);
-      animation:
-        oc-chat-ambient-sway 18s ease-in-out infinite alternate,
-        oc-chat-ambient-blur-pulse 9s ease-in-out infinite alternate;
-    }
-
-    .oc-chat-ambient__bands--front {
-      opacity: 0.92;
-      filter: blur(14px);
-      animation:
-        oc-chat-ambient-glide 14s ease-in-out infinite alternate-reverse,
-        oc-chat-ambient-blur-pulse 7s ease-in-out infinite alternate-reverse;
-    }
-
-    .oc-chat-ambient__band--primary {
-      animation: oc-chat-ambient-ribbon-flow 12s ease-in-out infinite alternate;
-    }
-
-    .oc-chat-ambient__band--secondary {
-      animation: oc-chat-ambient-ribbon-flow-alt 16s ease-in-out infinite alternate;
-    }
-
-    .oc-chat-ambient__band--accent {
-      animation: oc-chat-ambient-ribbon-flow 10s ease-in-out infinite alternate-reverse;
-    }
-
-    .oc-chat-ambient__band,
-    .oc-chat-ambient__thread,
-    .oc-chat-ambient__orbit {
-      fill: none;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      transform-box: fill-box;
-      transform-origin: center;
-    }
-
-    .oc-chat-ambient__thread {
-      stroke-width: 3;
-      opacity: 0.88;
-      filter: blur(2px);
-    }
-
-    .oc-chat-ambient__thread--cool,
-    .oc-chat-ambient__thread--dash {
-      stroke-dasharray: 10 14;
-      animation:
-        oc-chat-ambient-trace 16s linear infinite,
-        oc-chat-ambient-thread-drift 8s ease-in-out infinite alternate;
-    }
-
-    .oc-chat-ambient__thread--warm {
-      stroke-dasharray: 6 18;
-      animation:
-        oc-chat-ambient-trace 20s linear infinite reverse,
-        oc-chat-ambient-thread-drift 10s ease-in-out infinite alternate-reverse;
-    }
-
-    .oc-chat-ambient__thread--dash {
-      stroke-width: 2.2;
-      stroke-dasharray: 3 16;
-      opacity: 0.74;
-    }
-
-    .oc-chat-ambient__orbit {
-      stroke: var(--oc-chat-orbit);
-      stroke-width: 1.8;
-      opacity: 0.34;
-      filter: blur(4px);
-    }
-
-    .oc-chat-ambient__orbit--low {
-      stroke: var(--oc-chat-orbit-soft);
-      opacity: 0.24;
     }
 
     ${chatSurfaceRoot} .callout.danger {
@@ -968,115 +820,6 @@ export function getFrameworkStyles() {
       .chat-attachments-preview {
         padding-inline: 8px;
         padding-top: 8px;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .oc-chat-ambient__wash,
-      .oc-chat-ambient__bands,
-      .oc-chat-ambient__thread,
-      .oc-chat-ambient__band {
-        animation: none;
-      }
-    }
-
-    @keyframes oc-chat-ambient-sway {
-      0% {
-        transform: translate3d(-2%, 1%, 0) scale(1.01);
-      }
-
-      50% {
-        transform: translate3d(1.2%, -1.4%, 0) scale(1.03);
-      }
-
-      100% {
-        transform: translate3d(2.8%, -2%, 0) scale(1.02);
-      }
-    }
-
-    @keyframes oc-chat-ambient-glide {
-      0% {
-        transform: translate3d(4%, 2%, 0) scale(1.01);
-      }
-
-      50% {
-        transform: translate3d(-2.8%, -2.2%, 0) scale(1.05);
-      }
-
-      100% {
-        transform: translate3d(-5.2%, -3.4%, 0) scale(1.03);
-      }
-    }
-
-    @keyframes oc-chat-ambient-trace {
-      from {
-        stroke-dashoffset: 0;
-      }
-
-      to {
-        stroke-dashoffset: -240;
-      }
-    }
-
-    @keyframes oc-chat-ambient-blur-pulse {
-      0% {
-        opacity: 0.76;
-        filter: blur(20px) saturate(1.02);
-      }
-
-      100% {
-        opacity: 1;
-        filter: blur(36px) saturate(1.12);
-      }
-    }
-
-    @keyframes oc-chat-ambient-ribbon-flow {
-      0% {
-        transform: translate3d(-2.4%, 1.8%, 0) scale(1);
-      }
-
-      50% {
-        transform: translate3d(2%, -1.4%, 0) scale(1.06);
-      }
-
-      100% {
-        transform: translate3d(4.6%, -3.2%, 0) scale(1.03);
-      }
-    }
-
-    @keyframes oc-chat-ambient-ribbon-flow-alt {
-      0% {
-        transform: translate3d(2.6%, 1.4%, 0) scale(1.01);
-      }
-
-      50% {
-        transform: translate3d(-1.8%, -2.6%, 0) scale(1.05);
-      }
-
-      100% {
-        transform: translate3d(-4.8%, -1%, 0) scale(1.02);
-      }
-    }
-
-    @keyframes oc-chat-ambient-thread-drift {
-      0% {
-        transform: translate3d(0, 0, 0) scale(1);
-      }
-
-      100% {
-        transform: translate3d(1.6%, -1.4%, 0) scale(1.02);
-      }
-    }
-
-    @keyframes oc-chat-ambient-breathe {
-      0% {
-        opacity: 0.72;
-        transform: scale(0.98);
-      }
-
-      100% {
-        opacity: 0.96;
-        transform: scale(1.04);
       }
     }
 

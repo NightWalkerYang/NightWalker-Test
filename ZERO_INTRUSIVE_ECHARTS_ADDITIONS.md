@@ -83,10 +83,6 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/local-runtime/start-local-runtime.mjs`
 - `tools/openclaw-control-ui-echarts/local-runtime/start-tenant-platform.mjs`
 
-### Runtime: Background
-
-- `tools/openclaw-control-ui-echarts/runtime/background/chat-ambient.js`
-
 ### Runtime: Branding
 
 - `tools/openclaw-control-ui-echarts/runtime/branding/auto-token.js`
@@ -275,7 +271,6 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/brand-panel.test.ts`
 - `test/tools/openclaw-control-ui-echarts/brand-replacer.test.ts`
 - `test/tools/openclaw-control-ui-echarts/brand-state.test.ts`
-- `test/tools/openclaw-control-ui-echarts/chat-ambient.test.ts`
 - `test/tools/openclaw-control-ui-echarts/chat-composer.test.ts`
 - `test/tools/openclaw-control-ui-echarts/dom-compat-core.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-parser.test.ts`
@@ -390,7 +385,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Fenced-block adapters now warm their local libraries at boot and rescan only changed DOM roots, reducing the post-refresh delay before `echarts` and `file` cards appear.
 - Chat page visuals are customized through the injected framework styles layer. The zero-intrusive layer now restores a minimal visible shell for the native `/chat` composer when upstream chat-shell DOM drifts, while still avoiding the earlier pseudo-element redraw and toolbar-flattening path.
 - The shared DOM compat layer now also synchronizes stable `data-oc-*` markers onto the detected native Control UI shell nodes, and the framework/platform/tenant/lufeng style layers now prefer those compat markers before falling back to legacy upstream classes, so shell-class drift after future upstream syncs is more likely to be absorbed inside compat instead of breaking wide style regions directly.
-- The chat background uses an injected animated ambient layer, and that ambient sync now rechecks only the current or dirty chat surfaces instead of rescanning every `main` / `section` / `div` node on each DOM mutation.
+- The chat background no longer mounts the old injected animated ambient layer, so long chat sessions avoid the extra SVG, blur, and animation cost entirely.
 - Tool-call and tool-output sequences from the same turn are clustered and collapsible.
 - Voice input is bridged through a zero-intrusive runtime layer with visible state and error feedback.
 - Prompt-insertion helpers, member-chat send interception, native `New session` takeover, tenant shell trimming, content mounting, chat control probing, and chat background mounting now use the shared zero-intrusive compatibility layers under `runtime/framework/` (`dom-compat.js`, `mount-compat.js`, `app-compat.js`, `rpc-compat.js`) as their main path. `runtime/lufeng/surface.js`, `runtime/tenant/member-chat-surface.js`, `runtime/tenant/platform-surface.js`, `runtime/tenant/member-surface.js`, `runtime/tenant/tenant-surface.js`, `runtime/tenant/entry.js`, `runtime/branding/brand-replacer.js`, and `runtime/knowledge-graph/entry.js` now route primarily through those compat layers; remaining fragility is concentrated inside compat-internal upstream assumptions and a reduced set of centralized app private-state access instead of scattered feature-local raw selectors and ad hoc monkey patches.

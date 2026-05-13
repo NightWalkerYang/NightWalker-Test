@@ -14,11 +14,6 @@ describe("zero-intrusive framework styles", () => {
 
     expect(styles).toContain('[data-oc-chat-surface="true"]');
     expect(styles).toContain("--accent: #7eaad4;");
-    expect(styles).toContain(".oc-chat-ambient");
-    expect(styles).toContain(".oc-chat-ambient__svg");
-    expect(styles).toContain("@keyframes oc-chat-ambient-sway");
-    expect(styles).toContain("@keyframes oc-chat-ambient-trace");
-    expect(styles).toContain(':root[data-oc-member-chat-route="true"] .oc-chat-ambient');
     expect(styles).toContain(
       ':root[data-oc-member-chat-route="true"] :is([data-oc-chat-surface="true"], .content--chat, .shell--chat-focus .content)',
     );
@@ -64,6 +59,8 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain('[data-oc-chat-toolbar="true"]');
     expect(styles).toContain('[data-oc-chat-send-button="true"]');
     expect(styles).toContain('[data-oc-chat-action-button="true"]');
+    expect(styles).not.toContain(".oc-chat-ambient");
+    expect(styles).not.toContain("@keyframes oc-chat-ambient");
   });
 
   it("keeps the native chat composer structure while avoiding the old intrusive redraw", () => {
