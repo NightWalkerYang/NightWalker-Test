@@ -208,6 +208,7 @@ shell 的 docker fallback 还必须同时把目标机当前 token/config 来源�
 
 - 浏览器暴露的 `18789` 不再直接映射原始 gateway
 - 代理层把 `/tenant-platform-api/` 转发到 tenant sidecar
+- sidecar 健康检查也要兼容同源代理路径 `/tenant-platform-api/v1/healthz`，不能只接受裸 `/healthz`
 - 代理层还必须显式直出：
   - `/workspace-downloads/`
   - `/workspace-agent-downloads/`

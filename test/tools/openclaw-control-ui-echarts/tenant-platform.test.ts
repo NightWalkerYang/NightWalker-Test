@@ -273,6 +273,38 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("serves health checks on both root and api-base-prefixed paths", async () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const handler = createTenantPlatformRouter({
+        db,
+        config: {
+          ...sandbox.config,
+          apiBasePath: "/tenant-platform-api/v1",
+        },
+      });
+
+      const rootHealthResponse = await callTenantPlatformRoute(handler, {
+        url: "/healthz",
+      });
+      expect(rootHealthResponse.statusCode).toBe(200);
+      expect(rootHealthResponse.payload).toEqual({
+        ok: true,
+      });
+
+      const apiBaseHealthResponse = await callTenantPlatformRoute(handler, {
+        url: "/tenant-platform-api/v1/healthz",
+      });
+      expect(apiBaseHealthResponse.statusCode).toBe(200);
+      expect(apiBaseHealthResponse.payload).toEqual({
+        ok: true,
+      });
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("serves tenant member-management sidecar routes for binding and org scope", async () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);

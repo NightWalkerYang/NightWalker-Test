@@ -2088,7 +2088,7 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
-    if (url.pathname === "/healthz") {
+    if (url.pathname === "/healthz" || relativePath === "/healthz") {
       sendJson(request, response, 200, { ok: true });
       return;
     }
