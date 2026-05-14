@@ -549,14 +549,13 @@ describe("tenant surface", () => {
 
     root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.textContent).toContain("finance-core");
+    expect(root?.textContent).not.toContain("finance-report");
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).not.toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__context-bar")).not.toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__content-header")).toBeNull();
-    expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(2);
-    expect(
-      root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]'),
-    ).not.toBeNull();
-    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-1"]')).not.toBeNull();
+    expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(1);
+    expect(root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]')).toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-1"]')).toBeNull();
 
     const opsAssignmentButton = root?.querySelector(
       '[data-tenant-skill-assignment-select="assignment-3"]',
@@ -579,16 +578,28 @@ describe("tenant surface", () => {
     expect(root?.querySelector(".oc-tenant-skill-workbench__context-bar")).not.toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__content-header")).toBeNull();
     expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(1);
-    expect(root?.querySelector('[data-tenant-skill-template-save="tenant-agent-2"]')).not.toBeNull();
-    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-3"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-template-save="tenant-agent-2"]')).toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-3"]')).toBeNull();
+
+    const memberToggle = root?.querySelector('[data-tenant-skill-member-toggle="member-1"]');
+    memberToggle?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flush();
+
+    root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).toBeNull();
+    expect(root?.textContent).toContain("请选择该成员下的 Agent 后查看 skills。");
 
     window.history.pushState({}, "", "/?ocTenantView=tenant-skills-assignments");
     await flush();
 
     root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
-    expect(root?.textContent).toContain("ops-core");
-    expect(root?.textContent).toContain("运维助手");
+    expect(root?.textContent).toContain("请选择该成员下的 Agent 后查看 skills。");
     expect(requests.some((url) => url.includes("/tenant/admin/skills/entitlements"))).toBe(true);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=finance"))).toBe(

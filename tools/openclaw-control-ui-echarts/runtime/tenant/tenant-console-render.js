@@ -308,29 +308,18 @@ function getWorkbenchSkillStateVariant(skill) {
   return "unknown";
 }
 
-function isWorkbenchSkillTemplateChecked(skill) {
-  return Boolean(skill?.templateEnabled || skill?.templateBlocked);
+function getWorkbenchSkillAccessLabel(skill) {
+  if (skill?.classification === "bundled") {
+    return "无需购买";
+  }
+  if (skill?.entitlement?.enabledByTenant) {
+    return "已启用";
+  }
+  return String(skill?.marketStatus || "").trim() || "未授权";
 }
 
-function isWorkbenchSkillTemplateDisabled(skill) {
-  return Boolean(skill?.templateBlocked);
-}
-
-function renderSkillsWorkbenchSkillCard(controller, card, skill) {
-  const tenantAgentId = String(card?.tenantAgentId || "").trim();
-  const assignmentId = String(card?.assignmentId || "").trim();
+function renderSkillsWorkbenchSkillCard(card, skill) {
   const skillKey = String(skill?.skillKey || "").trim();
-  const templateDraft = controller.skillsTemplateDrafts.get(tenantAgentId);
-  const overrideDraft = controller.skillsOverrideDrafts.get(assignmentId);
-  let templateChecked = isWorkbenchSkillTemplateChecked(skill);
-  if (Array.isArray(templateDraft)) {
-    templateChecked = templateDraft.includes(skillKey);
-  }
-  let overrideAction = String(skill?.currentOverrideAction || "").trim();
-  if (Array.isArray(overrideDraft)) {
-    const matchedDraft = overrideDraft.find((entry) => String(entry?.skillKey || "").trim() === skillKey);
-    overrideAction = String(matchedDraft?.action || "").trim();
-  }
   return `
     <article class="oc-tenant-skill-workbench-skill-card">
       <div class="oc-tenant-skill-workbench-skill-card__header">
@@ -356,69 +345,23 @@ function renderSkillsWorkbenchSkillCard(controller, card, skill) {
         </div>
         <div>
           <dt>授权</dt>
-          <dd>${escapeHtml(
-            skill?.classification === "bundled"
-              ? "无需购买"
-              : skill?.entitlement?.enabledByTenant
-                ? "已启用"
-                : skill?.marketStatus || "未授权",
-          )}</dd>
+          <dd>${escapeHtml(getWorkbenchSkillAccessLabel(skill))}</dd>
         </div>
         <div>
           <dt>版本</dt>
           <dd>${escapeHtml(skill?.latestVersionLabel || skill?.currentVersionId || skill?.latestVersionId || "-")}</dd>
         </div>
         <div>
-          <dt>价格</dt>
-          <dd>${formatNumber(skill?.pricePoints || 0)}</dd>
+          <dt>状态</dt>
+          <dd>${escapeHtml(getWorkbenchSkillStateLabel(skill))}</dd>
         </div>
       </dl>
-      <div class="oc-tenant-skill-workbench-skill-card__controls">
-        <label class="oc-tenant-skill-workbench-toggle">
-          <input
-            type="checkbox"
-            data-tenant-skill-template-toggle="${escapeAttribute(tenantAgentId)}"
-            data-tenant-skill-key="${escapeAttribute(skillKey)}"
-            ${templateChecked ? "checked" : ""}
-            ${isWorkbenchSkillTemplateDisabled(skill) ? "disabled" : ""}
-          />
-          <span>Agent 默认启用</span>
-        </label>
-        <label class="field">
-          <span>成员覆盖</span>
-          <select
-            class="field__control"
-            data-tenant-skill-override-select="${escapeAttribute(assignmentId)}"
-            data-tenant-skill-key="${escapeAttribute(skillKey)}"
-          >
-            <option value="" ${!overrideAction ? "selected" : ""}>跟随默认</option>
-            <option value="force_add" ${overrideAction === "force_add" ? "selected" : ""}>成员加配</option>
-            <option value="force_remove" ${overrideAction === "force_remove" ? "selected" : ""}>成员移除</option>
-          </select>
-        </label>
-      </div>
-      <div class="oc-tenant-skill-workbench-skill-card__actions">
-        ${
-          skill?.classification === "paid" && !skill?.entitlement?.id && skill?.pendingOrderId
-            ? `<button class="btn primary" type="button" data-tenant-skill-confirm-order="${escapeAttribute(skill.pendingOrderId)}">确认购买</button>`
-            : skill?.classification === "paid" && !skill?.entitlement?.id
-              ? `<button class="btn" type="button" data-tenant-skill-order="${escapeAttribute(skill?.id)}">购买</button>`
-              : skill?.classification === "free" && skill?.entitlement?.id && !skill?.entitlement?.enabledByTenant
-                ? `<button class="btn" type="button" data-tenant-skill-enable="${escapeAttribute(skill.entitlement.id)}">启用授权</button>`
-                : skill?.classification === "free" && !skill?.entitlement?.id
-                  ? `<button class="btn" type="button" data-tenant-skill-free-enable="${escapeAttribute(skill?.id)}">免费启用</button>`
-                  : skill?.entitlement?.id && skill?.classification !== "bundled" && skill?.entitlement?.enabledByTenant
-                    ? `<button class="btn" type="button" data-tenant-skill-disable="${escapeAttribute(skill.entitlement.id)}">停用授权</button>`
-                    : ""
-        }
-      </div>
     </article>
   `;
 }
 
-function renderSkillsWorkbenchSelectedAgentPanel(controller, member, card) {
-  const blockedReasons = Array.isArray(card?.blockedReasons) ? card.blockedReasons : [];
-  const cardSkills = Array.isArray(card?.cardSkills) ? card.cardSkills : [];
+function renderSkillsWorkbenchSelectedAgentPanel(member, card) {
+  const cardSkills = Array.isArray(card?.displaySkills) ? card.displaySkills : [];
   return `
     <section class="oc-tenant-skill-workbench__selection-content">
       <div class="oc-tenant-skill-workbench__context-bar">
@@ -433,26 +376,17 @@ function renderSkillsWorkbenchSelectedAgentPanel(controller, member, card) {
             cardSkills.length,
           )} 个 skill</p>
         </div>
-        <div class="oc-tenant-skill-workbench__selection-actions">
-          <span class="data-table-badge data-table-badge--${String(card?.assignmentStatus || "").trim() === "active" ? "direct" : "unknown"}">${escapeHtml(
-            String(card?.assignmentStatus || "").trim() === "blocked_missing_skills" ? "已阻断" : "已分配",
-          )}</span>
-          <button class="btn primary" type="button" data-tenant-skill-template-save="${escapeAttribute(
-            card?.tenantAgentId || "",
-          )}">保存 Agent 默认</button>
-          <button class="btn" type="button" data-tenant-skill-override-save="${escapeAttribute(
-            card?.assignmentId || "",
-          )}">保存成员覆盖</button>
-        </div>
+        <span class="data-table-badge data-table-badge--${String(card?.assignmentStatus || "").trim() === "active" ? "direct" : "unknown"}">${escapeHtml(
+          String(card?.assignmentStatus || "").trim() === "blocked_missing_skills" ? "已阻断" : "已分配",
+        )}</span>
       </div>
       ${
-        blockedReasons.length
-          ? `<div class="callout warning">阻断原因：${escapeHtml(blockedReasons.join("，"))}</div>`
-          : ""
+        cardSkills.length
+          ? `<div class="oc-tenant-skill-workbench-skill-grid">
+              ${cardSkills.map((skill) => renderSkillsWorkbenchSkillCard(card, skill)).join("")}
+            </div>`
+          : `<div class="callout info">该 Agent 当前没有可显示的 skills。</div>`
       }
-      <div class="oc-tenant-skill-workbench-skill-grid">
-        ${cardSkills.map((skill) => renderSkillsWorkbenchSkillCard(controller, card, skill)).join("")}
-      </div>
     </section>
   `;
 }
@@ -559,7 +493,7 @@ function renderSkillsWorkbench(controller) {
       <div class="oc-tenant-skill-workbench__content">
         ${
           selectedMember && selectedCard
-            ? renderSkillsWorkbenchSelectedAgentPanel(controller, selectedMember, selectedCard)
+            ? renderSkillsWorkbenchSelectedAgentPanel(selectedMember, selectedCard)
             : selectedMember
               ? `<div class="callout info">请选择该成员下的 Agent 后查看 skills。</div>`
               : `<div class="callout info">请选择左侧成员后查看 Agent skills。</div>`

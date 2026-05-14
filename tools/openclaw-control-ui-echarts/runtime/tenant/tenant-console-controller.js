@@ -327,7 +327,7 @@ function buildTenantSkillWorkbenchState(controller) {
           .map((item) => [String(item?.skillKey || "").trim(), item])
           .filter(([skillKey]) => Boolean(skillKey)),
       );
-      const cardSkills = compatibleMarketItems.map((marketItem) => {
+      const allSkills = compatibleMarketItems.map((marketItem) => {
         const skillId = String(marketItem?.skillId || marketItem?.id || "").trim();
         const skillKey = String(marketItem?.skillKey || "").trim();
         const entitlement = entitlementBySkillId.get(skillId) || null;
@@ -350,6 +350,7 @@ function buildTenantSkillWorkbenchState(controller) {
           currentOverrideRemoved: String(overrideRow?.action || "").trim() === "force_remove",
         };
       });
+      const displaySkills = allSkills.filter((skill) => skill?.inResolvedSet);
       const nextCards = assignmentsByUserId.get(userId) || [];
       nextCards.push({
         assignmentId: String(assignment?.assignmentId || "").trim(),
@@ -364,7 +365,7 @@ function buildTenantSkillWorkbenchState(controller) {
           ? assignment.resolvedSkillKeys
           : [],
         templateRows,
-        cardSkills,
+        displaySkills,
       });
       assignmentsByUserId.set(userId, nextCards);
     }
@@ -436,7 +437,6 @@ function buildTenantSkillWorkbenchState(controller) {
   }
   if (!selectedMemberId && filteredMembers[0]?.userId) {
     selectedMemberId = filteredMembers[0].userId;
-    expandedMemberIds.add(selectedMemberId);
   }
 
   const selectedMember =

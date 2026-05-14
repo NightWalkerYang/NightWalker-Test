@@ -954,31 +954,6 @@
   word-break: break-word;
 }
 
-.oc-tenant-skill-workbench-skill-card__controls {
-  display: grid;
-  gap: 12px;
-}
-
-.oc-tenant-skill-workbench-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-strong);
-}
-
-.oc-tenant-skill-workbench-toggle input {
-  width: 16px;
-  height: 16px;
-}
-
-.oc-tenant-skill-workbench-skill-card__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 @media (max-width: 900px) {
   .oc-tenant-wallet-panels {
     grid-template-columns: 1fr;
