@@ -438,9 +438,6 @@ function buildTenantSkillWorkbenchState(controller) {
     selectedMemberId = filteredMembers[0].userId;
     expandedMemberIds.add(selectedMemberId);
   }
-  if (selectedMemberId) {
-    expandedMemberIds.add(selectedMemberId);
-  }
 
   const selectedMember =
     filteredMembers.find((member) => member.userId === selectedMemberId) ||
@@ -452,8 +449,11 @@ function buildTenantSkillWorkbenchState(controller) {
       ? selectedMember.cards
       : [];
   let selectedAssignmentId = String(previousState.selectedAssignmentId || "").trim();
-  if (!selectedMemberCards.some((card) => card.assignmentId === selectedAssignmentId)) {
-    selectedAssignmentId = selectedMemberCards[0]?.assignmentId || "";
+  if (
+    !expandedMemberIds.has(selectedMemberId) ||
+    !selectedMemberCards.some((card) => card.assignmentId === selectedAssignmentId)
+  ) {
+    selectedAssignmentId = "";
   }
   const selectedCard =
     selectedMemberCards.find((card) => card.assignmentId === selectedAssignmentId) || null;

@@ -261,6 +261,18 @@ function getWorkbenchSkillClassificationLabel(classification) {
   return normalized || "-";
 }
 
+const WORKBENCH_CHEVRON_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m6 9 6 6 6-6"></path>
+  </svg>
+`;
+
+const WORKBENCH_AGENT_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 3.5a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm-5 8h10A2.5 2.5 0 0 1 19.5 14v3.5H4.5V14A2.5 2.5 0 0 1 7 11.5Zm-2.5 8h15v1.5h-15Z"></path>
+  </svg>
+`;
+
 function getWorkbenchSkillStateLabel(skill) {
   if (skill?.templateBlocked) {
     return "缺授权阻断";
@@ -454,7 +466,7 @@ function renderSkillsWorkbenchTree(controller) {
       : [],
   );
   return `
-    <div class="oc-tenant-skill-workbench__member-tree">
+    <div class="oc-tenant-skill-workbench__member-nav">
       ${
         members.length
           ? members
@@ -463,70 +475,64 @@ function renderSkillsWorkbenchTree(controller) {
                 const isExpanded = expandedMemberIds.has(memberId);
                 const treeCards = Array.isArray(member?.treeCards) ? member.treeCards : member.cards || [];
                 return `
-                  <section class="oc-tenant-skill-workbench__tree-group">
+                  <section class="nav-section oc-tenant-skill-workbench__member-section ${
+                    isExpanded ? "" : "nav-section--collapsed"
+                  }">
                     <button
                       type="button"
-                      class="oc-tenant-skill-workbench__member-item ${
+                      class="nav-section__label oc-tenant-skill-workbench__member-trigger ${
                         memberId === state?.selectedMemberId
-                          ? "oc-tenant-skill-workbench__member-item--active"
+                          ? "oc-tenant-skill-workbench__member-trigger--active"
                           : ""
                       }"
                       data-tenant-skill-member-toggle="${escapeAttribute(memberId)}"
                       aria-expanded="${isExpanded ? "true" : "false"}"
                     >
-                      <span class="oc-tenant-skill-workbench__member-main">
-                        <span class="oc-tenant-skill-workbench__member-heading">
-                          <span class="oc-tenant-skill-workbench__tree-caret">${isExpanded ? "▾" : "▸"}</span>
-                          <span class="oc-tenant-skill-workbench__member-name">${escapeHtml(
-                            member.username || member.userId,
-                          )}</span>
-                        </span>
-                        <span class="oc-tenant-skill-workbench__member-meta">${formatNumber(
+                      <span class="oc-tenant-skill-workbench__member-label-group">
+                        <span class="nav-section__label-text">${escapeHtml(
+                          member.username || member.userId,
+                        )}</span>
+                        <span class="oc-tenant-skill-workbench__member-summary">${formatNumber(
                           Array.isArray(member.cards) ? member.cards.length : 0,
                         )} 个 Agent</span>
                       </span>
-                      <span class="data-table-badge data-table-badge--${getWorkbenchMemberStatusVariant(
-                        member.status,
-                      )}">${escapeHtml(member.status || "-")}</span>
+                      <span class="nav-section__chevron" aria-hidden="true">${WORKBENCH_CHEVRON_ICON}</span>
                     </button>
-                    ${
-                      isExpanded
-                        ? `
-                          <div class="oc-tenant-skill-workbench__agent-tree">
-                            ${
-                              treeCards.length
-                                ? treeCards
-                                    .map(
-                                      (card) => `
-                                        <button
-                                          type="button"
-                                          class="oc-tenant-skill-workbench__agent-item ${
-                                            String(card?.assignmentId || "").trim() ===
-                                            String(state?.selectedAssignmentId || "").trim()
-                                              ? "oc-tenant-skill-workbench__agent-item--active"
-                                              : ""
-                                          }"
-                                          data-tenant-skill-assignment-select="${escapeAttribute(
-                                            card?.assignmentId || "",
-                                          )}"
-                                          data-tenant-skill-member-select="${escapeAttribute(memberId)}"
-                                        >
-                                          <span class="oc-tenant-skill-workbench__agent-name">${escapeHtml(
-                                            getWorkbenchAgentTitle(card),
-                                          )}</span>
-                                          <span class="oc-tenant-skill-workbench__agent-meta">${escapeHtml(
-                                            card?.baseAgentId || card?.tenantAgentId || "-",
-                                          )}</span>
-                                        </button>
-                                      `,
-                                    )
-                                    .join("")
-                                : `<div class="callout info">该成员当前没有已分配 Agent。</div>`
-                            }
-                          </div>
-                        `
-                        : ""
-                    }
+                    <div class="nav-section__items" ${isExpanded ? "" : "hidden"}>
+                      ${
+                        treeCards.length
+                          ? treeCards
+                              .map(
+                                (card) => `
+                                  <button
+                                    type="button"
+                                    class="nav-item oc-tenant-skill-workbench__agent-nav-item ${
+                                      String(card?.assignmentId || "").trim() ===
+                                      String(state?.selectedAssignmentId || "").trim()
+                                        ? "nav-item--active"
+                                        : ""
+                                    }"
+                                    data-tenant-skill-assignment-select="${escapeAttribute(
+                                      card?.assignmentId || "",
+                                    )}"
+                                    data-tenant-skill-member-select="${escapeAttribute(memberId)}"
+                                  >
+                                    <span class="nav-item__icon" aria-hidden="true">${WORKBENCH_AGENT_ICON}</span>
+                                    <span class="nav-item__text">
+                                      <span class="oc-tenant-skill-workbench__agent-nav-name">${escapeHtml(
+                                        getWorkbenchAgentTitle(card),
+                                      )}</span>
+                                      <span class="oc-tenant-skill-workbench__agent-nav-meta">${escapeHtml(
+                                        card?.baseAgentId || card?.tenantAgentId || "-",
+                                      )}</span>
+                                    </span>
+                                  </button>
+                                `,
+                              )
+                              .join("")
+                          : `<div class="callout info">该成员当前没有已分配 Agent。</div>`
+                      }
+                    </div>
                   </section>
                 `;
               })

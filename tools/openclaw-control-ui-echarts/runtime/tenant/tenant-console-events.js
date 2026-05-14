@@ -332,6 +332,9 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         }
         rebuildSkillsWorkbenchState(controller, {
           selectedMemberId: memberId,
+          selectedAssignmentId: currentExpanded.has(memberId)
+            ? String(controller.skillsWorkbenchState?.selectedAssignmentId || "").trim()
+            : "",
           expandedMemberIds: [...currentExpanded],
         });
         render(root, controller);

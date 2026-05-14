@@ -519,14 +519,36 @@ describe("tenant surface", () => {
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
     expect(root?.textContent).toContain("alice");
     expect(root?.textContent).toContain("财务助手");
-    expect(root?.textContent).toContain("finance-core");
+    expect(root?.querySelector(".oc-tenant-skill-workbench__member-section")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__member-trigger")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__agent-nav-item")).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-member-toggle="member-1"]')).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-1"]')).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-2"]')).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-3"]')).not.toBeNull();
+    expect(root?.textContent).not.toContain("finance-core");
     expect(root?.textContent).not.toContain("运维核心能力");
     expect(root?.querySelector(".oc-tenant-skill-workbench-agent-card")).toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-panel")).toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__context-bar")).toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__content-header")).toBeNull();
+    expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(0);
+    expect(root?.textContent).toContain("请选择该成员下的 Agent 后查看 skills。");
+
+    const financeAssignmentButton = root?.querySelector(
+      '[data-tenant-skill-assignment-select="assignment-1"]',
+    );
+    financeAssignmentButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flush();
+
+    root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.textContent).toContain("finance-core");
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).not.toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__context-bar")).not.toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__content-header")).toBeNull();
