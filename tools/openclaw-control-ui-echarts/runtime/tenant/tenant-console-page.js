@@ -1,5 +1,4 @@
 import { createTenantApiClient } from "./api-client.js";
-import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
 import {
   PAGE_SIZE,
   dispatchWalletSummary,
@@ -8,25 +7,18 @@ import {
   resetTenantSectionState,
   tenantConsoleStateFactories,
 } from "./tenant-console-controller.js";
-import {
-  handleTenantDialogClosed,
-} from "./tenant-console-dialogs.js";
+import { handleTenantDialogClosed } from "./tenant-console-dialogs.js";
+import { createTenantConsoleEventHandlers } from "./tenant-console-events.js";
+import { clearRevokeAssignmentSelection } from "./tenant-console-members.js";
 import { renderTenantConsole } from "./tenant-console-render.js";
-import {
-  clearRevokeAssignmentSelection,
-} from "./tenant-console-members.js";
+import { totalUsagePages } from "./tenant-console-usage.js";
 import {
   findWalletOrderById,
   totalWalletFlowPages,
   totalWalletLedgerPages,
   totalWalletOrdersPages,
 } from "./tenant-console-wallet.js";
-import {
-  totalUsagePages,
-} from "./tenant-console-usage.js";
-import {
-  createTenantConsoleEventHandlers,
-} from "./tenant-console-events.js";
+import { TENANT_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
 
 function render(root, controller) {
   renderTenantConsole(root, controller);
@@ -65,6 +57,9 @@ function ensureController(root, session, apiClient) {
   root.addEventListener("change", (event) => {
     tenantConsoleEventHandlers.handleChange(root, controller, event);
   });
+  root.addEventListener("keydown", (event) => {
+    tenantConsoleEventHandlers.handleKeydown(root, controller, event);
+  });
   root.addEventListener("submit", (event) => {
     void tenantConsoleEventHandlers.handleSubmit(root, controller, event);
   });
@@ -82,9 +77,7 @@ async function refresh(root, controller) {
   await refreshTenantConsole(root, controller, runtimeHelpers);
 }
 
-runtimeHelpers.dispatchWalletSummary = tenantConsoleStateFactories
-  ? dispatchWalletSummary
-  : null;
+runtimeHelpers.dispatchWalletSummary = tenantConsoleStateFactories ? dispatchWalletSummary : null;
 runtimeHelpers.totalWalletOrdersPages = totalWalletOrdersPages;
 runtimeHelpers.totalWalletLedgerPages = totalWalletLedgerPages;
 runtimeHelpers.totalWalletFlowPages = totalWalletFlowPages;

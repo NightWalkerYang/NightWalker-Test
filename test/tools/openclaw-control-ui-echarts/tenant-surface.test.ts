@@ -194,7 +194,43 @@ describe("tenant surface", () => {
             async json() {
               return {
                 ok: true,
-                data: [],
+                data: [
+                  {
+                    id: "skill-free",
+                    skillId: "skill-free",
+                    skillKey: "finance-report",
+                    name: "财务报表 Skill",
+                    description: "生成财务报表与经营分析摘要。",
+                    classification: "free",
+                    marketStatus: "免费可启用",
+                    pricePoints: 0,
+                    latestVersionId: "version-free-1",
+                    latestVersionLabel: "v1.0.0",
+                    latestPublishedAt: "2026-05-01T08:00:00.000Z",
+                    compatibleBaseAgents: ["finance"],
+                    affectedTenantAgentCount: 2,
+                    affectedAssignmentCount: 3,
+                    entitlementId: null,
+                    enabledByTenant: false,
+                  },
+                  {
+                    id: "skill-paid",
+                    skillId: "skill-paid",
+                    skillKey: "risk-audit",
+                    name: "风险审计 Skill",
+                    description: "审计风险线索并输出整改建议。",
+                    classification: "paid",
+                    marketStatus: "待下单",
+                    pricePoints: 80,
+                    latestVersionId: "version-paid-1",
+                    latestVersionLabel: "v2.1.0",
+                    compatibleBaseAgents: ["*"],
+                    affectedTenantAgentCount: 0,
+                    affectedAssignmentCount: 0,
+                    entitlementId: null,
+                    enabledByTenant: false,
+                  },
+                ],
               };
             },
           };
@@ -212,6 +248,25 @@ describe("tenant surface", () => {
     const root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-market");
     expect(requests.some((url) => url.includes("/tenant/admin/skills/market"))).toBe(true);
+    expect(root?.querySelector(".data-table")).toBeNull();
+    expect(root?.querySelectorAll(".oc-tenant-skill-market-card")).toHaveLength(2);
+    expect(root?.textContent).toContain("财务报表 Skill");
+    expect(root?.textContent).toContain("免费可启用");
+    expect(root?.textContent).toContain("风险审计 Skill");
+    expect(root?.querySelector('[data-tenant-skill-free-enable="skill-free"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-order="skill-paid"]')).not.toBeNull();
+
+    const detailTrigger = root?.querySelector('[data-tenant-skill-market-detail="skill-free"]');
+    detailTrigger?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const detailDialog = document.querySelector("[data-tenant-skill-market-detail-dialog]");
+    expect(detailDialog?.open).toBe(true);
+    expect(detailDialog?.textContent).toContain("Skill 详情");
+    expect(detailDialog?.textContent).toContain("finance-report");
+    expect(detailDialog?.textContent).toContain("生成财务报表与经营分析摘要");
+    expect(detailDialog?.textContent).toContain("2 个 Agent");
+    expect(detailDialog?.textContent).toContain("3 个分配");
   });
 
   it("mounts the tenant skills workbench section when the route switches to tenant-skills-workbench", async () => {
@@ -523,9 +578,15 @@ describe("tenant surface", () => {
     expect(root?.querySelector(".oc-tenant-skill-workbench__member-trigger")).not.toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__agent-nav-item")).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-member-toggle="member-1"]')).not.toBeNull();
-    expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-1"]')).not.toBeNull();
-    expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-2"]')).not.toBeNull();
-    expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-3"]')).not.toBeNull();
+    expect(
+      root?.querySelector('[data-tenant-skill-assignment-select="assignment-1"]'),
+    ).not.toBeNull();
+    expect(
+      root?.querySelector('[data-tenant-skill-assignment-select="assignment-2"]'),
+    ).not.toBeNull();
+    expect(
+      root?.querySelector('[data-tenant-skill-assignment-select="assignment-3"]'),
+    ).not.toBeNull();
     expect(root?.textContent).not.toContain("finance-core");
     expect(root?.textContent).not.toContain("运维核心能力");
     expect(root?.querySelector(".oc-tenant-skill-workbench-agent-card")).toBeNull();
@@ -609,12 +670,12 @@ describe("tenant surface", () => {
     expect(root?.textContent).toContain("请选择该成员下的 Agent 后查看 skills。");
     expect(requests.some((url) => url.includes("/tenant/admin/skills/entitlements"))).toBe(true);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
-    expect(requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=finance"))).toBe(
-      true,
-    );
-    expect(requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=ops"))).toBe(
-      true,
-    );
+    expect(
+      requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=finance")),
+    ).toBe(true);
+    expect(
+      requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=ops")),
+    ).toBe(true);
   });
 
   it("mounts the native members view into the control-ui content area", async () => {

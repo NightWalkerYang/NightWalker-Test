@@ -56,6 +56,13 @@ export function createAgentTransferDialogState() {
   };
 }
 
+export function createSkillMarketDetailDialogState() {
+  return {
+    open: false,
+    skillId: "",
+  };
+}
+
 export function getAgentDetailDialog(controller) {
   if (!(controller?.agentDetailDialog && typeof controller.agentDetailDialog === "object")) {
     controller.agentDetailDialog = createAgentDetailDialogState();
@@ -94,6 +101,9 @@ export function handleTenantDialogClosed(controller, dialogElement, stateFactori
   }
   if (dialogElement.matches("[data-tenant-agent-transfer-dialog]")) {
     controller.agentTransferDialog = createAgentTransferDialogState();
+  }
+  if (dialogElement.matches("[data-tenant-skill-market-detail-dialog]")) {
+    controller.skillsMarketDetailDialog = createSkillMarketDetailDialogState();
   }
   if (dialogElement.matches("[data-tenant-revoke-assignment-dialog]")) {
     controller.revokeAssignmentDialog = stateFactories.createRevokeAssignmentDialogState();
@@ -151,6 +161,12 @@ export function dismissTenantDialog(root, controller, dialogKind, helpers) {
   if (dialogKind === "transfer") {
     controller.agentTransferDialog = createAgentTransferDialogState();
     closeDialog(root.querySelector("[data-tenant-agent-transfer-dialog]"));
+    helpers.render(root, controller);
+    return true;
+  }
+  if (dialogKind === "skill-market-detail") {
+    controller.skillsMarketDetailDialog = createSkillMarketDetailDialogState();
+    closeDialog(root.querySelector("[data-tenant-skill-market-detail-dialog]"));
     helpers.render(root, controller);
     return true;
   }

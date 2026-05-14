@@ -71,6 +71,12 @@
   white-space: nowrap;
 }
 
+.oc-tenant-surface-root .btn-sm {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .oc-tenant-table-actions {
   display: flex;
   flex-wrap: wrap;
@@ -162,13 +168,15 @@
   margin: 0;
 }
 
-.oc-tenant-agent-grid {
+.oc-tenant-agent-grid,
+.oc-tenant-skill-market-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
 }
 
-.oc-tenant-agent-card {
+.oc-tenant-agent-card,
+.oc-tenant-skill-market-card {
   display: grid;
   gap: 14px;
   padding: 18px;
@@ -178,9 +186,27 @@
   box-shadow: 0 12px 28px rgb(15 23 42 / 6%);
 }
 
+.oc-tenant-skill-market-card {
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    transform var(--duration-fast) ease;
+}
+
+.oc-tenant-skill-market-card:hover,
+.oc-tenant-skill-market-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border) 62%);
+  box-shadow: 0 16px 34px rgb(15 23 42 / 10%);
+  transform: translateY(-1px);
+  outline: none;
+}
+
 .oc-tenant-agent-card__header,
 .oc-tenant-agent-card__identity,
-.oc-tenant-agent-detail__hero {
+.oc-tenant-agent-detail__hero,
+.oc-tenant-skill-market-card__header,
+.oc-tenant-skill-market-detail__hero {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -214,12 +240,15 @@
 }
 
 .oc-tenant-agent-card__copy,
-.oc-tenant-agent-detail__hero-copy {
+.oc-tenant-agent-detail__hero-copy,
+.oc-tenant-skill-market-card__copy {
   min-width: 0;
 }
 
 .oc-tenant-agent-card__title,
-.oc-tenant-agent-detail__name {
+.oc-tenant-agent-detail__name,
+.oc-tenant-skill-market-card__title,
+.oc-tenant-skill-market-detail__title {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
@@ -227,14 +256,18 @@
 }
 
 .oc-tenant-agent-card__subtitle,
-.oc-tenant-agent-detail__subtitle {
+.oc-tenant-agent-detail__subtitle,
+.oc-tenant-skill-market-card__subtitle,
+.oc-tenant-skill-market-detail__subtitle {
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
   word-break: break-all;
 }
 
-.oc-tenant-agent-card__description {
+.oc-tenant-agent-card__description,
+.oc-tenant-skill-market-card__description,
+.oc-tenant-skill-market-detail__description {
   margin: 0;
   min-height: 40px;
   color: var(--muted);
@@ -243,7 +276,9 @@
 }
 
 .oc-tenant-agent-card__meta,
-.oc-tenant-agent-detail__grid {
+.oc-tenant-agent-detail__grid,
+.oc-tenant-skill-market-card__meta,
+.oc-tenant-skill-market-detail__grid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -251,18 +286,24 @@
 }
 
 .oc-tenant-agent-card__meta div,
-.oc-tenant-agent-detail__grid div {
+.oc-tenant-agent-detail__grid div,
+.oc-tenant-skill-market-card__meta div,
+.oc-tenant-skill-market-detail__grid div {
   min-width: 0;
 }
 
 .oc-tenant-agent-card__meta dt,
-.oc-tenant-agent-detail__grid dt {
+.oc-tenant-agent-detail__grid dt,
+.oc-tenant-skill-market-card__meta dt,
+.oc-tenant-skill-market-detail__grid dt {
   color: var(--muted);
   font-size: 12px;
 }
 
 .oc-tenant-agent-card__meta dd,
-.oc-tenant-agent-detail__grid dd {
+.oc-tenant-agent-detail__grid dd,
+.oc-tenant-skill-market-card__meta dd,
+.oc-tenant-skill-market-detail__grid dd {
   margin: 4px 0 0;
   color: var(--text-strong);
   font-size: 13px;
@@ -305,16 +346,32 @@
   justify-content: flex-end;
 }
 
-.oc-tenant-agent-card__actions {
+.oc-tenant-agent-card__actions,
+.oc-tenant-skill-market-card__actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.oc-tenant-agent-detail {
+.oc-tenant-skill-market-card__action-note {
+  align-self: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.oc-tenant-agent-detail,
+.oc-tenant-skill-market-detail {
   display: grid;
   gap: 18px;
+}
+
+.oc-tenant-skill-market-detail__eyebrow {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .oc-tenant-agent-detail__description {
@@ -496,6 +553,17 @@
 
   .oc-tenant-member-actions {
     min-width: 0;
+  }
+
+  .oc-tenant-skill-market-card__header,
+  .oc-tenant-skill-market-detail__hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .oc-tenant-skill-market-card__meta,
+  .oc-tenant-skill-market-detail__grid {
+    grid-template-columns: 1fr;
   }
 
   .oc-tenant-agent-grid {

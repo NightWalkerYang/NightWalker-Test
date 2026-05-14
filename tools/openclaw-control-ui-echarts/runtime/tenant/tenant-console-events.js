@@ -72,6 +72,24 @@ function openAgentDetailDialog(root, controller, agentId, render) {
   render(root, controller);
 }
 
+function openSkillMarketDetailDialog(root, controller, skillId, render) {
+  const normalizedSkillId = String(skillId || "").trim();
+  if (!normalizedSkillId) {
+    return;
+  }
+  const matched = (
+    Array.isArray(controller.skillsMarketItems) ? controller.skillsMarketItems : []
+  ).some((entry) => String(entry?.id || entry?.skillId || "").trim() === normalizedSkillId);
+  if (!matched) {
+    return;
+  }
+  controller.skillsMarketDetailDialog = {
+    open: true,
+    skillId: normalizedSkillId,
+  };
+  render(root, controller);
+}
+
 async function submitWalletRecharge(root, controller, target, refresh) {
   try {
     const payload = Object.fromEntries(new FormData(target).entries());
@@ -302,7 +320,9 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
 
       const workbenchMemberTrigger = target.closest("[data-tenant-skill-member-toggle]");
       if (workbenchMemberTrigger instanceof HTMLElement) {
-        const memberId = String(workbenchMemberTrigger.dataset.tenantSkillMemberToggle || "").trim();
+        const memberId = String(
+          workbenchMemberTrigger.dataset.tenantSkillMemberToggle || "",
+        ).trim();
         const currentExpanded = new Set(
           Array.isArray(controller.skillsWorkbenchState?.expandedMemberIds)
             ? controller.skillsWorkbenchState.expandedMemberIds
@@ -555,6 +575,15 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         return;
       }
 
+      const skillMarketDetailTrigger = target.closest("[data-tenant-skill-market-detail]");
+      if (skillMarketDetailTrigger instanceof HTMLElement) {
+        openSkillMarketDetailDialog(
+          root,
+          controller,
+          skillMarketDetailTrigger.dataset.tenantSkillMarketDetail,
+          render,
+        );
+      }
     },
 
     handleInput(root, controller, event) {
@@ -665,6 +694,30 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
       if (!(target instanceof Element)) {
         return;
       }
+    },
+
+    handleKeydown(root, controller, event) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      if (target.closest("button,a,input,select,textarea")) {
+        return;
+      }
+      const skillMarketDetailTrigger = target.closest("[data-tenant-skill-market-detail]");
+      if (!(skillMarketDetailTrigger instanceof HTMLElement)) {
+        return;
+      }
+      event.preventDefault();
+      openSkillMarketDetailDialog(
+        root,
+        controller,
+        skillMarketDetailTrigger.dataset.tenantSkillMarketDetail,
+        render,
+      );
     },
 
     async handleSubmit(root, controller, event) {

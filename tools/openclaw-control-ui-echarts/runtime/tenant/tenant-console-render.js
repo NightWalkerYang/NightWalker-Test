@@ -13,6 +13,8 @@ import {
   setPageValue,
   escapeHtml,
   escapeAttribute,
+  formatCredits,
+  formatDateTime,
   formatNumber,
 } from "./tenant-console-controller.js";
 import { openDialog } from "./tenant-console-dialogs.js";
@@ -261,6 +263,66 @@ function getWorkbenchSkillClassificationLabel(classification) {
   return normalized || "-";
 }
 
+function getSkillMarketClassificationLabel(classification) {
+  return getWorkbenchSkillClassificationLabel(classification);
+}
+
+function getSkillMarketStatusVariant(entry) {
+  const status = String(entry?.marketStatus || "").trim();
+  if (
+    entry?.enabledByTenant ||
+    status === "已启用" ||
+    status === "已购买已启用" ||
+    status === "无需购买"
+  ) {
+    return "direct";
+  }
+  if (status === "待确认" || status === "待下单" || status === "免费可启用") {
+    return "unknown";
+  }
+  return "unknown";
+}
+
+function getSkillMarketDisplayName(entry) {
+  return (
+    String(entry?.name || "").trim() ||
+    String(entry?.skillKey || "").trim() ||
+    String(entry?.id || "").trim() ||
+    "未命名 Skill"
+  );
+}
+
+function getSkillMarketId(entry) {
+  return String(entry?.id || entry?.skillId || "").trim();
+}
+
+function getSkillMarketVersionLabel(entry) {
+  return (
+    String(entry?.latestVersionLabel || "").trim() ||
+    String(entry?.currentVersionId || "").trim() ||
+    String(entry?.latestVersionId || "").trim() ||
+    "-"
+  );
+}
+
+function renderSkillMarketActions(entry, { compact = false } = {}) {
+  const sizeClass = compact ? " btn-sm" : "";
+  const skillId = getSkillMarketId(entry);
+  if (entry.classification === "paid" && !entry.entitlementId) {
+    return `<button class="btn${sizeClass}" type="button" data-tenant-skill-order="${escapeAttribute(skillId)}">下单</button>`;
+  }
+  if (entry.classification === "paid" && entry.pendingOrderId) {
+    return `<button class="btn primary${sizeClass}" type="button" data-tenant-skill-confirm-order="${escapeAttribute(entry.pendingOrderId)}">确认购买</button>`;
+  }
+  if (entry.classification === "free" && entry.entitlementId && !entry.enabledByTenant) {
+    return `<button class="btn${sizeClass}" type="button" data-tenant-skill-enable="${escapeAttribute(entry.entitlementId)}">启用</button>`;
+  }
+  if (entry.classification === "free" && !entry.entitlementId) {
+    return `<button class="btn${sizeClass}" type="button" data-tenant-skill-free-enable="${escapeAttribute(skillId)}">启用</button>`;
+  }
+  return `<span class="oc-tenant-skill-market-card__action-note">无需操作</span>`;
+}
+
 const WORKBENCH_CHEVRON_ICON = `
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="m6 9 6 6 6-6"></path>
@@ -377,7 +439,9 @@ function renderSkillsWorkbenchSelectedAgentPanel(member, card) {
           )} 个 skill</p>
         </div>
         <span class="data-table-badge data-table-badge--${String(card?.assignmentStatus || "").trim() === "active" ? "direct" : "unknown"}">${escapeHtml(
-          String(card?.assignmentStatus || "").trim() === "blocked_missing_skills" ? "已阻断" : "已分配",
+          String(card?.assignmentStatus || "").trim() === "blocked_missing_skills"
+            ? "已阻断"
+            : "已分配",
         )}</span>
       </div>
       ${
@@ -407,7 +471,9 @@ function renderSkillsWorkbenchTree(controller) {
               .map((member) => {
                 const memberId = String(member?.userId || "").trim();
                 const isExpanded = expandedMemberIds.has(memberId);
-                const treeCards = Array.isArray(member?.treeCards) ? member.treeCards : member.cards || [];
+                const treeCards = Array.isArray(member?.treeCards)
+                  ? member.treeCards
+                  : member.cards || [];
                 return `
                   <section class="nav-section oc-tenant-skill-workbench__member-section ${
                     isExpanded ? "" : "nav-section--collapsed"
@@ -503,60 +569,147 @@ function renderSkillsWorkbench(controller) {
   `;
 }
 
-function renderSkillsMarketTable(controller) {
-  const rows = Array.isArray(controller.skillsMarketItems) ? controller.skillsMarketItems : [];
+function getSkillsMarketDetailTarget(controller) {
+  const skillId = String(controller.skillsMarketDetailDialog?.skillId || "").trim();
+  if (!skillId) {
+    return null;
+  }
+  return (
+    (Array.isArray(controller.skillsMarketItems) ? controller.skillsMarketItems : []).find(
+      (entry) => getSkillMarketId(entry) === skillId,
+    ) || null
+  );
+}
+
+function renderSkillMarketDetailDialog(controller) {
+  const entry = getSkillsMarketDetailTarget(controller);
   return `
-    <div class="data-table-container">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Skill</th>
-            <th>类型</th>
-            <th>状态</th>
-            <th>价格</th>
-            <th>版本</th>
-            <th>影响模板</th>
-            <th>影响成员</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
+    <dialog class="oc-tenant-modal oc-tenant-modal--wide" data-tenant-skill-market-detail-dialog>
+      <div class="oc-tenant-modal__panel">
+        <header class="oc-tenant-modal__header">
+          <h3 class="oc-tenant-modal__title">Skill 详情</h3>
+          <button class="btn" type="button" data-tenant-close-dialog="skill-market-detail">关闭</button>
+        </header>
+        <div class="oc-tenant-modal__body">
           ${
-            rows.length
-              ? rows
-                  .map(
-                    (entry) => `
-                      <tr>
-                        <td>${escapeHtml(entry.name || entry.skillKey)}</td>
-                        <td>${escapeHtml(entry.classification)}</td>
-                        <td>${escapeHtml(entry.marketStatus || "-")}</td>
-                        <td>${formatNumber(entry.pricePoints || 0)}</td>
-                        <td>${escapeHtml(entry.latestVersionLabel || entry.latestVersionId || "-")}</td>
-                        <td>${formatNumber(entry.affectedTenantAgentCount || 0)}</td>
-                        <td>${formatNumber(entry.affectedAssignmentCount || 0)}</td>
-                        <td>
-                          ${
-                            entry.classification === "paid" && !entry.entitlementId
-                              ? `<button class="btn" type="button" data-tenant-skill-order="${escapeAttribute(entry.id)}">下单</button>`
-                              : entry.classification === "paid" && entry.pendingOrderId
-                                ? `<button class="btn primary" type="button" data-tenant-skill-confirm-order="${escapeAttribute(entry.pendingOrderId)}">确认购买</button>`
-                                : entry.classification === "free" &&
-                                    entry.entitlementId &&
-                                    !entry.enabledByTenant
-                                  ? `<button class="btn" type="button" data-tenant-skill-enable="${escapeAttribute(entry.entitlementId)}">启用</button>`
-                                  : entry.classification === "free" && !entry.entitlementId
-                                    ? `<button class="btn" type="button" data-tenant-skill-free-enable="${escapeAttribute(entry.id)}">启用</button>`
-                                    : `<span class="oc-platform-table-empty">-</span>`
-                          }
-                        </td>
-                      </tr>
-                    `,
-                  )
-                  .join("")
-              : `<tr><td colspan="8" class="oc-platform-table-empty">暂无 Skills 市场数据</td></tr>`
+            entry
+              ? `
+                <div class="oc-tenant-skill-market-detail">
+                  <div class="oc-tenant-skill-market-detail__hero">
+                    <div>
+                      <p class="oc-tenant-skill-market-detail__eyebrow">市场 Skill</p>
+                      <h4 class="oc-tenant-skill-market-detail__title">${escapeHtml(getSkillMarketDisplayName(entry))}</h4>
+                      <p class="oc-tenant-skill-market-detail__subtitle">${escapeHtml(entry.skillKey || entry.id || "-")}</p>
+                    </div>
+                    <span class="data-table-badge data-table-badge--${getSkillMarketStatusVariant(entry)}">${escapeHtml(entry.marketStatus || "-")}</span>
+                  </div>
+                  <p class="oc-tenant-skill-market-detail__description">${escapeHtml(entry.description || "暂无说明")}</p>
+                  <dl class="oc-tenant-skill-market-detail__grid">
+                    <div>
+                      <dt>类型</dt>
+                      <dd>${escapeHtml(getSkillMarketClassificationLabel(entry.classification))}</dd>
+                    </div>
+                    <div>
+                      <dt>价格</dt>
+                      <dd>${formatCredits(entry.pricePoints || 0)} 积分</dd>
+                    </div>
+                    <div>
+                      <dt>版本</dt>
+                      <dd>${escapeHtml(getSkillMarketVersionLabel(entry))}</dd>
+                    </div>
+                    <div>
+                      <dt>当前版本</dt>
+                      <dd>${escapeHtml(entry.currentVersionId || "-")}</dd>
+                    </div>
+                    <div>
+                      <dt>影响模板</dt>
+                      <dd>${formatNumber(entry.affectedTenantAgentCount || 0)} 个 Agent</dd>
+                    </div>
+                    <div>
+                      <dt>影响成员</dt>
+                      <dd>${formatNumber(entry.affectedAssignmentCount || 0)} 个分配</dd>
+                    </div>
+                    <div>
+                      <dt>授权状态</dt>
+                      <dd>${escapeHtml(entry.entitlementStatus || "-")}</dd>
+                    </div>
+                    <div>
+                      <dt>兼容范围</dt>
+                      <dd>${escapeHtml(
+                        Array.isArray(entry.compatibleBaseAgents) &&
+                          entry.compatibleBaseAgents.length
+                          ? entry.compatibleBaseAgents.join(", ")
+                          : "全部 Agent",
+                      )}</dd>
+                    </div>
+                    <div>
+                      <dt>发布时间</dt>
+                      <dd>${escapeHtml(formatDateTime(entry.latestPublishedAt || entry.latestSyncedAt))}</dd>
+                    </div>
+                    <div>
+                      <dt>更新时间</dt>
+                      <dd>${escapeHtml(formatDateTime(entry.updatedAt || entry.createdAt))}</dd>
+                    </div>
+                  </dl>
+                  <div class="oc-tenant-modal__actions">
+                    ${renderSkillMarketActions(entry)}
+                  </div>
+                </div>
+              `
+              : `<div class="callout info">未找到对应的 Skill 详情。</div>`
           }
-        </tbody>
-      </table>
+        </div>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderSkillsMarketCards(controller) {
+  const rows = Array.isArray(controller.skillsMarketItems) ? controller.skillsMarketItems : [];
+  if (!rows.length) {
+    return `<div class="callout info oc-tenant-agent-empty">暂无 Skills 市场数据</div>`;
+  }
+  return `
+    <div class="oc-tenant-skill-market-grid">
+      ${rows
+        .map((entry) => {
+          const skillId = getSkillMarketId(entry);
+          return `
+            <article class="oc-tenant-skill-market-card" data-tenant-skill-market-detail="${escapeAttribute(skillId)}" tabindex="0" role="button" aria-label="查看 ${escapeAttribute(getSkillMarketDisplayName(entry))} 详情">
+              <div class="oc-tenant-skill-market-card__header">
+                <div class="oc-tenant-skill-market-card__copy">
+                  <h3 class="oc-tenant-skill-market-card__title">${escapeHtml(getSkillMarketDisplayName(entry))}</h3>
+                  <p class="oc-tenant-skill-market-card__subtitle">${escapeHtml(entry.skillKey || skillId || "-")}</p>
+                </div>
+                <span class="data-table-badge data-table-badge--${getSkillMarketStatusVariant(entry)}">${escapeHtml(entry.marketStatus || "-")}</span>
+              </div>
+              <p class="oc-tenant-skill-market-card__description">${escapeHtml(entry.description || "暂无说明")}</p>
+              <dl class="oc-tenant-skill-market-card__meta">
+                <div>
+                  <dt>类型</dt>
+                  <dd>${escapeHtml(getSkillMarketClassificationLabel(entry.classification))}</dd>
+                </div>
+                <div>
+                  <dt>价格</dt>
+                  <dd>${formatCredits(entry.pricePoints || 0)}</dd>
+                </div>
+                <div>
+                  <dt>版本</dt>
+                  <dd>${escapeHtml(getSkillMarketVersionLabel(entry))}</dd>
+                </div>
+                <div>
+                  <dt>影响范围</dt>
+                  <dd>${formatNumber(entry.affectedTenantAgentCount || 0)} 模板 / ${formatNumber(entry.affectedAssignmentCount || 0)} 成员</dd>
+                </div>
+              </dl>
+              <div class="oc-tenant-skill-market-card__actions">
+                <button class="btn btn-sm" type="button" data-tenant-skill-market-detail="${escapeAttribute(skillId)}">详情</button>
+                ${renderSkillMarketActions(entry, { compact: true })}
+              </div>
+            </article>
+          `;
+        })
+        .join("")}
     </div>
   `;
 }
@@ -610,11 +763,11 @@ export function renderTenantConsole(root, controller) {
       ? renderTenantOverview(controller)
       : isSkillsWorkbench
         ? renderSkillsWorkbench(controller)
-      : isSkillsMarket
-        ? renderSkillsMarketTable(controller)
-        : isSkillsEntitlements || isSkillsAssignments
-          ? renderSkillsWorkbench(controller)
-          : isWallet
+        : isSkillsMarket
+          ? renderSkillsMarketCards(controller)
+          : isSkillsEntitlements || isSkillsAssignments
+            ? renderSkillsWorkbench(controller)
+            : isWallet
               ? renderTenantWalletPage(controller)
               : isWalletOrders
                 ? renderWalletOrdersList(controller, renderPagination)
@@ -667,6 +820,11 @@ export function renderTenantConsole(root, controller) {
 
   if (isOverview) {
     void initTenantOverviewCharts(root, controller);
+  }
+
+  if (isSkillsMarket && controller.skillsMarketDetailDialog?.open) {
+    root.insertAdjacentHTML("beforeend", renderSkillMarketDetailDialog(controller));
+    openDialog(root.querySelector("[data-tenant-skill-market-detail-dialog]"));
   }
 
   if (

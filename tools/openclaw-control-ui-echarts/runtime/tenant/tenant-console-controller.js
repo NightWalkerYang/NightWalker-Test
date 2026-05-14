@@ -2,6 +2,7 @@ import {
   createAgentDetailDialogState,
   createAgentTransferDialogState,
   createDeleteMemberDialogState,
+  createSkillMarketDetailDialogState,
 } from "./tenant-console-dialogs.js";
 import {
   createAssignAgentDialogState,
@@ -121,6 +122,7 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
     currentDataSourceBinding: null,
     tenantAgents: [],
     skillsMarketItems: [],
+    skillsMarketDetailDialog: stateFactories.createSkillMarketDetailDialogState(),
     skillsEntitlementItems: [],
     skillsAssignmentItems: [],
     skillsWorkbenchState: null,
@@ -224,7 +226,9 @@ function getWorkbenchCardTitle(card) {
 }
 
 function cardMatchesWorkbenchSearch(card, query) {
-  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const normalizedQuery = String(query || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedQuery) {
     return true;
   }
@@ -244,7 +248,9 @@ function cardMatchesWorkbenchSearch(card, query) {
 }
 
 function memberMatchesWorkbenchSearch(member, query) {
-  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const normalizedQuery = String(query || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedQuery) {
     return true;
   }
@@ -282,14 +288,16 @@ function getFallbackWorkbenchMarketStatus(classification, entitlement) {
 
 function buildWorkbenchDisplaySkill(params = {}) {
   const skillKey = String(params.skillKey || "").trim();
-  const marketItem = params.marketItem && typeof params.marketItem === "object" ? params.marketItem : null;
+  const marketItem =
+    params.marketItem && typeof params.marketItem === "object" ? params.marketItem : null;
   const templateRow =
     params.templateRow && typeof params.templateRow === "object" ? params.templateRow : null;
   const overrideRow =
     params.overrideRow && typeof params.overrideRow === "object" ? params.overrideRow : null;
   const entitlement =
     params.entitlement && typeof params.entitlement === "object" ? params.entitlement : null;
-  const resolvedSkillKeys = params.resolvedSkillKeys instanceof Set ? params.resolvedSkillKeys : new Set();
+  const resolvedSkillKeys =
+    params.resolvedSkillKeys instanceof Set ? params.resolvedSkillKeys : new Set();
   const templateEnabledSkillKeys =
     params.templateEnabledSkillKeys instanceof Set ? params.templateEnabledSkillKeys : new Set();
   const templateBlockedSkillKeys =
@@ -323,14 +331,13 @@ function buildWorkbenchDisplaySkill(params = {}) {
           skillKey ||
           "",
       ).trim() || skillKey,
-    description:
-      String(
-        marketItem?.description ||
-          templateRow?.description ||
-          overrideRow?.description ||
-          entitlement?.description ||
-          "",
-      ).trim(),
+    description: String(
+      marketItem?.description ||
+        templateRow?.description ||
+        overrideRow?.description ||
+        entitlement?.description ||
+        "",
+    ).trim(),
     classification,
     marketStatus:
       String(marketItem?.marketStatus || "").trim() ||
@@ -366,7 +373,9 @@ function buildTenantSkillWorkbenchState(controller) {
   const assignments = Array.isArray(controller.skillsAssignmentItems)
     ? controller.skillsAssignmentItems
     : [];
-  const marketItems = Array.isArray(controller.skillsMarketItems) ? controller.skillsMarketItems : [];
+  const marketItems = Array.isArray(controller.skillsMarketItems)
+    ? controller.skillsMarketItems
+    : [];
   const tenantAgentById = new Map(
     tenantAgents
       .map((agent) => [String(agent?.id || "").trim(), agent])
@@ -414,7 +423,9 @@ function buildTenantSkillWorkbenchState(controller) {
     );
     const templateBlockedSkillKeys = new Set(
       templateRows
-        .filter((item) => String(item?.templateState || "").trim() === "blocked_missing_entitlement")
+        .filter(
+          (item) => String(item?.templateState || "").trim() === "blocked_missing_entitlement",
+        )
         .map((item) => String(item?.skillKey || "").trim())
         .filter(Boolean),
     );
@@ -423,8 +434,9 @@ function buildTenantSkillWorkbenchState(controller) {
       ...(marketItemsByBaseAgentId.get("*") || []),
     ].filter(
       (item, index, items) =>
-        items.findIndex((candidate) => String(candidate?.id || "").trim() === String(item?.id || "").trim()) ===
-        index,
+        items.findIndex(
+          (candidate) => String(candidate?.id || "").trim() === String(item?.id || "").trim(),
+        ) === index,
     );
     const compatibleMarketItemsBySkillKey = new Map(
       compatibleMarketItems
@@ -776,7 +788,7 @@ export async function refreshTenantConsole(root, controller, helpers) {
     controller.skillsEntitlementItems = Array.isArray(entitlements) ? entitlements : [];
     controller.skillsAssignmentItems = Array.isArray(assignments) ? assignments : [];
     controller.skillsMarketItems = Array.isArray(marketGroups)
-      ? marketGroups.flatMap((entry) => Array.isArray(entry?.items) ? entry.items : [])
+      ? marketGroups.flatMap((entry) => (Array.isArray(entry?.items) ? entry.items : []))
       : [];
     rebuildSkillsWorkbenchState(controller);
     helpers.render(root, controller);
@@ -846,6 +858,9 @@ export function resetTenantSectionState(controller, previousSection, stateFactor
     controller.agentDetailDialog = stateFactories.createAgentDetailDialogState();
     controller.agentTransferDialog = stateFactories.createAgentTransferDialogState();
   }
+  if (controller.section !== "skills-market") {
+    controller.skillsMarketDetailDialog = stateFactories.createSkillMarketDetailDialogState();
+  }
   if (controller.section !== "agent-assignment") {
     controller.dialogs.assignOpen = false;
     controller.activeMember = null;
@@ -867,6 +882,7 @@ export function resetTenantSectionState(controller, previousSection, stateFactor
     controller.deleteMemberTarget = stateFactories.createDeleteMemberDialogState();
     controller.agentDetailDialog = stateFactories.createAgentDetailDialogState();
     controller.agentTransferDialog = stateFactories.createAgentTransferDialogState();
+    controller.skillsMarketDetailDialog = stateFactories.createSkillMarketDetailDialogState();
     controller.activeMember = null;
     controller.assignAgentDialog = stateFactories.createAssignAgentDialogState();
     controller.revokeAssignmentDialog = stateFactories.createRevokeAssignmentDialogState();
@@ -876,6 +892,7 @@ export function resetTenantSectionState(controller, previousSection, stateFactor
 export const tenantConsoleStateFactories = {
   createAgentDetailDialogState,
   createAgentTransferDialogState,
+  createSkillMarketDetailDialogState,
   createDeleteMemberDialogState,
   createAssignAgentDialogState,
   createMemberOrgScopeDialogState,
