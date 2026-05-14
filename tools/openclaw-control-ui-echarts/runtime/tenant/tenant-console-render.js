@@ -12,6 +12,7 @@ import {
   paginate,
   setPageValue,
   escapeHtml,
+  escapeAttribute,
   formatNumber,
 } from "./tenant-console-controller.js";
 import { openDialog } from "./tenant-console-dialogs.js";

@@ -214,6 +214,109 @@ describe("tenant surface", () => {
     expect(requests.some((url) => url.includes("/tenant/admin/skills/market"))).toBe(true);
   });
 
+  it("renders tenant skills entitlements and assignments sections with non-empty rows", async () => {
+    const requests = [];
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-skills-entitlements");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/skills/entitlements")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "entitlement-1",
+                    skillKey: "finance-core",
+                    name: "finance-core",
+                    classification: "bundled",
+                    status: "active",
+                    enabledByTenant: true,
+                    versionPolicy: "latest",
+                    currentVersionId: "ver-1",
+                    blockedReason: null,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/assignments")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    tenantAgentId: "tenant-agent-1",
+                    baseAgentId: "finance",
+                    templateSkillKeys: ["finance-core"],
+                    blockedSkillKeys: [],
+                    assignmentCount: 1,
+                    templateRows: [
+                      {
+                        skillKey: "finance-core",
+                        templateState: "enabled",
+                      },
+                    ],
+                    assignments: [
+                      {
+                        assignmentId: "assignment-1",
+                        username: "alice",
+                        resolvedSkillKeys: ["finance-core"],
+                        overrideRows: [],
+                        overrideSummary: [],
+                      },
+                    ],
+                  },
+                ],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    let root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-entitlements");
+    expect(root?.textContent).toContain("finance-core");
+    expect(root?.querySelector('[data-tenant-skill-disable="entitlement-1"]')).not.toBeNull();
+
+    window.history.pushState({}, "", "/?ocTenantView=tenant-skills-assignments");
+    await flush();
+
+    root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-assignments");
+    expect(root?.textContent).toContain("alice");
+    expect(
+      root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]'),
+    ).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-1"]')).not.toBeNull();
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/entitlements"))).toBe(true);
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
+  });
+
   it("mounts the native members view into the control-ui content area", async () => {
     writeTenantSession({
       token: "tenant-token",
