@@ -286,21 +286,6 @@ async function submitAssignAgents(root, controller, refresh, render) {
   }
 }
 
-function parseSkillOverrideEditorValue(value) {
-  return String(value || "")
-    .split(/\r?\n/)
-    .map((line) => String(line || "").trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [action, skillKey] = line.split(":");
-      return {
-        action: String(action || "").trim(),
-        skillKey: String(skillKey || "").trim(),
-      };
-    })
-    .filter((entry) => entry.action && entry.skillKey);
-}
-
 export function createTenantConsoleEventHandlers({ render, refresh }) {
   const memberDialogFactories = {
     createAssignAgentDialogState,
@@ -570,68 +555,6 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         return;
       }
 
-      const templateSaveTrigger = target.closest("[data-tenant-skill-template-save]");
-      if (templateSaveTrigger instanceof HTMLElement) {
-        const tenantAgentId = String(
-          templateSaveTrigger.dataset.tenantSkillTemplateSave || "",
-        ).trim();
-        try {
-          let skillKeys = Array.from(controller.skillsTemplateDrafts.get(tenantAgentId) || []);
-          if (!skillKeys.length) {
-            const matchedAssignment = (Array.isArray(controller.skillsAssignmentItems)
-              ? controller.skillsAssignmentItems
-              : []
-            ).find((entry) => String(entry?.tenantAgentId || "").trim() === tenantAgentId);
-            skillKeys = Array.isArray(matchedAssignment?.templateRows)
-              ? matchedAssignment.templateRows
-                  .filter((item) => String(item?.templateState || "").trim() === "enabled")
-                  .map((item) => String(item?.skillKey || "").trim())
-                  .filter(Boolean)
-              : [];
-          }
-          await controller.apiClient.saveTenantSkillTemplate({
-            tenantAgentId,
-            skillKeys,
-          });
-          await refresh(root, controller);
-          setFeedback(root, "Tenant Agent 技能模板已保存。");
-        } catch (error) {
-          setFeedback(root, error instanceof Error ? error.message : String(error), true);
-        }
-        return;
-      }
-
-      const overrideSaveTrigger = target.closest("[data-tenant-skill-override-save]");
-      if (overrideSaveTrigger instanceof HTMLElement) {
-        const assignmentId = String(
-          overrideSaveTrigger.dataset.tenantSkillOverrideSave || "",
-        ).trim();
-        let overrides = controller.skillsOverrideDrafts.get(assignmentId) || [];
-        if (!Array.isArray(overrides) || !overrides.length) {
-          const matchedAssignment = (Array.isArray(controller.skillsAssignmentItems)
-            ? controller.skillsAssignmentItems
-            : []
-          )
-            .flatMap((entry) => (Array.isArray(entry?.assignments) ? entry.assignments : []))
-            .find((entry) => String(entry?.assignmentId || "").trim() === assignmentId);
-          overrides = Array.isArray(matchedAssignment?.overrideRows)
-            ? matchedAssignment.overrideRows.map((item) => ({
-                skillKey: String(item?.skillKey || "").trim(),
-                action: String(item?.action || "").trim(),
-              }))
-            : [];
-        }
-        try {
-          await controller.apiClient.saveTenantSkillOverrides({
-            assignmentId,
-            overrides,
-          });
-          await refresh(root, controller);
-          setFeedback(root, "成员技能覆盖已保存。");
-        } catch (error) {
-          setFeedback(root, error instanceof Error ? error.message : String(error), true);
-        }
-      }
     },
 
     handleInput(root, controller, event) {
@@ -720,19 +643,6 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         render(root, controller);
         return;
       }
-      if (target.hasAttribute("data-tenant-skill-template-toggle")) {
-        const tenantAgentId = String(target.dataset.tenantSkillTemplateToggle || "").trim();
-        const skillKey = String(target.dataset.tenantSkillKey || "").trim();
-        const current = new Set(controller.skillsTemplateDrafts.get(tenantAgentId) || []);
-        if (target.checked) {
-          current.add(skillKey);
-        } else {
-          current.delete(skillKey);
-        }
-        controller.skillsTemplateDrafts.set(tenantAgentId, [...current]);
-        render(root, controller);
-        return;
-      }
       if (target.hasAttribute("data-tenant-search")) {
         controller.searchBySection[controller.section] = target.value;
         setPageValue(controller, 1);
@@ -754,25 +664,6 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
       const target = event.target;
       if (!(target instanceof Element)) {
         return;
-      }
-      if (
-        target instanceof HTMLSelectElement &&
-        target.hasAttribute("data-tenant-skill-override-select")
-      ) {
-        const assignmentId = String(target.dataset.tenantSkillOverrideSelect || "").trim();
-        const skillKey = String(target.dataset.tenantSkillKey || "").trim();
-        const nextAction = String(target.value || "").trim();
-        const currentDraft = Array.isArray(controller.skillsOverrideDrafts.get(assignmentId))
-          ? controller.skillsOverrideDrafts.get(assignmentId).map((entry) => ({ ...entry }))
-          : [];
-        const filteredDraft = currentDraft.filter(
-          (entry) => String(entry?.skillKey || "").trim() !== skillKey,
-        );
-        if (nextAction === "force_add" || nextAction === "force_remove") {
-          filteredDraft.push({ skillKey, action: nextAction });
-        }
-        controller.skillsOverrideDrafts.set(assignmentId, filteredDraft);
-        render(root, controller);
       }
     },
 

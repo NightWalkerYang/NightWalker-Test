@@ -908,14 +908,6 @@
   line-height: 1.6;
 }
 
-.oc-tenant-skill-workbench__selection-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .oc-tenant-skill-workbench-skill-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -988,9 +980,6 @@
     flex-direction: column;
   }
 
-  .oc-tenant-skill-workbench__selection-actions {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 900px) {
