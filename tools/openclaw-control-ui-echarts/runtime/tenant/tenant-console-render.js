@@ -404,18 +404,22 @@ function renderSkillsWorkbenchSkillCard(controller, card, skill) {
   `;
 }
 
-function renderSkillsWorkbenchSelectedAgentPanel(controller, card) {
+function renderSkillsWorkbenchSelectedAgentPanel(controller, member, card) {
   const blockedReasons = Array.isArray(card?.blockedReasons) ? card.blockedReasons : [];
+  const cardSkills = Array.isArray(card?.cardSkills) ? card.cardSkills : [];
   return `
     <section class="oc-tenant-skill-workbench__selection-content">
-      <header class="oc-tenant-skill-workbench__selection-header">
-        <div>
+      <div class="oc-tenant-skill-workbench__context-bar">
+        <div class="oc-tenant-skill-workbench__context-copy">
+          <p class="oc-tenant-skill-workbench__context-kicker">当前 Agent Skills</p>
           <h3 class="oc-tenant-skill-workbench__selection-title">${escapeHtml(
             getWorkbenchAgentTitle(card),
           )}</h3>
-          <p class="oc-tenant-skill-workbench__selection-subtitle">${escapeHtml(
-            card?.baseAgentId || card?.tenantAgentId || "-",
-          )}</p>
+          <p class="oc-tenant-skill-workbench__context-meta">${escapeHtml(
+            member?.username || member?.userId || "-",
+          )} · ${escapeHtml(card?.baseAgentId || card?.tenantAgentId || "-")} · ${formatNumber(
+            cardSkills.length,
+          )} 个 skill</p>
         </div>
         <div class="oc-tenant-skill-workbench__selection-actions">
           <span class="data-table-badge data-table-badge--${String(card?.assignmentStatus || "").trim() === "active" ? "direct" : "unknown"}">${escapeHtml(
@@ -428,16 +432,14 @@ function renderSkillsWorkbenchSelectedAgentPanel(controller, card) {
             card?.assignmentId || "",
           )}">保存成员覆盖</button>
         </div>
-      </header>
+      </div>
       ${
         blockedReasons.length
           ? `<div class="callout warning">阻断原因：${escapeHtml(blockedReasons.join("，"))}</div>`
           : ""
       }
       <div class="oc-tenant-skill-workbench-skill-grid">
-        ${(Array.isArray(card?.cardSkills) ? card.cardSkills : [])
-          .map((skill) => renderSkillsWorkbenchSkillCard(controller, card, skill))
-          .join("")}
+        ${cardSkills.map((skill) => renderSkillsWorkbenchSkillCard(controller, card, skill)).join("")}
       </div>
     </section>
   `;
@@ -551,19 +553,7 @@ function renderSkillsWorkbench(controller) {
       <div class="oc-tenant-skill-workbench__content">
         ${
           selectedMember && selectedCard
-            ? `
-              <header class="oc-tenant-skill-workbench__content-header">
-                <div>
-                  <h2 class="oc-tenant-skill-workbench__content-title">${escapeHtml(
-                    selectedMember.username || selectedMember.userId,
-                  )}</h2>
-                  <p class="oc-tenant-skill-workbench__content-summary">当前正在管理 ${escapeHtml(
-                    getWorkbenchAgentTitle(selectedCard),
-                  )} 的默认技能与成员覆盖。</p>
-                </div>
-              </header>
-              ${renderSkillsWorkbenchSelectedAgentPanel(controller, selectedCard)}
-            `
+            ? renderSkillsWorkbenchSelectedAgentPanel(controller, selectedMember, selectedCard)
             : selectedMember
               ? `<div class="callout info">请选择该成员下的 Agent 后查看 skills。</div>`
               : `<div class="callout info">请选择左侧成员后查看 Agent skills。</div>`

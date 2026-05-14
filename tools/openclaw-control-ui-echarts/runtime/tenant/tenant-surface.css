@@ -765,7 +765,6 @@
 }
 
 .oc-tenant-skill-workbench__sidebar,
-.oc-tenant-skill-workbench__content,
 .oc-tenant-skill-workbench-skill-card {
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -773,8 +772,7 @@
   box-shadow: 0 12px 28px rgb(15 23 42 / 6%);
 }
 
-.oc-tenant-skill-workbench__sidebar,
-.oc-tenant-skill-workbench__content {
+.oc-tenant-skill-workbench__sidebar {
   padding: 18px;
 }
 
@@ -784,14 +782,12 @@
   align-content: start;
 }
 
-.oc-tenant-skill-workbench__sidebar-header,
-.oc-tenant-skill-workbench__content-header {
+.oc-tenant-skill-workbench__sidebar-header {
   display: grid;
   gap: 6px;
 }
 
 .oc-tenant-skill-workbench__sidebar-title,
-.oc-tenant-skill-workbench__content-title,
 .oc-tenant-skill-workbench__selection-title,
 .oc-tenant-skill-workbench-skill-card__title {
   margin: 0;
@@ -799,7 +795,6 @@
 }
 
 .oc-tenant-skill-workbench__sidebar-summary,
-.oc-tenant-skill-workbench__content-summary,
 .oc-tenant-skill-workbench__selection-subtitle,
 .oc-tenant-skill-workbench-skill-card__subtitle,
 .oc-tenant-skill-workbench-skill-card__description {
@@ -910,6 +905,7 @@
   display: grid;
   gap: 16px;
   align-content: start;
+  padding: 4px 0 0;
 }
 
 .oc-tenant-skill-workbench__selection-content {
@@ -917,13 +913,34 @@
   gap: 16px;
 }
 
-.oc-tenant-skill-workbench__selection-header {
+.oc-tenant-skill-workbench__context-bar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 0 2px;
+  padding: 0 2px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+}
+
+.oc-tenant-skill-workbench__context-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.oc-tenant-skill-workbench__context-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.oc-tenant-skill-workbench__context-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .oc-tenant-skill-workbench__selection-actions {
@@ -1026,7 +1043,7 @@
     grid-template-columns: 1fr;
   }
 
-  .oc-tenant-skill-workbench__selection-header,
+  .oc-tenant-skill-workbench__context-bar,
   .oc-tenant-skill-workbench-skill-card__header {
     flex-direction: column;
   }

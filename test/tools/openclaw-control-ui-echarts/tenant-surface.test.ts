@@ -528,6 +528,9 @@ describe("tenant surface", () => {
     expect(root?.querySelector(".oc-tenant-skill-workbench-agent-card")).toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-panel")).toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__context-bar")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__content-header")).toBeNull();
+    expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(2);
     expect(
       root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]'),
     ).not.toBeNull();
@@ -551,6 +554,9 @@ describe("tenant surface", () => {
     expect(root?.querySelector(".oc-tenant-skill-workbench-agent-card")).toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-panel")).toBeNull();
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__context-bar")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__content-header")).toBeNull();
+    expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(1);
     expect(root?.querySelector('[data-tenant-skill-template-save="tenant-agent-2"]')).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-override-save="assignment-3"]')).not.toBeNull();
 
