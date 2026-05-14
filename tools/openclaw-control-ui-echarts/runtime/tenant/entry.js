@@ -46,6 +46,8 @@ import {
   TENANT_STATISTICS_OVERVIEW_VIEW,
   TENANT_SKILLS_MARKET_ROUTE,
   TENANT_SKILLS_MARKET_VIEW,
+  TENANT_SKILLS_WORKBENCH_ROUTE,
+  TENANT_SKILLS_WORKBENCH_VIEW,
   TENANT_SKILLS_ENTITLEMENTS_ROUTE,
   TENANT_SKILLS_ENTITLEMENTS_VIEW,
   TENANT_SKILLS_ASSIGNMENTS_ROUTE,
@@ -337,20 +339,12 @@ function getSectionConfigForSession(session) {
               activeView: TENANT_SKILLS_MARKET_VIEW,
             },
             {
-              className: "oc-tenant-skills-entitlements-link",
-              href: TENANT_SKILLS_ENTITLEMENTS_ROUTE,
-              title: "授权",
-              text: "授权",
+              className: "oc-tenant-skills-workbench-link",
+              href: TENANT_SKILLS_WORKBENCH_ROUTE,
+              title: "技能分配",
+              text: "技能分配",
               icon: ICONS.agentAllocation,
-              activeView: TENANT_SKILLS_ENTITLEMENTS_VIEW,
-            },
-            {
-              className: "oc-tenant-skills-assignments-link",
-              href: TENANT_SKILLS_ASSIGNMENTS_ROUTE,
-              title: "分配",
-              text: "分配",
-              icon: ICONS.agentAllocation,
-              activeView: TENANT_SKILLS_ASSIGNMENTS_VIEW,
+              activeView: TENANT_SKILLS_WORKBENCH_VIEW,
             },
           ],
         },
@@ -900,6 +894,7 @@ function isManagementViewActive() {
     activeView === TENANT_OWNED_AGENTS_VIEW ||
     activeView === TENANT_USAGE_STATS_VIEW ||
     activeView === TENANT_STATISTICS_OVERVIEW_VIEW ||
+    activeView === TENANT_SKILLS_WORKBENCH_VIEW ||
     activeView === TENANT_WALLET_VIEW ||
     activeView === TENANT_WALLET_ORDERS_VIEW ||
     activeView === TENANT_WALLET_LEDGER_VIEW ||

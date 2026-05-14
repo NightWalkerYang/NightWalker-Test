@@ -314,6 +314,19 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         return;
       }
 
+      const workbenchMemberTrigger = target.closest("[data-tenant-skill-member-select]");
+      if (workbenchMemberTrigger instanceof HTMLElement) {
+        const selectedMemberId = String(
+          workbenchMemberTrigger.dataset.tenantSkillMemberSelect || "",
+        ).trim();
+        controller.skillsWorkbenchState = {
+          ...(controller.skillsWorkbenchState || {}),
+          selectedMemberId,
+        };
+        await refresh(root, controller);
+        return;
+      }
+
       const walletRefreshTrigger = target.closest("[data-tenant-wallet-refresh]");
       if (walletRefreshTrigger instanceof HTMLElement) {
         await refresh(root, controller);
@@ -522,7 +535,19 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
           templateSaveTrigger.dataset.tenantSkillTemplateSave || "",
         ).trim();
         try {
-          const skillKeys = Array.from(controller.skillsTemplateDrafts.get(tenantAgentId) || []);
+          let skillKeys = Array.from(controller.skillsTemplateDrafts.get(tenantAgentId) || []);
+          if (!skillKeys.length) {
+            const matchedAssignment = (Array.isArray(controller.skillsAssignmentItems)
+              ? controller.skillsAssignmentItems
+              : []
+            ).find((entry) => String(entry?.tenantAgentId || "").trim() === tenantAgentId);
+            skillKeys = Array.isArray(matchedAssignment?.templateRows)
+              ? matchedAssignment.templateRows
+                  .filter((item) => String(item?.templateState || "").trim() === "enabled")
+                  .map((item) => String(item?.skillKey || "").trim())
+                  .filter(Boolean)
+              : [];
+          }
           await controller.apiClient.saveTenantSkillTemplate({
             tenantAgentId,
             skillKeys,
@@ -540,12 +565,21 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         const assignmentId = String(
           overrideSaveTrigger.dataset.tenantSkillOverrideSave || "",
         ).trim();
-        const editor = root.querySelector(
-          `[data-tenant-skill-override-editor="${CSS.escape(assignmentId)}"]`,
-        );
-        const overrides = parseSkillOverrideEditorValue(
-          editor instanceof HTMLTextAreaElement ? editor.value : "",
-        );
+        let overrides = controller.skillsOverrideDrafts.get(assignmentId) || [];
+        if (!Array.isArray(overrides) || !overrides.length) {
+          const matchedAssignment = (Array.isArray(controller.skillsAssignmentItems)
+            ? controller.skillsAssignmentItems
+            : []
+          )
+            .flatMap((entry) => (Array.isArray(entry?.assignments) ? entry.assignments : []))
+            .find((entry) => String(entry?.assignmentId || "").trim() === assignmentId);
+          overrides = Array.isArray(matchedAssignment?.overrideRows)
+            ? matchedAssignment.overrideRows.map((item) => ({
+                skillKey: String(item?.skillKey || "").trim(),
+                action: String(item?.action || "").trim(),
+              }))
+            : [];
+        }
         try {
           await controller.apiClient.saveTenantSkillOverrides({
             assignmentId,
@@ -655,6 +689,23 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
           current.delete(skillKey);
         }
         controller.skillsTemplateDrafts.set(tenantAgentId, [...current]);
+        render(root, controller);
+        return;
+      }
+      if (target instanceof HTMLSelectElement && target.hasAttribute("data-tenant-skill-override-select")) {
+        const assignmentId = String(target.dataset.tenantSkillOverrideSelect || "").trim();
+        const skillKey = String(target.dataset.tenantSkillKey || "").trim();
+        const nextAction = String(target.value || "").trim();
+        const currentDraft = Array.isArray(controller.skillsOverrideDrafts.get(assignmentId))
+          ? controller.skillsOverrideDrafts.get(assignmentId).map((entry) => ({ ...entry }))
+          : [];
+        const filteredDraft = currentDraft.filter(
+          (entry) => String(entry?.skillKey || "").trim() !== skillKey,
+        );
+        if (nextAction === "force_add" || nextAction === "force_remove") {
+          filteredDraft.push({ skillKey, action: nextAction });
+        }
+        controller.skillsOverrideDrafts.set(assignmentId, filteredDraft);
         render(root, controller);
         return;
       }

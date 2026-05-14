@@ -355,8 +355,8 @@ export function createTenantApiClient() {
     listTenantAgents() {
       return requestJson("/tenant/admin/tenant-agents");
     },
-    listTenantSkillsMarket() {
-      return requestJson("/tenant/admin/skills/market");
+    listTenantSkillsMarket({ baseAgentId = "" } = {}) {
+      return requestJson(withQuery("/tenant/admin/skills/market", { baseAgentId }));
     },
     listTenantSkillEntitlements() {
       return requestJson("/tenant/admin/skills/entitlements");

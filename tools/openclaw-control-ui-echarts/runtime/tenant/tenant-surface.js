@@ -12,6 +12,7 @@ import {
   TENANT_USAGE_STATS_VIEW,
   TENANT_STATISTICS_OVERVIEW_VIEW,
   TENANT_SKILLS_MARKET_VIEW,
+  TENANT_SKILLS_WORKBENCH_VIEW,
   TENANT_SKILLS_ENTITLEMENTS_VIEW,
   TENANT_SKILLS_ASSIGNMENTS_VIEW,
   TENANT_WALLET_VIEW,
@@ -38,6 +39,7 @@ function isTenantManagementView(view) {
     view === TENANT_USAGE_STATS_VIEW ||
     view === TENANT_STATISTICS_OVERVIEW_VIEW ||
     view === TENANT_SKILLS_MARKET_VIEW ||
+    view === TENANT_SKILLS_WORKBENCH_VIEW ||
     view === TENANT_SKILLS_ENTITLEMENTS_VIEW ||
     view === TENANT_SKILLS_ASSIGNMENTS_VIEW ||
     view === TENANT_WALLET_VIEW ||
@@ -72,11 +74,14 @@ function sectionForView(view) {
   if (view === TENANT_SKILLS_MARKET_VIEW) {
     return "skills-market";
   }
+  if (view === TENANT_SKILLS_WORKBENCH_VIEW) {
+    return "skills-workbench";
+  }
   if (view === TENANT_SKILLS_ENTITLEMENTS_VIEW) {
-    return "skills-entitlements";
+    return "skills-workbench";
   }
   if (view === TENANT_SKILLS_ASSIGNMENTS_VIEW) {
-    return "skills-assignments";
+    return "skills-workbench";
   }
   if (view === TENANT_WALLET_VIEW) {
     return "wallet";

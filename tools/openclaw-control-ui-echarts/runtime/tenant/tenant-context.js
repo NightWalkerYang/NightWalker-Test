@@ -27,6 +27,7 @@ export const TENANT_WALLET_ORDERS_VIEW = "tenant-wallet-orders";
 export const TENANT_WALLET_LEDGER_VIEW = "tenant-wallet-ledger";
 export const TENANT_WALLET_FLOW_VIEW = "tenant-wallet-flow";
 export const TENANT_SKILLS_MARKET_VIEW = "tenant-skills-market";
+export const TENANT_SKILLS_WORKBENCH_VIEW = "tenant-skills-workbench";
 export const TENANT_SKILLS_ENTITLEMENTS_VIEW = "tenant-skills-entitlements";
 export const TENANT_SKILLS_ASSIGNMENTS_VIEW = "tenant-skills-assignments";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
@@ -49,6 +50,7 @@ export const TENANT_WALLET_ORDERS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_
 export const TENANT_WALLET_LEDGER_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_LEDGER_VIEW}`;
 export const TENANT_WALLET_FLOW_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_FLOW_VIEW}`;
 export const TENANT_SKILLS_MARKET_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_SKILLS_MARKET_VIEW}`;
+export const TENANT_SKILLS_WORKBENCH_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_SKILLS_WORKBENCH_VIEW}`;
 export const TENANT_SKILLS_ENTITLEMENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_SKILLS_ENTITLEMENTS_VIEW}`;
 export const TENANT_SKILLS_ASSIGNMENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_SKILLS_ASSIGNMENTS_VIEW}`;
 export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
@@ -141,6 +143,7 @@ export function readSessionForCurrentView(locationHref = window.location.href) {
     view === TENANT_WALLET_LEDGER_VIEW ||
     view === TENANT_WALLET_FLOW_VIEW ||
     view === TENANT_SKILLS_MARKET_VIEW ||
+    view === TENANT_SKILLS_WORKBENCH_VIEW ||
     view === TENANT_SKILLS_ENTITLEMENTS_VIEW ||
     view === TENANT_SKILLS_ASSIGNMENTS_VIEW ||
     view === TENANT_AGENT_SELECTOR_VIEW

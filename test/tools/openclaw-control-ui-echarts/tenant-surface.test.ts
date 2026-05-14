@@ -214,7 +214,71 @@ describe("tenant surface", () => {
     expect(requests.some((url) => url.includes("/tenant/admin/skills/market"))).toBe(true);
   });
 
-  it("renders tenant skills entitlements and assignments sections with non-empty rows", async () => {
+  it("mounts the tenant skills workbench section when the route switches to tenant-skills-workbench", async () => {
+    const requests = [];
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-skills-workbench");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/entitlements")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/assignments")) {
+          return {
+            ok: true,
+            async json() {
+              return { ok: true, data: [] };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
+  });
+
+  it("renders the merged tenant skills workbench for workbench and legacy routes", async () => {
     const requests = [];
     writeTenantSession({
       token: "tenant-token",
@@ -243,6 +307,7 @@ describe("tenant surface", () => {
                 data: [
                   {
                     id: "entitlement-1",
+                    skillId: "skill-1",
                     skillKey: "finance-core",
                     name: "finance-core",
                     classification: "bundled",
@@ -279,12 +344,79 @@ describe("tenant surface", () => {
                     assignments: [
                       {
                         assignmentId: "assignment-1",
+                        userId: "member-1",
                         username: "alice",
                         resolvedSkillKeys: ["finance-core"],
                         overrideRows: [],
                         overrideSummary: [],
+                        blockedReasons: [],
+                        status: "active",
                       },
                     ],
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 1,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-agent-1",
+                    agentId: "finance",
+                    agentName: "财务助手",
+                    description: "财务分析 Agent",
+                    status: "active",
+                    balancePoints: 20,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/market?baseAgentId=finance")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "skill-1",
+                    skillId: "skill-1",
+                    skillKey: "finance-core",
+                    name: "finance-core",
+                    description: "财务核心能力",
+                    classification: "bundled",
+                    marketStatus: "无需购买",
+                    latestVersionId: "ver-1",
+                    latestVersionLabel: "v1",
+                    compatibleBaseAgents: ["finance"],
+                    pricePoints: 0,
                   },
                 ],
               };
@@ -299,22 +431,27 @@ describe("tenant surface", () => {
     await flush();
 
     let root = document.querySelector("[data-oc-tenant-surface-root]");
-    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-entitlements");
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
+    expect(root?.textContent).toContain("alice");
+    expect(root?.textContent).toContain("财务助手");
     expect(root?.textContent).toContain("finance-core");
-    expect(root?.querySelector('[data-tenant-skill-disable="entitlement-1"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-member-select="member-1"]')).not.toBeNull();
+    expect(
+      root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]'),
+    ).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-1"]')).not.toBeNull();
 
     window.history.pushState({}, "", "/?ocTenantView=tenant-skills-assignments");
     await flush();
 
     root = document.querySelector("[data-oc-tenant-surface-root]");
-    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-assignments");
-    expect(root?.textContent).toContain("alice");
-    expect(
-      root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]'),
-    ).not.toBeNull();
-    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-1"]')).not.toBeNull();
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
+    expect(root?.textContent).toContain("finance-core");
     expect(requests.some((url) => url.includes("/tenant/admin/skills/entitlements"))).toBe(true);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=finance"))).toBe(
+      true,
+    );
   });
 
   it("mounts the native members view into the control-ui content area", async () => {

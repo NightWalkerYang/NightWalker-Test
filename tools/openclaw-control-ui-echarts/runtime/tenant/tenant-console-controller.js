@@ -65,6 +65,7 @@ export function isRemoteSearchSection(section) {
   return (
     section === "usage-stats" ||
     section === "skills-market" ||
+    section === "skills-workbench" ||
     section === "skills-entitlements" ||
     section === "skills-assignments" ||
     section === "wallet-orders" ||
@@ -94,6 +95,7 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
       "owned-agents": "",
       "usage-stats": "",
       "skills-market": "",
+      "skills-workbench": "",
       "skills-entitlements": "",
       "skills-assignments": "",
       wallet: "",
@@ -107,6 +109,7 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
       "owned-agents": 1,
       "usage-stats": 1,
       "skills-market": 1,
+      "skills-workbench": 1,
       "skills-entitlements": 1,
       "skills-assignments": 1,
       wallet: 1,
@@ -120,6 +123,7 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
     skillsMarketItems: [],
     skillsEntitlementItems: [],
     skillsAssignmentItems: [],
+    skillsWorkbenchState: null,
     skillsTemplateDrafts: new Map(),
     skillsOverrideDrafts: new Map(),
     skillsBusyKeys: new Set(),
@@ -210,6 +214,186 @@ export function ensureTenantConsoleController(root, session, apiClient, stateFac
   const controller = createTenantConsoleControllerState(session, apiClient, stateFactories);
   root.__ocTenantConsoleController = controller;
   return controller;
+}
+
+function buildTenantSkillWorkbenchState(controller) {
+  const members = Array.isArray(controller.members) ? controller.members : [];
+  const tenantAgents = Array.isArray(controller.tenantAgents) ? controller.tenantAgents : [];
+  const entitlements = Array.isArray(controller.skillsEntitlementItems)
+    ? controller.skillsEntitlementItems
+    : [];
+  const assignments = Array.isArray(controller.skillsAssignmentItems)
+    ? controller.skillsAssignmentItems
+    : [];
+  const marketItems = Array.isArray(controller.skillsMarketItems) ? controller.skillsMarketItems : [];
+  const tenantAgentById = new Map(
+    tenantAgents
+      .map((agent) => [String(agent?.id || "").trim(), agent])
+      .filter(([tenantAgentId]) => Boolean(tenantAgentId)),
+  );
+  const entitlementBySkillId = new Map(
+    entitlements
+      .map((entry) => [String(entry?.skillId || "").trim(), entry])
+      .filter(([skillId]) => Boolean(skillId)),
+  );
+  const marketItemsByBaseAgentId = new Map();
+  for (const entry of marketItems) {
+    const baseAgentIds = Array.isArray(entry?.compatibleBaseAgents)
+      ? entry.compatibleBaseAgents
+      : ["*"];
+    for (const baseAgentId of baseAgentIds.length ? baseAgentIds : ["*"]) {
+      const normalizedBaseAgentId = String(baseAgentId || "").trim() || "*";
+      const group = marketItemsByBaseAgentId.get(normalizedBaseAgentId) || [];
+      group.push(entry);
+      marketItemsByBaseAgentId.set(normalizedBaseAgentId, group);
+    }
+  }
+
+  const assignmentsByUserId = new Map();
+  for (const row of assignments) {
+    const tenantAgentId = String(row?.tenantAgentId || "").trim();
+    const baseAgentId = String(row?.baseAgentId || "").trim();
+    const tenantAgent = tenantAgentById.get(tenantAgentId) || null;
+    const templateRows = Array.isArray(row?.templateRows) ? row.templateRows : [];
+    const templateEnabledSkillKeys = new Set(
+      templateRows
+        .filter((item) => String(item?.templateState || "").trim() === "enabled")
+        .map((item) => String(item?.skillKey || "").trim())
+        .filter(Boolean),
+    );
+    const templateBlockedSkillKeys = new Set(
+      templateRows
+        .filter((item) => String(item?.templateState || "").trim() === "blocked_missing_entitlement")
+        .map((item) => String(item?.skillKey || "").trim())
+        .filter(Boolean),
+    );
+    const compatibleMarketItems = [
+      ...(marketItemsByBaseAgentId.get(baseAgentId) || []),
+      ...(marketItemsByBaseAgentId.get("*") || []),
+    ].filter(
+      (item, index, items) =>
+        items.findIndex((candidate) => String(candidate?.id || "").trim() === String(item?.id || "").trim()) ===
+        index,
+    );
+    const assignmentRows = Array.isArray(row?.assignments) ? row.assignments : [];
+    for (const assignment of assignmentRows) {
+      const userId = String(assignment?.userId || "").trim();
+      if (!userId) {
+        continue;
+      }
+      const overrideRows = Array.isArray(assignment?.overrideRows) ? assignment.overrideRows : [];
+      const overrideBySkillKey = new Map(
+        overrideRows
+          .map((item) => [String(item?.skillKey || "").trim(), item])
+          .filter(([skillKey]) => Boolean(skillKey)),
+      );
+      const cardSkills = compatibleMarketItems.map((marketItem) => {
+        const skillId = String(marketItem?.skillId || marketItem?.id || "").trim();
+        const skillKey = String(marketItem?.skillKey || "").trim();
+        const entitlement = entitlementBySkillId.get(skillId) || null;
+        const templateRow =
+          templateRows.find((item) => String(item?.skillKey || "").trim() === skillKey) || null;
+        const overrideRow = overrideBySkillKey.get(skillKey) || null;
+        const resolvedSkillKeys = new Set(
+          Array.isArray(assignment?.resolvedSkillKeys) ? assignment.resolvedSkillKeys : [],
+        );
+        return {
+          ...marketItem,
+          entitlement,
+          templateRow,
+          overrideRow,
+          inResolvedSet: resolvedSkillKeys.has(skillKey),
+          templateEnabled: templateEnabledSkillKeys.has(skillKey),
+          templateBlocked: templateBlockedSkillKeys.has(skillKey),
+          currentOverrideAction: String(overrideRow?.action || "").trim() || "",
+          currentOverrideEnabled: String(overrideRow?.action || "").trim() === "force_add",
+          currentOverrideRemoved: String(overrideRow?.action || "").trim() === "force_remove",
+        };
+      });
+      const nextCards = assignmentsByUserId.get(userId) || [];
+      nextCards.push({
+        assignmentId: String(assignment?.assignmentId || "").trim(),
+        userId,
+        username: String(assignment?.username || "").trim(),
+        tenantAgentId,
+        baseAgentId,
+        tenantAgent,
+        assignmentStatus: String(assignment?.status || "").trim() || "active",
+        blockedReasons: Array.isArray(assignment?.blockedReasons) ? assignment.blockedReasons : [],
+        resolvedSkillKeys: Array.isArray(assignment?.resolvedSkillKeys)
+          ? assignment.resolvedSkillKeys
+          : [],
+        templateRows,
+        cardSkills,
+      });
+      assignmentsByUserId.set(userId, nextCards);
+    }
+  }
+
+  const memberItems = members.map((member) => {
+    const userId = String(member?.id || "").trim();
+    const cards = assignmentsByUserId.get(userId) || [];
+    return {
+      ...member,
+      userId,
+      cards: cards.sort((left, right) =>
+        String(
+          left?.tenantAgent?.agentName ||
+            left?.tenantAgent?.description ||
+            left?.baseAgentId ||
+            left?.tenantAgentId ||
+            "",
+        ).localeCompare(
+          String(
+            right?.tenantAgent?.agentName ||
+              right?.tenantAgent?.description ||
+              right?.baseAgentId ||
+              right?.tenantAgentId ||
+              "",
+          ),
+          "zh-CN",
+        ),
+      ),
+    };
+  });
+
+  const activeSearch = getSearchValue(controller).trim().toLowerCase();
+  const filteredMembers = activeSearch
+    ? memberItems.filter((member) => {
+        const memberMatch = [member?.username, member?.status]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(activeSearch));
+        const cardMatch = (member.cards || []).some((card) =>
+          [
+            card?.tenantAgent?.agentName,
+            card?.tenantAgent?.description,
+            card?.baseAgentId,
+            ...(Array.isArray(card?.resolvedSkillKeys) ? card.resolvedSkillKeys : []),
+          ]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(activeSearch)),
+        );
+        return memberMatch || cardMatch;
+      })
+    : memberItems;
+  const selectedMemberId = String(controller.skillsWorkbenchState?.selectedMemberId || "").trim();
+  const fallbackSelectedMemberId = filteredMembers[0]?.userId || memberItems[0]?.userId || "";
+  const resolvedSelectedMemberId = filteredMembers.some(
+    (member) => member.userId === selectedMemberId,
+  )
+    ? selectedMemberId
+    : fallbackSelectedMemberId;
+  const selectedMember =
+    filteredMembers.find((member) => member.userId === resolvedSelectedMemberId) ||
+    memberItems.find((member) => member.userId === resolvedSelectedMemberId) ||
+    null;
+
+  return {
+    members: memberItems,
+    filteredMembers,
+    selectedMemberId: resolvedSelectedMemberId,
+    selectedMember,
+  };
 }
 
 export async function refreshTenantConsole(root, controller, helpers) {
@@ -348,6 +532,39 @@ export async function refreshTenantConsole(root, controller, helpers) {
 
   if (controller.section === "skills-market") {
     controller.skillsMarketItems = await controller.apiClient.listTenantSkillsMarket();
+    helpers.render(root, controller);
+    return;
+  }
+
+  if (
+    controller.section === "skills-workbench" ||
+    controller.section === "skills-entitlements" ||
+    controller.section === "skills-assignments"
+  ) {
+    const [members, tenantAgents, entitlements, assignments] = await Promise.all([
+      controller.apiClient.listTenantMembers(),
+      controller.apiClient.listTenantAgents(),
+      controller.apiClient.listTenantSkillEntitlements(),
+      controller.apiClient.listTenantSkillAssignments(),
+    ]);
+    const marketGroups = await Promise.all(
+      (Array.isArray(tenantAgents) ? tenantAgents : []).map(async (agent) => {
+        const baseAgentId = String(agent?.agentId || agent?.baseAgentId || "").trim();
+        return {
+          tenantAgentId: String(agent?.id || "").trim(),
+          baseAgentId,
+          items: await controller.apiClient.listTenantSkillsMarket({ baseAgentId }),
+        };
+      }),
+    );
+    controller.members = Array.isArray(members) ? members : [];
+    controller.tenantAgents = Array.isArray(tenantAgents) ? tenantAgents : [];
+    controller.skillsEntitlementItems = Array.isArray(entitlements) ? entitlements : [];
+    controller.skillsAssignmentItems = Array.isArray(assignments) ? assignments : [];
+    controller.skillsMarketItems = Array.isArray(marketGroups)
+      ? marketGroups.flatMap((entry) => Array.isArray(entry?.items) ? entry.items : [])
+      : [];
+    controller.skillsWorkbenchState = buildTenantSkillWorkbenchState(controller);
     helpers.render(root, controller);
     return;
   }

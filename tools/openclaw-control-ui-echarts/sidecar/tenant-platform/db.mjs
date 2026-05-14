@@ -2276,14 +2276,15 @@ function listTenantSkillAssignmentsInternal(db, tenantId) {
     const templates = listTenantAgentSkillTemplates(db, tenantAgentId);
     const assignmentRows = db
       .prepare(
-        `SELECT ua.id,
-                ua.user_id AS userId,
-                ua.derived_agent_id AS derivedAgentId,
-                ua.status,
-                u.username
+      `SELECT ua.id,
+              ua.user_id AS userId,
+              ua.derived_agent_id AS derivedAgentId,
+              ua.status,
+              u.username
            FROM user_agent_assignments ua
            JOIN users u ON u.id = ua.user_id
-          WHERE ua.tenant_agent_id = ? AND ua.status = 'active'
+          WHERE ua.tenant_agent_id = ?
+            AND ua.status IN ('active', 'blocked_missing_skills')
           ORDER BY ua.created_at ASC`,
       )
       .all(tenantAgentId)
@@ -7655,12 +7656,14 @@ function getTenantMemberRow(db, tenantId, userId) {
   return (
     db
       .prepare(
-        `SELECT u.id, u.username, u.status,
+      `SELECT u.id, u.username, u.status,
               tm.role, tm.created_at AS createdAt,
               COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount
        FROM users u
        JOIN tenant_memberships tm ON tm.user_id = u.id
-       LEFT JOIN user_agent_assignments ua ON ua.user_id = u.id AND ua.status = 'active'
+       LEFT JOIN user_agent_assignments ua
+              ON ua.user_id = u.id
+             AND ua.status IN ('active', 'blocked_missing_skills')
        WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted' AND u.id = ?
        GROUP BY u.id, tm.role, tm.created_at`,
       )
@@ -7676,7 +7679,9 @@ export function listTenantMembers(db, tenantId) {
               COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount
        FROM users u
        JOIN tenant_memberships tm ON tm.user_id = u.id
-       LEFT JOIN user_agent_assignments ua ON ua.user_id = u.id AND ua.status = 'active'
+       LEFT JOIN user_agent_assignments ua
+              ON ua.user_id = u.id
+             AND ua.status IN ('active', 'blocked_missing_skills')
        WHERE tm.tenant_id = ? AND tm.role = 'member' AND tm.status != 'deleted'
        GROUP BY u.id, tm.role, tm.created_at
        ORDER BY tm.created_at DESC`,

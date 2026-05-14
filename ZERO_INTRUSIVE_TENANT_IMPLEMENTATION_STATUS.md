@@ -236,10 +236,10 @@
 当前真实状态：
 
 - 平台侧已存在独立 `Skills` 视图
-- 租户侧已存在独立 `工具` 分组：
+- 租户侧当前真实导航已经收敛为独立 `工具` 分组：
   - `市场`
-  - `授权`
-  - `分配`
+  - `技能分配`
+- 旧 `授权` / `分配` 路由仍保留兼容，但内容区已经统一落到同一个成员技能工作台
 - sidecar 已落地 Skills 市场数据模型、授权模型、模板模型、成员 override 模型、审计快照模型
 
 当前真实后端表已经存在：
@@ -271,12 +271,14 @@
   - `paid` skill 下单
   - 待确认订单确认购买
   - `free` skill 启用
-- 授权页：
-  - 查看 entitlement 状态
-  - 启用 / 停用已获得授权
-- 分配页：
-  - 按 `tenant_agent` 维度编辑模板
-  - 按成员 assignment 维度编辑 `force_add / force_remove`
+- 技能分配工作台：
+  - 左侧按成员切换
+  - 右侧按该成员已分配 Agent 渲染技能卡片
+  - 同一张卡片里同时管理：
+    - skill entitlement 启用 / 停用
+    - `tenant_agent` 默认模板
+    - 成员 assignment 级 `force_add / force_remove`
+  - 旧 `授权` / `分配` route 只是别名，不再维护两套独立页面
 
 当前真实平台操作已经落地第一版：
 
@@ -348,6 +350,7 @@
   - 平台 / 租户 Skills 导航入口存在
 - `tenant-surface.test.ts`
   - 租户 runtime surface 未因 Skills 页面新增而回归
+  - `tenant-skills-workbench` 与旧 `tenant-skills-entitlements` / `tenant-skills-assignments` 别名路由统一落到成员技能工作台
 
 ## 18. bootstrap 过滤 hook 已落地
 

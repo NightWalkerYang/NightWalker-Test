@@ -109,6 +109,20 @@ function renderToolbar(controller) {
       </div>
     `;
   }
+  if (controller.section === "skills-workbench") {
+    return `
+      <div class="data-table-toolbar oc-tenant-table-toolbar">
+        <label class="data-table-search">
+          <input
+            type="search"
+            placeholder="搜索成员、Agent 或 Skill"
+            value="${escapeHtml(getSearchValue(controller))}"
+            data-tenant-search
+          />
+        </label>
+      </div>
+    `;
+  }
   if (controller.section === "wallet") {
     const pendingCount = Number(controller.walletData?.summary?.pendingOrderCount || 0);
     return `
@@ -216,6 +230,290 @@ function renderToolbar(controller) {
         }
       </div>
     </div>
+  `;
+}
+
+function getWorkbenchMemberStatusVariant(status) {
+  return String(status || "").trim() === "active" ? "direct" : "unknown";
+}
+
+function getWorkbenchAgentTitle(card) {
+  return (
+    String(card?.tenantAgent?.agentName || "").trim() ||
+    String(card?.tenantAgent?.description || "").trim() ||
+    String(card?.baseAgentId || "").trim() ||
+    String(card?.tenantAgentId || "").trim() ||
+    "未命名 Agent"
+  );
+}
+
+function getWorkbenchSkillClassificationLabel(classification) {
+  const normalized = String(classification || "").trim();
+  if (normalized === "bundled") {
+    return "内置";
+  }
+  if (normalized === "free") {
+    return "免费";
+  }
+  if (normalized === "paid") {
+    return "付费";
+  }
+  return normalized || "-";
+}
+
+function getWorkbenchSkillStateLabel(skill) {
+  if (skill?.templateBlocked) {
+    return "缺授权阻断";
+  }
+  if (skill?.currentOverrideAction === "force_remove") {
+    return "成员移除";
+  }
+  if (skill?.currentOverrideAction === "force_add") {
+    return "成员加配";
+  }
+  if (skill?.templateEnabled && skill?.inResolvedSet) {
+    return "已生效";
+  }
+  if (skill?.templateEnabled) {
+    return "模板启用";
+  }
+  if (skill?.entitlement?.enabledByTenant) {
+    return "已授权未分配";
+  }
+  return String(skill?.marketStatus || "").trim() || "未启用";
+}
+
+function getWorkbenchSkillStateVariant(skill) {
+  if (skill?.templateBlocked) {
+    return "unknown";
+  }
+  if (skill?.currentOverrideAction === "force_remove") {
+    return "unknown";
+  }
+  if (skill?.currentOverrideAction === "force_add" || skill?.inResolvedSet) {
+    return "direct";
+  }
+  return "unknown";
+}
+
+function isWorkbenchSkillTemplateChecked(skill) {
+  return Boolean(skill?.templateEnabled || skill?.templateBlocked);
+}
+
+function isWorkbenchSkillTemplateDisabled(skill) {
+  return Boolean(skill?.templateBlocked);
+}
+
+function renderSkillsWorkbenchSkillCard(controller, card, skill) {
+  const tenantAgentId = String(card?.tenantAgentId || "").trim();
+  const assignmentId = String(card?.assignmentId || "").trim();
+  const skillKey = String(skill?.skillKey || "").trim();
+  const templateDraft = controller.skillsTemplateDrafts.get(tenantAgentId);
+  const overrideDraft = controller.skillsOverrideDrafts.get(assignmentId);
+  let templateChecked = isWorkbenchSkillTemplateChecked(skill);
+  if (Array.isArray(templateDraft)) {
+    templateChecked = templateDraft.includes(skillKey);
+  }
+  let overrideAction = String(skill?.currentOverrideAction || "").trim();
+  if (Array.isArray(overrideDraft)) {
+    const matchedDraft = overrideDraft.find((entry) => String(entry?.skillKey || "").trim() === skillKey);
+    overrideAction = String(matchedDraft?.action || "").trim();
+  }
+  return `
+    <article class="oc-tenant-skill-workbench-skill-card">
+      <div class="oc-tenant-skill-workbench-skill-card__header">
+        <div>
+          <h4 class="oc-tenant-skill-workbench-skill-card__title">${escapeHtml(
+            skill?.name || skillKey || "-",
+          )}</h4>
+          <p class="oc-tenant-skill-workbench-skill-card__subtitle">${escapeHtml(
+            skillKey || "-",
+          )}</p>
+        </div>
+        <span class="data-table-badge data-table-badge--${getWorkbenchSkillStateVariant(skill)}">${escapeHtml(
+          getWorkbenchSkillStateLabel(skill),
+        )}</span>
+      </div>
+      <p class="oc-tenant-skill-workbench-skill-card__description">${escapeHtml(
+        skill?.description || "暂无说明",
+      )}</p>
+      <dl class="oc-tenant-skill-workbench-skill-card__meta">
+        <div>
+          <dt>类型</dt>
+          <dd>${escapeHtml(getWorkbenchSkillClassificationLabel(skill?.classification))}</dd>
+        </div>
+        <div>
+          <dt>授权</dt>
+          <dd>${escapeHtml(
+            skill?.classification === "bundled"
+              ? "无需购买"
+              : skill?.entitlement?.enabledByTenant
+                ? "已启用"
+                : skill?.marketStatus || "未授权",
+          )}</dd>
+        </div>
+        <div>
+          <dt>版本</dt>
+          <dd>${escapeHtml(skill?.latestVersionLabel || skill?.currentVersionId || skill?.latestVersionId || "-")}</dd>
+        </div>
+        <div>
+          <dt>价格</dt>
+          <dd>${formatNumber(skill?.pricePoints || 0)}</dd>
+        </div>
+      </dl>
+      <div class="oc-tenant-skill-workbench-skill-card__controls">
+        <label class="oc-tenant-skill-workbench-toggle">
+          <input
+            type="checkbox"
+            data-tenant-skill-template-toggle="${escapeAttribute(tenantAgentId)}"
+            data-tenant-skill-key="${escapeAttribute(skillKey)}"
+            ${templateChecked ? "checked" : ""}
+            ${isWorkbenchSkillTemplateDisabled(skill) ? "disabled" : ""}
+          />
+          <span>Agent 默认启用</span>
+        </label>
+        <label class="field">
+          <span>成员覆盖</span>
+          <select
+            class="field__control"
+            data-tenant-skill-override-select="${escapeAttribute(assignmentId)}"
+            data-tenant-skill-key="${escapeAttribute(skillKey)}"
+          >
+            <option value="" ${!overrideAction ? "selected" : ""}>跟随默认</option>
+            <option value="force_add" ${overrideAction === "force_add" ? "selected" : ""}>成员加配</option>
+            <option value="force_remove" ${overrideAction === "force_remove" ? "selected" : ""}>成员移除</option>
+          </select>
+        </label>
+      </div>
+      <div class="oc-tenant-skill-workbench-skill-card__actions">
+        ${
+          skill?.classification === "paid" && !skill?.entitlement?.id && skill?.pendingOrderId
+            ? `<button class="btn primary" type="button" data-tenant-skill-confirm-order="${escapeAttribute(skill.pendingOrderId)}">确认购买</button>`
+            : skill?.classification === "paid" && !skill?.entitlement?.id
+              ? `<button class="btn" type="button" data-tenant-skill-order="${escapeAttribute(skill?.id)}">购买</button>`
+              : skill?.classification === "free" && skill?.entitlement?.id && !skill?.entitlement?.enabledByTenant
+                ? `<button class="btn" type="button" data-tenant-skill-enable="${escapeAttribute(skill.entitlement.id)}">启用授权</button>`
+                : skill?.classification === "free" && !skill?.entitlement?.id
+                  ? `<button class="btn" type="button" data-tenant-skill-free-enable="${escapeAttribute(skill?.id)}">免费启用</button>`
+                  : skill?.entitlement?.id && skill?.classification !== "bundled" && skill?.entitlement?.enabledByTenant
+                    ? `<button class="btn" type="button" data-tenant-skill-disable="${escapeAttribute(skill.entitlement.id)}">停用授权</button>`
+                    : ""
+        }
+      </div>
+    </article>
+  `;
+}
+
+function renderSkillsWorkbenchAgentCard(controller, card) {
+  const blockedReasons = Array.isArray(card?.blockedReasons) ? card.blockedReasons : [];
+  return `
+    <article class="oc-tenant-skill-workbench-agent-card">
+      <header class="oc-tenant-skill-workbench-agent-card__header">
+        <div>
+          <h3 class="oc-tenant-skill-workbench-agent-card__title">${escapeHtml(
+            getWorkbenchAgentTitle(card),
+          )}</h3>
+          <p class="oc-tenant-skill-workbench-agent-card__subtitle">${escapeHtml(
+            card?.baseAgentId || card?.tenantAgentId || "-",
+          )}</p>
+        </div>
+        <div class="oc-tenant-skill-workbench-agent-card__header-actions">
+          <span class="data-table-badge data-table-badge--${String(card?.assignmentStatus || "").trim() === "active" ? "direct" : "unknown"}">${escapeHtml(
+            String(card?.assignmentStatus || "").trim() === "blocked_missing_skills" ? "已阻断" : "已分配",
+          )}</span>
+          <button class="btn primary" type="button" data-tenant-skill-template-save="${escapeAttribute(
+            card?.tenantAgentId || "",
+          )}">保存 Agent 默认</button>
+          <button class="btn" type="button" data-tenant-skill-override-save="${escapeAttribute(
+            card?.assignmentId || "",
+          )}">保存成员覆盖</button>
+        </div>
+      </header>
+      ${
+        blockedReasons.length
+          ? `<div class="callout warning">阻断原因：${escapeHtml(blockedReasons.join("，"))}</div>`
+          : ""
+      }
+      <div class="oc-tenant-skill-workbench-skill-grid">
+        ${(Array.isArray(card?.cardSkills) ? card.cardSkills : [])
+          .map((skill) => renderSkillsWorkbenchSkillCard(controller, card, skill))
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderSkillsWorkbench(controller) {
+  const state = controller.skillsWorkbenchState;
+  const members = Array.isArray(state?.filteredMembers) ? state.filteredMembers : [];
+  const selectedMember = state?.selectedMember || null;
+  return `
+    <section class="oc-tenant-skill-workbench">
+      <aside class="oc-tenant-skill-workbench__sidebar">
+        <header class="oc-tenant-skill-workbench__sidebar-header">
+          <h2 class="oc-tenant-skill-workbench__sidebar-title">成员</h2>
+          <p class="oc-tenant-skill-workbench__sidebar-summary">选择成员后按 Agent 管理 skills</p>
+        </header>
+        <div class="oc-tenant-skill-workbench__member-list">
+          ${
+            members.length
+              ? members
+                  .map(
+                    (member) => `
+                      <button
+                        type="button"
+                        class="oc-tenant-skill-workbench__member-item ${
+                          member.userId === state?.selectedMemberId
+                            ? "oc-tenant-skill-workbench__member-item--active"
+                            : ""
+                        }"
+                        data-tenant-skill-member-select="${escapeAttribute(member.userId)}"
+                      >
+                        <span class="oc-tenant-skill-workbench__member-main">
+                          <span class="oc-tenant-skill-workbench__member-name">${escapeHtml(
+                            member.username || member.userId,
+                          )}</span>
+                          <span class="oc-tenant-skill-workbench__member-meta">${formatNumber(
+                            Array.isArray(member.cards) ? member.cards.length : 0,
+                          )} 个 Agent</span>
+                        </span>
+                        <span class="data-table-badge data-table-badge--${getWorkbenchMemberStatusVariant(
+                          member.status,
+                        )}">${escapeHtml(member.status || "-")}</span>
+                      </button>
+                    `,
+                  )
+                  .join("")
+              : `<div class="callout info">当前没有可管理 skills 的成员。</div>`
+          }
+        </div>
+      </aside>
+      <div class="oc-tenant-skill-workbench__content">
+        ${
+          selectedMember
+            ? `
+              <header class="oc-tenant-skill-workbench__content-header">
+                <div>
+                  <h2 class="oc-tenant-skill-workbench__content-title">${escapeHtml(
+                    selectedMember.username || selectedMember.userId,
+                  )}</h2>
+                  <p class="oc-tenant-skill-workbench__content-summary">按该成员已分配 Agent 管理默认技能与成员覆盖。</p>
+                </div>
+              </header>
+              ${
+                Array.isArray(selectedMember.cards) && selectedMember.cards.length
+                  ? `
+                    <div class="oc-tenant-skill-workbench__agent-list">
+                      ${selectedMember.cards.map((card) => renderSkillsWorkbenchAgentCard(controller, card)).join("")}
+                    </div>
+                  `
+                  : `<div class="callout info">该成员当前没有已分配 Agent。</div>`
+              }
+            `
+            : `<div class="callout info">请选择左侧成员后查看 Agent skills。</div>`
+        }
+      </div>
+    </section>
   `;
 }
 
@@ -470,6 +768,7 @@ export function renderTenantConsole(root, controller) {
   const isWalletFlow = controller.section === "wallet-flow";
   const isOwnedAgents = controller.section === "owned-agents";
   const isSkillsMarket = controller.section === "skills-market";
+  const isSkillsWorkbench = controller.section === "skills-workbench";
   const isSkillsEntitlements = controller.section === "skills-entitlements";
   const isSkillsAssignments = controller.section === "skills-assignments";
 
@@ -489,6 +788,7 @@ export function renderTenantConsole(root, controller) {
     isWalletOrders ||
     isWalletLedger ||
     isWalletFlow ||
+    isSkillsWorkbench ||
     isSkillsMarket ||
     isSkillsEntitlements ||
     isSkillsAssignments
@@ -505,6 +805,8 @@ export function renderTenantConsole(root, controller) {
     ? renderUsageList(controller, renderPagination)
     : isOverview
       ? renderTenantOverview(controller)
+      : isSkillsWorkbench
+        ? renderSkillsWorkbench(controller)
       : isSkillsMarket
         ? renderSkillsMarketTable(controller)
         : isSkillsEntitlements
@@ -540,7 +842,7 @@ export function renderTenantConsole(root, controller) {
   root.dataset.ocTenantEmbedded = "true";
   root.dataset.ocTenantSection = controller.section;
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow || isSkillsMarket || isSkillsEntitlements || isSkillsAssignments ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow || isSkillsWorkbench || isSkillsMarket || isSkillsEntitlements || isSkillsAssignments ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
     </section>
@@ -551,6 +853,7 @@ export function renderTenantConsole(root, controller) {
       isWalletOrders ||
       isWalletLedger ||
       isWalletFlow ||
+      isSkillsWorkbench ||
       isSkillsMarket ||
       isSkillsEntitlements ||
       isSkillsAssignments
