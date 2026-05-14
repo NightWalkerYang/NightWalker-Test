@@ -216,6 +216,46 @@ export function ensureTenantConsoleController(root, session, apiClient, stateFac
   return controller;
 }
 
+function getWorkbenchCardTitle(card) {
+  return (
+    String(card?.tenantAgent?.agentName || "").trim() ||
+    String(card?.tenantAgent?.description || "").trim() ||
+    String(card?.baseAgentId || "").trim() ||
+    String(card?.tenantAgentId || "").trim() ||
+    "未命名 Agent"
+  );
+}
+
+function cardMatchesWorkbenchSearch(card, query) {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  const skillValues = Array.isArray(card?.cardSkills)
+    ? card.cardSkills.flatMap((skill) => [skill?.name, skill?.skillKey, skill?.description])
+    : [];
+  return [
+    getWorkbenchCardTitle(card),
+    card?.tenantAgent?.description,
+    card?.baseAgentId,
+    card?.tenantAgentId,
+    ...(Array.isArray(card?.resolvedSkillKeys) ? card.resolvedSkillKeys : []),
+    ...skillValues,
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalizedQuery));
+}
+
+function memberMatchesWorkbenchSearch(member, query) {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  return [member?.username, member?.status, member?.userId]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalizedQuery));
+}
+
 function buildTenantSkillWorkbenchState(controller) {
   const members = Array.isArray(controller.members) ? controller.members : [];
   const tenantAgents = Array.isArray(controller.tenantAgents) ? controller.tenantAgents : [];
@@ -358,42 +398,86 @@ function buildTenantSkillWorkbenchState(controller) {
   });
 
   const activeSearch = getSearchValue(controller).trim().toLowerCase();
-  const filteredMembers = activeSearch
-    ? memberItems.filter((member) => {
-        const memberMatch = [member?.username, member?.status]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(activeSearch));
-        const cardMatch = (member.cards || []).some((card) =>
-          [
-            card?.tenantAgent?.agentName,
-            card?.tenantAgent?.description,
-            card?.baseAgentId,
-            ...(Array.isArray(card?.resolvedSkillKeys) ? card.resolvedSkillKeys : []),
-          ]
-            .filter(Boolean)
-            .some((value) => String(value).toLowerCase().includes(activeSearch)),
-        );
-        return memberMatch || cardMatch;
-      })
-    : memberItems;
-  const selectedMemberId = String(controller.skillsWorkbenchState?.selectedMemberId || "").trim();
-  const fallbackSelectedMemberId = filteredMembers[0]?.userId || memberItems[0]?.userId || "";
-  const resolvedSelectedMemberId = filteredMembers.some(
-    (member) => member.userId === selectedMemberId,
-  )
-    ? selectedMemberId
-    : fallbackSelectedMemberId;
+  const filteredMembers = memberItems
+    .map((member) => {
+      const memberMatch = memberMatchesWorkbenchSearch(member, activeSearch);
+      const matchedCards = activeSearch
+        ? member.cards.filter((card) => cardMatchesWorkbenchSearch(card, activeSearch))
+        : member.cards;
+      if (!memberMatch && !matchedCards.length) {
+        return null;
+      }
+      return {
+        ...member,
+        treeCards: activeSearch && !memberMatch ? matchedCards : member.cards,
+      };
+    })
+    .filter(Boolean);
+
+  const previousState =
+    controller.skillsWorkbenchState && typeof controller.skillsWorkbenchState === "object"
+      ? controller.skillsWorkbenchState
+      : {};
+  const previousExpandedMemberIds = new Set(
+    Array.isArray(previousState.expandedMemberIds)
+      ? previousState.expandedMemberIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [],
+  );
+  const availableMemberIds = new Set(filteredMembers.map((member) => member.userId));
+  const expandedMemberIds = new Set(
+    [...previousExpandedMemberIds].filter((memberId) => availableMemberIds.has(memberId)),
+  );
+  let selectedMemberId = String(previousState.selectedMemberId || "").trim();
+  if (!filteredMembers.some((member) => member.userId === selectedMemberId)) {
+    selectedMemberId = filteredMembers[0]?.userId || memberItems[0]?.userId || "";
+  }
+  if (!expandedMemberIds.size && selectedMemberId) {
+    expandedMemberIds.add(selectedMemberId);
+  }
+  if (!selectedMemberId && filteredMembers[0]?.userId) {
+    selectedMemberId = filteredMembers[0].userId;
+    expandedMemberIds.add(selectedMemberId);
+  }
+  if (selectedMemberId) {
+    expandedMemberIds.add(selectedMemberId);
+  }
+
   const selectedMember =
-    filteredMembers.find((member) => member.userId === resolvedSelectedMemberId) ||
-    memberItems.find((member) => member.userId === resolvedSelectedMemberId) ||
+    filteredMembers.find((member) => member.userId === selectedMemberId) ||
+    memberItems.find((member) => member.userId === selectedMemberId) ||
     null;
+  const selectedMemberCards = Array.isArray(selectedMember?.treeCards)
+    ? selectedMember.treeCards
+    : Array.isArray(selectedMember?.cards)
+      ? selectedMember.cards
+      : [];
+  let selectedAssignmentId = String(previousState.selectedAssignmentId || "").trim();
+  if (!selectedMemberCards.some((card) => card.assignmentId === selectedAssignmentId)) {
+    selectedAssignmentId = selectedMemberCards[0]?.assignmentId || "";
+  }
+  const selectedCard =
+    selectedMemberCards.find((card) => card.assignmentId === selectedAssignmentId) || null;
 
   return {
     members: memberItems,
     filteredMembers,
-    selectedMemberId: resolvedSelectedMemberId,
+    expandedMemberIds: [...expandedMemberIds],
+    selectedMemberId,
+    selectedAssignmentId,
     selectedMember,
+    selectedCard,
   };
+}
+
+export function rebuildSkillsWorkbenchState(controller, partialState = null) {
+  if (partialState && typeof partialState === "object") {
+    controller.skillsWorkbenchState = {
+      ...(controller.skillsWorkbenchState || {}),
+      ...partialState,
+    };
+  }
+  controller.skillsWorkbenchState = buildTenantSkillWorkbenchState(controller);
+  return controller.skillsWorkbenchState;
 }
 
 export async function refreshTenantConsole(root, controller, helpers) {
@@ -564,7 +648,7 @@ export async function refreshTenantConsole(root, controller, helpers) {
     controller.skillsMarketItems = Array.isArray(marketGroups)
       ? marketGroups.flatMap((entry) => Array.isArray(entry?.items) ? entry.items : [])
       : [];
-    controller.skillsWorkbenchState = buildTenantSkillWorkbenchState(controller);
+    rebuildSkillsWorkbenchState(controller);
     helpers.render(root, controller);
     return;
   }

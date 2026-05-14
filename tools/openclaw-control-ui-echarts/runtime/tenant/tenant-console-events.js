@@ -5,6 +5,7 @@ import {
   formatNumber,
   getPageValue,
   isRemoteSearchSection,
+  rebuildSkillsWorkbenchState,
   setPageValue,
   tenantConsoleStateFactories,
 } from "./tenant-console-controller.js";
@@ -314,16 +315,53 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         return;
       }
 
-      const workbenchMemberTrigger = target.closest("[data-tenant-skill-member-select]");
+      const workbenchMemberTrigger = target.closest("[data-tenant-skill-member-toggle]");
       if (workbenchMemberTrigger instanceof HTMLElement) {
+        const memberId = String(workbenchMemberTrigger.dataset.tenantSkillMemberToggle || "").trim();
+        const currentExpanded = new Set(
+          Array.isArray(controller.skillsWorkbenchState?.expandedMemberIds)
+            ? controller.skillsWorkbenchState.expandedMemberIds
+                .map((value) => String(value || "").trim())
+                .filter(Boolean)
+            : [],
+        );
+        if (currentExpanded.has(memberId)) {
+          currentExpanded.delete(memberId);
+        } else {
+          currentExpanded.add(memberId);
+        }
+        rebuildSkillsWorkbenchState(controller, {
+          selectedMemberId: memberId,
+          expandedMemberIds: [...currentExpanded],
+        });
+        render(root, controller);
+        return;
+      }
+
+      const workbenchAssignmentTrigger = target.closest("[data-tenant-skill-assignment-select]");
+      if (workbenchAssignmentTrigger instanceof HTMLElement) {
         const selectedMemberId = String(
-          workbenchMemberTrigger.dataset.tenantSkillMemberSelect || "",
+          workbenchAssignmentTrigger.dataset.tenantSkillMemberSelect || "",
         ).trim();
-        controller.skillsWorkbenchState = {
-          ...(controller.skillsWorkbenchState || {}),
+        const selectedAssignmentId = String(
+          workbenchAssignmentTrigger.dataset.tenantSkillAssignmentSelect || "",
+        ).trim();
+        const currentExpanded = new Set(
+          Array.isArray(controller.skillsWorkbenchState?.expandedMemberIds)
+            ? controller.skillsWorkbenchState.expandedMemberIds
+                .map((value) => String(value || "").trim())
+                .filter(Boolean)
+            : [],
+        );
+        if (selectedMemberId) {
+          currentExpanded.add(selectedMemberId);
+        }
+        rebuildSkillsWorkbenchState(controller, {
           selectedMemberId,
-        };
-        await refresh(root, controller);
+          selectedAssignmentId,
+          expandedMemberIds: [...currentExpanded],
+        });
+        render(root, controller);
         return;
       }
 
@@ -692,23 +730,6 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         render(root, controller);
         return;
       }
-      if (target instanceof HTMLSelectElement && target.hasAttribute("data-tenant-skill-override-select")) {
-        const assignmentId = String(target.dataset.tenantSkillOverrideSelect || "").trim();
-        const skillKey = String(target.dataset.tenantSkillKey || "").trim();
-        const nextAction = String(target.value || "").trim();
-        const currentDraft = Array.isArray(controller.skillsOverrideDrafts.get(assignmentId))
-          ? controller.skillsOverrideDrafts.get(assignmentId).map((entry) => ({ ...entry }))
-          : [];
-        const filteredDraft = currentDraft.filter(
-          (entry) => String(entry?.skillKey || "").trim() !== skillKey,
-        );
-        if (nextAction === "force_add" || nextAction === "force_remove") {
-          filteredDraft.push({ skillKey, action: nextAction });
-        }
-        controller.skillsOverrideDrafts.set(assignmentId, filteredDraft);
-        render(root, controller);
-        return;
-      }
       if (target.hasAttribute("data-tenant-search")) {
         controller.searchBySection[controller.section] = target.value;
         setPageValue(controller, 1);
@@ -722,6 +743,32 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
           }, REMOTE_SEARCH_DEBOUNCE_MS);
           return;
         }
+        render(root, controller);
+      }
+    },
+
+    handleChange(root, controller, event) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (
+        target instanceof HTMLSelectElement &&
+        target.hasAttribute("data-tenant-skill-override-select")
+      ) {
+        const assignmentId = String(target.dataset.tenantSkillOverrideSelect || "").trim();
+        const skillKey = String(target.dataset.tenantSkillKey || "").trim();
+        const nextAction = String(target.value || "").trim();
+        const currentDraft = Array.isArray(controller.skillsOverrideDrafts.get(assignmentId))
+          ? controller.skillsOverrideDrafts.get(assignmentId).map((entry) => ({ ...entry }))
+          : [];
+        const filteredDraft = currentDraft.filter(
+          (entry) => String(entry?.skillKey || "").trim() !== skillKey,
+        );
+        if (nextAction === "force_add" || nextAction === "force_remove") {
+          filteredDraft.push({ skillKey, action: nextAction });
+        }
+        controller.skillsOverrideDrafts.set(assignmentId, filteredDraft);
         render(root, controller);
       }
     },

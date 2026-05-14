@@ -62,6 +62,9 @@ function ensureController(root, session, apiClient) {
   root.addEventListener("input", (event) => {
     tenantConsoleEventHandlers.handleInput(root, controller, event);
   });
+  root.addEventListener("change", (event) => {
+    tenantConsoleEventHandlers.handleChange(root, controller, event);
+  });
   root.addEventListener("submit", (event) => {
     void tenantConsoleEventHandlers.handleSubmit(root, controller, event);
   });

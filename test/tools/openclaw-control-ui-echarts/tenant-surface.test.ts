@@ -332,12 +332,16 @@ describe("tenant surface", () => {
                   {
                     tenantAgentId: "tenant-agent-1",
                     baseAgentId: "finance",
-                    templateSkillKeys: ["finance-core"],
+                    templateSkillKeys: ["finance-core", "finance-report"],
                     blockedSkillKeys: [],
-                    assignmentCount: 1,
+                    assignmentCount: 2,
                     templateRows: [
                       {
                         skillKey: "finance-core",
+                        templateState: "enabled",
+                      },
+                      {
+                        skillKey: "finance-report",
                         templateState: "enabled",
                       },
                     ],
@@ -347,6 +351,41 @@ describe("tenant surface", () => {
                         userId: "member-1",
                         username: "alice",
                         resolvedSkillKeys: ["finance-core"],
+                        overrideRows: [],
+                        overrideSummary: [],
+                        blockedReasons: [],
+                        status: "active",
+                      },
+                      {
+                        assignmentId: "assignment-2",
+                        userId: "member-1",
+                        username: "alice",
+                        resolvedSkillKeys: ["finance-core", "finance-report"],
+                        overrideRows: [],
+                        overrideSummary: [],
+                        blockedReasons: [],
+                        status: "active",
+                      },
+                    ],
+                  },
+                  {
+                    tenantAgentId: "tenant-agent-2",
+                    baseAgentId: "ops",
+                    templateSkillKeys: ["ops-core"],
+                    blockedSkillKeys: [],
+                    assignmentCount: 1,
+                    templateRows: [
+                      {
+                        skillKey: "ops-core",
+                        templateState: "enabled",
+                      },
+                    ],
+                    assignments: [
+                      {
+                        assignmentId: "assignment-3",
+                        userId: "member-1",
+                        username: "alice",
+                        resolvedSkillKeys: ["ops-core"],
                         overrideRows: [],
                         overrideSummary: [],
                         blockedReasons: [],
@@ -393,6 +432,14 @@ describe("tenant surface", () => {
                     status: "active",
                     balancePoints: 20,
                   },
+                  {
+                    id: "tenant-agent-2",
+                    agentId: "ops",
+                    agentName: "运维助手",
+                    description: "运维处理 Agent",
+                    status: "active",
+                    balancePoints: 10,
+                  },
                 ],
               };
             },
@@ -418,6 +465,44 @@ describe("tenant surface", () => {
                     compatibleBaseAgents: ["finance"],
                     pricePoints: 0,
                   },
+                  {
+                    id: "skill-2",
+                    skillId: "skill-2",
+                    skillKey: "finance-report",
+                    name: "finance-report",
+                    description: "财务报表能力",
+                    classification: "free",
+                    marketStatus: "免费可启用",
+                    latestVersionId: "ver-2",
+                    latestVersionLabel: "v2",
+                    compatibleBaseAgents: ["finance"],
+                    pricePoints: 0,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/market?baseAgentId=ops")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "skill-3",
+                    skillId: "skill-3",
+                    skillKey: "ops-core",
+                    name: "ops-core",
+                    description: "运维核心能力",
+                    classification: "bundled",
+                    marketStatus: "无需购买",
+                    latestVersionId: "ver-3",
+                    latestVersionLabel: "v3",
+                    compatibleBaseAgents: ["ops"],
+                    pricePoints: 0,
+                  },
                 ],
               };
             },
@@ -435,21 +520,47 @@ describe("tenant surface", () => {
     expect(root?.textContent).toContain("alice");
     expect(root?.textContent).toContain("财务助手");
     expect(root?.textContent).toContain("finance-core");
-    expect(root?.querySelector('[data-tenant-skill-member-select="member-1"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-member-toggle="member-1"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-1"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-2"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-3"]')).not.toBeNull();
+    expect(root?.textContent).not.toContain("运维核心能力");
     expect(
       root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]'),
     ).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-override-save="assignment-1"]')).not.toBeNull();
+
+    const opsAssignmentButton = root?.querySelector(
+      '[data-tenant-skill-assignment-select="assignment-3"]',
+    );
+    opsAssignmentButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flush();
+
+    root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.textContent).toContain("运维助手");
+    expect(root?.textContent).toContain("ops-core");
+    expect(root?.textContent).not.toContain("finance-report");
+    expect(root?.querySelector('[data-tenant-skill-template-save="tenant-agent-2"]')).not.toBeNull();
+    expect(root?.querySelector('[data-tenant-skill-override-save="assignment-3"]')).not.toBeNull();
 
     window.history.pushState({}, "", "/?ocTenantView=tenant-skills-assignments");
     await flush();
 
     root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
-    expect(root?.textContent).toContain("finance-core");
+    expect(root?.textContent).toContain("ops-core");
+    expect(root?.textContent).toContain("运维助手");
     expect(requests.some((url) => url.includes("/tenant/admin/skills/entitlements"))).toBe(true);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=finance"))).toBe(
+      true,
+    );
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/market?baseAgentId=ops"))).toBe(
       true,
     );
   });

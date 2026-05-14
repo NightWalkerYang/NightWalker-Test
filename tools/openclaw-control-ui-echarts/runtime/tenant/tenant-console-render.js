@@ -443,74 +443,132 @@ function renderSkillsWorkbenchAgentCard(controller, card) {
   `;
 }
 
-function renderSkillsWorkbench(controller) {
+function renderSkillsWorkbenchTree(controller) {
   const state = controller.skillsWorkbenchState;
   const members = Array.isArray(state?.filteredMembers) ? state.filteredMembers : [];
+  const expandedMemberIds = new Set(
+    Array.isArray(state?.expandedMemberIds)
+      ? state.expandedMemberIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [],
+  );
+  return `
+    <div class="oc-tenant-skill-workbench__member-tree">
+      ${
+        members.length
+          ? members
+              .map((member) => {
+                const memberId = String(member?.userId || "").trim();
+                const isExpanded = expandedMemberIds.has(memberId);
+                const treeCards = Array.isArray(member?.treeCards) ? member.treeCards : member.cards || [];
+                return `
+                  <section class="oc-tenant-skill-workbench__tree-group">
+                    <button
+                      type="button"
+                      class="oc-tenant-skill-workbench__member-item ${
+                        memberId === state?.selectedMemberId
+                          ? "oc-tenant-skill-workbench__member-item--active"
+                          : ""
+                      }"
+                      data-tenant-skill-member-toggle="${escapeAttribute(memberId)}"
+                      aria-expanded="${isExpanded ? "true" : "false"}"
+                    >
+                      <span class="oc-tenant-skill-workbench__member-main">
+                        <span class="oc-tenant-skill-workbench__member-heading">
+                          <span class="oc-tenant-skill-workbench__tree-caret">${isExpanded ? "▾" : "▸"}</span>
+                          <span class="oc-tenant-skill-workbench__member-name">${escapeHtml(
+                            member.username || member.userId,
+                          )}</span>
+                        </span>
+                        <span class="oc-tenant-skill-workbench__member-meta">${formatNumber(
+                          Array.isArray(member.cards) ? member.cards.length : 0,
+                        )} 个 Agent</span>
+                      </span>
+                      <span class="data-table-badge data-table-badge--${getWorkbenchMemberStatusVariant(
+                        member.status,
+                      )}">${escapeHtml(member.status || "-")}</span>
+                    </button>
+                    ${
+                      isExpanded
+                        ? `
+                          <div class="oc-tenant-skill-workbench__agent-tree">
+                            ${
+                              treeCards.length
+                                ? treeCards
+                                    .map(
+                                      (card) => `
+                                        <button
+                                          type="button"
+                                          class="oc-tenant-skill-workbench__agent-item ${
+                                            String(card?.assignmentId || "").trim() ===
+                                            String(state?.selectedAssignmentId || "").trim()
+                                              ? "oc-tenant-skill-workbench__agent-item--active"
+                                              : ""
+                                          }"
+                                          data-tenant-skill-assignment-select="${escapeAttribute(
+                                            card?.assignmentId || "",
+                                          )}"
+                                          data-tenant-skill-member-select="${escapeAttribute(memberId)}"
+                                        >
+                                          <span class="oc-tenant-skill-workbench__agent-name">${escapeHtml(
+                                            getWorkbenchAgentTitle(card),
+                                          )}</span>
+                                          <span class="oc-tenant-skill-workbench__agent-meta">${escapeHtml(
+                                            card?.baseAgentId || card?.tenantAgentId || "-",
+                                          )}</span>
+                                        </button>
+                                      `,
+                                    )
+                                    .join("")
+                                : `<div class="callout info">该成员当前没有已分配 Agent。</div>`
+                            }
+                          </div>
+                        `
+                        : ""
+                    }
+                  </section>
+                `;
+              })
+              .join("")
+          : `<div class="callout info">当前没有可管理 skills 的成员。</div>`
+      }
+    </div>
+  `;
+}
+
+function renderSkillsWorkbench(controller) {
+  const state = controller.skillsWorkbenchState;
   const selectedMember = state?.selectedMember || null;
+  const selectedCard = state?.selectedCard || null;
   return `
     <section class="oc-tenant-skill-workbench">
       <aside class="oc-tenant-skill-workbench__sidebar">
         <header class="oc-tenant-skill-workbench__sidebar-header">
           <h2 class="oc-tenant-skill-workbench__sidebar-title">成员</h2>
-          <p class="oc-tenant-skill-workbench__sidebar-summary">选择成员后按 Agent 管理 skills</p>
+          <p class="oc-tenant-skill-workbench__sidebar-summary">展开成员后选择 Agent，再管理该 Agent 的 skills</p>
         </header>
-        <div class="oc-tenant-skill-workbench__member-list">
-          ${
-            members.length
-              ? members
-                  .map(
-                    (member) => `
-                      <button
-                        type="button"
-                        class="oc-tenant-skill-workbench__member-item ${
-                          member.userId === state?.selectedMemberId
-                            ? "oc-tenant-skill-workbench__member-item--active"
-                            : ""
-                        }"
-                        data-tenant-skill-member-select="${escapeAttribute(member.userId)}"
-                      >
-                        <span class="oc-tenant-skill-workbench__member-main">
-                          <span class="oc-tenant-skill-workbench__member-name">${escapeHtml(
-                            member.username || member.userId,
-                          )}</span>
-                          <span class="oc-tenant-skill-workbench__member-meta">${formatNumber(
-                            Array.isArray(member.cards) ? member.cards.length : 0,
-                          )} 个 Agent</span>
-                        </span>
-                        <span class="data-table-badge data-table-badge--${getWorkbenchMemberStatusVariant(
-                          member.status,
-                        )}">${escapeHtml(member.status || "-")}</span>
-                      </button>
-                    `,
-                  )
-                  .join("")
-              : `<div class="callout info">当前没有可管理 skills 的成员。</div>`
-          }
-        </div>
+        ${renderSkillsWorkbenchTree(controller)}
       </aside>
       <div class="oc-tenant-skill-workbench__content">
         ${
-          selectedMember
+          selectedMember && selectedCard
             ? `
               <header class="oc-tenant-skill-workbench__content-header">
                 <div>
                   <h2 class="oc-tenant-skill-workbench__content-title">${escapeHtml(
                     selectedMember.username || selectedMember.userId,
                   )}</h2>
-                  <p class="oc-tenant-skill-workbench__content-summary">按该成员已分配 Agent 管理默认技能与成员覆盖。</p>
+                  <p class="oc-tenant-skill-workbench__content-summary">当前正在管理 ${escapeHtml(
+                    getWorkbenchAgentTitle(selectedCard),
+                  )} 的默认技能与成员覆盖。</p>
                 </div>
               </header>
-              ${
-                Array.isArray(selectedMember.cards) && selectedMember.cards.length
-                  ? `
-                    <div class="oc-tenant-skill-workbench__agent-list">
-                      ${selectedMember.cards.map((card) => renderSkillsWorkbenchAgentCard(controller, card)).join("")}
-                    </div>
-                  `
-                  : `<div class="callout info">该成员当前没有已分配 Agent。</div>`
-              }
+              <div class="oc-tenant-skill-workbench__agent-list">
+                ${renderSkillsWorkbenchAgentCard(controller, selectedCard)}
+              </div>
             `
-            : `<div class="callout info">请选择左侧成员后查看 Agent skills。</div>`
+            : selectedMember
+              ? `<div class="callout info">请选择该成员下的 Agent 后查看 skills。</div>`
+              : `<div class="callout info">请选择左侧成员后查看 Agent skills。</div>`
         }
       </div>
     </section>
