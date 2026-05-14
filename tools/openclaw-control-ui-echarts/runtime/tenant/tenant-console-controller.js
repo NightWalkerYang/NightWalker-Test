@@ -416,8 +416,9 @@ function buildTenantSkillWorkbenchState(controller) {
     controller.skillsWorkbenchState && typeof controller.skillsWorkbenchState === "object"
       ? controller.skillsWorkbenchState
       : {};
+  const hasExplicitExpandedMemberIds = Array.isArray(previousState.expandedMemberIds);
   const previousExpandedMemberIds = new Set(
-    Array.isArray(previousState.expandedMemberIds)
+    hasExplicitExpandedMemberIds
       ? previousState.expandedMemberIds.map((value) => String(value || "").trim()).filter(Boolean)
       : [],
   );
@@ -429,10 +430,10 @@ function buildTenantSkillWorkbenchState(controller) {
   if (!filteredMembers.some((member) => member.userId === selectedMemberId)) {
     selectedMemberId = filteredMembers[0]?.userId || memberItems[0]?.userId || "";
   }
-  if (!expandedMemberIds.size && selectedMemberId) {
+  if (!expandedMemberIds.size && selectedMemberId && !hasExplicitExpandedMemberIds) {
     expandedMemberIds.add(selectedMemberId);
   }
-  if (!selectedMemberId && filteredMembers[0]?.userId) {
+  if (!selectedMemberId && filteredMembers[0]?.userId && !hasExplicitExpandedMemberIds) {
     selectedMemberId = filteredMembers[0].userId;
   }
 

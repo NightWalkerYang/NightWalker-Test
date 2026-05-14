@@ -591,6 +591,13 @@ describe("tenant surface", () => {
     await flush();
 
     root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(memberToggle?.getAttribute("aria-expanded")).not.toBe("false");
+    const collapsedToggle = root?.querySelector('[data-tenant-skill-member-toggle="member-1"]');
+    const collapsedSection = collapsedToggle?.closest(".oc-tenant-skill-workbench__member-section");
+    const collapsedItems = collapsedSection?.querySelector(".nav-section__items");
+    expect(collapsedToggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(collapsedSection?.classList.contains("nav-section--collapsed")).toBe(true);
+    expect(collapsedItems?.hasAttribute("hidden")).toBe(true);
     expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).toBeNull();
     expect(root?.textContent).toContain("请选择该成员下的 Agent 后查看 skills。");
 

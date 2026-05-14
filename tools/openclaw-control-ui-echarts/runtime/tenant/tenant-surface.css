@@ -778,8 +778,12 @@
 
 .oc-tenant-skill-workbench__sidebar {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
-  align-content: start;
+  align-content: stretch;
+  min-height: 0;
+  max-height: calc(100vh - 220px);
+  overflow: hidden;
 }
 
 .oc-tenant-skill-workbench__sidebar-header {
@@ -807,6 +811,10 @@
 .oc-tenant-skill-workbench__member-nav {
   display: grid;
   gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
 }
 
 .oc-tenant-skill-workbench__member-section {
@@ -964,6 +972,10 @@
   .oc-tenant-skill-workbench {
     grid-template-columns: 1fr;
     min-height: auto;
+  }
+
+  .oc-tenant-skill-workbench__sidebar {
+    max-height: none;
   }
 
   .oc-tenant-skill-workbench__member-section > .nav-section__items {
