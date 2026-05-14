@@ -844,10 +844,15 @@
   color: var(--muted);
 }
 
-.oc-tenant-skill-workbench__member-section > .nav-section__items {
+.oc-tenant-skill-workbench__member-section > .nav-section__items:not([hidden]) {
   display: grid;
   gap: 8px;
   padding-left: 12px;
+}
+
+.oc-tenant-skill-workbench__member-section.nav-section--collapsed > .nav-section__items,
+.oc-tenant-skill-workbench__member-section > .nav-section__items[hidden] {
+  display: none;
 }
 
 .oc-tenant-skill-workbench__agent-nav-item {
@@ -978,7 +983,7 @@
     max-height: none;
   }
 
-  .oc-tenant-skill-workbench__member-section > .nav-section__items {
+  .oc-tenant-skill-workbench__member-section > .nav-section__items:not([hidden]) {
     padding-left: 8px;
   }
 
