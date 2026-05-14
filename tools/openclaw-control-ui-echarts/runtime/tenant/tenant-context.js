@@ -16,6 +16,7 @@ export const PLATFORM_TENANT_MANAGEMENT_VIEW = PLATFORM_TENANTS_VIEW;
 export const PLATFORM_AGENT_ASSIGNMENT_VIEW = "platform-agent-assignment";
 export const PLATFORM_DATA_SOURCES_VIEW = "platform-data-sources";
 export const PLATFORM_NODE_MANAGEMENT_VIEW = "platform-nodes";
+export const PLATFORM_SKILLS_VIEW = "platform-skills";
 export const TENANT_MEMBERS_VIEW = "tenant-members";
 export const TENANT_AGENT_ASSIGNMENT_VIEW = "tenant-agent-assignment";
 export const TENANT_OWNED_AGENTS_VIEW = "tenant-owned-agents";
@@ -25,6 +26,9 @@ export const TENANT_WALLET_VIEW = "tenant-wallet";
 export const TENANT_WALLET_ORDERS_VIEW = "tenant-wallet-orders";
 export const TENANT_WALLET_LEDGER_VIEW = "tenant-wallet-ledger";
 export const TENANT_WALLET_FLOW_VIEW = "tenant-wallet-flow";
+export const TENANT_SKILLS_MARKET_VIEW = "tenant-skills-market";
+export const TENANT_SKILLS_ENTITLEMENTS_VIEW = "tenant-skills-entitlements";
+export const TENANT_SKILLS_ASSIGNMENTS_VIEW = "tenant-skills-assignments";
 export const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
 export const TENANT_WALLET_SUMMARY_EVENT = "openclaw:tenant-wallet-summary";
 export const LOGIN_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${LOGIN_VIEW}`;
@@ -34,6 +38,7 @@ export const PLATFORM_TENANT_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${P
 export const PLATFORM_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_AGENT_ASSIGNMENT_VIEW}`;
 export const PLATFORM_DATA_SOURCES_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_DATA_SOURCES_VIEW}`;
 export const PLATFORM_NODE_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_NODE_MANAGEMENT_VIEW}`;
+export const PLATFORM_SKILLS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${PLATFORM_SKILLS_VIEW}`;
 export const TENANT_MEMBER_MANAGEMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_MEMBERS_VIEW}`;
 export const TENANT_AGENT_ASSIGNMENT_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_ASSIGNMENT_VIEW}`;
 export const TENANT_OWNED_AGENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_OWNED_AGENTS_VIEW}`;
@@ -43,6 +48,9 @@ export const TENANT_WALLET_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_
 export const TENANT_WALLET_ORDERS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_ORDERS_VIEW}`;
 export const TENANT_WALLET_LEDGER_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_LEDGER_VIEW}`;
 export const TENANT_WALLET_FLOW_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_WALLET_FLOW_VIEW}`;
+export const TENANT_SKILLS_MARKET_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_SKILLS_MARKET_VIEW}`;
+export const TENANT_SKILLS_ENTITLEMENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_SKILLS_ENTITLEMENTS_VIEW}`;
+export const TENANT_SKILLS_ASSIGNMENTS_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_SKILLS_ASSIGNMENTS_VIEW}`;
 export const TENANT_AGENT_SELECTOR_ROUTE = `./?${TENANT_VIEW_QUERY_KEY}=${TENANT_AGENT_SELECTOR_VIEW}`;
 
 function normalizeTenantSessionValue(value) {
@@ -114,7 +122,8 @@ export function readSessionForCurrentView(locationHref = window.location.href) {
     view === PLATFORM_TENANTS_VIEW ||
     view === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
     view === PLATFORM_DATA_SOURCES_VIEW ||
-    view === PLATFORM_NODE_MANAGEMENT_VIEW
+    view === PLATFORM_NODE_MANAGEMENT_VIEW ||
+    view === PLATFORM_SKILLS_VIEW
   ) {
     return readPlatformSession();
   }
@@ -131,6 +140,9 @@ export function readSessionForCurrentView(locationHref = window.location.href) {
     view === TENANT_WALLET_ORDERS_VIEW ||
     view === TENANT_WALLET_LEDGER_VIEW ||
     view === TENANT_WALLET_FLOW_VIEW ||
+    view === TENANT_SKILLS_MARKET_VIEW ||
+    view === TENANT_SKILLS_ENTITLEMENTS_VIEW ||
+    view === TENANT_SKILLS_ASSIGNMENTS_VIEW ||
     view === TENANT_AGENT_SELECTOR_VIEW
   ) {
     return readTenantSession();

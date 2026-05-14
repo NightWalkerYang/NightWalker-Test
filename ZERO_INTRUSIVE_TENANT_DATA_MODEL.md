@@ -1,222 +1,216 @@
 # 零侵入租户数据模型
 
-这份文档只保留当前主线直接相关的数据表与业务约束。
+这份文档只保留当前已落地且与 Skills 市场、租户 Agent 分配、钱包结算直接相关的数据模型。
 
-当前第一阶段底座默认使用：
+当前真实底座：
 
 - SQLite
+- 主迁移文件：`tools/openclaw-control-ui-echarts/sidecar/tenant-platform/migrations/001_init.sql`
+- 主运行实现：`tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs`
 
-主库运行时生成路径见：
+## 当前主线实体
 
-- `ZERO_INTRUSIVE_TENANT_DEPLOYMENT_AND_OPERATIONS.md`
-
-## `tenants`
+### `tenants`
 
 作用：
 
 - 租户主表
 
-建议字段：
+当前关键字段：
 
 - `id`
 - `code`
 - `name`
 - `status`
+- `deployment_mode`
 - `created_at`
 - `updated_at`
 
-## `users`
+### `users`
 
 作用：
 
-- 用户主表
-- 平台管理员创建租户管理员账号
-- 租户管理员创建本租户成员账号
+- 平台管理员、租户管理员、租户成员账号主表
 
-账号规则：
-
-- 登录账号按租户内唯一设计
-
-建议字段：
+当前关键字段：
 
 - `id`
-- `tenant_id`
 - `username`
 - `password_hash`
-- `status`
-- `disabled_at`
-- `created_at`
-- `updated_at`
-
-## `tenant_memberships`
-
-作用：
-
-- 用户与租户关系
-
-建议字段：
-
-- `tenant_id`
-- `user_id`
 - `role`
 - `status`
 - `created_at`
 - `updated_at`
 
-角色建议：
+当前真实约束：
 
-- `platform_admin`
-- `tenant_admin`
-- `tenant_member`
+- `username` 全局唯一
+- 用户归属租户通过 `tenant_memberships` 表达，不在 `users` 直接带 `tenant_id`
 
-当前业务约束：
-
-- 每个租户仅允许一个 `tenant_admin`
-
-## `tenant_quotas`
+### `tenant_memberships`
 
 作用：
 
-- 保存租户人数上限和其他配额
-- 由平台管理员配置
+- 用户与租户关系
 
-建议字段：
-
-- `tenant_id`
-- `member_limit`
-- `agent_limit`
-- `created_at`
-- `updated_at`
-
-## `tenant_agents`
-
-作用：
-
-- 表达某个租户能使用哪些 Agent
-- 承载租户和 Agent 之间的计费倍率
-
-当前规则：
-
-- 计费倍率按“租户 + Agent”维度配置
-- 不同租户、不同 Agent 的计费倍率可以不同
-- 平台管理员把某个 Agent 从租户上撤销后：
-  - 该租户下所有成员立即看不到这个 Agent
-  - 该 Agent 剩余积分退回租户钱包
-  - 该 Agent 历史会话保留
-
-建议字段：
+当前关键字段：
 
 - `id`
 - `tenant_id`
-- `agent_key`
-- `agent_id`
-- `workspace_path`
-- `agent_dir_path`
-- `pricing_multiplier`
-- `wallet_mode`
+- `user_id`
+- `role`
 - `status`
 - `created_at`
-- `updated_at`
 
-## `user_agent_assignments`
+当前真实角色：
+
+- `tenant_admin`
+- `member`
+
+### `tenant_quotas`
 
 作用：
 
-- 表达某个租户成员被分配了哪些 Agent
+- 租户人数限制与到期控制
 
-建议字段：
+当前关键字段：
+
+- `tenant_id`
+- `member_limit`
+- `license_expires_at`
+- `renewal_code`
+- `readonly_after_expiry`
+- `created_at`
+- `updated_at`
+
+### `tenant_agents`
+
+作用：
+
+- 表达某个租户当前拥有的基础 Agent
+- 承载租户 Agent 级积分余额与倍率
+
+当前关键字段：
+
+- `id`
+- `tenant_id`
+- `agent_id`
+- `description`
+- `rate_multiplier`
+- `status`
+- `balance_points`
+- `created_at`
+- `updated_at`
+
+当前真实约束：
+
+- `(tenant_id, agent_id)` 唯一
+- 平台撤回租户 Agent 时：
+  - `tenant_agents.status -> inactive`
+  - 相关成员分配同步失效
+  - Agent 剩余积分退回租户钱包
+
+### `user_agent_assignments`
+
+作用：
+
+- 表达某个成员被分配了哪个租户 Agent
+- 持久化成员派生 Agent 与派生工作区
+
+当前关键字段：
 
 - `id`
 - `tenant_id`
 - `user_id`
 - `tenant_agent_id`
+- `derived_agent_id`
+- `derived_workspace_dir`
 - `status`
-- `revoked_at`
-- `assigned_by`
 - `created_at`
-- `updated_at`
 
-当前规则：
+当前真实状态：
 
-- 成员取消某个 Agent 分配后，不能再看到该 Agent 下的历史
-- 成员被停用后，其名下未用完的 Agent 预算原地保留在 Agent 上
+- `active`
+- `inactive`
+- `blocked_missing_skills`
 
-## `tenant_wallets`
+当前真实含义：
+
+- `active`：成员可见且可用
+- `inactive`：已撤回或已清理
+- `blocked_missing_skills`：模板或成员覆盖引用了当前不可用 skill，成员侧必须隐藏
+
+## 钱包与充值主线
+
+### `tenant_wallets`
 
 作用：
 
 - 租户钱包总账
 
-当前积分规则：
+当前关键字段：
 
-- 最终结算币种固定为人民币 `CNY`
-- `1 积分 = 1 人民币`
-- sidecar 以本地静态模型单价表与本地静态汇率表作为租户计费真值
-- 不依赖供应商在线价格查询
-
-建议字段：
-
-- `id`
 - `tenant_id`
-- `currency_type`
-- `total_balance`
-- `available_balance`
-- `locked_balance`
+- `balance_points`
 - `created_at`
 - `updated_at`
 
-## `tenant_agent_budgets`
+当前真实规则：
+
+- 结算币种固定 `CNY`
+- `1 积分 = 1 CNY`
+- 钱包只记录租户总余额
+
+### `tenant_agent_budgets`
 
 作用：
 
-- 租户管理员划转给某个 Agent 的预算子账
-- 不允许透支
+- 租户钱包向某个租户 Agent 划拨预算的留痕
 
-建议字段：
+当前关键字段：
 
 - `id`
 - `tenant_id`
 - `tenant_agent_id`
-- `allocated_credits`
-- `used_credits`
-- `remaining_credits`
+- `amount_points`
+- `created_by_user_id`
 - `created_at`
-- `updated_at`
 
-## `tenant_wallet_ledger`
+### `tenant_wallet_ledger`
 
 作用：
 
-- 钱包和预算相关流水账
+- 钱包相关审计真值
 
-建议字段：
+当前关键字段：
 
 - `id`
 - `tenant_id`
-- `wallet_id`
-- `entry_type`
-- `amount`
+- `direction`
+- `category`
+- `amount_points`
 - `balance_after`
-- `related_resource_type`
-- `related_resource_id`
-- `operator_user_id`
-- `metadata_json`
+- `tenant_agent_id`
+- `payment_order_id`
+- `actor_user_id`
+- `note`
 - `created_at`
 
-当前流水除了在线充值和扣费，还应支持：
+当前真实 category：
 
-- 手工授予积分
-- 本地部署额度初始化
-- 额度导入
-- 冻结回收
+- `recharge`
+- `agent_transfer`
+- `agent_revoke_refund`
+- `usage_charge`
+- `skill_purchase`
 
-## `payment_orders`
+### `payment_orders`
 
 作用：
 
-- 保存支付订单和充值订单
+- 外部充值订单
 
-当前实际字段：
+当前关键字段：
 
 - `id`
 - `tenant_id`
@@ -229,35 +223,252 @@
 - `created_at`
 - `updated_at`
 
-当前说明：
+## Skills 市场主线
 
-- 第一阶段真实支付由通联 H5 收银台承接
-- 第一阶段不需要平台管理员手动续费、补单、退款
-- 支付成功后先进入待确认订单，再入账
-- `provider_payload` 当前同时保存支付渠道、创建人和最近一次通联返回报文
-
-## `audit_logs`
+### `platform_skills`
 
 作用：
 
-- 保存系统级审计事件
+- 平台技能总目录
 
-建议字段：
+当前关键字段：
+
+- `id`
+- `skill_key`
+- `name`
+- `description`
+- `classification`
+- `source_type`
+- `source_root`
+- `source_workspace_dir`
+- `status`
+- `price_points`
+- `compatible_base_agents_json`
+- `latest_version_id`
+- `latest_version_label`
+- `latest_version_hash`
+- `latest_synced_at`
+- `latest_published_at`
+- `affected_tenant_count`
+- `created_at`
+- `updated_at`
+
+当前真实分类：
+
+- `bundled`
+- `free`
+- `paid`
+
+当前真实来源：
+
+- `workspace`
+- `managed`
+
+当前真实规则：
+
+- 基础 Agent 工作区 `skills/*/SKILL.md` 会自动建档为 `bundled`
+- 未编目的基础 skill 不报错，自动入 catalog
+
+### `platform_skill_versions`
+
+作用：
+
+- 技能版本表
+
+当前关键字段：
+
+- `id`
+- `skill_id`
+- `version_label`
+- `version_hash`
+- `skill_md_path`
+- `skill_md_content`
+- `skill_metadata_json`
+- `status`
+- `created_at`
+- `updated_at`
+
+当前真实规则：
+
+- 版本唯一性按 `(skill_id, version_hash)`
+- `managed` skill 版本内容会持久化到 sidecar managed skill storage
+- `bundled` skill 版本按 `SKILL.md` 内容 hash 自动滚动
+
+### `platform_skill_agent_bindings`
+
+作用：
+
+- 记录 skill 兼容哪些基础 Agent
+
+当前关键字段：
+
+- `id`
+- `skill_id`
+- `base_agent_id`
+- `status`
+- `created_at`
+- `updated_at`
+
+### `tenant_skill_orders`
+
+作用：
+
+- paid skill 购买订单
+
+当前关键字段：
 
 - `id`
 - `tenant_id`
-- `user_id`
-- `action`
-- `resource_type`
-- `resource_id`
-- `payload_json`
+- `skill_id`
+- `order_status`
+- `acquire_type`
+- `amount_points`
+- `version_policy`
+- `current_version_id`
+- `created_by_user_id`
+- `confirmed_by_user_id`
+- `confirmed_at`
 - `created_at`
+- `updated_at`
+
+当前真实状态：
+
+- `pending_confirmation`
+- `confirmed`
+
+当前真实规则：
+
+- v1 只对 `paid` 生效
+- `free` 不走钱包扣费链路
+- 订单确认时会同步写 `tenant_wallet_ledger.category = skill_purchase`
+
+### `tenant_skill_entitlements`
+
+作用：
+
+- 租户维度 skill 授权真值
+
+当前关键字段：
+
+- `id`
+- `tenant_id`
+- `skill_id`
+- `status`
+- `acquire_type`
+- `version_policy`
+- `current_version_id`
+- `enabled_by_tenant`
+- `blocked_reason`
+- `order_id`
+- `created_at`
+- `updated_at`
+
+当前真实状态：
+
+- `active`
+- `pending`
+- `disabled`
+- `revoked`
+
+当前真实规则：
+
+- `bundled` 自动生成 `active + enabled_by_tenant = true`
+- `free` 显式启用后进入 `active`
+- `paid` 订单确认后进入 `active`
+- 最终是否可用同时看：
+  - `status === active`
+  - `enabled_by_tenant === true`
+
+### `tenant_agent_skill_templates`
+
+作用：
+
+- 某个租户 Agent 的默认技能模板
+
+当前关键字段：
+
+- `id`
+- `tenant_agent_id`
+- `skill_id`
+- `template_state`
+- `source_type`
+- `created_at`
+- `updated_at`
+
+当前真实状态：
+
+- `enabled`
+- `disabled`
+- `blocked_missing_entitlement`
+
+当前真实规则：
+
+- bundled skill 首次发现后自动写入模板并默认 `enabled`
+- 模板里引用未购买或已停用 skill 时，状态会被重协调为 `blocked_missing_entitlement`
+
+### `user_agent_skill_overrides`
+
+作用：
+
+- 成员维度 skill 增删覆盖
+
+当前关键字段：
+
+- `id`
+- `assignment_id`
+- `tenant_agent_id`
+- `user_id`
+- `skill_id`
+- `action`
+- `created_at`
+- `updated_at`
+
+当前真实动作：
+
+- `force_add`
+- `force_remove`
+
+当前真实公式：
+
+- `(tenant_agent_template_enabled ∪ member_force_add) - member_force_remove`
+
+### `tenant_agent_skill_snapshots`
+
+作用：
+
+- 每次派生 Agent reconcile 后的审计快照
+
+当前关键字段：
+
+- `id`
+- `assignment_id`
+- `tenant_id`
+- `tenant_agent_id`
+- `user_id`
+- `derived_agent_id`
+- `resolved_skill_keys_json`
+- `resolved_version_ids_json`
+- `blocked_reasons_json`
+- `applied_at`
+
+当前真实用途：
+
+- 回放某个成员某次最终生效 skill 集
+- 追查为什么某个成员 Agent 被 blocked
+
+## 当前技能隔离真实规则
+
+- 基础顶层 `.md` 和 `memory/` 继续按派生工作区逻辑保留
+- `skills/` 不再整树盲拷贝
+- sidecar 先按最终 skill 集重建派生工作区 `skills/`
+- 然后在 runtime derived agent config 里显式写 `skills: [...]`
+- 两层都生效，任何一层单独成功都不算完成
 
 ## 当前阅读建议
 
 遇到这些任务时优先读本文件：
 
-- 新增字段或修表
-- 成员、租户、Agent 关系怎么落库
-- 钱包流水、订单、预算子账的字段怎么对齐
-- 需要确认某个业务约束应该落在哪张表
+- Skills 市场要加字段或修规则
+- 成员 skill override 应该落在哪张表
+- paid/free/bundled 状态流怎么落库
+- 派生 Agent 为什么会被 blocked

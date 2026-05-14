@@ -231,6 +231,47 @@ export function createTenantApiClient() {
     listPlatformNodes() {
       return requestJson("/platform/nodes");
     },
+    listPlatformSkills() {
+      return requestJson("/platform/skills");
+    },
+    savePlatformSkill(body) {
+      return requestJson("/platform/skills", { method: "POST", body });
+    },
+    discoverPlatformSkills() {
+      return requestJson("/platform/skills/discover", { method: "POST", body: {} });
+    },
+    publishPlatformSkill(skillId, body) {
+      return requestJson(
+        `/platform/skills/${encodeURIComponent(String(skillId || "").trim())}/publish`,
+        {
+          method: "POST",
+          body,
+        },
+      );
+    },
+    reclassifyPlatformSkill(skillId, body) {
+      return requestJson(
+        `/platform/skills/${encodeURIComponent(String(skillId || "").trim())}/reclassify`,
+        {
+          method: "POST",
+          body,
+        },
+      );
+    },
+    resyncPlatformSkill(skillId) {
+      return requestJson(
+        `/platform/skills/${encodeURIComponent(String(skillId || "").trim())}/resync`,
+        {
+          method: "POST",
+          body: {},
+        },
+      );
+    },
+    listPlatformSkillVersions(skillId) {
+      return requestJson(
+        `/platform/skills/${encodeURIComponent(String(skillId || "").trim())}/versions`,
+      );
+    },
     savePlatformNode(body) {
       return requestJson("/platform/nodes", { method: "POST", body });
     },
@@ -313,6 +354,51 @@ export function createTenantApiClient() {
     },
     listTenantAgents() {
       return requestJson("/tenant/admin/tenant-agents");
+    },
+    listTenantSkillsMarket() {
+      return requestJson("/tenant/admin/skills/market");
+    },
+    listTenantSkillEntitlements() {
+      return requestJson("/tenant/admin/skills/entitlements");
+    },
+    listTenantSkillAssignments() {
+      return requestJson("/tenant/admin/skills/assignments");
+    },
+    createTenantSkillOrder(body) {
+      return requestJson("/tenant/admin/skills/orders", { method: "POST", body });
+    },
+    confirmTenantSkillOrder(orderId) {
+      return requestJson(
+        `/tenant/admin/skills/orders/${encodeURIComponent(String(orderId || "").trim())}/confirm`,
+        {
+          method: "POST",
+          body: {},
+        },
+      );
+    },
+    enableTenantSkillEntitlement(entitlementId) {
+      return requestJson(
+        `/tenant/admin/skills/entitlements/${encodeURIComponent(String(entitlementId || "").trim())}/enable`,
+        {
+          method: "POST",
+          body: {},
+        },
+      );
+    },
+    disableTenantSkillEntitlement(entitlementId) {
+      return requestJson(
+        `/tenant/admin/skills/entitlements/${encodeURIComponent(String(entitlementId || "").trim())}/disable`,
+        {
+          method: "POST",
+          body: {},
+        },
+      );
+    },
+    saveTenantSkillTemplate(body) {
+      return requestJson("/tenant/admin/skills/templates", { method: "POST", body });
+    },
+    saveTenantSkillOverrides(body) {
+      return requestJson("/tenant/admin/skills/overrides", { method: "POST", body });
     },
     listTenantMemberAssignedAgents(userId) {
       return requestJson(withQuery("/tenant/admin/members/agents", { userId }));

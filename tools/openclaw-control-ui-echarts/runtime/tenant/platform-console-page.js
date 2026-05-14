@@ -53,14 +53,8 @@ import {
   openCreateNodeDialog,
   openEditNodeDialog,
 } from "./platform-console-nodes.js";
-import {
-  clearAllocationSelections,
-  renderPlatformConsole,
-} from "./platform-console-render.js";
-import {
-  PLATFORM_LOGIN_ROUTE,
-  requireTenantSession,
-} from "./tenant-context.js";
+import { clearAllocationSelections, renderPlatformConsole } from "./platform-console-render.js";
+import { PLATFORM_LOGIN_ROUTE, requireTenantSession } from "./tenant-context.js";
 
 const PAGE_SELECTOR = "[data-oc-platform-tenant-console-page]";
 
@@ -375,7 +369,10 @@ async function handleClick(root, controller, event) {
   if (paginationButton instanceof HTMLElement) {
     const action = paginationButton.dataset.platformPage;
     const page = controller.pageBySection[controller.section] || 1;
-    controller.pageBySection[controller.section] = Math.max(1, action === "next" ? page + 1 : page - 1);
+    controller.pageBySection[controller.section] = Math.max(
+      1,
+      action === "next" ? page + 1 : page - 1,
+    );
     render(root, controller);
     return;
   }
@@ -430,21 +427,80 @@ async function handleClick(root, controller, event) {
     return;
   }
 
+  if (target.closest("[data-platform-discover-skills]")) {
+    try {
+      await controller.apiClient.discoverPlatformSkills();
+      await refresh(root, controller);
+      setFeedback(root, "Bundled Skills 已重新发现。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  const resyncSkillTrigger = target.closest("[data-platform-skill-resync]");
+  if (resyncSkillTrigger instanceof HTMLElement) {
+    try {
+      await controller.apiClient.resyncPlatformSkill(
+        resyncSkillTrigger.dataset.platformSkillResync || "",
+      );
+      await refresh(root, controller);
+      setFeedback(root, "Skill 已触发重同步。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
+  const reclassifySkillTrigger = target.closest("[data-platform-skill-reclassify]");
+  if (reclassifySkillTrigger instanceof HTMLElement) {
+    const skillId = String(reclassifySkillTrigger.dataset.platformSkillReclassify || "").trim();
+    const classification = window.prompt("输入新的分类：bundled / free / paid", "paid");
+    if (!classification) {
+      return;
+    }
+    const priceInput =
+      String(classification).trim().toLowerCase() === "paid"
+        ? window.prompt("输入新的价格积分", "0")
+        : "0";
+    try {
+      await controller.apiClient.reclassifyPlatformSkill(skillId, {
+        classification,
+        pricePoints: Number.parseFloat(String(priceInput || "0")) || 0,
+      });
+      await refresh(root, controller);
+      setFeedback(root, "Skill 分类已更新。");
+    } catch (error) {
+      setFeedback(root, error instanceof Error ? error.message : String(error), true);
+    }
+    return;
+  }
+
   const editNodeTrigger = target.closest("[data-platform-open-edit-node]");
   if (editNodeTrigger instanceof HTMLElement) {
-    openEditNodeDialog(root, controller, nodeById(controller, editNodeTrigger.dataset.platformOpenEditNode || ""), {
-      render,
-      setFeedback,
-    });
+    openEditNodeDialog(
+      root,
+      controller,
+      nodeById(controller, editNodeTrigger.dataset.platformOpenEditNode || ""),
+      {
+        render,
+        setFeedback,
+      },
+    );
     return;
   }
 
   const bindNodeTrigger = target.closest("[data-platform-open-bind-node]");
   if (bindNodeTrigger instanceof HTMLElement) {
-    openBindNodeDialog(root, controller, tenantById(controller, bindNodeTrigger.dataset.platformOpenBindNode || ""), {
-      render,
-      setFeedback,
-    });
+    openBindNodeDialog(
+      root,
+      controller,
+      tenantById(controller, bindNodeTrigger.dataset.platformOpenBindNode || ""),
+      {
+        render,
+        setFeedback,
+      },
+    );
     return;
   }
 
@@ -781,7 +837,9 @@ async function handleSubmit(root, controller, event) {
     }
     dialog.description = String(formData.get("description") || "");
     if (!isLocalEdition(controller)) {
-      dialog.rateMultiplier = String(formData.get("rateMultiplier") || dialog.rateMultiplier || "1");
+      dialog.rateMultiplier = String(
+        formData.get("rateMultiplier") || dialog.rateMultiplier || "1",
+      );
       dialog.balancePoints = String(formData.get("balancePoints") || dialog.balancePoints || "0");
     }
     const tenantLabel = dialog.tenantName || dialog.tenantId || "该租户";
@@ -828,7 +886,10 @@ async function handleSubmit(root, controller, event) {
           );
           return;
         }
-        setFeedback(root, `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent。`);
+        setFeedback(
+          root,
+          `已向租户“${tenantLabel}”下发 ${formatNumber(assignedAgentCount)} 个 Agent。`,
+        );
         return;
       }
       const currentDialog = controller.assignTenantAgentDialog;

@@ -9,6 +9,7 @@ import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_DATA_SOURCES_VIEW,
   PLATFORM_NODE_MANAGEMENT_VIEW,
+  PLATFORM_SKILLS_VIEW,
   PLATFORM_TENANTS_VIEW,
   clearPersistedControlUiSession,
   readPlatformSession,
@@ -27,7 +28,8 @@ function isPlatformManagementView(view) {
     view === PLATFORM_TENANTS_VIEW ||
     view === PLATFORM_AGENT_ASSIGNMENT_VIEW ||
     view === PLATFORM_DATA_SOURCES_VIEW ||
-    view === PLATFORM_NODE_MANAGEMENT_VIEW
+    view === PLATFORM_NODE_MANAGEMENT_VIEW ||
+    view === PLATFORM_SKILLS_VIEW
   );
 }
 
@@ -49,6 +51,9 @@ function sectionForView(view) {
   }
   if (view === PLATFORM_NODE_MANAGEMENT_VIEW) {
     return "nodes";
+  }
+  if (view === PLATFORM_SKILLS_VIEW) {
+    return "skills";
   }
   return "tenants";
 }

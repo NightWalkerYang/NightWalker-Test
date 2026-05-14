@@ -24,8 +24,24 @@ const DERIVED_AGENT_SEED_ONCE_ENTRIES = [
   "memory.md",
   "memory",
 ];
-const DERIVED_AGENT_SYNC_ALWAYS_ENTRIES = ["skills", "hooks"];
+const DERIVED_AGENT_SYNC_ALWAYS_ENTRIES = ["hooks"];
 const DERIVED_AGENT_METADATA_FILE = ".tenant-derived-agent.json";
+const SKILL_CATALOG_COMPATIBLE_ANY = "*";
+const SKILL_TEMPLATE_STATE_ENABLED = "enabled";
+const SKILL_TEMPLATE_STATE_DISABLED = "disabled";
+const SKILL_TEMPLATE_STATE_BLOCKED = "blocked_missing_entitlement";
+const SKILL_ENTITLEMENT_ACTIVE = "active";
+const SKILL_ENTITLEMENT_PENDING = "pending";
+const SKILL_ENTITLEMENT_DISABLED = "disabled";
+const SKILL_ENTITLEMENT_REVOKED = "revoked";
+const SKILL_ORDER_PENDING_CONFIRMATION = "pending_confirmation";
+const SKILL_ORDER_CONFIRMED = "confirmed";
+const SKILL_CLASS_BUNDLED = "bundled";
+const SKILL_CLASS_FREE = "free";
+const SKILL_CLASS_PAID = "paid";
+const ASSIGNMENT_STATUS_ACTIVE = "active";
+const ASSIGNMENT_STATUS_INACTIVE = "inactive";
+const ASSIGNMENT_STATUS_BLOCKED_MISSING_SKILLS = "blocked_missing_skills";
 const DEFAULT_BILLING_CURRENCY = "CNY";
 const DEFAULT_CONFIG_PRICING_CURRENCY = "USD";
 const DEFAULT_ZERO_INTRUSIVE_BILLING_RATES = {
@@ -110,6 +126,21 @@ function parseJsonObject(value) {
   }
 }
 
+function parseJsonArray(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function stringifyJsonObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -121,9 +152,25 @@ function stringifyJsonObject(value) {
   }
 }
 
+function stringifyJsonArray(value) {
+  try {
+    return JSON.stringify(Array.isArray(value) ? value : []);
+  } catch {
+    return "[]";
+  }
+}
+
 function toFiniteNumber(value, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function readUtf8FileIfExists(filePath, fallback = "") {
+  try {
+    return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function roundPoints(value) {
@@ -579,6 +626,174 @@ function ensureDataSourceSchemaCompatibility(db) {
   }
 }
 
+function ensureSkillMarketplaceSchemaCompatibility(db) {
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS platform_skills (
+       id TEXT PRIMARY KEY,
+       skill_key TEXT NOT NULL UNIQUE,
+       name TEXT NOT NULL,
+       description TEXT NOT NULL DEFAULT '',
+       classification TEXT NOT NULL DEFAULT 'bundled',
+       source_type TEXT NOT NULL DEFAULT 'workspace',
+       source_root TEXT NOT NULL DEFAULT '',
+       source_workspace_dir TEXT,
+       status TEXT NOT NULL DEFAULT 'active',
+       price_points REAL NOT NULL DEFAULT 0,
+       compatible_base_agents_json TEXT NOT NULL DEFAULT '[]',
+       latest_version_id TEXT,
+       latest_version_label TEXT,
+       latest_version_hash TEXT,
+       latest_synced_at TEXT,
+       latest_published_at TEXT,
+       affected_tenant_count INTEGER NOT NULL DEFAULT 0,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS platform_skill_versions (
+       id TEXT PRIMARY KEY,
+       skill_id TEXT NOT NULL,
+       version_label TEXT NOT NULL,
+       version_hash TEXT NOT NULL,
+       skill_md_path TEXT NOT NULL,
+       skill_md_content TEXT NOT NULL,
+       skill_metadata_json TEXT NOT NULL DEFAULT '{}',
+       status TEXT NOT NULL DEFAULT 'active',
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       UNIQUE(skill_id, version_hash),
+       FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS platform_skill_agent_bindings (
+       id TEXT PRIMARY KEY,
+       skill_id TEXT NOT NULL,
+       base_agent_id TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'active',
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       UNIQUE(skill_id, base_agent_id),
+       FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_skill_orders (
+       id TEXT PRIMARY KEY,
+       tenant_id TEXT NOT NULL,
+       skill_id TEXT NOT NULL,
+       order_status TEXT NOT NULL DEFAULT 'pending_confirmation',
+       acquire_type TEXT NOT NULL DEFAULT 'paid_order',
+       amount_points REAL NOT NULL DEFAULT 0,
+       version_policy TEXT NOT NULL DEFAULT 'latest',
+       current_version_id TEXT,
+       created_by_user_id TEXT,
+       confirmed_by_user_id TEXT,
+       confirmed_at TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE,
+       FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+       FOREIGN KEY (confirmed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_skill_entitlements (
+       id TEXT PRIMARY KEY,
+       tenant_id TEXT NOT NULL,
+       skill_id TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'pending',
+       acquire_type TEXT NOT NULL DEFAULT 'bundled',
+       version_policy TEXT NOT NULL DEFAULT 'latest',
+       current_version_id TEXT,
+       enabled_by_tenant INTEGER NOT NULL DEFAULT 0,
+       blocked_reason TEXT,
+       order_id TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       UNIQUE(tenant_id, skill_id),
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE,
+       FOREIGN KEY (order_id) REFERENCES tenant_skill_orders(id) ON DELETE SET NULL
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_agent_skill_templates (
+       id TEXT PRIMARY KEY,
+       tenant_agent_id TEXT NOT NULL,
+       skill_id TEXT NOT NULL,
+       template_state TEXT NOT NULL DEFAULT 'enabled',
+       source_type TEXT NOT NULL DEFAULT 'base_default',
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       UNIQUE(tenant_agent_id, skill_id),
+       FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+       FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS user_agent_skill_overrides (
+       id TEXT PRIMARY KEY,
+       assignment_id TEXT NOT NULL,
+       tenant_agent_id TEXT NOT NULL,
+       user_id TEXT NOT NULL,
+       skill_id TEXT NOT NULL,
+       action TEXT NOT NULL,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       UNIQUE(assignment_id, skill_id, action),
+       FOREIGN KEY (assignment_id) REFERENCES user_agent_assignments(id) ON DELETE CASCADE,
+       FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+       FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS tenant_agent_skill_snapshots (
+       id TEXT PRIMARY KEY,
+       assignment_id TEXT NOT NULL,
+       tenant_id TEXT NOT NULL,
+       tenant_agent_id TEXT NOT NULL,
+       user_id TEXT NOT NULL,
+       derived_agent_id TEXT NOT NULL,
+       resolved_skill_keys_json TEXT NOT NULL,
+       resolved_version_ids_json TEXT NOT NULL,
+       blocked_reasons_json TEXT NOT NULL,
+       applied_at TEXT NOT NULL,
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+       FOREIGN KEY (assignment_id) REFERENCES user_agent_assignments(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_platform_skills_classification_status
+       ON platform_skills (classification, status, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_platform_skill_versions_skill
+       ON platform_skill_versions (skill_id, created_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tenant_skill_entitlements_tenant_status
+       ON tenant_skill_entitlements (tenant_id, status, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tenant_agent_skill_templates_agent
+       ON tenant_agent_skill_templates (tenant_agent_id, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_user_agent_skill_overrides_assignment
+       ON user_agent_skill_overrides (assignment_id, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tenant_agent_skill_snapshots_assignment
+       ON tenant_agent_skill_snapshots (assignment_id, applied_at DESC);`,
+  );
+}
+
 function getScalar(db, sql, params) {
   const stmt = db.prepare(sql);
   let row;
@@ -757,6 +972,7 @@ function ensureSchemaCompatibility(db) {
   ensureTenantUsageRecordSchemaCompatibility(db);
   ensurePlatformUpdateLogSchemaCompatibility(db);
   ensureDataSourceSchemaCompatibility(db);
+  ensureSkillMarketplaceSchemaCompatibility(db);
 }
 
 function normalizeSegment(value, fallback = "x", maxLength = 24) {
@@ -775,6 +991,2485 @@ function shortStableHash(input) {
     .update(String(input || ""))
     .digest("hex")
     .slice(0, 12);
+}
+
+function computeStableTextHash(value) {
+  return crypto
+    .createHash("sha256")
+    .update(String(value || ""), "utf8")
+    .digest("hex");
+}
+
+function normalizeSkillClassification(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (
+    normalized === SKILL_CLASS_BUNDLED ||
+    normalized === SKILL_CLASS_FREE ||
+    normalized === SKILL_CLASS_PAID
+  ) {
+    return normalized;
+  }
+  return SKILL_CLASS_BUNDLED;
+}
+
+function normalizeSkillEntitlementStatus(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (
+    normalized === SKILL_ENTITLEMENT_ACTIVE ||
+    normalized === SKILL_ENTITLEMENT_PENDING ||
+    normalized === SKILL_ENTITLEMENT_DISABLED ||
+    normalized === SKILL_ENTITLEMENT_REVOKED
+  ) {
+    return normalized;
+  }
+  return SKILL_ENTITLEMENT_PENDING;
+}
+
+function normalizeSkillTemplateState(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (
+    normalized === SKILL_TEMPLATE_STATE_ENABLED ||
+    normalized === SKILL_TEMPLATE_STATE_DISABLED ||
+    normalized === SKILL_TEMPLATE_STATE_BLOCKED
+  ) {
+    return normalized;
+  }
+  return SKILL_TEMPLATE_STATE_ENABLED;
+}
+
+function normalizeSkillOrderStatus(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === SKILL_ORDER_PENDING_CONFIRMATION || normalized === SKILL_ORDER_CONFIRMED) {
+    return normalized;
+  }
+  return SKILL_ORDER_PENDING_CONFIRMATION;
+}
+
+function normalizeSkillOverrideAction(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "force_add" || normalized === "force_remove") {
+    return normalized;
+  }
+  return "";
+}
+
+function normalizeAssignmentStatus(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (
+    normalized === ASSIGNMENT_STATUS_ACTIVE ||
+    normalized === ASSIGNMENT_STATUS_INACTIVE ||
+    normalized === ASSIGNMENT_STATUS_BLOCKED_MISSING_SKILLS
+  ) {
+    return normalized;
+  }
+  return ASSIGNMENT_STATUS_ACTIVE;
+}
+
+function parseSimpleFrontmatter(raw) {
+  const text = String(raw || "");
+  if (!text.startsWith("---")) {
+    return {};
+  }
+  const lines = text.split(/\r?\n/);
+  if (lines[0].trim() !== "---") {
+    return {};
+  }
+  const result = {};
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === "---") {
+      break;
+    }
+    const match = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line);
+    if (!match) {
+      continue;
+    }
+    result[match[1]] = match[2];
+  }
+  return result;
+}
+
+function normalizeSkillKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+}
+
+function normalizeSkillName(value, fallback = "") {
+  return (
+    String(value || "")
+      .trim()
+      .slice(0, 160) || fallback
+  );
+}
+
+function normalizeSkillDescription(value) {
+  return String(value || "")
+    .trim()
+    .slice(0, 2000);
+}
+
+function listWorkspaceSkillDirectories(workspaceDir) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir) {
+    return [];
+  }
+  const skillsRoot = path.join(normalizedWorkspaceDir, "skills");
+  if (!fs.existsSync(skillsRoot)) {
+    return [];
+  }
+  try {
+    return fs
+      .readdirSync(skillsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(skillsRoot, entry.name))
+      .filter((skillDir) => fs.existsSync(path.join(skillDir, "SKILL.md")))
+      .sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
+  } catch {
+    return [];
+  }
+}
+
+function readWorkspaceSkillManifest(skillDir) {
+  const normalizedSkillDir = String(skillDir || "").trim();
+  const skillMdPath = path.join(normalizedSkillDir, "SKILL.md");
+  const raw = readUtf8FileIfExists(skillMdPath);
+  if (!raw) {
+    return null;
+  }
+  const frontmatter = parseSimpleFrontmatter(raw);
+  const dirName = path.basename(normalizedSkillDir);
+  const name = normalizeSkillName(frontmatter.name, dirName);
+  const description = normalizeSkillDescription(frontmatter.description);
+  const skillKey = normalizeSkillKey(frontmatter.name || dirName);
+  const relativePath = path.relative(path.dirname(normalizedSkillDir), normalizedSkillDir);
+  return {
+    skillKey,
+    name,
+    description,
+    skillDir: normalizedSkillDir,
+    skillMdPath,
+    skillMdContent: raw,
+    versionHash: computeStableTextHash(raw),
+    versionLabel: `bundled-${computeStableTextHash(raw).slice(0, 12)}`,
+    relativePath,
+  };
+}
+
+function resolveManagedSkillsStorageRoot(params = {}) {
+  return path.join(resolveConfigDir(params), "tenant-platform", "managed-skills");
+}
+
+function ensureManagedSkillStorageRoot(params = {}) {
+  const root = resolveManagedSkillsStorageRoot(params);
+  fs.mkdirSync(root, { recursive: true });
+  return root;
+}
+
+function resolveStoredManagedSkillVersionDir(params = {}) {
+  const skillId = String(params.skillId || "").trim();
+  const versionId = String(params.versionId || "").trim();
+  if (!skillId || !versionId) {
+    return "";
+  }
+  return path.join(ensureManagedSkillStorageRoot(params), skillId, versionId);
+}
+
+function mapPlatformSkillRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id || "").trim(),
+    skillKey: String(row.skillKey || "").trim(),
+    name: normalizeSkillName(row.name),
+    description: normalizeSkillDescription(row.description),
+    classification: normalizeSkillClassification(row.classification),
+    sourceType: String(row.sourceType || "").trim() || "workspace",
+    sourceRoot: String(row.sourceRoot || "").trim(),
+    sourceWorkspaceDir: String(row.sourceWorkspaceDir || "").trim() || null,
+    status: String(row.status || "").trim() || "active",
+    pricePoints: normalizeNonNegativePoints(row.pricePoints),
+    compatibleBaseAgents: parseJsonArray(row.compatibleBaseAgentsJson).map((entry) =>
+      String(entry || "").trim(),
+    ),
+    latestVersionId: String(row.latestVersionId || "").trim() || null,
+    latestVersionLabel: String(row.latestVersionLabel || "").trim() || null,
+    latestVersionHash: String(row.latestVersionHash || "").trim() || null,
+    latestSyncedAt: String(row.latestSyncedAt || "").trim() || null,
+    latestPublishedAt: String(row.latestPublishedAt || "").trim() || null,
+    affectedTenantCount: Number(row.affectedTenantCount || 0),
+    createdAt: String(row.createdAt || "").trim(),
+    updatedAt: String(row.updatedAt || "").trim(),
+  };
+}
+
+function mapPlatformSkillVersionRow(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id || "").trim(),
+    skillId: String(row.skillId || "").trim(),
+    versionLabel: String(row.versionLabel || "").trim(),
+    versionHash: String(row.versionHash || "").trim(),
+    skillMdPath: String(row.skillMdPath || "").trim(),
+    skillMdContent: String(row.skillMdContent || ""),
+    skillMetadata: parseJsonObject(row.skillMetadataJson) || {},
+    status: String(row.status || "").trim() || "active",
+    createdAt: String(row.createdAt || "").trim(),
+    updatedAt: String(row.updatedAt || "").trim(),
+  };
+}
+
+function getPlatformSkillByKey(db, skillKey) {
+  return mapPlatformSkillRow(
+    db
+      .prepare(
+        `SELECT id,
+                skill_key AS skillKey,
+                name,
+                description,
+                classification,
+                source_type AS sourceType,
+                source_root AS sourceRoot,
+                source_workspace_dir AS sourceWorkspaceDir,
+                status,
+                price_points AS pricePoints,
+                compatible_base_agents_json AS compatibleBaseAgentsJson,
+                latest_version_id AS latestVersionId,
+                latest_version_label AS latestVersionLabel,
+                latest_version_hash AS latestVersionHash,
+                latest_synced_at AS latestSyncedAt,
+                latest_published_at AS latestPublishedAt,
+                affected_tenant_count AS affectedTenantCount,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+           FROM platform_skills
+          WHERE skill_key = ?`,
+      )
+      .get(normalizeSkillKey(skillKey)),
+  );
+}
+
+function getPlatformSkillVersionById(db, versionId) {
+  return mapPlatformSkillVersionRow(
+    db
+      .prepare(
+        `SELECT id,
+                skill_id AS skillId,
+                version_label AS versionLabel,
+                version_hash AS versionHash,
+                skill_md_path AS skillMdPath,
+                skill_md_content AS skillMdContent,
+                skill_metadata_json AS skillMetadataJson,
+                status,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+           FROM platform_skill_versions
+          WHERE id = ?`,
+      )
+      .get(String(versionId || "").trim()),
+  );
+}
+
+function listPlatformSkillVersionsByIds(db, versionIds = []) {
+  const normalizedVersionIds = [
+    ...new Set(versionIds.map((entry) => String(entry || "").trim()).filter(Boolean)),
+  ];
+  if (!normalizedVersionIds.length) {
+    return [];
+  }
+  const placeholders = normalizedVersionIds.map(() => "?").join(", ");
+  return db
+    .prepare(
+      `SELECT id,
+              skill_id AS skillId,
+              version_label AS versionLabel,
+              version_hash AS versionHash,
+              skill_md_path AS skillMdPath,
+              skill_md_content AS skillMdContent,
+              skill_metadata_json AS skillMetadataJson,
+              status,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+         FROM platform_skill_versions
+        WHERE id IN (${placeholders})
+        ORDER BY created_at ASC`,
+    )
+    .all(...normalizedVersionIds)
+    .map(mapPlatformSkillVersionRow)
+    .filter(Boolean);
+}
+
+function isSkillCompatibleWithBaseAgent(skill, baseAgentId) {
+  const normalizedBaseAgentId = String(baseAgentId || "").trim();
+  if (!normalizedBaseAgentId) {
+    return false;
+  }
+  const compatibleBaseAgents = Array.isArray(skill?.compatibleBaseAgents)
+    ? skill.compatibleBaseAgents
+    : [];
+  if (!compatibleBaseAgents.length) {
+    return true;
+  }
+  return (
+    compatibleBaseAgents.includes(SKILL_CATALOG_COMPATIBLE_ANY) ||
+    compatibleBaseAgents.includes(normalizedBaseAgentId)
+  );
+}
+
+function storeManagedSkillVersionFile(params = {}) {
+  const skillId = String(params.skillId || "").trim();
+  const versionId = String(params.versionId || "").trim();
+  const skillKey = normalizeSkillKey(params.skillKey);
+  const skillMdContent = String(params.skillMdContent || "");
+  if (!skillId || !versionId || !skillKey || !skillMdContent) {
+    return "";
+  }
+  const versionDir = resolveStoredManagedSkillVersionDir({
+    ...params,
+    skillId,
+    versionId,
+  });
+  if (!versionDir) {
+    return "";
+  }
+  const skillDir = path.join(versionDir, skillKey);
+  fs.mkdirSync(skillDir, { recursive: true });
+  const skillMdPath = path.join(skillDir, "SKILL.md");
+  fs.writeFileSync(skillMdPath, skillMdContent, "utf8");
+  return skillMdPath;
+}
+
+function upsertPlatformSkillCatalogEntry(db, params = {}) {
+  const skillKey = normalizeSkillKey(params.skillKey);
+  if (!skillKey) {
+    throw new Error("skill_key_required");
+  }
+  const now = nowIso();
+  const classification = normalizeSkillClassification(params.classification);
+  const compatibleBaseAgents = Array.isArray(params.compatibleBaseAgents)
+    ? [
+        ...new Set(
+          params.compatibleBaseAgents.map((entry) => String(entry || "").trim()).filter(Boolean),
+        ),
+      ]
+    : [SKILL_CATALOG_COMPATIBLE_ANY];
+  const existing = getPlatformSkillByKey(db, skillKey);
+  if (existing) {
+    db.prepare(
+      `UPDATE platform_skills
+          SET name = @name,
+              description = @description,
+              classification = @classification,
+              source_type = @sourceType,
+              source_root = @sourceRoot,
+              source_workspace_dir = @sourceWorkspaceDir,
+              status = @status,
+              price_points = @pricePoints,
+              compatible_base_agents_json = @compatibleBaseAgentsJson,
+              latest_synced_at = @latestSyncedAt,
+              updated_at = @updatedAt
+        WHERE id = @id`,
+    ).run({
+      id: existing.id,
+      name: normalizeSkillName(params.name, skillKey),
+      description: normalizeSkillDescription(params.description),
+      classification,
+      sourceType: String(params.sourceType || "workspace").trim() || "workspace",
+      sourceRoot: String(params.sourceRoot || "").trim(),
+      sourceWorkspaceDir: String(params.sourceWorkspaceDir || "").trim() || null,
+      status: String(params.status || "active").trim() || "active",
+      pricePoints: normalizeNonNegativePoints(params.pricePoints),
+      compatibleBaseAgentsJson: stringifyJsonArray(compatibleBaseAgents),
+      latestSyncedAt: now,
+      updatedAt: now,
+    });
+    return getPlatformSkillByKey(db, skillKey);
+  }
+
+  const skillId = createId("platform_skill");
+  db.prepare(
+    `INSERT INTO platform_skills (
+       id,
+       skill_key,
+       name,
+       description,
+       classification,
+       source_type,
+       source_root,
+       source_workspace_dir,
+       status,
+       price_points,
+       compatible_base_agents_json,
+       latest_synced_at,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @skillKey,
+       @name,
+       @description,
+       @classification,
+       @sourceType,
+       @sourceRoot,
+       @sourceWorkspaceDir,
+       @status,
+       @pricePoints,
+       @compatibleBaseAgentsJson,
+       @latestSyncedAt,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id: skillId,
+    skillKey,
+    name: normalizeSkillName(params.name, skillKey),
+    description: normalizeSkillDescription(params.description),
+    classification,
+    sourceType: String(params.sourceType || "workspace").trim() || "workspace",
+    sourceRoot: String(params.sourceRoot || "").trim(),
+    sourceWorkspaceDir: String(params.sourceWorkspaceDir || "").trim() || null,
+    status: String(params.status || "active").trim() || "active",
+    pricePoints: normalizeNonNegativePoints(params.pricePoints),
+    compatibleBaseAgentsJson: stringifyJsonArray(compatibleBaseAgents),
+    latestSyncedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return getPlatformSkillByKey(db, skillKey);
+}
+
+function upsertPlatformSkillVersion(db, params = {}) {
+  const skillId = String(params.skillId || "").trim();
+  const skillKey = normalizeSkillKey(params.skillKey);
+  const versionHash = String(params.versionHash || "").trim();
+  if (!skillId || !skillKey || !versionHash) {
+    throw new Error("platform_skill_version_missing_fields");
+  }
+  const now = nowIso();
+  const existing = db
+    .prepare(
+      `SELECT id
+         FROM platform_skill_versions
+        WHERE skill_id = ? AND version_hash = ?
+        LIMIT 1`,
+    )
+    .get(skillId, versionHash);
+  if (existing?.id) {
+    return getPlatformSkillVersionById(db, existing.id);
+  }
+  const versionId = createId("skill_version");
+  const storedSkillMdPath =
+    storeManagedSkillVersionFile({
+      ...params,
+      skillId,
+      versionId,
+      skillKey,
+    }) || String(params.skillMdPath || "").trim();
+  db.prepare(
+    `INSERT INTO platform_skill_versions (
+       id,
+       skill_id,
+       version_label,
+       version_hash,
+       skill_md_path,
+       skill_md_content,
+       skill_metadata_json,
+       status,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @skillId,
+       @versionLabel,
+       @versionHash,
+       @skillMdPath,
+       @skillMdContent,
+       @skillMetadataJson,
+       'active',
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id: versionId,
+    skillId,
+    versionLabel:
+      String(params.versionLabel || versionHash.slice(0, 12)).trim() || versionHash.slice(0, 12),
+    versionHash,
+    skillMdPath: storedSkillMdPath,
+    skillMdContent: String(params.skillMdContent || ""),
+    skillMetadataJson: stringifyJsonObject(params.skillMetadata || {}),
+    createdAt: now,
+    updatedAt: now,
+  });
+  db.prepare(
+    `UPDATE platform_skills
+        SET latest_version_id = @versionId,
+            latest_version_label = @versionLabel,
+            latest_version_hash = @versionHash,
+            latest_published_at = @publishedAt,
+            latest_synced_at = @publishedAt,
+            updated_at = @updatedAt
+      WHERE id = @skillId`,
+  ).run({
+    skillId,
+    versionId,
+    versionLabel:
+      String(params.versionLabel || versionHash.slice(0, 12)).trim() || versionHash.slice(0, 12),
+    versionHash,
+    publishedAt: now,
+    updatedAt: now,
+  });
+  return getPlatformSkillVersionById(db, versionId);
+}
+
+function ensurePlatformSkillAgentBindings(db, skillId, baseAgentIds = []) {
+  const normalizedBaseAgentIds = [
+    ...new Set(baseAgentIds.map((entry) => String(entry || "").trim()).filter(Boolean)),
+  ];
+  const now = nowIso();
+  for (const baseAgentId of normalizedBaseAgentIds) {
+    db.prepare(
+      `INSERT INTO platform_skill_agent_bindings (
+         id,
+         skill_id,
+         base_agent_id,
+         status,
+         created_at,
+         updated_at
+       ) VALUES (
+         @id,
+         @skillId,
+         @baseAgentId,
+         'active',
+         @createdAt,
+         @updatedAt
+       )
+       ON CONFLICT(skill_id, base_agent_id) DO UPDATE SET
+         status = 'active',
+         updated_at = excluded.updated_at`,
+    ).run({
+      id: createId("skill_agent_binding"),
+      skillId,
+      baseAgentId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+function discoverBundledSkillsForBaseAgent(db, params = {}) {
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  const workspaceDir = resolveBaseWorkspaceDir(params);
+  if (!baseAgentId || !workspaceDir) {
+    return [];
+  }
+  const manifests = listWorkspaceSkillDirectories(workspaceDir)
+    .map((skillDir) => readWorkspaceSkillManifest(skillDir))
+    .filter(Boolean);
+  const discovered = [];
+  for (const manifest of manifests) {
+    const skill = upsertPlatformSkillCatalogEntry(db, {
+      skillKey: manifest.skillKey,
+      name: manifest.name,
+      description: manifest.description,
+      classification: SKILL_CLASS_BUNDLED,
+      sourceType: "workspace",
+      sourceRoot: manifest.skillDir,
+      sourceWorkspaceDir: workspaceDir,
+      status: "active",
+      pricePoints: 0,
+      compatibleBaseAgents: [baseAgentId],
+    });
+    if (!skill?.id) {
+      continue;
+    }
+    ensurePlatformSkillAgentBindings(db, skill.id, [baseAgentId]);
+    const version = upsertPlatformSkillVersion(db, {
+      ...params,
+      skillId: skill.id,
+      skillKey: manifest.skillKey,
+      versionHash: manifest.versionHash,
+      versionLabel: manifest.versionLabel,
+      skillMdPath: manifest.skillMdPath,
+      skillMdContent: manifest.skillMdContent,
+      skillMetadata: {
+        name: manifest.name,
+        description: manifest.description,
+        relativePath: manifest.relativePath,
+      },
+    });
+    discovered.push({
+      ...skill,
+      latestVersionId: version?.id || skill.latestVersionId,
+      latestVersionLabel: version?.versionLabel || skill.latestVersionLabel,
+      latestVersionHash: version?.versionHash || skill.latestVersionHash,
+      sourceRoot: manifest.skillDir,
+      sourceWorkspaceDir: workspaceDir,
+      compatibleBaseAgents: [baseAgentId],
+    });
+  }
+  return discovered;
+}
+
+function listPlatformSkillsInternal(db, params = {}) {
+  const classification = String(params.classification || "")
+    .trim()
+    .toLowerCase();
+  const includeInactive = Boolean(params.includeInactive);
+  const where = [];
+  const bindings = {};
+  if (!includeInactive) {
+    where.push(`status = 'active'`);
+  }
+  if (classification) {
+    where.push(`classification = @classification`);
+    bindings.classification = classification;
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  return db
+    .prepare(
+      `SELECT id,
+              skill_key AS skillKey,
+              name,
+              description,
+              classification,
+              source_type AS sourceType,
+              source_root AS sourceRoot,
+              source_workspace_dir AS sourceWorkspaceDir,
+              status,
+              price_points AS pricePoints,
+              compatible_base_agents_json AS compatibleBaseAgentsJson,
+              latest_version_id AS latestVersionId,
+              latest_version_label AS latestVersionLabel,
+              latest_version_hash AS latestVersionHash,
+              latest_synced_at AS latestSyncedAt,
+              latest_published_at AS latestPublishedAt,
+              affected_tenant_count AS affectedTenantCount,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+         FROM platform_skills
+         ${whereSql}
+         ORDER BY updated_at DESC, created_at DESC`,
+    )
+    .all(bindings)
+    .map(mapPlatformSkillRow)
+    .filter(Boolean);
+}
+
+function listTenantSkillsMarketInternal(db, tenantId, params = {}) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  if (!normalizedTenantId) {
+    return [];
+  }
+  const entitlementBySkillId = new Map(
+    listTenantSkillEntitlementsInternal(db, normalizedTenantId).map((entry) => [
+      entry.skillId,
+      entry,
+    ]),
+  );
+  const pendingOrderBySkillId = new Map(
+    db
+      .prepare(
+        `SELECT id,
+                skill_id AS skillId,
+                order_status AS orderStatus,
+                amount_points AS amountPoints,
+                created_at AS createdAt
+           FROM tenant_skill_orders
+          WHERE tenant_id = ?
+          ORDER BY created_at DESC`,
+      )
+      .all(normalizedTenantId)
+      .map((row) => ({
+        id: String(row?.id || "").trim(),
+        skillId: String(row?.skillId || "").trim(),
+        orderStatus: normalizeSkillOrderStatus(row?.orderStatus),
+        amountPoints: normalizeNonNegativePoints(row?.amountPoints),
+        createdAt: String(row?.createdAt || "").trim(),
+      }))
+      .filter((row) => row.id)
+      .filter(
+        (row, index, rows) => rows.findIndex((entry) => entry.skillId === row.skillId) === index,
+      )
+      .map((row) => [row.skillId, row]),
+  );
+  const templateCountBySkillId = new Map();
+  const assignmentCountBySkillId = new Map();
+  for (const row of db
+    .prepare(
+      `SELECT tats.skill_id AS skillId,
+              COUNT(DISTINCT tats.tenant_agent_id) AS tenantAgentCount
+         FROM tenant_agent_skill_templates tats
+         JOIN tenant_agents ta ON ta.id = tats.tenant_agent_id
+        WHERE ta.tenant_id = ?
+        GROUP BY tats.skill_id`,
+    )
+    .all(normalizedTenantId)) {
+    templateCountBySkillId.set(
+      String(row?.skillId || "").trim(),
+      Number(row?.tenantAgentCount || 0) || 0,
+    );
+  }
+  for (const row of db
+    .prepare(
+      `SELECT uaso.skill_id AS skillId,
+              COUNT(DISTINCT uaso.assignment_id) AS assignmentCount
+         FROM user_agent_skill_overrides uaso
+         JOIN user_agent_assignments ua ON ua.id = uaso.assignment_id
+        WHERE ua.tenant_id = ? AND ua.status = 'active'
+        GROUP BY uaso.skill_id`,
+    )
+    .all(normalizedTenantId)) {
+    assignmentCountBySkillId.set(
+      String(row?.skillId || "").trim(),
+      Number(row?.assignmentCount || 0) || 0,
+    );
+  }
+
+  return listPlatformSkillsInternal(db, { includeInactive: true })
+    .filter((skill) => {
+      if (skill.status !== "active") {
+        return false;
+      }
+      if (!baseAgentId) {
+        return true;
+      }
+      return isSkillCompatibleWithBaseAgent(skill, baseAgentId);
+    })
+    .map((skill) => {
+      const entitlement = entitlementBySkillId.get(skill.id) || null;
+      const isCompatible = !baseAgentId || isSkillCompatibleWithBaseAgent(skill, baseAgentId);
+      let marketStatus = "待下单";
+      if (!isCompatible) {
+        marketStatus = "不兼容";
+      } else if (skill.classification === SKILL_CLASS_BUNDLED) {
+        marketStatus = "无需购买";
+      } else if (skill.classification === SKILL_CLASS_FREE) {
+        marketStatus = entitlement?.enabledByTenant ? "已启用" : "免费可启用";
+      } else if (!entitlement) {
+        marketStatus =
+          pendingOrderBySkillId.get(skill.id)?.orderStatus === SKILL_ORDER_PENDING_CONFIRMATION
+            ? "待确认"
+            : "待下单";
+      } else if (entitlement.status === SKILL_ENTITLEMENT_PENDING) {
+        marketStatus = "待确认";
+      } else if (entitlement.status === SKILL_ENTITLEMENT_ACTIVE) {
+        marketStatus = entitlement.enabledByTenant ? "已购买已启用" : "已购买未启用";
+      } else {
+        marketStatus = "待下单";
+      }
+      return {
+        ...skill,
+        entitlementId: entitlement?.id || null,
+        entitlementStatus: entitlement?.status || null,
+        enabledByTenant: entitlement?.enabledByTenant || false,
+        pendingOrderId: pendingOrderBySkillId.get(skill.id)?.id || null,
+        pendingOrderStatus: pendingOrderBySkillId.get(skill.id)?.orderStatus || null,
+        currentVersionId:
+          String(entitlement?.currentVersionId || "").trim() || skill.latestVersionId || null,
+        affectedTenantAgentCount: templateCountBySkillId.get(skill.id) || 0,
+        affectedAssignmentCount: assignmentCountBySkillId.get(skill.id) || 0,
+        marketStatus,
+        compatible: isCompatible,
+      };
+    })
+    .sort((left, right) => left.skillKey.localeCompare(right.skillKey));
+}
+
+function ensureTenantSkillEntitlement(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const skillId = String(params.skillId || "").trim();
+  if (!tenantId || !skillId) {
+    throw new Error("tenant_skill_entitlement_missing_fields");
+  }
+  const existing = db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              skill_id AS skillId,
+              status,
+              acquire_type AS acquireType,
+              version_policy AS versionPolicy,
+              current_version_id AS currentVersionId,
+              enabled_by_tenant AS enabledByTenant,
+              blocked_reason AS blockedReason,
+              order_id AS orderId,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+         FROM tenant_skill_entitlements
+        WHERE tenant_id = ? AND skill_id = ?`,
+    )
+    .get(tenantId, skillId);
+  const now = nowIso();
+  const status = normalizeSkillEntitlementStatus(params.status);
+  const enabledByTenant = params.enabledByTenant ? 1 : 0;
+  if (existing?.id) {
+    db.prepare(
+      `UPDATE tenant_skill_entitlements
+          SET status = @status,
+              acquire_type = @acquireType,
+              version_policy = @versionPolicy,
+              current_version_id = @currentVersionId,
+              enabled_by_tenant = @enabledByTenant,
+              blocked_reason = @blockedReason,
+              order_id = @orderId,
+              updated_at = @updatedAt
+        WHERE id = @id`,
+    ).run({
+      id: existing.id,
+      status,
+      acquireType: String(params.acquireType || existing.acquireType || "bundled").trim(),
+      versionPolicy: String(params.versionPolicy || "latest").trim() || "latest",
+      currentVersionId: String(params.currentVersionId || "").trim() || null,
+      enabledByTenant,
+      blockedReason: String(params.blockedReason || "").trim() || null,
+      orderId: String(params.orderId || "").trim() || null,
+      updatedAt: now,
+    });
+    return (
+      listTenantSkillEntitlementsInternal(db, tenantId).find((entry) => entry.id === existing.id) ||
+      null
+    );
+  }
+  const entitlementId = createId("tenant_skill_entitlement");
+  db.prepare(
+    `INSERT INTO tenant_skill_entitlements (
+       id,
+       tenant_id,
+       skill_id,
+       status,
+       acquire_type,
+       version_policy,
+       current_version_id,
+       enabled_by_tenant,
+       blocked_reason,
+       order_id,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @tenantId,
+       @skillId,
+       @status,
+       @acquireType,
+       @versionPolicy,
+       @currentVersionId,
+       @enabledByTenant,
+       @blockedReason,
+       @orderId,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id: entitlementId,
+    tenantId,
+    skillId,
+    status,
+    acquireType: String(params.acquireType || "bundled").trim() || "bundled",
+    versionPolicy: String(params.versionPolicy || "latest").trim() || "latest",
+    currentVersionId: String(params.currentVersionId || "").trim() || null,
+    enabledByTenant,
+    blockedReason: String(params.blockedReason || "").trim() || null,
+    orderId: String(params.orderId || "").trim() || null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return (
+    listTenantSkillEntitlementsInternal(db, tenantId).find((entry) => entry.id === entitlementId) ||
+    null
+  );
+}
+
+function createTenantSkillOrderRecord(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const skillId = String(params.skillId || "").trim();
+  if (!tenantId || !skillId) {
+    throw new Error("tenant_skill_order_missing_fields");
+  }
+  const now = nowIso();
+  const orderId = createId("tenant_skill_order");
+  const createdByUserId = String(params.createdByUserId || "").trim();
+  const validCreatedByUserId = createdByUserId
+    ? String(
+        getScalar(db, `SELECT id AS value FROM users WHERE id = ? LIMIT 1`, [createdByUserId]) ||
+          "",
+      ).trim() || null
+    : null;
+  db.prepare(
+    `INSERT INTO tenant_skill_orders (
+       id,
+       tenant_id,
+       skill_id,
+       order_status,
+       acquire_type,
+       amount_points,
+       version_policy,
+       current_version_id,
+       created_by_user_id,
+       confirmed_by_user_id,
+       confirmed_at,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @tenantId,
+       @skillId,
+       @orderStatus,
+       @acquireType,
+       @amountPoints,
+       @versionPolicy,
+       @currentVersionId,
+       @createdByUserId,
+       NULL,
+       NULL,
+       @createdAt,
+       @updatedAt
+     )`,
+  ).run({
+    id: orderId,
+    tenantId,
+    skillId,
+    orderStatus: normalizeSkillOrderStatus(params.orderStatus),
+    acquireType: String(params.acquireType || "paid_order").trim() || "paid_order",
+    amountPoints: normalizeNonNegativePoints(params.amountPoints),
+    versionPolicy: String(params.versionPolicy || "latest").trim() || "latest",
+    currentVersionId: String(params.currentVersionId || "").trim() || null,
+    createdByUserId: validCreatedByUserId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return getTenantSkillOrderById(db, orderId);
+}
+
+function getTenantSkillOrderById(db, orderId) {
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!normalizedOrderId) {
+    return null;
+  }
+  const row = db
+    .prepare(
+      `SELECT tso.id,
+              tso.tenant_id AS tenantId,
+              tso.skill_id AS skillId,
+              tso.order_status AS orderStatus,
+              tso.acquire_type AS acquireType,
+              tso.amount_points AS amountPoints,
+              tso.version_policy AS versionPolicy,
+              tso.current_version_id AS currentVersionId,
+              tso.created_by_user_id AS createdByUserId,
+              tso.confirmed_by_user_id AS confirmedByUserId,
+              tso.confirmed_at AS confirmedAt,
+              tso.created_at AS createdAt,
+              tso.updated_at AS updatedAt,
+              ps.skill_key AS skillKey,
+              ps.name,
+              ps.classification,
+              ps.price_points AS pricePoints,
+              ps.latest_version_id AS latestVersionId
+         FROM tenant_skill_orders tso
+         JOIN platform_skills ps ON ps.id = tso.skill_id
+        WHERE tso.id = ?
+        LIMIT 1`,
+    )
+    .get(normalizedOrderId);
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id || "").trim(),
+    tenantId: String(row.tenantId || "").trim(),
+    skillId: String(row.skillId || "").trim(),
+    orderStatus: normalizeSkillOrderStatus(row.orderStatus),
+    acquireType: String(row.acquireType || "").trim() || "paid_order",
+    amountPoints: normalizeNonNegativePoints(row.amountPoints),
+    versionPolicy: String(row.versionPolicy || "").trim() || "latest",
+    currentVersionId: String(row.currentVersionId || "").trim() || null,
+    createdByUserId: String(row.createdByUserId || "").trim() || null,
+    confirmedByUserId: String(row.confirmedByUserId || "").trim() || null,
+    confirmedAt: String(row.confirmedAt || "").trim() || null,
+    createdAt: String(row.createdAt || "").trim(),
+    updatedAt: String(row.updatedAt || "").trim(),
+    skillKey: String(row.skillKey || "").trim(),
+    name: normalizeSkillName(row.name, row.skillKey),
+    classification: normalizeSkillClassification(row.classification),
+    pricePoints: normalizeNonNegativePoints(row.pricePoints),
+    latestVersionId: String(row.latestVersionId || "").trim() || null,
+  };
+}
+
+function ensureTenantAgentSkillTemplate(db, params = {}) {
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const skillId = String(params.skillId || "").trim();
+  if (!tenantAgentId || !skillId) {
+    throw new Error("tenant_agent_skill_template_missing_fields");
+  }
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO tenant_agent_skill_templates (
+       id,
+       tenant_agent_id,
+       skill_id,
+       template_state,
+       source_type,
+       created_at,
+       updated_at
+     ) VALUES (
+       @id,
+       @tenantAgentId,
+       @skillId,
+       @templateState,
+       @sourceType,
+       @createdAt,
+       @updatedAt
+     )
+     ON CONFLICT(tenant_agent_id, skill_id) DO UPDATE SET
+       template_state = excluded.template_state,
+       source_type = excluded.source_type,
+       updated_at = excluded.updated_at`,
+  ).run({
+    id: createId("tenant_agent_skill_template"),
+    tenantAgentId,
+    skillId,
+    templateState: normalizeSkillTemplateState(params.templateState),
+    sourceType: String(params.sourceType || "base_default").trim() || "base_default",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+function listTenantAgentSkillTemplates(db, tenantAgentId) {
+  const normalizedTenantAgentId = String(tenantAgentId || "").trim();
+  if (!normalizedTenantAgentId) {
+    return [];
+  }
+  return db
+    .prepare(
+      `SELECT tats.id,
+              tats.tenant_agent_id AS tenantAgentId,
+              tats.skill_id AS skillId,
+              tats.template_state AS templateState,
+              tats.source_type AS sourceType,
+              tats.created_at AS createdAt,
+              tats.updated_at AS updatedAt,
+              ps.skill_key AS skillKey,
+              ps.name,
+              ps.description,
+              ps.classification,
+              ps.status,
+              ps.price_points AS pricePoints,
+              ps.latest_version_id AS latestVersionId
+         FROM tenant_agent_skill_templates tats
+         JOIN platform_skills ps ON ps.id = tats.skill_id
+        WHERE tats.tenant_agent_id = ?
+        ORDER BY tats.created_at ASC, ps.skill_key ASC`,
+    )
+    .all(normalizedTenantAgentId)
+    .map((row) => ({
+      id: String(row.id || "").trim(),
+      tenantAgentId: String(row.tenantAgentId || "").trim(),
+      skillId: String(row.skillId || "").trim(),
+      templateState: normalizeSkillTemplateState(row.templateState),
+      sourceType: String(row.sourceType || "").trim() || "base_default",
+      createdAt: String(row.createdAt || "").trim(),
+      updatedAt: String(row.updatedAt || "").trim(),
+      skillKey: String(row.skillKey || "").trim(),
+      name: normalizeSkillName(row.name, row.skillKey),
+      description: normalizeSkillDescription(row.description),
+      classification: normalizeSkillClassification(row.classification),
+      status: String(row.status || "").trim() || "active",
+      pricePoints: normalizeNonNegativePoints(row.pricePoints),
+      latestVersionId: String(row.latestVersionId || "").trim() || null,
+    }));
+}
+
+function setUserAgentSkillOverrides(db, params = {}) {
+  const assignmentId = String(params.assignmentId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!assignmentId || !tenantAgentId || !userId) {
+    throw new Error("user_agent_skill_override_missing_fields");
+  }
+  const overrides = Array.isArray(params.overrides) ? params.overrides : [];
+  const now = nowIso();
+  db.prepare("DELETE FROM user_agent_skill_overrides WHERE assignment_id = ?").run(assignmentId);
+  for (const override of overrides) {
+    const action = normalizeSkillOverrideAction(override?.action);
+    const skillId = String(override?.skillId || "").trim();
+    if (!action || !skillId) {
+      continue;
+    }
+    db.prepare(
+      `INSERT INTO user_agent_skill_overrides (
+         id,
+         assignment_id,
+         tenant_agent_id,
+         user_id,
+         skill_id,
+         action,
+         created_at,
+         updated_at
+       ) VALUES (
+         @id,
+         @assignmentId,
+         @tenantAgentId,
+         @userId,
+         @skillId,
+         @action,
+         @createdAt,
+         @updatedAt
+       )`,
+    ).run({
+      id: createId("user_agent_skill_override"),
+      assignmentId,
+      tenantAgentId,
+      userId,
+      skillId,
+      action,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+function listUserAgentSkillOverrides(db, assignmentId) {
+  const normalizedAssignmentId = String(assignmentId || "").trim();
+  if (!normalizedAssignmentId) {
+    return [];
+  }
+  return db
+    .prepare(
+      `SELECT uaso.id,
+              uaso.assignment_id AS assignmentId,
+              uaso.tenant_agent_id AS tenantAgentId,
+              uaso.user_id AS userId,
+              uaso.skill_id AS skillId,
+              uaso.action,
+              uaso.created_at AS createdAt,
+              uaso.updated_at AS updatedAt,
+              ps.skill_key AS skillKey,
+              ps.name,
+              ps.description,
+              ps.classification,
+              ps.status,
+              ps.price_points AS pricePoints,
+              ps.latest_version_id AS latestVersionId
+         FROM user_agent_skill_overrides uaso
+         JOIN platform_skills ps ON ps.id = uaso.skill_id
+        WHERE uaso.assignment_id = ?
+        ORDER BY uaso.created_at ASC, ps.skill_key ASC`,
+    )
+    .all(normalizedAssignmentId)
+    .map((row) => ({
+      id: String(row.id || "").trim(),
+      assignmentId: String(row.assignmentId || "").trim(),
+      tenantAgentId: String(row.tenantAgentId || "").trim(),
+      userId: String(row.userId || "").trim(),
+      skillId: String(row.skillId || "").trim(),
+      action: normalizeSkillOverrideAction(row.action),
+      createdAt: String(row.createdAt || "").trim(),
+      updatedAt: String(row.updatedAt || "").trim(),
+      skillKey: String(row.skillKey || "").trim(),
+      name: normalizeSkillName(row.name, row.skillKey),
+      description: normalizeSkillDescription(row.description),
+      classification: normalizeSkillClassification(row.classification),
+      status: String(row.status || "").trim() || "active",
+      pricePoints: normalizeNonNegativePoints(row.pricePoints),
+      latestVersionId: String(row.latestVersionId || "").trim() || null,
+    }));
+}
+
+function listTenantSkillEntitlementsInternal(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return [];
+  }
+  return db
+    .prepare(
+      `SELECT tse.id,
+              tse.tenant_id AS tenantId,
+              tse.skill_id AS skillId,
+              tse.status,
+              tse.acquire_type AS acquireType,
+              tse.version_policy AS versionPolicy,
+              tse.current_version_id AS currentVersionId,
+              tse.enabled_by_tenant AS enabledByTenant,
+              tse.blocked_reason AS blockedReason,
+              tse.order_id AS orderId,
+              tse.created_at AS createdAt,
+              tse.updated_at AS updatedAt,
+              ps.skill_key AS skillKey,
+              ps.name,
+              ps.description,
+              ps.classification,
+              ps.status AS skillStatus,
+              ps.price_points AS pricePoints,
+              ps.latest_version_id AS latestVersionId
+         FROM tenant_skill_entitlements tse
+         JOIN platform_skills ps ON ps.id = tse.skill_id
+        WHERE tse.tenant_id = ?
+        ORDER BY tse.updated_at DESC, tse.created_at DESC`,
+    )
+    .all(normalizedTenantId)
+    .map((row) => ({
+      id: String(row.id || "").trim(),
+      tenantId: String(row.tenantId || "").trim(),
+      skillId: String(row.skillId || "").trim(),
+      status: normalizeSkillEntitlementStatus(row.status),
+      acquireType: String(row.acquireType || "").trim() || "bundled",
+      versionPolicy: String(row.versionPolicy || "").trim() || "latest",
+      currentVersionId: String(row.currentVersionId || "").trim() || null,
+      enabledByTenant: Number(row.enabledByTenant || 0) > 0,
+      blockedReason: String(row.blockedReason || "").trim() || null,
+      orderId: String(row.orderId || "").trim() || null,
+      createdAt: String(row.createdAt || "").trim(),
+      updatedAt: String(row.updatedAt || "").trim(),
+      skillKey: String(row.skillKey || "").trim(),
+      name: normalizeSkillName(row.name, row.skillKey),
+      description: normalizeSkillDescription(row.description),
+      classification: normalizeSkillClassification(row.classification),
+      skillStatus: String(row.skillStatus || "").trim() || "active",
+      pricePoints: normalizeNonNegativePoints(row.pricePoints),
+      latestVersionId: String(row.latestVersionId || "").trim() || null,
+    }));
+}
+
+function listTenantSkillAssignmentsInternal(db, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!normalizedTenantId) {
+    return [];
+  }
+  const tenantAgents = db
+    .prepare(
+      `SELECT ta.id,
+              ta.agent_id AS baseAgentId,
+              ta.description,
+              ta.status,
+              COUNT(DISTINCT CASE WHEN ua.status = 'active' THEN ua.id END) AS assignmentCount
+         FROM tenant_agents ta
+         LEFT JOIN user_agent_assignments ua ON ua.tenant_agent_id = ta.id
+        WHERE ta.tenant_id = ?
+        GROUP BY ta.id
+        ORDER BY ta.updated_at DESC, ta.created_at DESC`,
+    )
+    .all(normalizedTenantId);
+  return tenantAgents.map((row) => {
+    const tenantAgentId = String(row?.id || "").trim();
+    const templates = listTenantAgentSkillTemplates(db, tenantAgentId);
+    const assignmentRows = db
+      .prepare(
+        `SELECT ua.id,
+                ua.user_id AS userId,
+                ua.derived_agent_id AS derivedAgentId,
+                ua.status,
+                u.username
+           FROM user_agent_assignments ua
+           JOIN users u ON u.id = ua.user_id
+          WHERE ua.tenant_agent_id = ? AND ua.status = 'active'
+          ORDER BY ua.created_at ASC`,
+      )
+      .all(tenantAgentId)
+      .map((assignment) => {
+        const assignmentId = String(assignment?.id || "").trim();
+        const overrides = listUserAgentSkillOverrides(db, assignmentId);
+        const resolved = resolveAssignmentSkillState(db, {
+          tenantId: normalizedTenantId,
+          tenantAgentId,
+          assignmentId,
+        });
+        return {
+          assignmentId,
+          userId: String(assignment?.userId || "").trim(),
+          username: String(assignment?.username || "").trim(),
+          derivedAgentId: String(assignment?.derivedAgentId || "").trim() || null,
+          status: String(assignment?.status || "").trim() || "active",
+          overrideRows: overrides,
+          overrideSummary: overrides.map((entry) => ({
+            skillKey: entry.skillKey,
+            action: entry.action,
+          })),
+          resolvedSkillKeys: resolved.resolvedEntries.map((entry) => entry.skillKey),
+          blockedReasons: resolved.blockedReasons,
+        };
+      });
+    const blockedSkillKeys = templates
+      .filter((entry) => entry.templateState === SKILL_TEMPLATE_STATE_BLOCKED)
+      .map((entry) => entry.skillKey);
+    return {
+      tenantAgentId,
+      baseAgentId: String(row?.baseAgentId || "").trim(),
+      description: String(row?.description || "").trim() || null,
+      status: String(row?.status || "").trim() || "active",
+      assignmentCount: Number(row?.assignmentCount || 0) || 0,
+      templateRows: templates,
+      templateSkillKeys: templates
+        .filter((entry) => entry.templateState === SKILL_TEMPLATE_STATE_ENABLED)
+        .map((entry) => entry.skillKey),
+      blockedSkillKeys,
+      assignments: assignmentRows,
+    };
+  });
+}
+
+function resolveSkillVersionForEntitlement(db, entitlement) {
+  const versionId =
+    String(entitlement?.currentVersionId || "").trim() ||
+    String(entitlement?.latestVersionId || "").trim();
+  return versionId ? getPlatformSkillVersionById(db, versionId) : null;
+}
+
+function isSkillEntitlementUsable(classification, entitlement) {
+  const normalizedClassification = normalizeSkillClassification(classification);
+  if (normalizedClassification === SKILL_CLASS_BUNDLED) {
+    return true;
+  }
+  return (
+    normalizeSkillEntitlementStatus(entitlement?.status) === SKILL_ENTITLEMENT_ACTIVE &&
+    Boolean(entitlement?.enabledByTenant)
+  );
+}
+
+function ensureTenantBundledSkillState(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  if (!tenantId || !tenantAgentId || !baseAgentId) {
+    return [];
+  }
+  const discoveredBundledSkills = discoverBundledSkillsForBaseAgent(db, {
+    ...params,
+    baseAgentId,
+  });
+  for (const skill of discoveredBundledSkills) {
+    ensureTenantSkillEntitlement(db, {
+      tenantId,
+      skillId: skill.id,
+      status: SKILL_ENTITLEMENT_ACTIVE,
+      acquireType: "bundled",
+      versionPolicy: "latest",
+      currentVersionId: skill.latestVersionId,
+      enabledByTenant: true,
+    });
+    ensureTenantAgentSkillTemplate(db, {
+      tenantAgentId,
+      skillId: skill.id,
+      templateState: SKILL_TEMPLATE_STATE_ENABLED,
+      sourceType: "base_default",
+    });
+  }
+  return discoveredBundledSkills;
+}
+
+function upsertTenantAgentSkillSnapshot(db, params = {}) {
+  const assignmentId = String(params.assignmentId || "").trim();
+  if (!assignmentId) {
+    return null;
+  }
+  const now = nowIso();
+  db.prepare("DELETE FROM tenant_agent_skill_snapshots WHERE assignment_id = ?").run(assignmentId);
+  const snapshotId = createId("tenant_agent_skill_snapshot");
+  db.prepare(
+    `INSERT INTO tenant_agent_skill_snapshots (
+       id,
+       assignment_id,
+       tenant_id,
+       tenant_agent_id,
+       user_id,
+       derived_agent_id,
+       resolved_skill_keys_json,
+       resolved_version_ids_json,
+       blocked_reasons_json,
+       applied_at
+     ) VALUES (
+       @id,
+       @assignmentId,
+       @tenantId,
+       @tenantAgentId,
+       @userId,
+       @derivedAgentId,
+       @resolvedSkillKeysJson,
+       @resolvedVersionIdsJson,
+       @blockedReasonsJson,
+       @appliedAt
+     )`,
+  ).run({
+    id: snapshotId,
+    assignmentId,
+    tenantId: String(params.tenantId || "").trim(),
+    tenantAgentId: String(params.tenantAgentId || "").trim(),
+    userId: String(params.userId || "").trim(),
+    derivedAgentId: String(params.derivedAgentId || "").trim(),
+    resolvedSkillKeysJson: stringifyJsonArray(params.resolvedSkillKeys),
+    resolvedVersionIdsJson: stringifyJsonArray(params.resolvedVersionIds),
+    blockedReasonsJson: stringifyJsonArray(params.blockedReasons),
+    appliedAt: now,
+  });
+  return snapshotId;
+}
+
+function resolveAssignmentSkillState(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const assignmentId = String(params.assignmentId || "").trim();
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  if (!tenantId || !tenantAgentId) {
+    throw new Error("resolve_assignment_skill_state_missing_fields");
+  }
+  if (baseAgentId) {
+    ensureTenantBundledSkillState(db, {
+      ...params,
+      tenantId,
+      tenantAgentId,
+      baseAgentId,
+    });
+  }
+  const entitlements = listTenantSkillEntitlementsInternal(db, tenantId);
+  const entitlementBySkillId = new Map(entitlements.map((entry) => [entry.skillId, entry]));
+  const templates = listTenantAgentSkillTemplates(db, tenantAgentId);
+  const overrides = assignmentId ? listUserAgentSkillOverrides(db, assignmentId) : [];
+  const enabledTemplateSkillIds = new Set();
+  const blockedReasons = [];
+
+  for (const template of templates) {
+    const entitlement = entitlementBySkillId.get(template.skillId);
+    const hasActiveEntitlement = isSkillEntitlementUsable(template.classification, entitlement);
+    if (template.templateState === SKILL_TEMPLATE_STATE_BLOCKED) {
+      blockedReasons.push(`${template.skillKey}:missing_entitlement`);
+      continue;
+    }
+    if (template.templateState !== SKILL_TEMPLATE_STATE_ENABLED) {
+      continue;
+    }
+    if (!hasActiveEntitlement) {
+      blockedReasons.push(`${template.skillKey}:missing_entitlement`);
+      continue;
+    }
+    enabledTemplateSkillIds.add(template.skillId);
+  }
+
+  const forceAddSkillIds = new Set(
+    overrides.filter((entry) => entry.action === "force_add").map((entry) => entry.skillId),
+  );
+  const forceRemoveSkillIds = new Set(
+    overrides.filter((entry) => entry.action === "force_remove").map((entry) => entry.skillId),
+  );
+
+  for (const skillId of forceAddSkillIds) {
+    const entitlement = entitlementBySkillId.get(skillId);
+    const hasActiveEntitlement = isSkillEntitlementUsable(entitlement?.classification, entitlement);
+    if (!hasActiveEntitlement) {
+      const skillKey = entitlement?.skillKey || skillId;
+      blockedReasons.push(`${skillKey}:force_add_missing_entitlement`);
+      continue;
+    }
+    enabledTemplateSkillIds.add(skillId);
+  }
+
+  for (const skillId of forceRemoveSkillIds) {
+    enabledTemplateSkillIds.delete(skillId);
+  }
+
+  const resolvedEntries = [];
+  for (const skillId of enabledTemplateSkillIds) {
+    const entitlement = entitlementBySkillId.get(skillId);
+    const version = resolveSkillVersionForEntitlement(db, entitlement);
+    if (!entitlement || !version) {
+      blockedReasons.push(`${entitlement?.skillKey || skillId}:version_unresolved`);
+      continue;
+    }
+    resolvedEntries.push({
+      skillId,
+      skillKey: entitlement.skillKey,
+      versionId: version.id,
+      version,
+      entitlement,
+    });
+  }
+
+  return {
+    resolvedEntries: resolvedEntries.sort((left, right) =>
+      left.skillKey.localeCompare(right.skillKey),
+    ),
+    blockedReasons: [...new Set(blockedReasons)].sort((left, right) => left.localeCompare(right)),
+    templateRows: templates,
+    overrideRows: overrides,
+    entitlementRows: entitlements,
+  };
+}
+
+function createResolvedSkillError(blockedReasons = []) {
+  const uniqueReasons = [
+    ...new Set((blockedReasons || []).map((entry) => String(entry || "").trim()).filter(Boolean)),
+  ];
+  const error = new Error("tenant_agent_skills_blocked");
+  error.code = "tenant_agent_skills_blocked";
+  error.blockedReasons = uniqueReasons;
+  error.missingSkills = uniqueReasons
+    .map((entry) =>
+      String(entry || "")
+        .split(":")[0]
+        ?.trim(),
+    )
+    .filter(Boolean);
+  return error;
+}
+
+function updatePlatformSkillAffectedTenantCounts(db, skillId) {
+  const normalizedSkillId = String(skillId || "").trim();
+  if (!normalizedSkillId) {
+    return;
+  }
+  const affectedTenantCount = Number(
+    getScalar(
+      db,
+      `SELECT COUNT(DISTINCT ta.tenant_id) AS value
+         FROM tenant_agent_skill_templates tats
+         JOIN tenant_agents ta ON ta.id = tats.tenant_agent_id
+        WHERE tats.skill_id = ?`,
+      [normalizedSkillId],
+    ) || 0,
+  );
+  db.prepare(
+    `UPDATE platform_skills
+        SET affected_tenant_count = @affectedTenantCount,
+            updated_at = @updatedAt
+      WHERE id = @skillId`,
+  ).run({
+    skillId: normalizedSkillId,
+    affectedTenantCount,
+    updatedAt: nowIso(),
+  });
+}
+
+function listActiveAssignmentsForTenantAgent(db, tenantAgentId) {
+  const normalizedTenantAgentId = String(tenantAgentId || "").trim();
+  if (!normalizedTenantAgentId) {
+    return [];
+  }
+  return db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              user_id AS userId,
+              tenant_agent_id AS tenantAgentId,
+              derived_agent_id AS derivedAgentId,
+              derived_workspace_dir AS derivedWorkspaceDir,
+              status
+         FROM user_agent_assignments
+        WHERE tenant_agent_id = ?
+          AND status IN ('active', 'blocked_missing_skills')
+        ORDER BY created_at ASC`,
+    )
+    .all(normalizedTenantAgentId)
+    .map((row) => ({
+      id: String(row?.id || "").trim(),
+      tenantId: String(row?.tenantId || "").trim(),
+      userId: String(row?.userId || "").trim(),
+      tenantAgentId: String(row?.tenantAgentId || "").trim(),
+      derivedAgentId: String(row?.derivedAgentId || "").trim(),
+      derivedWorkspaceDir: String(row?.derivedWorkspaceDir || "").trim(),
+      status: normalizeAssignmentStatus(row?.status),
+    }))
+    .filter((row) => row.id);
+}
+
+function setAssignmentStatus(db, params = {}) {
+  const assignmentId = String(params.assignmentId || "").trim();
+  const status = normalizeAssignmentStatus(params.status);
+  if (!assignmentId) {
+    return;
+  }
+  db.prepare(
+    `UPDATE user_agent_assignments
+        SET status = @status,
+            derived_agent_id = @derivedAgentId,
+            derived_workspace_dir = @derivedWorkspaceDir
+      WHERE id = @assignmentId`,
+  ).run({
+    assignmentId,
+    status,
+    derivedAgentId: String(params.derivedAgentId || "").trim() || null,
+    derivedWorkspaceDir: String(params.derivedWorkspaceDir || "").trim() || null,
+  });
+}
+
+function reconcileTenantAgentAssignments(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const baseAgentId = String(params.baseAgentId || "").trim();
+  if (!tenantId || !tenantAgentId || !baseAgentId) {
+    return {
+      blockedAssignmentCount: 0,
+      activeAssignmentCount: 0,
+      blockedAssignmentIds: [],
+      activeAssignmentIds: [],
+    };
+  }
+  const assignments = listActiveAssignmentsForTenantAgent(db, tenantAgentId);
+  const blockedAssignmentIds = [];
+  const activeAssignmentIds = [];
+  for (const assignment of assignments) {
+    const derivedAgentId =
+      String(assignment?.derivedAgentId || "").trim() ||
+      deriveTenantMemberAgentId({
+        tenantId,
+        userId: assignment.userId,
+        tenantAgentId,
+        baseAgentId,
+      });
+    const resolved = resolveAssignmentSkillState(db, {
+      tenantId,
+      tenantAgentId,
+      assignmentId: assignment.id,
+      baseAgentId,
+      configPath: params.configPath,
+      configDir: params.configDir,
+    });
+    if (resolved.blockedReasons.length) {
+      setAssignmentStatus(db, {
+        assignmentId: assignment.id,
+        status: ASSIGNMENT_STATUS_BLOCKED_MISSING_SKILLS,
+        derivedAgentId,
+        derivedWorkspaceDir:
+          String(assignment.derivedWorkspaceDir || "").trim() ||
+          buildDerivedAgentWorkspacePath({
+            ...params,
+            tenantId,
+            userId: assignment.userId,
+            tenantAgentId,
+            baseAgentId,
+            derivedAgentId,
+          }),
+      });
+      upsertTenantAgentSkillSnapshot(db, {
+        assignmentId: assignment.id,
+        tenantId,
+        tenantAgentId,
+        userId: assignment.userId,
+        derivedAgentId,
+        resolvedSkillKeys: resolved.resolvedEntries.map((entry) => entry.skillKey),
+        resolvedVersionIds: resolved.resolvedEntries.map((entry) => entry.versionId),
+        blockedReasons: resolved.blockedReasons,
+      });
+      blockedAssignmentIds.push(assignment.id);
+      continue;
+    }
+    const workspace = ensureTenantDerivedWorkspace({
+      db,
+      tenantId,
+      userId: assignment.userId,
+      tenantAgentId,
+      baseAgentId,
+      derivedAgentId,
+      assignmentId: assignment.id,
+      configPath: params.configPath,
+      configDir: params.configDir,
+    });
+    setAssignmentStatus(db, {
+      assignmentId: assignment.id,
+      status: ASSIGNMENT_STATUS_ACTIVE,
+      derivedAgentId,
+      derivedWorkspaceDir: workspace.canonicalWorkspace,
+    });
+    syncDerivedAgentRuntimeConfigEntry({
+      baseAgentId,
+      derivedAgentId,
+      skills: workspace.resolvedSkillKeys,
+      configPath: params.configPath,
+      configDir: params.configDir,
+    });
+    upsertTenantAgentSkillSnapshot(db, {
+      assignmentId: assignment.id,
+      tenantId,
+      tenantAgentId,
+      userId: assignment.userId,
+      derivedAgentId,
+      resolvedSkillKeys: workspace.resolvedSkillKeys,
+      resolvedVersionIds: workspace.resolvedVersionIds,
+      blockedReasons: workspace.blockedReasons,
+    });
+    activeAssignmentIds.push(assignment.id);
+  }
+  return {
+    blockedAssignmentCount: blockedAssignmentIds.length,
+    activeAssignmentCount: activeAssignmentIds.length,
+    blockedAssignmentIds,
+    activeAssignmentIds,
+  };
+}
+
+function reconcileTenantAgentSkillState(db, params = {}) {
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  if (!tenantAgentId) {
+    return {
+      tenantAgentId: "",
+      blockedSkillKeys: [],
+      blockedAssignmentCount: 0,
+      activeAssignmentCount: 0,
+    };
+  }
+  const tenantAgent = db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              agent_id AS baseAgentId
+         FROM tenant_agents
+        WHERE id = ?
+        LIMIT 1`,
+    )
+    .get(tenantAgentId);
+  if (!tenantAgent?.id) {
+    return {
+      tenantAgentId,
+      blockedSkillKeys: [],
+      blockedAssignmentCount: 0,
+      activeAssignmentCount: 0,
+    };
+  }
+  const tenantId = String(tenantAgent.tenantId || "").trim();
+  const baseAgentId = String(tenantAgent.baseAgentId || "").trim();
+  ensureTenantBundledSkillState(db, {
+    ...params,
+    tenantId,
+    tenantAgentId,
+    baseAgentId,
+  });
+  const entitlements = listTenantSkillEntitlementsInternal(db, tenantId);
+  const entitlementBySkillId = new Map(entitlements.map((entry) => [entry.skillId, entry]));
+  const templates = listTenantAgentSkillTemplates(db, tenantAgentId);
+  const blockedSkillKeys = [];
+  for (const template of templates) {
+    const entitlement = entitlementBySkillId.get(template.skillId);
+    const classification = normalizeSkillClassification(template.classification);
+    const shouldBeBlocked =
+      classification !== SKILL_CLASS_BUNDLED &&
+      !isSkillEntitlementUsable(classification, entitlement);
+    const nextTemplateState = shouldBeBlocked
+      ? SKILL_TEMPLATE_STATE_BLOCKED
+      : template.templateState === SKILL_TEMPLATE_STATE_BLOCKED
+        ? SKILL_TEMPLATE_STATE_ENABLED
+        : template.templateState;
+    if (nextTemplateState !== template.templateState) {
+      ensureTenantAgentSkillTemplate(db, {
+        tenantAgentId,
+        skillId: template.skillId,
+        templateState: nextTemplateState,
+        sourceType: template.sourceType,
+      });
+    }
+    if (nextTemplateState === SKILL_TEMPLATE_STATE_BLOCKED) {
+      blockedSkillKeys.push(template.skillKey);
+    }
+    updatePlatformSkillAffectedTenantCounts(db, template.skillId);
+  }
+  const reconcileResult = reconcileTenantAgentAssignments(db, {
+    ...params,
+    tenantId,
+    tenantAgentId,
+    baseAgentId,
+  });
+  return {
+    tenantAgentId,
+    tenantId,
+    baseAgentId,
+    blockedSkillKeys: [...new Set(blockedSkillKeys)].sort((left, right) =>
+      left.localeCompare(right),
+    ),
+    blockedAssignmentCount: reconcileResult.blockedAssignmentCount,
+    activeAssignmentCount: reconcileResult.activeAssignmentCount,
+    blockedAssignmentIds: reconcileResult.blockedAssignmentIds,
+    activeAssignmentIds: reconcileResult.activeAssignmentIds,
+  };
+}
+
+function reconcileTenantSkillAcrossTenantAgents(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const skillId = String(params.skillId || "").trim();
+  if (!tenantId || !skillId) {
+    return [];
+  }
+  const tenantAgentIds = db
+    .prepare(
+      `SELECT DISTINCT ta.id
+         FROM tenant_agents ta
+         LEFT JOIN tenant_agent_skill_templates tats ON tats.tenant_agent_id = ta.id
+        WHERE ta.tenant_id = ?
+          AND (
+            tats.skill_id = ?
+            OR ta.id IN (
+              SELECT ua.tenant_agent_id
+                FROM user_agent_skill_overrides ua
+               WHERE ua.skill_id = ?
+            )
+          )
+        ORDER BY ta.created_at ASC`,
+    )
+    .all(tenantId, skillId, skillId)
+    .map((row) => String(row?.id || "").trim())
+    .filter(Boolean);
+  return tenantAgentIds.map((tenantAgentId) =>
+    reconcileTenantAgentSkillState(db, {
+      ...params,
+      tenantAgentId,
+    }),
+  );
+}
+
+export function listPlatformSkills(db, params = {}) {
+  return listPlatformSkillsInternal(db, params);
+}
+
+export function listTenantSkillsMarket(db, tenantId, params = {}) {
+  return listTenantSkillsMarketInternal(db, tenantId, params);
+}
+
+export function listTenantSkillEntitlements(db, tenantId) {
+  return listTenantSkillEntitlementsInternal(db, tenantId);
+}
+
+export function listTenantSkillAssignments(db, tenantId) {
+  return listTenantSkillAssignmentsInternal(db, tenantId);
+}
+
+export function savePlatformSkill(db, params = {}) {
+  const skillKey = normalizeSkillKey(params.skillKey);
+  const skillMdContent = String(params.skillMdContent || "").trim();
+  if (!skillKey) {
+    throw new Error("skill_key_required");
+  }
+  if (!skillMdContent) {
+    throw new Error("skill_md_content_required");
+  }
+  const now = nowIso();
+  const skill = upsertPlatformSkillCatalogEntry(db, {
+    skillKey,
+    name: params.name,
+    description: params.description,
+    classification: params.classification,
+    sourceType: params.sourceType || "managed",
+    sourceRoot: String(params.sourceRoot || "managed").trim() || "managed",
+    sourceWorkspaceDir: String(params.sourceWorkspaceDir || "").trim() || null,
+    status: String(params.status || "active").trim() || "active",
+    pricePoints: params.pricePoints,
+    compatibleBaseAgents: params.compatibleBaseAgents,
+  });
+  const versionHash = computeStableTextHash(skillMdContent);
+  const version = upsertPlatformSkillVersion(db, {
+    ...params,
+    skillId: skill.id,
+    skillKey,
+    versionHash,
+    versionLabel:
+      String(params.versionLabel || "").trim() ||
+      `${normalizeSkillClassification(params.classification)}-${versionHash.slice(0, 12)}`,
+    skillMdContent,
+    skillMetadata: {
+      savedAt: now,
+      managed: true,
+    },
+  });
+  ensurePlatformSkillAgentBindings(
+    db,
+    skill.id,
+    Array.isArray(params.compatibleBaseAgents)
+      ? params.compatibleBaseAgents
+      : [SKILL_CATALOG_COMPATIBLE_ANY],
+  );
+  updatePlatformSkillAffectedTenantCounts(db, skill.id);
+  return {
+    skill: getPlatformSkillByKey(db, skillKey),
+    version,
+  };
+}
+
+export function discoverPlatformSkills(db, params = {}) {
+  const configAgents = Array.isArray(params.configAgents) ? params.configAgents : [];
+  const discovered = [];
+  for (const agent of configAgents) {
+    const baseAgentId = String(agent?.id || "").trim();
+    if (!baseAgentId) {
+      continue;
+    }
+    const entries = discoverBundledSkillsForBaseAgent(db, {
+      ...params,
+      baseAgentId,
+    });
+    discovered.push(...entries);
+  }
+  return discovered;
+}
+
+export function reclassifyPlatformSkill(db, params = {}) {
+  const skillId = String(params.skillId || "").trim();
+  if (!skillId) {
+    throw new Error("skill_id_required");
+  }
+  const existing = db
+    .prepare(`SELECT skill_key AS skillKey FROM platform_skills WHERE id = ? LIMIT 1`)
+    .get(skillId);
+  if (!existing?.skillKey) {
+    throw new Error("platform_skill_not_found");
+  }
+  db.prepare(
+    `UPDATE platform_skills
+        SET classification = @classification,
+            price_points = @pricePoints,
+            status = @status,
+            updated_at = @updatedAt
+      WHERE id = @skillId`,
+  ).run({
+    skillId,
+    classification: normalizeSkillClassification(params.classification),
+    pricePoints: normalizeNonNegativePoints(params.pricePoints),
+    status: String(params.status || "active").trim() || "active",
+    updatedAt: nowIso(),
+  });
+  const tenantIds = db
+    .prepare(
+      `SELECT DISTINCT tenant_id AS tenantId
+         FROM tenant_skill_entitlements
+        WHERE skill_id = ?`,
+    )
+    .all(skillId)
+    .map((row) => String(row?.tenantId || "").trim())
+    .filter(Boolean);
+  for (const tenantId of tenantIds) {
+    const entitlement = listTenantSkillEntitlementsInternal(db, tenantId).find(
+      (entry) => entry.skillId === skillId,
+    );
+    const classification = normalizeSkillClassification(params.classification);
+    if (classification === SKILL_CLASS_BUNDLED) {
+      ensureTenantSkillEntitlement(db, {
+        tenantId,
+        skillId,
+        status: SKILL_ENTITLEMENT_ACTIVE,
+        acquireType: "bundled",
+        versionPolicy: "latest",
+        currentVersionId:
+          entitlement?.currentVersionId ||
+          getPlatformSkillByKey(db, existing.skillKey)?.latestVersionId,
+        enabledByTenant: true,
+      });
+    } else if (
+      classification === SKILL_CLASS_FREE &&
+      entitlement?.status === SKILL_ENTITLEMENT_PENDING
+    ) {
+      ensureTenantSkillEntitlement(db, {
+        tenantId,
+        skillId,
+        status: SKILL_ENTITLEMENT_DISABLED,
+        acquireType: "free_enable",
+        versionPolicy: entitlement?.versionPolicy || "latest",
+        currentVersionId: entitlement?.currentVersionId,
+        enabledByTenant: false,
+      });
+    } else if (
+      classification === SKILL_CLASS_PAID &&
+      (!entitlement || entitlement.status !== SKILL_ENTITLEMENT_ACTIVE)
+    ) {
+      ensureTenantSkillEntitlement(db, {
+        tenantId,
+        skillId,
+        status: SKILL_ENTITLEMENT_DISABLED,
+        acquireType: "paid_order",
+        versionPolicy: entitlement?.versionPolicy || "latest",
+        currentVersionId: entitlement?.currentVersionId,
+        enabledByTenant: false,
+        blockedReason: "reclassified_to_paid",
+      });
+    }
+    reconcileTenantSkillAcrossTenantAgents(db, {
+      ...params,
+      tenantId,
+      skillId,
+    });
+  }
+  updatePlatformSkillAffectedTenantCounts(db, skillId);
+  return getPlatformSkillByKey(db, existing.skillKey);
+}
+
+export function resyncPlatformSkill(db, params = {}) {
+  const skillId = String(params.skillId || "").trim();
+  if (!skillId) {
+    throw new Error("skill_id_required");
+  }
+  const skill = db
+    .prepare(
+      `SELECT id,
+              skill_key AS skillKey,
+              source_type AS sourceType,
+              source_root AS sourceRoot,
+              source_workspace_dir AS sourceWorkspaceDir
+         FROM platform_skills
+        WHERE id = ?
+        LIMIT 1`,
+    )
+    .get(skillId);
+  if (!skill?.id) {
+    throw new Error("platform_skill_not_found");
+  }
+  if (String(skill.sourceType || "").trim() === "workspace") {
+    const baseAgentIds = db
+      .prepare(
+        `SELECT base_agent_id AS baseAgentId
+           FROM platform_skill_agent_bindings
+          WHERE skill_id = ? AND status = 'active'
+          ORDER BY created_at ASC`,
+      )
+      .all(skillId)
+      .map((row) => String(row?.baseAgentId || "").trim())
+      .filter(Boolean);
+    for (const baseAgentId of baseAgentIds) {
+      discoverBundledSkillsForBaseAgent(db, {
+        ...params,
+        baseAgentId,
+      });
+    }
+  }
+  const tenantIds = db
+    .prepare(
+      `SELECT DISTINCT tenant_id AS tenantId
+         FROM tenant_skill_entitlements
+        WHERE skill_id = ?`,
+    )
+    .all(skillId)
+    .map((row) => String(row?.tenantId || "").trim())
+    .filter(Boolean);
+  for (const tenantId of tenantIds) {
+    const entitlement = listTenantSkillEntitlementsInternal(db, tenantId).find(
+      (entry) => entry.skillId === skillId,
+    );
+    if (entitlement?.versionPolicy === "latest") {
+      ensureTenantSkillEntitlement(db, {
+        tenantId,
+        skillId,
+        status: entitlement.status,
+        acquireType: entitlement.acquireType,
+        versionPolicy: "latest",
+        currentVersionId: getPlatformSkillByKey(db, skill.skillKey)?.latestVersionId,
+        enabledByTenant: entitlement.enabledByTenant,
+        blockedReason: entitlement.blockedReason,
+        orderId: entitlement.orderId,
+      });
+    }
+    reconcileTenantSkillAcrossTenantAgents(db, {
+      ...params,
+      tenantId,
+      skillId,
+    });
+  }
+  updatePlatformSkillAffectedTenantCounts(db, skillId);
+  return getPlatformSkillByKey(db, skill.skillKey);
+}
+
+export function listPlatformSkillVersions(db, skillId) {
+  const normalizedSkillId = String(skillId || "").trim();
+  if (!normalizedSkillId) {
+    throw new Error("skill_id_required");
+  }
+  return db
+    .prepare(
+      `SELECT id,
+              skill_id AS skillId,
+              version_label AS versionLabel,
+              version_hash AS versionHash,
+              skill_md_path AS skillMdPath,
+              skill_md_content AS skillMdContent,
+              skill_metadata_json AS skillMetadataJson,
+              status,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+         FROM platform_skill_versions
+        WHERE skill_id = ?
+        ORDER BY created_at DESC`,
+    )
+    .all(normalizedSkillId)
+    .map(mapPlatformSkillVersionRow)
+    .filter(Boolean);
+}
+
+export function createTenantSkillOrder(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const skillId = String(params.skillId || "").trim();
+  if (!tenantId || !skillId) {
+    throw new Error("tenant_skill_order_missing_fields");
+  }
+  const skill = db
+    .prepare(
+      `SELECT id,
+              classification,
+              price_points AS pricePoints,
+              latest_version_id AS latestVersionId
+         FROM platform_skills
+        WHERE id = ?
+        LIMIT 1`,
+    )
+    .get(skillId);
+  if (!skill?.id) {
+    throw new Error("platform_skill_not_found");
+  }
+  const classification = normalizeSkillClassification(skill.classification);
+  if (classification === SKILL_CLASS_FREE) {
+    return ensureTenantSkillEntitlement(db, {
+      tenantId,
+      skillId,
+      status: SKILL_ENTITLEMENT_ACTIVE,
+      acquireType: "free_enable",
+      versionPolicy: "latest",
+      currentVersionId: String(skill.latestVersionId || "").trim() || null,
+      enabledByTenant: true,
+      blockedReason: null,
+    });
+  }
+  if (classification !== SKILL_CLASS_PAID) {
+    throw new Error("skill_order_only_for_paid_skill");
+  }
+  const existing = db
+    .prepare(
+      `SELECT id
+         FROM tenant_skill_orders
+        WHERE tenant_id = ? AND skill_id = ? AND order_status = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    )
+    .get(tenantId, skillId, SKILL_ORDER_PENDING_CONFIRMATION);
+  if (existing?.id) {
+    return getTenantSkillOrderById(db, existing.id);
+  }
+  return createTenantSkillOrderRecord(db, {
+    tenantId,
+    skillId,
+    orderStatus: SKILL_ORDER_PENDING_CONFIRMATION,
+    acquireType: "paid_order",
+    amountPoints: skill.pricePoints,
+    versionPolicy: "latest",
+    currentVersionId: String(skill.latestVersionId || "").trim() || null,
+    createdByUserId: params.createdByUserId,
+  });
+}
+
+export function confirmTenantSkillOrder(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const orderId = String(params.orderId || "").trim();
+  const actorUserId = String(params.actorUserId || "").trim();
+  if (!tenantId || !orderId) {
+    throw new Error("tenant_skill_order_missing_fields");
+  }
+  return runInTransaction(db, () => {
+    const order = getTenantSkillOrderById(db, orderId);
+    if (!order || order.tenantId !== tenantId) {
+      throw new Error("tenant_skill_order_not_found");
+    }
+    if (order.orderStatus === SKILL_ORDER_CONFIRMED) {
+      return {
+        confirmed: false,
+        alreadyConfirmed: true,
+        order,
+        entitlement:
+          listTenantSkillEntitlementsInternal(db, tenantId).find(
+            (entry) => entry.orderId === order.id || entry.skillId === order.skillId,
+          ) || null,
+        walletBalance: getTenantWalletBalance(db, tenantId),
+      };
+    }
+    const walletBalanceBefore = getTenantWalletBalance(db, tenantId);
+    if (walletBalanceBefore < order.amountPoints) {
+      throw new Error("insufficient_wallet_balance");
+    }
+    const walletBalanceAfter = normalizeNonNegativePoints(walletBalanceBefore - order.amountPoints);
+    const updatedAt = nowIso();
+    const validActorUserId = actorUserId
+      ? String(
+          getScalar(db, `SELECT id AS value FROM users WHERE id = ? LIMIT 1`, [actorUserId]) || "",
+        ).trim() || null
+      : null;
+    db.prepare(
+      `UPDATE tenant_wallets
+          SET balance_points = @balancePoints,
+              updated_at = @updatedAt
+        WHERE tenant_id = @tenantId`,
+    ).run({
+      tenantId,
+      balancePoints: walletBalanceAfter,
+      updatedAt,
+    });
+    db.prepare(
+      `UPDATE tenant_skill_orders
+          SET order_status = @orderStatus,
+              confirmed_by_user_id = @confirmedByUserId,
+              confirmed_at = @confirmedAt,
+              updated_at = @updatedAt
+        WHERE id = @orderId`,
+    ).run({
+      orderId,
+      orderStatus: SKILL_ORDER_CONFIRMED,
+      confirmedByUserId: validActorUserId,
+      confirmedAt: updatedAt,
+      updatedAt,
+    });
+    db.prepare(
+      `INSERT INTO tenant_wallet_ledger (
+         id,
+         tenant_id,
+         direction,
+         category,
+         amount_points,
+         balance_after,
+         actor_user_id,
+         note,
+         created_at
+       ) VALUES (
+         @id,
+         @tenantId,
+         'debit',
+         'skill_purchase',
+         @amountPoints,
+         @balanceAfter,
+         @actorUserId,
+         @note,
+         @createdAt
+       )`,
+    ).run({
+      id: createId("ledger"),
+      tenantId,
+      amountPoints: order.amountPoints,
+      balanceAfter: walletBalanceAfter,
+      actorUserId: validActorUserId,
+      note: `skill_purchase:${order.id}:${order.skillKey}`,
+      createdAt: updatedAt,
+    });
+    const entitlement = ensureTenantSkillEntitlement(db, {
+      tenantId,
+      skillId: order.skillId,
+      status: SKILL_ENTITLEMENT_ACTIVE,
+      acquireType: order.acquireType,
+      versionPolicy: order.versionPolicy,
+      currentVersionId: order.currentVersionId || order.latestVersionId,
+      enabledByTenant: true,
+      blockedReason: null,
+      orderId: order.id,
+    });
+    reconcileTenantSkillAcrossTenantAgents(db, {
+      ...params,
+      tenantId,
+      skillId: order.skillId,
+    });
+    updatePlatformSkillAffectedTenantCounts(db, order.skillId);
+    return {
+      confirmed: true,
+      alreadyConfirmed: false,
+      order: getTenantSkillOrderById(db, orderId),
+      entitlement,
+      walletBalance: getTenantWalletBalance(db, tenantId),
+    };
+  });
+}
+
+export function setTenantSkillEntitlementEnabled(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const entitlementId = String(params.entitlementId || "").trim();
+  if (!tenantId || !entitlementId) {
+    throw new Error("tenant_skill_entitlement_missing_fields");
+  }
+  const entitlement = listTenantSkillEntitlementsInternal(db, tenantId).find(
+    (entry) => entry.id === entitlementId,
+  );
+  if (!entitlement) {
+    throw new Error("tenant_skill_entitlement_not_found");
+  }
+  const classification = normalizeSkillClassification(entitlement.classification);
+  const enabledByTenant = Boolean(params.enabledByTenant);
+  const status =
+    classification === SKILL_CLASS_FREE
+      ? enabledByTenant
+        ? SKILL_ENTITLEMENT_ACTIVE
+        : SKILL_ENTITLEMENT_DISABLED
+      : classification === SKILL_CLASS_BUNDLED
+        ? SKILL_ENTITLEMENT_ACTIVE
+        : entitlement.status;
+  const updatedEntitlement = ensureTenantSkillEntitlement(db, {
+    tenantId,
+    skillId: entitlement.skillId,
+    status,
+    acquireType:
+      classification === SKILL_CLASS_FREE ? "free_enable" : entitlement.acquireType || "bundled",
+    versionPolicy: entitlement.versionPolicy || "latest",
+    currentVersionId: entitlement.currentVersionId || entitlement.latestVersionId,
+    enabledByTenant,
+    blockedReason: enabledByTenant ? null : entitlement.blockedReason,
+    orderId: entitlement.orderId,
+  });
+  reconcileTenantSkillAcrossTenantAgents(db, {
+    ...params,
+    tenantId,
+    skillId: entitlement.skillId,
+  });
+  updatePlatformSkillAffectedTenantCounts(db, entitlement.skillId);
+  return updatedEntitlement;
+}
+
+export function saveTenantAgentSkillTemplateSet(db, params = {}) {
+  const tenantId = String(params.tenantId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const skillKeys = Array.isArray(params.skillKeys)
+    ? [...new Set(params.skillKeys.map((entry) => normalizeSkillKey(entry)).filter(Boolean))]
+    : [];
+  if (!tenantId || !tenantAgentId) {
+    throw new Error("tenant_agent_skill_template_missing_fields");
+  }
+  const tenantAgent = db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              agent_id AS baseAgentId
+         FROM tenant_agents
+        WHERE id = ?
+        LIMIT 1`,
+    )
+    .get(tenantAgentId);
+  if (!tenantAgent?.id || String(tenantAgent.tenantId || "").trim() !== tenantId) {
+    throw new Error("tenant_agent_not_found");
+  }
+  ensureTenantBundledSkillState(db, {
+    ...params,
+    tenantId,
+    tenantAgentId,
+    baseAgentId: String(tenantAgent.baseAgentId || "").trim(),
+  });
+  const availableTemplates = listTenantAgentSkillTemplates(db, tenantAgentId);
+  const templateBySkillKey = new Map(availableTemplates.map((entry) => [entry.skillKey, entry]));
+  const sourceTypeBySkillId = new Map(
+    availableTemplates.map((entry) => [entry.skillId, entry.sourceType]),
+  );
+  for (const template of availableTemplates) {
+    const nextState = skillKeys.includes(template.skillKey)
+      ? template.templateState === SKILL_TEMPLATE_STATE_BLOCKED
+        ? SKILL_TEMPLATE_STATE_BLOCKED
+        : SKILL_TEMPLATE_STATE_ENABLED
+      : SKILL_TEMPLATE_STATE_DISABLED;
+    ensureTenantAgentSkillTemplate(db, {
+      tenantAgentId,
+      skillId: template.skillId,
+      templateState: nextState,
+      sourceType: template.sourceType,
+    });
+  }
+  for (const skillKey of skillKeys) {
+    if (templateBySkillKey.has(skillKey)) {
+      continue;
+    }
+    const skill = getPlatformSkillByKey(db, skillKey);
+    if (!skill?.id) {
+      throw new Error(`platform_skill_not_found:${skillKey}`);
+    }
+    ensureTenantAgentSkillTemplate(db, {
+      tenantAgentId,
+      skillId: skill.id,
+      templateState: SKILL_TEMPLATE_STATE_ENABLED,
+      sourceType: sourceTypeBySkillId.get(skill.id) || "tenant_added",
+    });
+  }
+  const result = reconcileTenantAgentSkillState(db, {
+    ...params,
+    tenantId,
+    tenantAgentId,
+    baseAgentId: String(tenantAgent.baseAgentId || "").trim(),
+  });
+  for (const template of listTenantAgentSkillTemplates(db, tenantAgentId)) {
+    updatePlatformSkillAffectedTenantCounts(db, template.skillId);
+  }
+  return {
+    tenantAgentId,
+    templateRows: listTenantAgentSkillTemplates(db, tenantAgentId),
+    blockedSkillKeys: result.blockedSkillKeys,
+    blockedAssignmentCount: result.blockedAssignmentCount,
+  };
+}
+
+export function saveUserAgentSkillOverrideSet(db, params = {}) {
+  const assignmentId = String(params.assignmentId || "").trim();
+  const overrideEntries = Array.isArray(params.overrides) ? params.overrides : [];
+  if (!assignmentId) {
+    throw new Error("assignment_id_required");
+  }
+  const assignment = db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              user_id AS userId,
+              tenant_agent_id AS tenantAgentId,
+              derived_agent_id AS derivedAgentId
+         FROM user_agent_assignments
+        WHERE id = ?
+        LIMIT 1`,
+    )
+    .get(assignmentId);
+  if (!assignment?.id) {
+    throw new Error("assignment_not_found");
+  }
+  const tenantAgent = db
+    .prepare(
+      `SELECT agent_id AS baseAgentId
+         FROM tenant_agents
+        WHERE id = ?
+        LIMIT 1`,
+    )
+    .get(assignment.tenantAgentId);
+  if (!tenantAgent?.baseAgentId) {
+    throw new Error("tenant_agent_not_found");
+  }
+  const normalizedOverrides = overrideEntries
+    .map((entry) => {
+      const action = normalizeSkillOverrideAction(entry?.action);
+      const skillKey = normalizeSkillKey(entry?.skillKey);
+      const skillId =
+        String(entry?.skillId || "").trim() || getPlatformSkillByKey(db, skillKey)?.id || "";
+      if (!action || !skillId) {
+        return null;
+      }
+      return {
+        skillId,
+        action,
+      };
+    })
+    .filter(Boolean);
+  setUserAgentSkillOverrides(db, {
+    assignmentId,
+    tenantAgentId: assignment.tenantAgentId,
+    userId: assignment.userId,
+    overrides: normalizedOverrides,
+  });
+  const result = reconcileTenantAgentSkillState(db, {
+    ...params,
+    tenantId: String(assignment.tenantId || "").trim(),
+    tenantAgentId: String(assignment.tenantAgentId || "").trim(),
+    baseAgentId: String(tenantAgent.baseAgentId || "").trim(),
+  });
+  const refreshedOverrides = listUserAgentSkillOverrides(db, assignmentId);
+  return {
+    assignmentId,
+    overrideRows: refreshedOverrides,
+    blockedAssignmentIds: result.blockedAssignmentIds,
+    activeAssignmentIds: result.activeAssignmentIds,
+  };
 }
 
 function deriveTenantMemberAgentId(params) {
@@ -1946,6 +4641,9 @@ function syncDerivedAgentRuntimeConfigEntry(params = {}) {
     id: derivedAgentId,
     workspace: derivedWorkspace,
     agentDir: derivedAgentDir,
+    skills: Array.isArray(params.skills)
+      ? [...new Set(params.skills.map((entry) => normalizeSkillKey(entry)).filter(Boolean))]
+      : cloneJsonValue(nextList[baseIndex]?.skills),
   };
   const existingIndex = nextList.findIndex(
     (entry) =>
@@ -2039,6 +4737,38 @@ function copySeedEntryIfMissing(source, target) {
   fs.copyFileSync(source, target);
 }
 
+function removePathIfExists(targetPath) {
+  const normalizedTargetPath = String(targetPath || "").trim();
+  if (!normalizedTargetPath || !fs.existsSync(normalizedTargetPath)) {
+    return false;
+  }
+  fs.rmSync(normalizedTargetPath, { recursive: true, force: true });
+  return true;
+}
+
+function materializeResolvedSkillsIntoWorkspace(workspaceDir, resolvedEntries = []) {
+  const normalizedWorkspaceDir = String(workspaceDir || "").trim();
+  if (!normalizedWorkspaceDir) {
+    return [];
+  }
+  const skillsRoot = path.join(normalizedWorkspaceDir, "skills");
+  removePathIfExists(skillsRoot);
+  fs.mkdirSync(skillsRoot, { recursive: true });
+  const resolvedSkillKeys = [];
+  for (const entry of resolvedEntries) {
+    const skillKey = normalizeSkillKey(entry?.skillKey);
+    const skillMdContent = String(entry?.version?.skillMdContent || "").trim();
+    if (!skillKey || !skillMdContent) {
+      continue;
+    }
+    const skillDir = path.join(skillsRoot, skillKey);
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, "SKILL.md"), `${entry.version.skillMdContent}`, "utf8");
+    resolvedSkillKeys.push(skillKey);
+  }
+  return resolvedSkillKeys;
+}
+
 function ensureDerivedWorkspaceAlias(aliasPath, targetPath) {
   try {
     if (fs.existsSync(aliasPath)) {
@@ -2085,6 +4815,19 @@ function ensureTenantDerivedWorkspace(params) {
     }
   }
 
+  const resolvedSkillState = resolveAssignmentSkillState(params.db, {
+    tenantId: params.tenantId,
+    tenantAgentId: params.tenantAgentId,
+    assignmentId: params.assignmentId,
+    baseAgentId: params.baseAgentId,
+    configPath: params.configPath,
+    configDir: params.configDir,
+    workspaceDir: params.workspaceDir,
+  });
+  const resolvedSkillKeys = materializeResolvedSkillsIntoWorkspace(
+    canonicalWorkspace,
+    resolvedSkillState.resolvedEntries,
+  );
   const metadataPath = path.join(canonicalWorkspace, DERIVED_AGENT_METADATA_FILE);
   if (!fs.existsSync(metadataPath)) {
     fs.writeFileSync(
@@ -2120,6 +4863,9 @@ function ensureTenantDerivedWorkspace(params) {
   return {
     canonicalWorkspace,
     runtimeWorkspace,
+    resolvedSkillKeys,
+    resolvedVersionIds: resolvedSkillState.resolvedEntries.map((entry) => entry.versionId),
+    blockedReasons: resolvedSkillState.blockedReasons,
   };
 }
 
@@ -3304,6 +6050,11 @@ export function buildManagedNodeDesiredState(db, params = {}) {
       users: [],
       memberships: [],
       tenantAgents: [],
+      platformSkills: [],
+      platformSkillVersions: [],
+      tenantSkillEntitlements: [],
+      tenantAgentSkillTemplates: [],
+      userAgentSkillOverrides: [],
       userAssignments: [],
       generatedAt: nowIso(),
     };
@@ -3373,6 +6124,64 @@ export function buildManagedNodeDesiredState(db, params = {}) {
        ORDER BY created_at ASC`,
     )
     .all(...tenantIds);
+  const platformSkills = listPlatformSkillsInternal(db, { includeInactive: true });
+  const platformSkillVersions = listPlatformSkillVersionsByIds(
+    db,
+    platformSkills.map((entry) => entry.latestVersionId),
+  );
+  const tenantSkillEntitlements = tenantIds.flatMap((tenantId) =>
+    listTenantSkillEntitlementsInternal(db, tenantId),
+  );
+  const tenantAgentSkillTemplates = db
+    .prepare(
+      `SELECT tats.id,
+              tats.tenant_agent_id AS tenantAgentId,
+              tats.skill_id AS skillId,
+              tats.template_state AS templateState,
+              tats.source_type AS sourceType,
+              tats.created_at AS createdAt,
+              tats.updated_at AS updatedAt
+         FROM tenant_agent_skill_templates tats
+         JOIN tenant_agents ta ON ta.id = tats.tenant_agent_id
+        WHERE ta.tenant_id IN (${placeholders})
+        ORDER BY tats.created_at ASC`,
+    )
+    .all(...tenantIds)
+    .map((row) => ({
+      id: String(row?.id || "").trim(),
+      tenantAgentId: String(row?.tenantAgentId || "").trim(),
+      skillId: String(row?.skillId || "").trim(),
+      templateState: normalizeSkillTemplateState(row?.templateState),
+      sourceType: String(row?.sourceType || "").trim() || "base_default",
+      createdAt: String(row?.createdAt || "").trim(),
+      updatedAt: String(row?.updatedAt || "").trim(),
+    }));
+  const userAgentSkillOverrides = db
+    .prepare(
+      `SELECT uaso.id,
+              uaso.assignment_id AS assignmentId,
+              uaso.tenant_agent_id AS tenantAgentId,
+              uaso.user_id AS userId,
+              uaso.skill_id AS skillId,
+              uaso.action,
+              uaso.created_at AS createdAt,
+              uaso.updated_at AS updatedAt
+         FROM user_agent_skill_overrides uaso
+         JOIN user_agent_assignments ua ON ua.id = uaso.assignment_id
+        WHERE ua.tenant_id IN (${placeholders}) AND ua.status = 'active'
+        ORDER BY uaso.created_at ASC`,
+    )
+    .all(...tenantIds)
+    .map((row) => ({
+      id: String(row?.id || "").trim(),
+      assignmentId: String(row?.assignmentId || "").trim(),
+      tenantAgentId: String(row?.tenantAgentId || "").trim(),
+      userId: String(row?.userId || "").trim(),
+      skillId: String(row?.skillId || "").trim(),
+      action: normalizeSkillOverrideAction(row?.action),
+      createdAt: String(row?.createdAt || "").trim(),
+      updatedAt: String(row?.updatedAt || "").trim(),
+    }));
   const dataSources = db
     .prepare(
       `SELECT DISTINCT d.id,
@@ -3424,6 +6233,11 @@ export function buildManagedNodeDesiredState(db, params = {}) {
     users,
     memberships,
     tenantAgents,
+    platformSkills,
+    platformSkillVersions,
+    tenantSkillEntitlements,
+    tenantAgentSkillTemplates,
+    userAgentSkillOverrides,
     dataSources,
     tenantDataSourceBindings,
     userAssignments,
@@ -3443,6 +6257,19 @@ export function applyManagedNodeDesiredState(db, params = {}) {
   const users = Array.isArray(params?.users) ? params.users : [];
   const memberships = Array.isArray(params?.memberships) ? params.memberships : [];
   const tenantAgents = Array.isArray(params?.tenantAgents) ? params.tenantAgents : [];
+  const platformSkills = Array.isArray(params?.platformSkills) ? params.platformSkills : [];
+  const platformSkillVersions = Array.isArray(params?.platformSkillVersions)
+    ? params.platformSkillVersions
+    : [];
+  const tenantSkillEntitlements = Array.isArray(params?.tenantSkillEntitlements)
+    ? params.tenantSkillEntitlements
+    : [];
+  const tenantAgentSkillTemplates = Array.isArray(params?.tenantAgentSkillTemplates)
+    ? params.tenantAgentSkillTemplates
+    : [];
+  const userAgentSkillOverrides = Array.isArray(params?.userAgentSkillOverrides)
+    ? params.userAgentSkillOverrides
+    : [];
   const dataSources = Array.isArray(params?.dataSources) ? params.dataSources : [];
   const tenantDataSourceBindings = Array.isArray(params?.tenantDataSourceBindings)
     ? params.tenantDataSourceBindings
@@ -3752,6 +6579,109 @@ export function applyManagedNodeDesiredState(db, params = {}) {
       });
     }
 
+    const skillIdByKey = new Map();
+    for (const skill of platformSkills) {
+      const upsertedSkill = upsertPlatformSkillCatalogEntry(db, {
+        skillKey: skill?.skillKey,
+        name: skill?.name,
+        description: skill?.description,
+        classification: skill?.classification,
+        sourceType: skill?.sourceType,
+        sourceRoot: skill?.sourceRoot,
+        sourceWorkspaceDir: skill?.sourceWorkspaceDir,
+        status: skill?.status,
+        pricePoints: skill?.pricePoints,
+        compatibleBaseAgents: skill?.compatibleBaseAgents,
+      });
+      if (upsertedSkill?.id) {
+        skillIdByKey.set(upsertedSkill.skillKey, upsertedSkill.id);
+      }
+    }
+    for (const version of platformSkillVersions) {
+      const remoteSkillId = String(version?.skillId || "").trim();
+      const localSkillId =
+        [...skillIdByKey.entries()].find(([, skillId]) => skillId === remoteSkillId)?.[1] ||
+        skillIdByKey.get(
+          String(
+            platformSkills.find(
+              (entry) => String(entry?.latestVersionId || "").trim() === version.id,
+            )?.skillKey || "",
+          ).trim(),
+        ) ||
+        remoteSkillId;
+      if (!localSkillId) {
+        continue;
+      }
+      const existingVersion = getPlatformSkillVersionById(db, version?.id);
+      if (existingVersion?.id) {
+        continue;
+      }
+      db.prepare(
+        `INSERT INTO platform_skill_versions (
+           id,
+           skill_id,
+           version_label,
+           version_hash,
+           skill_md_path,
+           skill_md_content,
+           skill_metadata_json,
+           status,
+           created_at,
+           updated_at
+         ) VALUES (
+           @id,
+           @skillId,
+           @versionLabel,
+           @versionHash,
+           @skillMdPath,
+           @skillMdContent,
+           @skillMetadataJson,
+           'active',
+           @createdAt,
+           @updatedAt
+         )`,
+      ).run({
+        id: String(version?.id || "").trim(),
+        skillId: localSkillId,
+        versionLabel: String(version?.versionLabel || version?.versionHash || "").trim(),
+        versionHash: String(version?.versionHash || "").trim(),
+        skillMdPath: String(version?.skillMdPath || "").trim(),
+        skillMdContent: String(version?.skillMdContent || ""),
+        skillMetadataJson: stringifyJsonObject(version?.skillMetadata || {}),
+        createdAt: normalizeIsoTimestamp(version?.createdAt, now),
+        updatedAt: normalizeIsoTimestamp(version?.updatedAt, now),
+      });
+    }
+
+    for (const entitlement of tenantSkillEntitlements) {
+      ensureTenantSkillEntitlement(db, {
+        tenantId: entitlement?.tenantId,
+        skillId: entitlement?.skillId,
+        status: entitlement?.status,
+        acquireType: entitlement?.acquireType,
+        versionPolicy: entitlement?.versionPolicy,
+        currentVersionId: entitlement?.currentVersionId,
+        enabledByTenant: entitlement?.enabledByTenant,
+        blockedReason: entitlement?.blockedReason,
+        orderId: entitlement?.orderId,
+      });
+    }
+
+    db.prepare(
+      `DELETE FROM tenant_agent_skill_templates
+        WHERE tenant_agent_id IN (
+          SELECT id FROM tenant_agents WHERE tenant_id IN (${tenantIds.map(() => "?").join(", ")})
+        )`,
+    ).run(...tenantIds);
+    for (const template of tenantAgentSkillTemplates) {
+      ensureTenantAgentSkillTemplate(db, {
+        tenantAgentId: template?.tenantAgentId,
+        skillId: template?.skillId,
+        templateState: template?.templateState,
+        sourceType: template?.sourceType,
+      });
+    }
+
     for (const dataSource of dataSources) {
       const dataSourceId = String(dataSource?.id || "").trim();
       if (!dataSourceId) {
@@ -3895,6 +6825,73 @@ export function applyManagedNodeDesiredState(db, params = {}) {
           configPath,
           configDir,
         });
+      }
+      const overridesByAssignmentId = new Map();
+      for (const override of userAgentSkillOverrides) {
+        const assignmentId = String(override?.assignmentId || "").trim();
+        if (!assignmentId) {
+          continue;
+        }
+        const existingOverrides = overridesByAssignmentId.get(assignmentId) || [];
+        existingOverrides.push({
+          skillId: override?.skillId,
+          action: override?.action,
+        });
+        overridesByAssignmentId.set(assignmentId, existingOverrides);
+      }
+      db.prepare(
+        `DELETE FROM user_agent_skill_overrides
+          WHERE assignment_id IN (
+            SELECT id FROM user_agent_assignments WHERE tenant_id IN (${tenantPlaceholders})
+          )`,
+      ).run(...tenantIds);
+      for (const [assignmentId, overrides] of overridesByAssignmentId.entries()) {
+        const assignmentRow = db
+          .prepare(
+            `SELECT tenant_id AS tenantId,
+                    tenant_agent_id AS tenantAgentId,
+                    user_id AS userId,
+                    derived_agent_id AS derivedAgentId
+               FROM user_agent_assignments
+              WHERE id = ?`,
+          )
+          .get(assignmentId);
+        if (!assignmentRow) {
+          continue;
+        }
+        setUserAgentSkillOverrides(db, {
+          assignmentId,
+          tenantAgentId: assignmentRow.tenantAgentId,
+          userId: assignmentRow.userId,
+          overrides,
+        });
+        const tenantAgentRow = db
+          .prepare(
+            `SELECT agent_id AS baseAgentId
+               FROM tenant_agents
+              WHERE id = ?`,
+          )
+          .get(assignmentRow.tenantAgentId);
+        if (tenantAgentRow?.baseAgentId) {
+          const workspace = ensureTenantDerivedWorkspace({
+            db,
+            tenantId: assignmentRow.tenantId,
+            userId: assignmentRow.userId,
+            tenantAgentId: assignmentRow.tenantAgentId,
+            baseAgentId: tenantAgentRow.baseAgentId,
+            derivedAgentId: assignmentRow.derivedAgentId,
+            assignmentId,
+            configPath,
+            configDir,
+          });
+          syncDerivedAgentRuntimeConfigEntry({
+            baseAgentId: tenantAgentRow.baseAgentId,
+            derivedAgentId: assignmentRow.derivedAgentId,
+            skills: workspace?.resolvedSkillKeys || [],
+            configPath,
+            configDir,
+          });
+        }
       }
       for (const row of localAssignments) {
         const assignmentKey = buildManagedNodeAssignmentKey(row);
@@ -4869,11 +7866,16 @@ export function listTenantAgents(db, tenantId, configAgents = [], options = {}) 
     .all(tenantId)
     .map((row) => {
       const configEntry = configMap.get(row.agentId) ?? null;
+      const blockedSkillKeys = listTenantAgentSkillTemplates(db, String(row.id || "").trim())
+        .filter((entry) => entry.templateState === SKILL_TEMPLATE_STATE_BLOCKED)
+        .map((entry) => entry.skillKey);
       return {
         ...row,
         agentName: configEntry?.name ?? row.agentId,
         emoji: configEntry?.emoji ?? null,
         avatar: configEntry?.avatar ?? null,
+        blockedSkillKeys,
+        assignmentBlocked: blockedSkillKeys.length > 0,
       };
     });
 }
@@ -5014,18 +8016,67 @@ function assignTenantAgentToUserCore(db, params) {
       baseAgentId: tenantAgent.baseAgentId,
     });
 
+  const nextAssignmentId = String(existing?.id || "").trim() || createId("assignment");
+
+  if (!existing) {
+    db.prepare(
+      `INSERT INTO user_agent_assignments
+         (id, tenant_id, user_id, tenant_agent_id, derived_agent_id, derived_workspace_dir, status, created_at)
+       VALUES
+         (@id, @tenantId, @userId, @tenantAgentId, @derivedAgentId, NULL, 'active', @createdAt)`,
+    ).run({
+      id: nextAssignmentId,
+      tenantId: params.tenantId,
+      userId: params.userId,
+      tenantAgentId: params.tenantAgentId,
+      derivedAgentId,
+      createdAt: nowIso(),
+    });
+  }
+
+  const resolvedSkillState = resolveAssignmentSkillState(db, {
+    tenantId: params.tenantId,
+    tenantAgentId: params.tenantAgentId,
+    assignmentId: nextAssignmentId,
+    baseAgentId: tenantAgent.baseAgentId,
+    configPath: params.configPath,
+    configDir: params.configDir,
+  });
+  if (resolvedSkillState.blockedReasons.length) {
+    setAssignmentStatus(db, {
+      assignmentId: nextAssignmentId,
+      status: ASSIGNMENT_STATUS_BLOCKED_MISSING_SKILLS,
+      derivedAgentId,
+      derivedWorkspaceDir: existing?.derivedWorkspaceDir || null,
+    });
+    upsertTenantAgentSkillSnapshot(db, {
+      assignmentId: nextAssignmentId,
+      tenantId: params.tenantId,
+      tenantAgentId: params.tenantAgentId,
+      userId: params.userId,
+      derivedAgentId,
+      resolvedSkillKeys: resolvedSkillState.resolvedEntries.map((entry) => entry.skillKey),
+      resolvedVersionIds: resolvedSkillState.resolvedEntries.map((entry) => entry.versionId),
+      blockedReasons: resolvedSkillState.blockedReasons,
+    });
+    throw createResolvedSkillError(resolvedSkillState.blockedReasons);
+  }
+
   const workspace = ensureTenantDerivedWorkspace({
+    db,
     tenantId: params.tenantId,
     userId: params.userId,
     tenantAgentId: params.tenantAgentId,
     baseAgentId: tenantAgent.baseAgentId,
     derivedAgentId,
+    assignmentId: nextAssignmentId,
     configPath: params.configPath,
     configDir: params.configDir,
   });
   syncDerivedAgentRuntimeConfigEntry({
     baseAgentId: tenantAgent.baseAgentId,
     derivedAgentId,
+    skills: workspace.resolvedSkillKeys,
     configPath: params.configPath,
     configDir: params.configDir,
   });
@@ -5046,42 +8097,40 @@ function assignTenantAgentToUserCore(db, params) {
     workspaceDir: workspace.canonicalWorkspace,
   });
 
+  upsertTenantAgentSkillSnapshot(db, {
+    assignmentId: nextAssignmentId,
+    tenantId: params.tenantId,
+    tenantAgentId: params.tenantAgentId,
+    userId: params.userId,
+    derivedAgentId,
+    resolvedSkillKeys: workspace.resolvedSkillKeys,
+    resolvedVersionIds: workspace.resolvedVersionIds,
+    blockedReasons: workspace.blockedReasons,
+  });
+
   if (existing) {
-    db.prepare(
-      `UPDATE user_agent_assignments
-       SET status = 'active',
-           derived_agent_id = @derivedAgentId,
-           derived_workspace_dir = @derivedWorkspaceDir
-       WHERE id = @id`,
-    ).run({
-      id: existing.id,
+    setAssignmentStatus(db, {
+      assignmentId: existing.id,
+      status: ASSIGNMENT_STATUS_ACTIVE,
       derivedAgentId,
       derivedWorkspaceDir: workspace.canonicalWorkspace,
     });
     return {
       assignmentId: existing.id,
       derivedAgentId,
+      blockedReasons: workspace.blockedReasons,
     };
   }
-
-  const assignmentId = createId("assignment");
-  db.prepare(
-    `INSERT INTO user_agent_assignments
-       (id, tenant_id, user_id, tenant_agent_id, derived_agent_id, derived_workspace_dir, status, created_at)
-     VALUES
-       (@id, @tenantId, @userId, @tenantAgentId, @derivedAgentId, @derivedWorkspaceDir, 'active', @createdAt)`,
-  ).run({
-    id: assignmentId,
-    tenantId: params.tenantId,
-    userId: params.userId,
-    tenantAgentId: params.tenantAgentId,
+  setAssignmentStatus(db, {
+    assignmentId: nextAssignmentId,
+    status: ASSIGNMENT_STATUS_ACTIVE,
     derivedAgentId,
     derivedWorkspaceDir: workspace.canonicalWorkspace,
-    createdAt: nowIso(),
   });
   return {
-    assignmentId,
+    assignmentId: nextAssignmentId,
     derivedAgentId,
+    blockedReasons: workspace.blockedReasons,
   };
 }
 
@@ -5364,19 +8413,49 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
         });
       }
       workspace = ensureTenantDerivedWorkspace({
+        db,
         tenantId: row.tenantId,
         userId: row.userId,
         tenantAgentId: row.tenantAgentId,
         baseAgentId: row.baseAgentId,
         derivedAgentId: resolvedAgentId,
+        assignmentId: row.assignmentId,
         configPath: params.configPath,
         configDir: params.configDir,
+      });
+      upsertTenantAgentSkillSnapshot(db, {
+        assignmentId: row.assignmentId,
+        tenantId: row.tenantId,
+        tenantAgentId: row.tenantAgentId,
+        userId: row.userId,
+        derivedAgentId: resolvedAgentId,
+        resolvedSkillKeys: workspace?.resolvedSkillKeys || [],
+        resolvedVersionIds: workspace?.resolvedVersionIds || [],
+        blockedReasons: workspace?.blockedReasons || [],
       });
       syncDerivedAgentRuntimeConfigEntry({
         baseAgentId: row.baseAgentId,
         derivedAgentId: resolvedAgentId,
+        skills: workspace?.resolvedSkillKeys,
         configPath: params.configPath,
         configDir: params.configDir,
+      });
+      if (Array.isArray(workspace?.blockedReasons) && workspace.blockedReasons.length) {
+        setAssignmentStatus(db, {
+          assignmentId: row.assignmentId,
+          status: ASSIGNMENT_STATUS_BLOCKED_MISSING_SKILLS,
+          derivedAgentId: resolvedAgentId,
+          derivedWorkspaceDir:
+            workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        });
+        return null;
+      }
+      setAssignmentStatus(db, {
+        assignmentId: row.assignmentId,
+        status: ASSIGNMENT_STATUS_ACTIVE,
+        derivedAgentId: resolvedAgentId,
+        derivedWorkspaceDir:
+          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
       });
       if (
         String(row.derivedAgentId || "").trim() !== resolvedAgentId ||
@@ -5433,8 +8512,10 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
         displayName,
         emoji: configEntry?.emoji ?? null,
         avatar: configEntry?.avatar ?? null,
+        blockedSkillReasons: workspace?.blockedReasons || [],
       };
-    });
+    })
+    .filter(Boolean);
 }
 
 function normalizeWorkspaceVisualizationRelativePath(relativePath) {

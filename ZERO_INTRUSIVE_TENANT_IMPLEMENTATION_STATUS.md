@@ -218,12 +218,138 @@
 
 当前工作区初始化采用“分层模板继承”：
 
-- 首次分配时，派生工作区会复制母 Agent 的关键顶层 `.md`、`memory/`、`skills/`、`hooks/`
-- 后续再次命中派生工作区 ensure 时，只持续回刷 `skills/`、`hooks/`
+- 首次分配时，派生工作区会复制母 Agent 的关键顶层 `.md`、`memory/`、`hooks/`
+- 后续再次命中派生工作区 ensure 时，只持续回刷 `hooks/`
 - 顶层 `AGENTS.md`、`IDENTITY.md`、`USER.md`、`TOOLS.md`、`SOUL.md`、`HEARTBEAT.md`、`BOOTSTRAP.md`、`MEMORY.md` 与 `memory/` 仅在缺失时补种子，不再按母 Agent 后续改动覆盖成员侧个性化内容
 - 不继承旧会话或其它运行时产物
 
-## 14. bootstrap 过滤 hook 已落地
+当前已经补上的 Skills 隔离：
+
+- `skills/` 不再盲目整树复制
+- sidecar 先根据租户模板 + 成员 override 解析最终 skill 集
+- 再重建派生工作区里的 `skills/<skillKey>/SKILL.md`
+- 最后同步 derived agent config 的 `skills` allowlist
+- 这意味着物理文件层和 runtime 可见层都已经落地
+
+## 14. Skills 市场与租户技能分配已落地第一版
+
+当前真实状态：
+
+- 平台侧已存在独立 `Skills` 视图
+- 租户侧已存在独立 `工具` 分组：
+  - `市场`
+  - `授权`
+  - `分配`
+- sidecar 已落地 Skills 市场数据模型、授权模型、模板模型、成员 override 模型、审计快照模型
+
+当前真实后端表已经存在：
+
+- `platform_skills`
+- `platform_skill_versions`
+- `platform_skill_agent_bindings`
+- `tenant_skill_orders`
+- `tenant_skill_entitlements`
+- `tenant_agent_skill_templates`
+- `user_agent_skill_overrides`
+- `tenant_agent_skill_snapshots`
+
+当前真实业务规则已经落地：
+
+- skill 归属按 `tenant`
+- skill 分类按 `bundled / free / paid`
+- 基础 Agent 工作区里发现的新 skill 会自动建档为 `bundled`
+- `bundled` 首次发现后自动写入租户 entitlement 和模板
+- `free` 需要租户管理员显式启用
+- `paid` 需要租户下单并确认，确认时走租户钱包扣减
+- 成员最终 skill 公式已经固定为：
+  - `(tenant_agent_template_enabled ∪ member_force_add) - member_force_remove`
+
+当前真实租户操作已经落地第一版：
+
+- 市场页：
+  - 查看可用 skill
+  - `paid` skill 下单
+  - 待确认订单确认购买
+  - `free` skill 启用
+- 授权页：
+  - 查看 entitlement 状态
+  - 启用 / 停用已获得授权
+- 分配页：
+  - 按 `tenant_agent` 维度编辑模板
+  - 按成员 assignment 维度编辑 `force_add / force_remove`
+
+当前真实平台操作已经落地第一版：
+
+- Skills 列表展示
+- 重新发现 bundled skill
+- Skill 重同步
+- Skill 改分类 `bundled / free / paid`
+- Skill 版本查看路由
+
+当前真实路由已经存在：
+
+- 平台：
+  - `GET /platform/skills`
+  - `POST /platform/skills`
+  - `POST /platform/skills/discover`
+  - `POST /platform/skills/:id/publish`
+  - `POST /platform/skills/:id/reclassify`
+  - `POST /platform/skills/:id/resync`
+  - `GET /platform/skills/:id/versions`
+- 租户：
+  - `GET /tenant/admin/skills/market`
+  - `GET /tenant/admin/skills/entitlements`
+  - `GET /tenant/admin/skills/assignments`
+  - `POST /tenant/admin/skills/orders`
+  - `POST /tenant/admin/skills/orders/:id/confirm`
+  - `POST /tenant/admin/skills/entitlements/:id/enable`
+  - `POST /tenant/admin/skills/entitlements/:id/disable`
+  - `POST /tenant/admin/skills/templates`
+  - `POST /tenant/admin/skills/overrides`
+
+## 15. Skills 缺授权阻断已落地
+
+当前真实状态：
+
+- 当 `tenant_agent` 模板包含未购买或已停用的非 bundled skill 时：
+  - 该模板项会被重协调为 `blocked_missing_entitlement`
+  - 成员分配接口会直接失败
+  - 返回结构里会带 `blockedReasons` 和 `missingSkills`
+- 已存在的成员 assignment 不再继续假装可用：
+  - `user_agent_assignments.status -> blocked_missing_skills`
+  - 成员侧 `listAssignedAgentsForUser()` 会直接隐藏这些 Agent
+- 租户管理员在原有成员分配弹窗里已经能看到“缺少技能授权”的禁配提示
+
+## 16. managed-node Skills desired state 已接通
+
+当前真实状态：
+
+- control-plane desired state 里已经包含：
+  - `platformSkills`
+  - `platformSkillVersions`
+  - `tenantSkillEntitlements`
+  - `tenantAgentSkillTemplates`
+  - `userAgentSkillOverrides`
+- managed-node apply 阶段会回放这些数据，并重新 reconcile 派生成员工作区
+- 受管节点本地管理写入仍然被 `managed_node_controlled` 阻断
+
+## 17. Skills 相关定向验证已补齐
+
+当前真实已验证：
+
+- `tenant-platform.test.ts`
+  - bundled skill 自动发现
+  - derived workspace 只保留允许 skill
+  - derived agent config `skills` allowlist 同步
+  - paid skill 未购买时阻断成员分配
+  - paid skill 购买确认后恢复分配
+  - 模板 + 成员 override 最终公式
+- `tenant-entry.test.ts`
+  - 平台 / 租户 Skills 导航入口存在
+- `tenant-surface.test.ts`
+  - 租户 runtime surface 未因 Skills 页面新增而回归
+
+## 18. bootstrap 过滤 hook 已落地
 
 当前真实状态：
 
@@ -238,7 +364,7 @@
 - 零侵入部署层还会同步到 `OPENCLAW_CONFIG_DIR/hooks/tenant-member-bootstrap-filter`
 - 确保 gateway 常驻进程能够发现并注册
 
-## 15. sidecar 自动批准辅助链路已落地
+## 19. sidecar 自动批准辅助链路已落地
 
 当前真实状态：
 
@@ -260,7 +386,7 @@
 
 - 当前轮一定不出现 `approval-pending`
 
-## 16. Kingdee analytics 宿主桥接已落地
+## 20. Kingdee analytics 宿主桥接已落地
 
 当前真实状态：
 
@@ -277,7 +403,7 @@
 - AI 插入 / 更新 analytics PostgreSQL 数据
 - AI 执行宿主工程的 `init-db`、对象同步、销售模块同步
 
-## 17. 选择块协议已落地
+## 21. 选择块协议已落地
 
 当前真实状态：
 
@@ -292,7 +418,7 @@
 - “发送至聊天框”
 - “按所选继续”
 
-## 18. 当前如何用这份文档
+## 22. 当前如何用这份文档
 
 遇到这些情况时，优先回到本文件：
 

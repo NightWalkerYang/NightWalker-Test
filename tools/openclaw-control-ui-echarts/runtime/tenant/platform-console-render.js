@@ -63,10 +63,7 @@ function restoreRenderFocusState(root, state) {
     const input = root.querySelector("[data-platform-search]");
     if (input instanceof HTMLInputElement) {
       input.focus();
-      if (
-        typeof state.selectionStart === "number" &&
-        typeof state.selectionEnd === "number"
-      ) {
+      if (typeof state.selectionStart === "number" && typeof state.selectionEnd === "number") {
         try {
           input.setSelectionRange(state.selectionStart, state.selectionEnd);
         } catch {
@@ -127,12 +124,15 @@ function renderToolbar(controller) {
   const isTenantSection = controller.section === "tenants";
   const isDataSourceSection = controller.section === "data-sources";
   const isNodeSection = controller.section === "nodes";
+  const isSkillsSection = controller.section === "skills";
   const localEdition = isLocalEdition(controller);
   const placeholder = isDataSourceSection
     ? "搜索数据源名称、编码或归属租户"
     : isNodeSection
       ? "搜索节点名称或标识"
-      : "搜索租户名称或编码";
+      : isSkillsSection
+        ? "搜索 Skill 名称、标识或分类"
+        : "搜索租户名称或编码";
   return `
     <div class="data-table-toolbar oc-platform-table-toolbar">
       <label class="data-table-search">
@@ -159,10 +159,65 @@ function renderToolbar(controller) {
           : ""
       }
       ${
+        isSkillsSection
+          ? `<button class="btn" type="button" data-platform-discover-skills>发现 Bundled Skills</button>`
+          : ""
+      }
+      ${
         isTenantSection && localEdition
           ? `<button class="btn" type="button" data-platform-open-local-license>授权管理</button>`
           : ""
       }
+    </div>
+  `;
+}
+
+function renderPlatformSkillsTable(rows) {
+  return `
+    <div class="data-table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Skill</th>
+            <th>类型</th>
+            <th>来源</th>
+            <th>状态</th>
+            <th>价格</th>
+            <th>最新版本</th>
+            <th>兼容 Agent</th>
+            <th>最近同步</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rows.length
+              ? rows
+                  .map(
+                    (entry) => `
+                      <tr>
+                        <td>${escapeHtml(entry.name || entry.skillKey)}</td>
+                        <td>${escapeHtml(entry.classification)}</td>
+                        <td>${escapeHtml(entry.sourceType || "-")}</td>
+                        <td>${escapeHtml(entry.status || "-")}</td>
+                        <td>${formatNumber(entry.pricePoints || 0)}</td>
+                        <td>${escapeHtml(entry.latestVersionLabel || entry.latestVersionId || "-")}</td>
+                        <td>${escapeHtml((entry.compatibleBaseAgents || []).join(", ") || "*")}</td>
+                        <td>${escapeHtml(formatDateTime(entry.latestSyncedAt || entry.updatedAt))}</td>
+                        <td>
+                          <div class="oc-platform-table-actions">
+                            <button class="btn" type="button" data-platform-skill-resync="${escapeHtml(entry.id)}">重同步</button>
+                            <button class="btn" type="button" data-platform-skill-reclassify="${escapeHtml(entry.id)}">改分类</button>
+                          </div>
+                        </td>
+                      </tr>
+                    `,
+                  )
+                  .join("")
+              : `<tr><td colspan="9" class="oc-platform-table-empty">暂无 Skills 数据</td></tr>`
+          }
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -317,7 +372,17 @@ export function renderPlatformConsole(root, controller, helpers) {
       ? filterDataSources(controller)
       : controller.section === "nodes"
         ? filterNodes(controller)
-        : filterTenants(controller);
+        : controller.section === "skills"
+          ? controller.skills.filter((entry) => {
+              const query = getSearchValue(controller).trim().toLowerCase();
+              if (!query) {
+                return true;
+              }
+              return [entry.name, entry.skillKey, entry.classification, entry.sourceType]
+                .filter(Boolean)
+                .some((value) => String(value).toLowerCase().includes(query));
+            })
+          : filterTenants(controller);
   const pagination = paginate(filtered, getPageValue(controller));
   setPageValue(controller, pagination.page);
 
@@ -332,9 +397,11 @@ export function renderPlatformConsole(root, controller, helpers) {
             ? renderDataSourceManagementTable(controller, pagination.items)
             : controller.section === "nodes"
               ? renderNodeManagementTable(pagination.items)
-              : controller.section === "agent-allocation"
-                ? renderAgentAssignmentTable(controller, pagination.items)
-                : renderTenantManagementTable(controller, pagination.items)
+              : controller.section === "skills"
+                ? renderPlatformSkillsTable(pagination.items)
+                : controller.section === "agent-allocation"
+                  ? renderAgentAssignmentTable(controller, pagination.items)
+                  : renderTenantManagementTable(controller, pagination.items)
         }
         ${renderPagination(controller, pagination)}
       </div>

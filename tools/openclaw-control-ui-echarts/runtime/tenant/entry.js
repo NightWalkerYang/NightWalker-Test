@@ -7,12 +7,19 @@ import {
   writeSandboxViewToken,
 } from "../sandbox-view/context.js";
 import { createTenantApiClient } from "./api-client.js";
+import { createTenantLifecycle } from "./lifecycle.js";
 import {
   bootTenantRouteSync,
   createTenantRouteDrivenScanner,
   navigateTenantRoute,
   resetTenantRouteSyncForTests,
 } from "./route-sync.js";
+import { createTenantRuntimeStore } from "./runtime-store.js";
+import {
+  createTenantShellCoordinator,
+  findTenantShellTopbar,
+  listTenantShellSidebarRoots,
+} from "./shell-coordinator.js";
 import {
   LOGIN_ROUTE,
   PLATFORM_AGENT_ASSIGNMENT_ROUTE,
@@ -21,6 +28,8 @@ import {
   PLATFORM_DATA_SOURCES_VIEW,
   PLATFORM_NODE_MANAGEMENT_ROUTE,
   PLATFORM_NODE_MANAGEMENT_VIEW,
+  PLATFORM_SKILLS_ROUTE,
+  PLATFORM_SKILLS_VIEW,
   PLATFORM_TENANT_MANAGEMENT_ROUTE,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
   TENANT_AGENT_ASSIGNMENT_ROUTE,
@@ -35,6 +44,12 @@ import {
   TENANT_USAGE_STATS_VIEW,
   TENANT_STATISTICS_OVERVIEW_ROUTE,
   TENANT_STATISTICS_OVERVIEW_VIEW,
+  TENANT_SKILLS_MARKET_ROUTE,
+  TENANT_SKILLS_MARKET_VIEW,
+  TENANT_SKILLS_ENTITLEMENTS_ROUTE,
+  TENANT_SKILLS_ENTITLEMENTS_VIEW,
+  TENANT_SKILLS_ASSIGNMENTS_ROUTE,
+  TENANT_SKILLS_ASSIGNMENTS_VIEW,
   TENANT_WALLET_ROUTE,
   TENANT_WALLET_VIEW,
   TENANT_WALLET_ORDERS_ROUTE,
@@ -58,13 +73,6 @@ import {
   readTenantShellContext,
   readTenantView,
 } from "./tenant-context.js";
-import { createTenantLifecycle } from "./lifecycle.js";
-import { createTenantRuntimeStore } from "./runtime-store.js";
-import {
-  createTenantShellCoordinator,
-  findTenantShellTopbar,
-  listTenantShellSidebarRoots,
-} from "./shell-coordinator.js";
 import { bootUpdateLogDialogs, resetUpdateLogDialogsForTests } from "./update-log-dialog.js";
 import { createTenantViewRegistry } from "./view-registry.js";
 
@@ -234,6 +242,14 @@ function getSectionConfigForSession(session) {
               icon: ICONS.dataSources,
               activeView: PLATFORM_DATA_SOURCES_VIEW,
             },
+            {
+              className: "oc-platform-skills-link",
+              href: PLATFORM_SKILLS_ROUTE,
+              title: "Skills",
+              text: "Skills",
+              icon: ICONS.agentAllocation,
+              activeView: PLATFORM_SKILLS_VIEW,
+            },
           ],
         },
       ],
@@ -303,6 +319,36 @@ function getSectionConfigForSession(session) {
               text: "耗量统计",
               icon: ICONS.stats,
               activeView: TENANT_USAGE_STATS_VIEW,
+            },
+          ],
+        },
+        {
+          className: "oc-tenant-tools-section",
+          label: "工具",
+          links: [
+            {
+              className: "oc-tenant-skills-market-link",
+              href: TENANT_SKILLS_MARKET_ROUTE,
+              title: "市场",
+              text: "市场",
+              icon: ICONS.agentAllocation,
+              activeView: TENANT_SKILLS_MARKET_VIEW,
+            },
+            {
+              className: "oc-tenant-skills-entitlements-link",
+              href: TENANT_SKILLS_ENTITLEMENTS_ROUTE,
+              title: "授权",
+              text: "授权",
+              icon: ICONS.agentAllocation,
+              activeView: TENANT_SKILLS_ENTITLEMENTS_VIEW,
+            },
+            {
+              className: "oc-tenant-skills-assignments-link",
+              href: TENANT_SKILLS_ASSIGNMENTS_ROUTE,
+              title: "分配",
+              text: "分配",
+              icon: ICONS.agentAllocation,
+              activeView: TENANT_SKILLS_ASSIGNMENTS_VIEW,
             },
           ],
         },
@@ -1555,7 +1601,6 @@ export function bootTenantEntry() {
   tenantEntryLifecycle.addCleanup(clearMemberVisualizationPolling);
   tenantEntryLifecycle.addCleanup(clearMemberSandboxPolling);
 }
-
 
 export function resetTenantEntryForTests() {
   tenantEntryLifecycle?.cleanup?.();

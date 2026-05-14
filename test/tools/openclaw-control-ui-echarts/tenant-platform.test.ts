@@ -23,6 +23,7 @@ import {
   createTenantWithAdmin,
   createTenantMember,
   confirmTenantPaymentOrderPaid,
+  confirmTenantSkillOrder,
   getTenantPaymentOrderById,
   getUserByUsername,
   listPlatformUpdateLogs,
@@ -39,6 +40,13 @@ import {
   revokeTenantAgentAssignments,
   revokePlatformTenantAgents,
   listAssignedAgentsForUser,
+  listPlatformSkills,
+  savePlatformSkill,
+  saveTenantAgentSkillTemplateSet,
+  saveUserAgentSkillOverrideSet,
+  listTenantSkillAssignments,
+  listTenantSkillEntitlements,
+  listTenantSkillsMarket,
   listAssignedAgentVisualizationsForUser,
   listAssignedAgentSandboxesForUser,
   getTenantOverview,
@@ -46,6 +54,7 @@ import {
   listTenantUsageRecords,
   syncTenantUsageRecords,
   transferTenantWalletToAgent,
+  createTenantSkillOrder,
   updatePlatformUpdateLog,
   updateTenantPaymentOrderStatus,
   updateTenantMemberLimit,
@@ -92,6 +101,7 @@ function createTempSandbox() {
       stateDir: path.join(configDir, "tenant-platform"),
       dbPath: path.join(configDir, "tenant-platform", "tenant-platform.sqlite"),
       configPath,
+      sessionSecret: "test-session-secret",
     },
   };
 }
@@ -433,7 +443,7 @@ describe("tenant platform database foundation", () => {
     try {
       const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
       fs.mkdirSync(path.join(baseWorkspace, "memory"), { recursive: true });
-      fs.mkdirSync(path.join(baseWorkspace, "skills"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "finance-core"), { recursive: true });
       fs.mkdirSync(path.join(baseWorkspace, "sessions"), { recursive: true });
       fs.writeFileSync(path.join(baseWorkspace, "MEMORY.md"), "# 母 Agent 记忆", "utf8");
       fs.writeFileSync(
@@ -442,8 +452,16 @@ describe("tenant platform database foundation", () => {
         "utf8",
       );
       fs.writeFileSync(
-        path.join(baseWorkspace, "skills", "README.md"),
-        "skills should be available in the derived workspace",
+        path.join(baseWorkspace, "skills", "finance-core", "SKILL.md"),
+        `---
+name: finance-core
+description: bundled finance skill
+---
+
+# finance-core
+
+bundled skill body
+`,
         "utf8",
       );
       fs.writeFileSync(
@@ -499,6 +517,13 @@ describe("tenant platform database foundation", () => {
         configPath: sandbox.config.configPath,
         configDir: sandbox.config.configDir,
       });
+      expect(listPlatformSkills(db).map((entry) => entry.skillKey)).toContain("finance-core");
+      expect(listTenantSkillEntitlements(db, tenant.id).map((entry) => entry.skillKey)).toContain(
+        "finance-core",
+      );
+      expect(listTenantSkillAssignments(db, tenant.id)[0]?.templateSkillKeys).toContain(
+        "finance-core",
+      );
       expect(String(assignment.derivedAgentId || "")).toMatch(/^tenant-/);
       expect(
         fs.existsSync(
@@ -520,9 +545,10 @@ describe("tenant platform database foundation", () => {
       expect(
         fs.readFileSync(path.join(derivedWorkspace, "memory", "tenant-policy.md"), "utf8"),
       ).toContain("成员首次分配后应继承");
-      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
-        "skills should be available",
-      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "finance-core", "SKILL.md"), "utf8"),
+      ).toContain("bundled skill body");
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "README.md"))).toBe(false);
       expect(fs.readFileSync(path.join(derivedWorkspace, "hooks", "README.md"), "utf8")).toContain(
         "hook docs",
       );
@@ -531,6 +557,22 @@ describe("tenant platform database foundation", () => {
         "should stay inherited",
       );
       expect(readConfigAgentIds(sandbox)).toContain(String(assignment.derivedAgentId));
+      const runtimeConfig = JSON.parse(fs.readFileSync(sandbox.config.configPath, "utf8"));
+      const derivedConfigEntry = runtimeConfig?.agents?.list?.find(
+        (entry) => String(entry?.id || "").trim() === String(assignment.derivedAgentId),
+      );
+      expect(derivedConfigEntry?.skills).toEqual(["finance-core"]);
+
+      const platformSkills = listPlatformSkills(db);
+      expect(platformSkills.map((entry) => entry.skillKey)).toContain("finance-core");
+      const tenantEntitlements = listTenantSkillEntitlements(db, tenant.id);
+      expect(tenantEntitlements.map((entry) => entry.skillKey)).toContain("finance-core");
+      const marketSkills = listTenantSkillsMarket(db, tenant.id);
+      expect(marketSkills.find((entry) => entry.skillKey === "finance-core")?.marketStatus).toBe(
+        "无需购买",
+      );
+      const assignmentSkills = listTenantSkillAssignments(db, tenant.id);
+      expect(assignmentSkills[0]?.templateSkillKeys).toContain("finance-core");
 
       const agents = listAssignedAgentsForUser(
         db,
@@ -605,21 +647,401 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("lists platform and tenant skill views through the zero-intrusive sidecar routes", async () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "finance-core"), { recursive: true });
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "SKILL.md"),
+        `---
+name: finance-core
+description: bundled finance skill
+---
+
+# finance-core
+`,
+        "utf8",
+      );
+      const platformAdmin = createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "skills-routes",
+        name: "租户 Skills Routes",
+        adminUsername: "skills-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const tenantAdmin = getUserByUsername(db, "skills-admin");
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-skill",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 10,
+        status: "active",
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const router = createTenantPlatformRouter({
+        db,
+        config: {
+          ...sandbox.config,
+          apiBasePath: "/tenant-platform-api/v1",
+          edition: "cloud",
+          nodeRole: "control-plane",
+          configDir: sandbox.config.configDir,
+          configPath: sandbox.config.configPath,
+          sessionSecret: sandbox.config.sessionSecret,
+        },
+      });
+      const platformSessionToken = issueSessionToken(
+        {
+          userId: platformAdmin.id,
+          username: platformAdmin.username,
+          role: "platform_admin",
+          tenantId: null,
+        },
+        sandbox.config.sessionSecret,
+      );
+      const tenantSessionToken = issueSessionToken(
+        {
+          userId: tenantAdmin.id,
+          username: tenantAdmin.username,
+          role: "tenant_admin",
+          tenantId: tenant.id,
+        },
+        sandbox.config.sessionSecret,
+      );
+
+      const platformSkillsResponse = await callTenantPlatformRoute(router, {
+        url: "/tenant-platform-api/v1/platform/skills",
+        headers: {
+          authorization: `Bearer ${platformSessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(platformSkillsResponse.statusCode).toBe(200);
+      expect(platformSkillsResponse.payload?.data[0]?.skillKey).toBe("finance-core");
+
+      const marketResponse = await callTenantPlatformRoute(router, {
+        url: "/tenant-platform-api/v1/tenant/admin/skills/market",
+        headers: {
+          authorization: `Bearer ${tenantSessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(marketResponse.statusCode).toBe(200);
+      expect(marketResponse.payload?.data[0]?.marketStatus).toBe("无需购买");
+
+      const entitlementsResponse = await callTenantPlatformRoute(router, {
+        url: "/tenant-platform-api/v1/tenant/admin/skills/entitlements",
+        headers: {
+          authorization: `Bearer ${tenantSessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(entitlementsResponse.statusCode).toBe(200);
+      expect(entitlementsResponse.payload?.data[0]?.skillKey).toBe("finance-core");
+
+      const assignmentsResponse = await callTenantPlatformRoute(router, {
+        url: "/tenant-platform-api/v1/tenant/admin/skills/assignments",
+        headers: {
+          authorization: `Bearer ${tenantSessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(assignmentsResponse.statusCode).toBe(200);
+      expect(assignmentsResponse.payload?.data[0]?.templateSkillKeys).toContain("finance-core");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("blocks member assignment when a paid template skill is not purchased, then restores after purchase", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "paid-skill-block",
+        name: "租户 Paid Skill",
+        adminUsername: "paid-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-paid",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const savedSkill = savePlatformSkill(db, {
+        skillKey: "premium-forecast",
+        name: "premium-forecast",
+        description: "paid forecast skill",
+        classification: "paid",
+        sourceType: "managed",
+        sourceRoot: "managed",
+        pricePoints: 30,
+        compatibleBaseAgents: ["finance"],
+        skillMdContent: `---
+name: premium-forecast
+description: paid forecast skill
+---
+
+# premium-forecast
+
+paid skill body
+`,
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+      saveTenantAgentSkillTemplateSet(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        skillKeys: ["premium-forecast"],
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+
+      expect(() =>
+        assignTenantAgentToUser(db, {
+          tenantId: tenant.id,
+          userId: member.id,
+          tenantAgentId,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        }),
+      ).toThrowError(/tenant_agent_skills_blocked/);
+
+      const order = createTenantSkillOrder(db, {
+        tenantId: tenant.id,
+        skillId: savedSkill.skill.id,
+        createdByUserId: "tenant-admin",
+      });
+      expect(order?.orderStatus).toBe("pending_confirmation");
+
+      db.prepare(
+        `INSERT INTO tenant_wallets (tenant_id, balance_points, created_at, updated_at)
+         VALUES (@tenantId, 100, @createdAt, @updatedAt)
+         ON CONFLICT(tenant_id) DO UPDATE SET balance_points = 100, updated_at = excluded.updated_at`,
+      ).run({
+        tenantId: tenant.id,
+        createdAt: "2026-05-13T00:00:00.000Z",
+        updatedAt: "2026-05-13T00:00:00.000Z",
+      });
+
+      const confirmed = confirmTenantSkillOrder(db, {
+        tenantId: tenant.id,
+        orderId: order.id,
+        actorUserId: "tenant-admin",
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+      expect(confirmed.confirmed).toBe(true);
+
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      expect(
+        fs.readFileSync(
+          path.join(derivedWorkspace, "skills", "premium-forecast", "SKILL.md"),
+          "utf8",
+        ),
+      ).toContain("paid skill body");
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("resolves template and member overrides into the final derived workspace skill set", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "alpha"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "beta"), { recursive: true });
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "alpha", "SKILL.md"),
+        `---
+name: alpha
+description: alpha skill
+---
+
+# alpha
+`,
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "beta", "SKILL.md"),
+        `---
+name: beta
+description: beta skill
+---
+
+# beta
+`,
+        "utf8",
+      );
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "override-formula",
+        name: "租户 Override",
+        adminUsername: "override-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-override",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const gammaSkill = savePlatformSkill(db, {
+        skillKey: "gamma",
+        name: "gamma",
+        description: "free gamma skill",
+        classification: "free",
+        sourceType: "managed",
+        sourceRoot: "managed",
+        pricePoints: 0,
+        compatibleBaseAgents: ["finance"],
+        skillMdContent: `---
+name: gamma
+description: gamma skill
+---
+
+# gamma
+`,
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+      createTenantSkillOrder(db, {
+        tenantId: tenant.id,
+        skillId: gammaSkill.skill.id,
+        createdByUserId: "override-admin",
+      });
+      saveTenantAgentSkillTemplateSet(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        skillKeys: ["alpha", "beta"],
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      saveUserAgentSkillOverrideSet(db, {
+        assignmentId: assignment.assignmentId,
+        overrides: [
+          { action: "force_add", skillKey: "gamma" },
+          { action: "force_remove", skillKey: "beta" },
+        ],
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+      const agents = listAssignedAgentsForUser(
+        db,
+        {
+          tenantId: tenant.id,
+          userId: member.id,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(agents).toHaveLength(1);
+      const derivedWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(agents[0]?.derivedAgentId || ""),
+      );
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"))).toBe(true);
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "beta", "SKILL.md"))).toBe(false);
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "gamma", "SKILL.md"))).toBe(true);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("re-syncs skills and hooks but preserves derived top-level md files after first bootstrap", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
     try {
       const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
-      fs.mkdirSync(path.join(baseWorkspace, "skills"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "alpha"), { recursive: true });
       fs.mkdirSync(path.join(baseWorkspace, "hooks"), { recursive: true });
       fs.writeFileSync(path.join(baseWorkspace, "AGENTS.md"), "# parent agents v1\n", "utf8");
       fs.writeFileSync(path.join(baseWorkspace, "IDENTITY.md"), "# parent identity v1\n", "utf8");
       fs.writeFileSync(
-        path.join(baseWorkspace, "skills", "README.md"),
-        "skill readme v1\n",
+        path.join(baseWorkspace, "skills", "alpha", "SKILL.md"),
+        `---
+name: alpha
+description: alpha skill
+---
+
+# alpha
+
+alpha skill v1
+`,
         "utf8",
       );
-      fs.writeFileSync(path.join(baseWorkspace, "skills", "alpha.md"), "alpha skill v1\n", "utf8");
       fs.writeFileSync(path.join(baseWorkspace, "hooks", "README.md"), "hook readme v1\n", "utf8");
 
       createBootstrapPlatformAdmin(db, {
@@ -658,6 +1080,7 @@ describe("tenant platform database foundation", () => {
         configPath: sandbox.config.configPath,
         configDir: sandbox.config.configDir,
       });
+      expect(listPlatformSkills(db).map((entry) => entry.skillKey)).toContain("alpha");
       const derivedWorkspace = path.join(
         sandbox.config.configDir,
         "workspace-agents",
@@ -666,9 +1089,9 @@ describe("tenant platform database foundation", () => {
       expect(fs.readFileSync(path.join(derivedWorkspace, "AGENTS.md"), "utf8")).toContain(
         "parent agents v1",
       );
-      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
-        "skill readme v1",
-      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"), "utf8"),
+      ).toContain("alpha skill v1");
 
       fs.writeFileSync(path.join(derivedWorkspace, "AGENTS.md"), "# child agents custom\n", "utf8");
       fs.writeFileSync(
@@ -677,8 +1100,8 @@ describe("tenant platform database foundation", () => {
         "utf8",
       );
       fs.writeFileSync(
-        path.join(derivedWorkspace, "skills", "README.md"),
-        "child skill readme custom\n",
+        path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"),
+        "child\n",
         "utf8",
       );
       fs.writeFileSync(
@@ -690,11 +1113,18 @@ describe("tenant platform database foundation", () => {
       fs.writeFileSync(path.join(baseWorkspace, "AGENTS.md"), "# parent agents v2\n", "utf8");
       fs.writeFileSync(path.join(baseWorkspace, "IDENTITY.md"), "# parent identity v2\n", "utf8");
       fs.writeFileSync(
-        path.join(baseWorkspace, "skills", "README.md"),
-        "skill readme v2\n",
+        path.join(baseWorkspace, "skills", "alpha", "SKILL.md"),
+        `---
+name: alpha
+description: alpha skill
+---
+
+# alpha
+
+alpha skill v2
+`,
         "utf8",
       );
-      fs.writeFileSync(path.join(baseWorkspace, "skills", "alpha.md"), "alpha skill v2\n", "utf8");
       fs.writeFileSync(path.join(baseWorkspace, "hooks", "README.md"), "hook readme v2\n", "utf8");
 
       const assignedAgents = listAssignedAgentsForUser(
@@ -715,12 +1145,9 @@ describe("tenant platform database foundation", () => {
       expect(fs.readFileSync(path.join(derivedWorkspace, "IDENTITY.md"), "utf8")).toContain(
         "child identity custom",
       );
-      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
-        "skill readme v2",
-      );
-      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "alpha.md"), "utf8")).toContain(
-        "alpha skill v2",
-      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"), "utf8"),
+      ).toContain("alpha skill v2");
       expect(fs.readFileSync(path.join(derivedWorkspace, "hooks", "README.md"), "utf8")).toContain(
         "hook readme v2",
       );
@@ -776,7 +1203,7 @@ describe("tenant platform database foundation", () => {
 
     const splitWorkspace = path.join(sandbox.root, "shared-workspace");
     fs.mkdirSync(path.join(splitWorkspace, "memory"), { recursive: true });
-    fs.mkdirSync(path.join(splitWorkspace, "skills"), { recursive: true });
+    fs.mkdirSync(path.join(splitWorkspace, "skills", "split-layout"), { recursive: true });
     fs.writeFileSync(path.join(splitWorkspace, "MEMORY.md"), "# 主工作区记忆", "utf8");
     fs.writeFileSync(
       path.join(splitWorkspace, "memory", "split-layout.md"),
@@ -784,8 +1211,16 @@ describe("tenant platform database foundation", () => {
       "utf8",
     );
     fs.writeFileSync(
-      path.join(splitWorkspace, "skills", "README.md"),
-      "split workspace skills should be visible in derived agents",
+      path.join(splitWorkspace, "skills", "split-layout", "SKILL.md"),
+      `---
+name: split-layout
+description: split workspace skill
+---
+
+# split-layout
+
+split workspace skill body
+`,
       "utf8",
     );
 
@@ -843,9 +1278,9 @@ describe("tenant platform database foundation", () => {
       expect(
         fs.readFileSync(path.join(derivedWorkspace, "memory", "split-layout.md"), "utf8"),
       ).toContain("split workspace should still seed derived agents");
-      expect(fs.readFileSync(path.join(derivedWorkspace, "skills", "README.md"), "utf8")).toContain(
-        "split workspace skills should be visible",
-      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "split-layout", "SKILL.md"), "utf8"),
+      ).toContain("split workspace skill body");
     } finally {
       if (previousWorkspaceDir === undefined) {
         delete process.env.OPENCLAW_WORKSPACE_DIR;

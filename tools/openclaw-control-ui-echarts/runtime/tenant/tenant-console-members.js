@@ -1,12 +1,5 @@
-import {
-  escapeHtml,
-  formatDateTime,
-  formatNumber,
-} from "./tenant-console-controller.js";
-import {
-  getDeleteMemberTarget,
-  setFeedback,
-} from "./tenant-console-dialogs.js";
+import { escapeHtml, formatDateTime, formatNumber } from "./tenant-console-controller.js";
+import { getDeleteMemberTarget, setFeedback } from "./tenant-console-dialogs.js";
 
 export function memberStatusLabel(status) {
   return String(status || "").trim() === "active" ? "已启用" : "已禁用";
@@ -17,17 +10,24 @@ export function memberStatusToggleLabel(status) {
 }
 
 export function normalizeMemberOrgScopeMode(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   return normalized === "all" || normalized === "custom" ? normalized : "none";
 }
 
 function normalizeSearchQuery(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 export function getCurrentTenantDataSourceBinding(controller) {
   if (
-    !(controller?.currentDataSourceBinding && typeof controller.currentDataSourceBinding === "object")
+    !(
+      controller?.currentDataSourceBinding &&
+      typeof controller.currentDataSourceBinding === "object"
+    )
   ) {
     return null;
   }
@@ -75,8 +75,8 @@ export function isMemberStatusBusy(controller, userId) {
   const normalized = String(userId || "").trim();
   return Boolean(
     normalized &&
-      controller?.busyMemberStatusIds instanceof Set &&
-      controller.busyMemberStatusIds.has(normalized),
+    controller?.busyMemberStatusIds instanceof Set &&
+    controller.busyMemberStatusIds.has(normalized),
   );
 }
 
@@ -234,7 +234,7 @@ export function getAssignableTenantAgents(dialog) {
     dialog?.assignedAgentIds instanceof Set ? dialog.assignedAgentIds : new Set();
   return dialog.agents.filter((agent) => {
     const agentId = String(agent?.id || "").trim();
-    return Boolean(agentId) && !assignedAgentIds.has(agentId);
+    return Boolean(agentId) && !assignedAgentIds.has(agentId) && !agent?.assignmentBlocked;
   });
 }
 
@@ -304,9 +304,7 @@ export function createMemberOrgScopeDialogState() {
 }
 
 export function getMemberOrgScopeDialog(controller) {
-  if (
-    !(controller?.memberOrgScopeDialog && typeof controller.memberOrgScopeDialog === "object")
-  ) {
+  if (!(controller?.memberOrgScopeDialog && typeof controller.memberOrgScopeDialog === "object")) {
     controller.memberOrgScopeDialog = createMemberOrgScopeDialogState();
   }
   return controller.memberOrgScopeDialog;
@@ -701,7 +699,11 @@ export function renderMemberOrgScopeDialog(controller) {
                       ${["none", "custom", "all"]
                         .map((mode) => {
                           const label =
-                            mode === "none" ? "未分配" : mode === "custom" ? "指定组织" : "全部组织";
+                            mode === "none"
+                              ? "未分配"
+                              : mode === "custom"
+                                ? "指定组织"
+                                : "全部组织";
                           return `
                             <label class="oc-tenant-member-org-scope-mode">
                               <input
@@ -754,7 +756,7 @@ export function renderAssignDialog(controller, isLocalEdition) {
       ? `<div class="callout info">${escapeHtml(dialog.error)}</div>`
       : "";
   const listMarkup =
-    !dialog.loading && selectableAgents.length
+    !dialog.loading && (Array.isArray(dialog.agents) ? dialog.agents.length : 0)
       ? `
         <div class="data-table-container oc-tenant-revoke-assignment-list">
           <table class="data-table">
@@ -766,7 +768,11 @@ export function renderAssignDialog(controller, isLocalEdition) {
               </tr>
             </thead>
             <tbody>
-              ${selectableAgents
+              ${(Array.isArray(dialog.agents) ? dialog.agents : [])
+                .filter((agent) => {
+                  const agentId = String(agent?.id || "").trim();
+                  return Boolean(agentId) && !dialog.assignedAgentIds.has(agentId);
+                })
                 .map(
                   (agent) => `
                     <tr>
@@ -775,7 +781,7 @@ export function renderAssignDialog(controller, isLocalEdition) {
                           type="checkbox"
                           data-tenant-assign-agent-select="${escapeHtml(agent.id)}"
                           aria-label="选择 ${escapeHtml(getAssignAgentDisplayName(agent))}"
-                          ${dialog.busy ? "disabled" : ""}
+                          ${dialog.busy || agent.assignmentBlocked ? "disabled" : ""}
                           ${isAssignAgentSelected(controller, agent.id) ? "checked" : ""}
                         />
                       </td>
@@ -783,7 +789,14 @@ export function renderAssignDialog(controller, isLocalEdition) {
                         <div class="oc-tenant-revoke-assignment__agent-name">${escapeHtml(getAssignAgentDisplayName(agent))}</div>
                         <div class="oc-tenant-revoke-assignment__agent-meta">${escapeHtml(agent.agentId || agent.id || "-")}${localEdition ? "" : ` · ${formatNumber(agent.balancePoints)} 积分`}</div>
                       </td>
-                      <td>${escapeHtml(agent.description || "-")}</td>
+                      <td>
+                        <div>${escapeHtml(agent.description || "-")}</div>
+                        ${
+                          agent.assignmentBlocked
+                            ? `<div class="oc-platform-table-empty">缺少技能授权: ${escapeHtml((agent.blockedSkillKeys || []).join(", ") || "-")}</div>`
+                            : ""
+                        }
+                      </td>
                     </tr>
                   `,
                 )
@@ -1142,9 +1155,7 @@ export async function openMemberOrgScopeDialog(root, controller, memberId, helpe
     ).trim();
     currentDialog.orgs = Array.isArray(orgs) ? orgs : [];
     const availableOrgIds = new Set(
-      currentDialog.orgs
-        .map((org) => String(org?.orgId || "").trim())
-        .filter(Boolean),
+      currentDialog.orgs.map((org) => String(org?.orgId || "").trim()).filter(Boolean),
     );
     currentDialog.scopeMode = normalizeMemberOrgScopeMode(scope?.scopeMode);
     currentDialog.sandboxEnabled =

@@ -2,6 +2,7 @@ import {
   PLATFORM_AGENT_ASSIGNMENT_VIEW,
   PLATFORM_DATA_SOURCES_VIEW,
   PLATFORM_NODE_MANAGEMENT_VIEW,
+  PLATFORM_SKILLS_VIEW,
   PLATFORM_TENANT_MANAGEMENT_VIEW,
 } from "./tenant-context.js";
 
@@ -25,6 +26,9 @@ export function currentSectionHref(section) {
   if (section === "nodes") {
     return `./?ocTenantView=${PLATFORM_NODE_MANAGEMENT_VIEW}`;
   }
+  if (section === "skills") {
+    return `./?ocTenantView=${PLATFORM_SKILLS_VIEW}`;
+  }
   return `./?ocTenantView=${PLATFORM_TENANT_MANAGEMENT_VIEW}`;
 }
 
@@ -34,9 +38,7 @@ export function isLocalEdition(controller) {
 
 export function formatNumber(value) {
   const numeric = Number(value || 0);
-  return Number.isFinite(numeric)
-    ? new Intl.NumberFormat("zh-CN").format(numeric)
-    : "0";
+  return Number.isFinite(numeric) ? new Intl.NumberFormat("zh-CN").format(numeric) : "0";
 }
 
 export function formatDateTime(value) {
@@ -107,16 +109,20 @@ export function createPlatformConsoleControllerState(session, apiClient, stateFa
       "agent-allocation": "",
       "data-sources": "",
       nodes: "",
+      skills: "",
     },
     pageBySection: {
       tenants: 1,
       "agent-allocation": 1,
       "data-sources": 1,
       nodes: 1,
+      skills: 1,
     },
     tenants: [],
     nodes: [],
     catalogAgents: [],
+    skills: [],
+    skillVersionsBySkillId: new Map(),
     rateDialogAgents: [],
     dialogs: {
       createTenantOpen: false,
@@ -200,6 +206,7 @@ export function updateSectionLinkState(section) {
     [currentSectionHref("agent-allocation"), "agent-allocation"],
     [currentSectionHref("data-sources"), "data-sources"],
     [currentSectionHref("nodes"), "nodes"],
+    [currentSectionHref("skills"), "skills"],
   ]);
   for (const [href, targetSection] of sectionByHref.entries()) {
     const links = document.querySelectorAll(`a[href="${href}"]`);
@@ -212,12 +219,14 @@ export function updateSectionLinkState(section) {
 export async function refreshPlatformConsole(root, controller, helpers) {
   const includeNodes = controller.section === "nodes" && !isLocalEdition(controller);
   const includeDataSources = controller.section === "data-sources";
-  const [tenants, catalogAgents, nodes, localLicense, dataSources] = await Promise.all([
+  const includeSkills = controller.section === "skills";
+  const [tenants, catalogAgents, nodes, localLicense, dataSources, skills] = await Promise.all([
     controller.apiClient.listPlatformTenants(),
     controller.apiClient.listPlatformCatalogAgents(),
     includeNodes ? controller.apiClient.listPlatformNodes() : Promise.resolve([]),
     isLocalEdition(controller) ? controller.apiClient.getLocalLicense() : Promise.resolve(null),
     includeDataSources ? controller.apiClient.listPlatformDataSources() : Promise.resolve(null),
+    includeSkills ? controller.apiClient.listPlatformSkills() : Promise.resolve([]),
   ]);
   controller.tenants = tenants;
   controller.catalogAgents = catalogAgents;
@@ -231,6 +240,9 @@ export async function refreshPlatformConsole(root, controller, helpers) {
     dialog.dataSources = controller.dataSources.slice();
     dialog.loading = false;
     helpers.syncDataSourceDraftTenant(controller);
+  }
+  if (includeSkills) {
+    controller.skills = Array.isArray(skills) ? skills : [];
   }
   if (controller.assignTenantAgentDialog?.open) {
     controller.assignTenantAgentDialog.agents = Array.isArray(catalogAgents)

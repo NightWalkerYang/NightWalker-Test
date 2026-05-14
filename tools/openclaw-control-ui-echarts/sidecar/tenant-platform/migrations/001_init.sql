@@ -119,6 +119,139 @@ CREATE TABLE IF NOT EXISTS tenant_agents (
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS platform_skills (
+  id TEXT PRIMARY KEY,
+  skill_key TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  classification TEXT NOT NULL DEFAULT 'bundled',
+  source_type TEXT NOT NULL DEFAULT 'workspace',
+  source_root TEXT NOT NULL DEFAULT '',
+  source_workspace_dir TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  price_points REAL NOT NULL DEFAULT 0,
+  compatible_base_agents_json TEXT NOT NULL DEFAULT '[]',
+  latest_version_id TEXT,
+  latest_version_label TEXT,
+  latest_version_hash TEXT,
+  latest_synced_at TEXT,
+  latest_published_at TEXT,
+  affected_tenant_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS platform_skill_versions (
+  id TEXT PRIMARY KEY,
+  skill_id TEXT NOT NULL,
+  version_label TEXT NOT NULL,
+  version_hash TEXT NOT NULL,
+  skill_md_path TEXT NOT NULL,
+  skill_md_content TEXT NOT NULL,
+  skill_metadata_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(skill_id, version_hash),
+  FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS platform_skill_agent_bindings (
+  id TEXT PRIMARY KEY,
+  skill_id TEXT NOT NULL,
+  base_agent_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(skill_id, base_agent_id),
+  FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS tenant_skill_orders (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  skill_id TEXT NOT NULL,
+  order_status TEXT NOT NULL DEFAULT 'pending_confirmation',
+  acquire_type TEXT NOT NULL DEFAULT 'paid_order',
+  amount_points REAL NOT NULL DEFAULT 0,
+  version_policy TEXT NOT NULL DEFAULT 'latest',
+  current_version_id TEXT,
+  created_by_user_id TEXT,
+  confirmed_by_user_id TEXT,
+  confirmed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (confirmed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS tenant_skill_entitlements (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  skill_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  acquire_type TEXT NOT NULL DEFAULT 'bundled',
+  version_policy TEXT NOT NULL DEFAULT 'latest',
+  current_version_id TEXT,
+  enabled_by_tenant INTEGER NOT NULL DEFAULT 0,
+  blocked_reason TEXT,
+  order_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(tenant_id, skill_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE,
+  FOREIGN KEY (order_id) REFERENCES tenant_skill_orders(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS tenant_agent_skill_templates (
+  id TEXT PRIMARY KEY,
+  tenant_agent_id TEXT NOT NULL,
+  skill_id TEXT NOT NULL,
+  template_state TEXT NOT NULL DEFAULT 'enabled',
+  source_type TEXT NOT NULL DEFAULT 'base_default',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(tenant_agent_id, skill_id),
+  FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS user_agent_skill_overrides (
+  id TEXT PRIMARY KEY,
+  assignment_id TEXT NOT NULL,
+  tenant_agent_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  skill_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(assignment_id, skill_id, action),
+  FOREIGN KEY (assignment_id) REFERENCES user_agent_assignments(id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (skill_id) REFERENCES platform_skills(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS tenant_agent_skill_snapshots (
+  id TEXT PRIMARY KEY,
+  assignment_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  tenant_agent_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  derived_agent_id TEXT NOT NULL,
+  resolved_skill_keys_json TEXT NOT NULL,
+  resolved_version_ids_json TEXT NOT NULL,
+  blocked_reasons_json TEXT NOT NULL,
+  applied_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (assignment_id) REFERENCES user_agent_assignments(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS user_agent_assignments (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -324,6 +457,24 @@ CREATE INDEX IF NOT EXISTS idx_tenant_wallet_ledger_usage_note
 
 CREATE INDEX IF NOT EXISTS idx_payment_orders_tenant_status
   ON payment_orders (tenant_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_platform_skills_classification_status
+  ON platform_skills (classification, status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_platform_skill_versions_skill
+  ON platform_skill_versions (skill_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_skill_entitlements_tenant_status
+  ON tenant_skill_entitlements (tenant_id, status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_agent_skill_templates_agent
+  ON tenant_agent_skill_templates (tenant_agent_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_agent_skill_overrides_assignment
+  ON user_agent_skill_overrides (assignment_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_agent_skill_snapshots_assignment
+  ON tenant_agent_skill_snapshots (assignment_id, applied_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_platform_update_logs_published
   ON platform_update_logs (published_at DESC, updated_at DESC);

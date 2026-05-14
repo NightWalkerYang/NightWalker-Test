@@ -233,7 +233,7 @@ describe("zero-intrusive tenant entry", () => {
     );
 
     const items = managementSection?.querySelectorAll(".nav-item") ?? [];
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     expect(items[0]?.textContent).toContain("租户管理");
     expect(items[0]?.getAttribute("href")).toContain("ocTenantView=platform-tenants");
     expect(items[1]?.textContent).toContain("Agent 分配");
@@ -242,6 +242,8 @@ describe("zero-intrusive tenant entry", () => {
     expect(items[2]?.getAttribute("href")).toContain("ocTenantView=platform-nodes");
     expect(items[3]?.textContent).toContain("创建数据源");
     expect(items[3]?.getAttribute("href")).toContain("ocTenantView=platform-data-sources");
+    expect(items[4]?.textContent).toContain("Skills");
+    expect(items[4]?.getAttribute("href")).toContain("ocTenantView=platform-skills");
 
     const chatGroup = document.querySelector('[data-native-group="chat"]');
     expect(managementSection?.nextElementSibling).toBe(chatGroup);
@@ -312,6 +314,8 @@ describe("zero-intrusive tenant entry", () => {
     const agentItems = agentSection?.querySelectorAll(".nav-item") ?? [];
     const statsSection = document.querySelector(".oc-tenant-stats-section");
     const statsItems = statsSection?.querySelectorAll(".nav-item") ?? [];
+    const toolsSection = document.querySelector(".oc-tenant-tools-section");
+    const toolsItems = toolsSection?.querySelectorAll(".nav-item") ?? [];
     const walletSection = document.querySelector(".oc-tenant-wallet-section");
     const walletItems = walletSection?.querySelectorAll(".nav-item") ?? [];
     expect(managementSection).not.toBeNull();
@@ -335,6 +339,16 @@ describe("zero-intrusive tenant entry", () => {
     );
     expect(statsItems[1]?.textContent).toContain("耗量统计");
     expect(statsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
+    expect(toolsSection).not.toBeNull();
+    expect(toolsItems).toHaveLength(3);
+    expect(toolsItems[0]?.textContent).toContain("市场");
+    expect(toolsItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-skills-market");
+    expect(toolsItems[1]?.textContent).toContain("授权");
+    expect(toolsItems[1]?.getAttribute("href")).toContain(
+      "ocTenantView=tenant-skills-entitlements",
+    );
+    expect(toolsItems[2]?.textContent).toContain("分配");
+    expect(toolsItems[2]?.getAttribute("href")).toContain("ocTenantView=tenant-skills-assignments");
     expect(walletSection).not.toBeNull();
     expect(walletItems).toHaveLength(4);
     expect(walletItems[0]?.textContent).toContain("钱包充值");

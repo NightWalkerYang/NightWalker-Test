@@ -1,10 +1,4 @@
 import {
-  TENANT_WALLET_SUMMARY_EVENT,
-} from "./tenant-context.js";
-import {
-  refreshTenantOverview,
-} from "./tenant-overview-page.js";
-import {
   createAgentDetailDialogState,
   createAgentTransferDialogState,
   createDeleteMemberDialogState,
@@ -14,6 +8,8 @@ import {
   createMemberOrgScopeDialogState,
   createRevokeAssignmentDialogState,
 } from "./tenant-console-members.js";
+import { TENANT_WALLET_SUMMARY_EVENT } from "./tenant-context.js";
+import { refreshTenantOverview } from "./tenant-overview-page.js";
 
 export const PAGE_SIZE = 8;
 export const REMOTE_SEARCH_DEBOUNCE_MS = 250;
@@ -30,9 +26,7 @@ export function escapeHtml(value) {
 }
 
 export function escapeAttribute(value) {
-  return escapeHtml(value)
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return escapeHtml(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export function formatDateTime(value) {
@@ -70,6 +64,9 @@ export function formatCredits(value) {
 export function isRemoteSearchSection(section) {
   return (
     section === "usage-stats" ||
+    section === "skills-market" ||
+    section === "skills-entitlements" ||
+    section === "skills-assignments" ||
     section === "wallet-orders" ||
     section === "wallet-ledger" ||
     section === "wallet-flow"
@@ -96,6 +93,9 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
       "agent-assignment": "",
       "owned-agents": "",
       "usage-stats": "",
+      "skills-market": "",
+      "skills-entitlements": "",
+      "skills-assignments": "",
       wallet: "",
       "wallet-orders": "",
       "wallet-ledger": "",
@@ -106,6 +106,9 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
       "agent-assignment": 1,
       "owned-agents": 1,
       "usage-stats": 1,
+      "skills-market": 1,
+      "skills-entitlements": 1,
+      "skills-assignments": 1,
       wallet: 1,
       "wallet-orders": 1,
       "wallet-ledger": 1,
@@ -114,6 +117,12 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
     members: [],
     currentDataSourceBinding: null,
     tenantAgents: [],
+    skillsMarketItems: [],
+    skillsEntitlementItems: [],
+    skillsAssignmentItems: [],
+    skillsTemplateDrafts: new Map(),
+    skillsOverrideDrafts: new Map(),
+    skillsBusyKeys: new Set(),
     busyMemberStatusIds: new Set(),
     pendingMemberStatuses: new Map(),
     walletData: null,
@@ -209,9 +218,8 @@ export async function refreshTenantConsole(root, controller, helpers) {
     controller.walletSummary = controller.walletData?.summary || null;
     dispatchWalletSummary(controller.walletSummary);
     if (controller.walletActiveOrderId) {
-      const matchedOrder = (Array.isArray(controller.walletData?.orders)
-        ? controller.walletData.orders
-        : []
+      const matchedOrder = (
+        Array.isArray(controller.walletData?.orders) ? controller.walletData.orders : []
       ).find((order) => String(order?.id || "").trim() === controller.walletActiveOrderId);
       if (matchedOrder) {
         controller.walletActiveOrder = matchedOrder;
@@ -334,6 +342,24 @@ export async function refreshTenantConsole(root, controller, helpers) {
     if (controller.walletSummary) {
       dispatchWalletSummary(controller.walletSummary);
     }
+    helpers.render(root, controller);
+    return;
+  }
+
+  if (controller.section === "skills-market") {
+    controller.skillsMarketItems = await controller.apiClient.listTenantSkillsMarket();
+    helpers.render(root, controller);
+    return;
+  }
+
+  if (controller.section === "skills-entitlements") {
+    controller.skillsEntitlementItems = await controller.apiClient.listTenantSkillEntitlements();
+    helpers.render(root, controller);
+    return;
+  }
+
+  if (controller.section === "skills-assignments") {
+    controller.skillsAssignmentItems = await controller.apiClient.listTenantSkillAssignments();
     helpers.render(root, controller);
     return;
   }

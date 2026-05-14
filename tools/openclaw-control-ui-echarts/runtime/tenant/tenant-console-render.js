@@ -95,6 +95,19 @@ function restoreRenderFocusState(root, state) {
 }
 
 function renderToolbar(controller) {
+  if (
+    controller.section === "skills-market" ||
+    controller.section === "skills-entitlements" ||
+    controller.section === "skills-assignments"
+  ) {
+    return `
+      <div class="data-table-toolbar oc-tenant-table-toolbar">
+        <div class="oc-tenant-wallet-toolbar__summary">
+          Skills 管理
+        </div>
+      </div>
+    `;
+  }
   if (controller.section === "wallet") {
     const pendingCount = Number(controller.walletData?.summary?.pendingOrderCount || 0);
     return `
@@ -205,6 +218,247 @@ function renderToolbar(controller) {
   `;
 }
 
+function renderSkillsMarketTable(controller) {
+  const rows = Array.isArray(controller.skillsMarketItems) ? controller.skillsMarketItems : [];
+  return `
+    <div class="data-table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Skill</th>
+            <th>类型</th>
+            <th>状态</th>
+            <th>价格</th>
+            <th>版本</th>
+            <th>影响模板</th>
+            <th>影响成员</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rows.length
+              ? rows
+                  .map(
+                    (entry) => `
+                      <tr>
+                        <td>${escapeHtml(entry.name || entry.skillKey)}</td>
+                        <td>${escapeHtml(entry.classification)}</td>
+                        <td>${escapeHtml(entry.marketStatus || "-")}</td>
+                        <td>${formatNumber(entry.pricePoints || 0)}</td>
+                        <td>${escapeHtml(entry.latestVersionLabel || entry.latestVersionId || "-")}</td>
+                        <td>${formatNumber(entry.affectedTenantAgentCount || 0)}</td>
+                        <td>${formatNumber(entry.affectedAssignmentCount || 0)}</td>
+                        <td>
+                          ${
+                            entry.classification === "paid" && !entry.entitlementId
+                              ? `<button class="btn" type="button" data-tenant-skill-order="${escapeAttribute(entry.id)}">下单</button>`
+                              : entry.classification === "paid" && entry.pendingOrderId
+                                ? `<button class="btn primary" type="button" data-tenant-skill-confirm-order="${escapeAttribute(entry.pendingOrderId)}">确认购买</button>`
+                                : entry.classification === "free" &&
+                                    entry.entitlementId &&
+                                    !entry.enabledByTenant
+                                  ? `<button class="btn" type="button" data-tenant-skill-enable="${escapeAttribute(entry.entitlementId)}">启用</button>`
+                                  : entry.classification === "free" && !entry.entitlementId
+                                    ? `<button class="btn" type="button" data-tenant-skill-free-enable="${escapeAttribute(entry.id)}">启用</button>`
+                                    : `<span class="oc-platform-table-empty">-</span>`
+                          }
+                        </td>
+                      </tr>
+                    `,
+                  )
+                  .join("")
+              : `<tr><td colspan="8" class="oc-platform-table-empty">暂无 Skills 市场数据</td></tr>`
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSkillsEntitlementsTable(controller) {
+  const rows = Array.isArray(controller.skillsEntitlementItems)
+    ? controller.skillsEntitlementItems
+    : [];
+  return `
+    <div class="data-table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Skill</th>
+            <th>类型</th>
+            <th>授权状态</th>
+            <th>启用</th>
+            <th>版本策略</th>
+            <th>当前版本</th>
+            <th>阻断原因</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rows.length
+              ? rows
+                  .map(
+                    (entry) => `
+                      <tr>
+                        <td>${escapeHtml(entry.name || entry.skillKey)}</td>
+                        <td>${escapeHtml(entry.classification)}</td>
+                        <td>${escapeHtml(entry.status)}</td>
+                        <td>${entry.enabledByTenant ? "是" : "否"}</td>
+                        <td>${escapeHtml(entry.versionPolicy || "-")}</td>
+                        <td>${escapeHtml(entry.currentVersionId || entry.latestVersionId || "-")}</td>
+                        <td>${escapeHtml(entry.blockedReason || "-")}</td>
+                        <td>
+                          ${
+                            entry.enabledByTenant
+                              ? `<button class="btn" type="button" data-tenant-skill-disable="${escapeAttribute(entry.id)}">停用</button>`
+                              : `<button class="btn primary" type="button" data-tenant-skill-enable="${escapeAttribute(entry.id)}">启用</button>`
+                          }
+                        </td>
+                      </tr>
+                    `,
+                  )
+                  .join("")
+              : `<tr><td colspan="8" class="oc-platform-table-empty">暂无租户授权数据</td></tr>`
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSkillsAssignmentsTable(controller) {
+  const rows = Array.isArray(controller.skillsAssignmentItems)
+    ? controller.skillsAssignmentItems
+    : [];
+  return `
+    <div class="data-table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Tenant Agent</th>
+            <th>模板 Skills</th>
+            <th>阻断 Skills</th>
+            <th>成员数</th>
+            <th>成员覆盖摘要</th>
+            <th>模板编辑</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rows.length
+              ? rows
+                  .map((entry) => {
+                    const draft = controller.skillsTemplateDrafts.get(
+                      String(entry.tenantAgentId || "").trim(),
+                    );
+                    const selectedSkillKeys = new Set(
+                      Array.isArray(draft)
+                        ? draft
+                        : Array.isArray(entry.templateRows)
+                          ? entry.templateRows
+                              .filter((item) => item.templateState === "enabled")
+                              .map((item) => String(item.skillKey || "").trim())
+                          : [],
+                    );
+                    const assignmentSummary = Array.isArray(entry.assignments)
+                      ? entry.assignments
+                          .map((assignment) => {
+                            const overrideSummary = Array.isArray(assignment.overrideSummary)
+                              ? assignment.overrideSummary
+                                  .map((override) => `${override.action}:${override.skillKey}`)
+                                  .join(", ")
+                              : "";
+                            return `${assignment.username || assignment.userId}: ${overrideSummary || assignment.resolvedSkillKeys?.join(", ") || "-"}`;
+                          })
+                          .join(" | ")
+                      : "-";
+                    return `
+                      <tr>
+                        <td>${escapeHtml(entry.baseAgentId)}</td>
+                        <td>${escapeHtml((entry.templateSkillKeys || []).join(", ") || "-")}</td>
+                        <td>${escapeHtml((entry.blockedSkillKeys || []).join(", ") || "-")}</td>
+                        <td>${formatNumber(entry.assignmentCount || 0)}</td>
+                        <td>${escapeHtml(assignmentSummary || "-")}</td>
+                        <td>
+                          <div class="oc-tenant-skill-template-editor">
+                            ${
+                              Array.isArray(entry.templateRows) && entry.templateRows.length
+                                ? entry.templateRows
+                                    .map(
+                                      (template) => `
+                                        <label class="oc-tenant-member-org-scope-mode">
+                                          <input
+                                            type="checkbox"
+                                            data-tenant-skill-template-toggle="${escapeAttribute(entry.tenantAgentId)}"
+                                            data-tenant-skill-key="${escapeAttribute(template.skillKey)}"
+                                            ${selectedSkillKeys.has(String(template.skillKey || "").trim()) ? "checked" : ""}
+                                          />
+                                          <span>${escapeHtml(template.skillKey)}</span>
+                                        </label>
+                                      `,
+                                    )
+                                    .join("")
+                                : `<span class="oc-platform-table-empty">-</span>`
+                            }
+                            <div class="oc-tenant-table-actions">
+                              <button class="btn primary" type="button" data-tenant-skill-template-save="${escapeAttribute(entry.tenantAgentId)}">保存模板</button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      ${
+                        Array.isArray(entry.assignments) && entry.assignments.length
+                          ? entry.assignments
+                              .map((assignment) => {
+                                const assignmentId = String(assignment.assignmentId || "").trim();
+                                const overrideDraft =
+                                  controller.skillsOverrideDrafts.get(assignmentId) ||
+                                  (Array.isArray(assignment.overrideRows)
+                                    ? assignment.overrideRows.map((item) => ({
+                                        skillKey: String(item.skillKey || "").trim(),
+                                        action: String(item.action || "").trim(),
+                                      }))
+                                    : []);
+                                return `
+                                  <tr class="oc-tenant-skill-assignment-row">
+                                    <td colspan="6">
+                                      <div class="oc-tenant-skill-template-editor">
+                                        <strong>${escapeHtml(assignment.username || assignment.userId || assignmentId)}</strong>
+                                        <div>${escapeHtml((assignment.resolvedSkillKeys || []).join(", ") || "-")}</div>
+                                        <textarea
+                                          class="field__control"
+                                          rows="3"
+                                          data-tenant-skill-override-editor="${escapeAttribute(assignmentId)}"
+                                          placeholder="每行一个覆盖，如 force_add:C 或 force_remove:B"
+                                        >${escapeHtml(
+                                          overrideDraft
+                                            .map((item) => `${item.action}:${item.skillKey}`)
+                                            .join("\n"),
+                                        )}</textarea>
+                                        <div class="oc-tenant-table-actions">
+                                          <button class="btn" type="button" data-tenant-skill-override-save="${escapeAttribute(assignmentId)}">保存成员覆盖</button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                `;
+                              })
+                              .join("")
+                          : ""
+                      }
+                    `;
+                  })
+                  .join("")
+              : `<tr><td colspan="6" class="oc-platform-table-empty">暂无 Skill 分配数据</td></tr>`
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 export function renderTenantConsole(root, controller) {
   const focusState = captureRenderFocusState(root);
   const isUsageStats = controller.section === "usage-stats";
@@ -214,6 +468,9 @@ export function renderTenantConsole(root, controller) {
   const isWalletLedger = controller.section === "wallet-ledger";
   const isWalletFlow = controller.section === "wallet-flow";
   const isOwnedAgents = controller.section === "owned-agents";
+  const isSkillsMarket = controller.section === "skills-market";
+  const isSkillsEntitlements = controller.section === "skills-entitlements";
+  const isSkillsAssignments = controller.section === "skills-assignments";
 
   if (controller.section === "agent-assignment") {
     pruneRevokeAssignmentSelection(controller);
@@ -225,7 +482,15 @@ export function renderTenantConsole(root, controller) {
   }
 
   const pagination =
-    isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow
+    isUsageStats ||
+    isOverview ||
+    isWallet ||
+    isWalletOrders ||
+    isWalletLedger ||
+    isWalletFlow ||
+    isSkillsMarket ||
+    isSkillsEntitlements ||
+    isSkillsAssignments
       ? null
       : paginate(
           isOwnedAgents ? filterTenantAgents(controller) : filterMembers(controller),
@@ -239,22 +504,28 @@ export function renderTenantConsole(root, controller) {
     ? renderUsageList(controller, renderPagination)
     : isOverview
       ? renderTenantOverview(controller)
-      : isWallet
-        ? renderTenantWalletPage(controller)
-        : isWalletOrders
-          ? renderWalletOrdersList(controller, renderPagination)
-          : isWalletLedger
-            ? renderWalletLedgerList(controller, renderPagination)
-            : isWalletFlow
-              ? renderWalletFlowList(controller, renderPagination)
-              : isOwnedAgents
-                ? `
+      : isSkillsMarket
+        ? renderSkillsMarketTable(controller)
+        : isSkillsEntitlements
+          ? renderSkillsEntitlementsTable(controller)
+          : isSkillsAssignments
+            ? renderSkillsAssignmentsTable(controller)
+            : isWallet
+              ? renderTenantWalletPage(controller)
+              : isWalletOrders
+                ? renderWalletOrdersList(controller, renderPagination)
+                : isWalletLedger
+                  ? renderWalletLedgerList(controller, renderPagination)
+                  : isWalletFlow
+                    ? renderWalletFlowList(controller, renderPagination)
+                    : isOwnedAgents
+                      ? `
                   <div class="data-table-wrapper">
                     ${renderOwnedAgentsCards(pagination.items, controller)}
                     ${renderPagination(pagination)}
                   </div>
                 `
-                : `
+                      : `
                   <div class="data-table-wrapper">
                     ${
                       controller.section === "agent-assignment"
@@ -268,12 +539,20 @@ export function renderTenantConsole(root, controller) {
   root.dataset.ocTenantEmbedded = "true";
   root.dataset.ocTenantSection = controller.section;
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow || isSkillsMarket || isSkillsEntitlements || isSkillsAssignments ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
     </section>
     ${
-      isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow
+      isUsageStats ||
+      isOverview ||
+      isWallet ||
+      isWalletOrders ||
+      isWalletLedger ||
+      isWalletFlow ||
+      isSkillsMarket ||
+      isSkillsEntitlements ||
+      isSkillsAssignments
         ? ""
         : isOwnedAgents
           ? `${renderAgentDetailDialog(controller)}${renderAgentTransferDialog(controller)}`
@@ -291,7 +570,10 @@ export function renderTenantConsole(root, controller) {
     !isWallet &&
     !isWalletOrders &&
     !isWalletLedger &&
-    !isWalletFlow
+    !isWalletFlow &&
+    !isSkillsMarket &&
+    !isSkillsEntitlements &&
+    !isSkillsAssignments
   ) {
     if (isOwnedAgents && controller.agentDetailDialog?.open) {
       openDialog(root.querySelector("[data-tenant-agent-detail-dialog]"));

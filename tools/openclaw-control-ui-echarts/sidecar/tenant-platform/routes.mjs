@@ -37,10 +37,13 @@ import {
   deletePlatformUpdateLog,
   createTenantMember,
   createTenantPaymentOrder,
+  createTenantSkillOrder,
   createTenantWithAdmin,
   clearTenantDataSourceBinding,
+  confirmTenantSkillOrder,
   confirmTenantPaymentOrderPaid,
   deactivateSyncSchedule,
+  discoverPlatformSkills,
   getBootstrapStatus,
   getDataSourceById,
   getManagedNodeLeaseState,
@@ -57,10 +60,15 @@ import {
   listDataSources,
   listManagedNodes,
   listPlatformUpdateLogs,
+  listPlatformSkills,
+  listPlatformSkillVersions,
   listTenants,
   listTenantAgents,
+  listTenantSkillEntitlements,
   listTenantDataSourceBindings,
   listTenantMembers,
+  listTenantSkillAssignments,
+  listTenantSkillsMarket,
   listTenantSyncSchedules,
   listTenantUsageStats,
   listTenantUsageRecords,
@@ -82,6 +90,12 @@ import {
   upsertDataSource,
   upsertSyncSchedule,
   registerManagedNodeHeartbeat,
+  reclassifyPlatformSkill,
+  resyncPlatformSkill,
+  savePlatformSkill,
+  saveTenantAgentSkillTemplateSet,
+  saveUserAgentSkillOverrideSet,
+  setTenantSkillEntitlementEnabled,
   updateTenantPaymentOrderStatus,
   updateTenantMemberLimit,
   updateTenantMemberPassword,
@@ -2164,6 +2178,14 @@ export function createTenantPlatformRouter(deps) {
         sendJson(request, response, 400, {
           ok: false,
           error: error instanceof Error ? error.message : String(error),
+          data:
+            error && typeof error === "object"
+              ? {
+                  code: String(error.code || "").trim() || null,
+                  blockedReasons: Array.isArray(error.blockedReasons) ? error.blockedReasons : [],
+                  missingSkills: Array.isArray(error.missingSkills) ? error.missingSkills : [],
+                }
+              : undefined,
         });
       }
       return;
@@ -2806,6 +2828,234 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/platform/skills") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listPlatformSkills(deps.db, {
+          includeInactive: url.searchParams.get("includeInactive") === "1",
+          classification: url.searchParams.get("classification") || "",
+        }),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/skills") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const result = savePlatformSkill(deps.db, {
+          ...body,
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.skill.save",
+          resourceType: "platform_skill",
+          resourceId: result?.skill?.id || null,
+          payloadJson: {
+            skillKey: result?.skill?.skillKey || null,
+            classification: result?.skill?.classification || null,
+            pricePoints: result?.skill?.pricePoints || 0,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          data: error?.blockedReasons ? { blockedReasons: error.blockedReasons } : undefined,
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/platform/skills/discover") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const discovered = discoverPlatformSkills(deps.db, {
+          configAgents,
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.skill.discover",
+          resourceType: "platform_skill",
+          resourceId: null,
+          payloadJson: {
+            discoveredCount: discovered.length,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: discovered });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const platformSkillPublishMatch =
+      request.method === "POST"
+        ? /^\/platform\/skills\/([^/]+)\/publish$/i.exec(relativePath)
+        : null;
+    if (platformSkillPublishMatch) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const result = savePlatformSkill(deps.db, {
+          ...body,
+          skillId: decodeURIComponent(platformSkillPublishMatch[1] || ""),
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.skill.publish",
+          resourceType: "platform_skill",
+          resourceId: result?.skill?.id || null,
+          payloadJson: {
+            skillKey: result?.skill?.skillKey || null,
+            versionId: result?.version?.id || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const platformSkillReclassifyMatch =
+      request.method === "POST"
+        ? /^\/platform\/skills\/([^/]+)\/reclassify$/i.exec(relativePath)
+        : null;
+    if (platformSkillReclassifyMatch) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const skillId = decodeURIComponent(platformSkillReclassifyMatch[1] || "");
+        const result = reclassifyPlatformSkill(deps.db, {
+          ...body,
+          skillId,
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.skill.reclassify",
+          resourceType: "platform_skill",
+          resourceId: result?.id || skillId,
+          payloadJson: {
+            classification: result?.classification || body.classification || null,
+            pricePoints: result?.pricePoints || body.pricePoints || 0,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const platformSkillResyncMatch =
+      request.method === "POST"
+        ? /^\/platform\/skills\/([^/]+)\/resync$/i.exec(relativePath)
+        : null;
+    if (platformSkillResyncMatch) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const skillId = decodeURIComponent(platformSkillResyncMatch[1] || "");
+        const result = resyncPlatformSkill(deps.db, {
+          skillId,
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          action: "platform.skill.resync",
+          resourceType: "platform_skill",
+          resourceId: result?.id || skillId,
+          payloadJson: {
+            skillKey: result?.skillKey || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const platformSkillVersionsMatch =
+      request.method === "GET"
+        ? /^\/platform\/skills\/([^/]+)\/versions$/i.exec(relativePath)
+        : null;
+    if (platformSkillVersionsMatch) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["platform_admin"])) {
+        return;
+      }
+      try {
+        const skillId = decodeURIComponent(platformSkillVersionsMatch[1] || "");
+        sendJson(request, response, 200, {
+          ok: true,
+          data: listPlatformSkillVersions(deps.db, skillId),
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     if (request.method === "GET" && relativePath === "/platform/tenant-members") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["platform_admin"])) {
@@ -3230,6 +3480,283 @@ export function createTenantPlatformRouter(deps) {
         ok: true,
         data: listTenantAgents(deps.db, session.tenantId, configAgents),
       });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/skills/market") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantSkillsMarket(deps.db, session.tenantId, {
+          baseAgentId: String(url.searchParams.get("baseAgentId") || "").trim(),
+        }),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/skills/entitlements") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantSkillEntitlements(deps.db, session.tenantId),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && relativePath === "/tenant/admin/skills/assignments") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listTenantSkillAssignments(deps.db, session.tenantId),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/skills/orders") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const result = createTenantSkillOrder(deps.db, {
+          tenantId: session.tenantId,
+          skillId: String(body.skillId || "").trim(),
+          createdByUserId: session.userId,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.skill_order.create",
+          resourceType: "tenant_skill_order",
+          resourceId: result?.id || null,
+          payloadJson: {
+            skillId: result?.skillId || null,
+            skillKey: result?.skillKey || null,
+            amountPoints: result?.amountPoints || 0,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const tenantSkillOrderConfirmMatch =
+      request.method === "POST"
+        ? /^\/tenant\/admin\/skills\/orders\/([^/]+)\/confirm$/i.exec(relativePath)
+        : null;
+    if (tenantSkillOrderConfirmMatch) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const orderId = decodeURIComponent(tenantSkillOrderConfirmMatch[1] || "");
+        const result = confirmTenantSkillOrder(deps.db, {
+          tenantId: session.tenantId,
+          orderId,
+          actorUserId: session.userId,
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.skill_order.confirm",
+          resourceType: "tenant_skill_order",
+          resourceId: result?.order?.id || orderId,
+          payloadJson: {
+            skillId: result?.order?.skillId || null,
+            walletBalance: result?.walletBalance || 0,
+            confirmed: Boolean(result?.confirmed),
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const tenantSkillEntitlementEnableMatch =
+      request.method === "POST"
+        ? /^\/tenant\/admin\/skills\/entitlements\/([^/]+)\/enable$/i.exec(relativePath)
+        : null;
+    if (tenantSkillEntitlementEnableMatch) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const entitlementId = decodeURIComponent(tenantSkillEntitlementEnableMatch[1] || "");
+        const result = setTenantSkillEntitlementEnabled(deps.db, {
+          tenantId: session.tenantId,
+          entitlementId,
+          enabledByTenant: true,
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.skill_entitlement.enable",
+          resourceType: "tenant_skill_entitlement",
+          resourceId: result?.id || entitlementId,
+          payloadJson: {
+            skillId: result?.skillId || null,
+            skillKey: result?.skillKey || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const tenantSkillEntitlementDisableMatch =
+      request.method === "POST"
+        ? /^\/tenant\/admin\/skills\/entitlements\/([^/]+)\/disable$/i.exec(relativePath)
+        : null;
+    if (tenantSkillEntitlementDisableMatch) {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const entitlementId = decodeURIComponent(tenantSkillEntitlementDisableMatch[1] || "");
+        const result = setTenantSkillEntitlementEnabled(deps.db, {
+          tenantId: session.tenantId,
+          entitlementId,
+          enabledByTenant: false,
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.skill_entitlement.disable",
+          resourceType: "tenant_skill_entitlement",
+          resourceId: result?.id || entitlementId,
+          payloadJson: {
+            skillId: result?.skillId || null,
+            skillKey: result?.skillKey || null,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/skills/templates") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const result = saveTenantAgentSkillTemplateSet(deps.db, {
+          tenantId: session.tenantId,
+          tenantAgentId: String(body.tenantAgentId || "").trim(),
+          skillKeys: Array.isArray(body.skillKeys) ? body.skillKeys : [],
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.skill_template.save",
+          resourceType: "tenant_agent",
+          resourceId: result?.tenantAgentId || null,
+          payloadJson: {
+            blockedSkillKeys: result?.blockedSkillKeys || [],
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          data: error?.blockedReasons ? { blockedReasons: error.blockedReasons } : undefined,
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/tenant/admin/skills/overrides") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["tenant_admin"])) {
+        return;
+      }
+      if (!requireLocalWritable(request, response, deps)) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const result = saveUserAgentSkillOverrideSet(deps.db, {
+          assignmentId: String(body.assignmentId || "").trim(),
+          overrides: Array.isArray(body.overrides) ? body.overrides : [],
+          configDir: deps.config.configDir,
+          configPath: deps.config.configPath,
+        });
+        logAudit(deps.db, {
+          userId: session.userId,
+          tenantId: session.tenantId,
+          action: "tenant.skill_override.save",
+          resourceType: "user_agent_assignment",
+          resourceId: result?.assignmentId || null,
+          payloadJson: {
+            overrideCount: Array.isArray(result?.overrideRows) ? result.overrideRows.length : 0,
+          },
+        });
+        sendJson(request, response, 200, { ok: true, data: result });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          data: error?.blockedReasons ? { blockedReasons: error.blockedReasons } : undefined,
+        });
+      }
       return;
     }
 

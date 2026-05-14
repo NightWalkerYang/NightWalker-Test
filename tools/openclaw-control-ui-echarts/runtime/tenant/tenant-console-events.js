@@ -1,3 +1,4 @@
+import { openAgentTransferDialog } from "./tenant-console-agents.js";
 import {
   REMOTE_SEARCH_DEBOUNCE_MS,
   dispatchWalletSummary,
@@ -37,13 +38,7 @@ import {
   setRevokeAssignmentSelected,
   updateMemberStatus,
 } from "./tenant-console-members.js";
-import {
-  openAgentTransferDialog,
-} from "./tenant-console-agents.js";
-import {
-  findWalletOrderById,
-  queryWalletOrderStatus,
-} from "./tenant-console-wallet.js";
+import { findWalletOrderById, queryWalletOrderStatus } from "./tenant-console-wallet.js";
 
 function clearSelectionForToggle(controller, target, entries, clearSelection, setSelected) {
   const selected = target.checked;
@@ -58,8 +53,9 @@ function clearSelectionForToggle(controller, target, entries, clearSelection, se
 
 function openPasswordDialog(root, controller, memberId, render) {
   controller.passwordMember =
-    controller.members.find((member) => String(member?.id || "").trim() === String(memberId || "").trim()) ||
-    null;
+    controller.members.find(
+      (member) => String(member?.id || "").trim() === String(memberId || "").trim(),
+    ) || null;
   if (!controller.passwordMember) {
     return;
   }
@@ -178,8 +174,9 @@ async function submitDeleteMember(root, controller, target, refresh) {
     const payload = Object.fromEntries(new FormData(target).entries());
     const result = await controller.apiClient.deleteTenantMember(payload);
     const memberLabel =
-      String(result?.username || controller.deleteMemberTarget?.username || payload.userId || "").trim() ||
-      "该成员";
+      String(
+        result?.username || controller.deleteMemberTarget?.username || payload.userId || "",
+      ).trim() || "该成员";
     const revokedAssignmentCount = Number(result?.revokedAssignmentCount || 0);
     controller.dialogs.deleteMemberOpen = false;
     controller.deleteMemberTarget = tenantConsoleStateFactories.createDeleteMemberDialogState();
@@ -248,7 +245,10 @@ async function submitAssignAgents(root, controller, refresh, render) {
         );
         return;
       }
-      setFeedback(root, `已为成员“${memberLabel}”分配 ${formatNumber(assignedAgentCount)} 个 Agent。`);
+      setFeedback(
+        root,
+        `已为成员“${memberLabel}”分配 ${formatNumber(assignedAgentCount)} 个 Agent。`,
+      );
       return;
     }
     const currentDialog = controller.assignAgentDialog;
@@ -283,6 +283,21 @@ async function submitAssignAgents(root, controller, refresh, render) {
     render(root, controller);
     setFeedback(root, errorMessage, true);
   }
+}
+
+function parseSkillOverrideEditorValue(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [action, skillKey] = line.split(":");
+      return {
+        action: String(action || "").trim(),
+        skillKey: String(skillKey || "").trim(),
+      };
+    })
+    .filter((entry) => entry.action && entry.skillKey);
 }
 
 export function createTenantConsoleEventHandlers({ render, refresh }) {
@@ -397,34 +412,26 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
 
       const deleteTrigger = target.closest("[data-tenant-open-member-delete]");
       if (deleteTrigger instanceof HTMLElement) {
-        openDeleteMemberDialog(
-          root,
-          controller,
-          deleteTrigger.dataset.tenantOpenMemberDelete,
-          { render },
-        );
+        openDeleteMemberDialog(root, controller, deleteTrigger.dataset.tenantOpenMemberDelete, {
+          render,
+        });
         return;
       }
 
       const closeDialogTrigger = target.closest("[data-tenant-close-dialog]");
       if (closeDialogTrigger instanceof HTMLElement) {
-        dismissTenantDialog(
-          root,
-          controller,
-          closeDialogTrigger.dataset.tenantCloseDialog || "",
-          { render, ...memberDialogFactories },
-        );
+        dismissTenantDialog(root, controller, closeDialogTrigger.dataset.tenantCloseDialog || "", {
+          render,
+          ...memberDialogFactories,
+        });
         return;
       }
 
       const assignTrigger = target.closest("[data-tenant-open-assign]");
       if (assignTrigger instanceof HTMLElement) {
-        await openAssignAgentDialog(
-          root,
-          controller,
-          assignTrigger.dataset.tenantOpenAssign,
-          { render },
-        );
+        await openAssignAgentDialog(root, controller, assignTrigger.dataset.tenantOpenAssign, {
+          render,
+        });
         return;
       }
 
@@ -436,6 +443,119 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
           revokeTrigger.dataset.tenantRevokeAssignment,
           { render },
         );
+        return;
+      }
+
+      const orderTrigger = target.closest("[data-tenant-skill-order]");
+      if (orderTrigger instanceof HTMLElement) {
+        try {
+          await controller.apiClient.createTenantSkillOrder({
+            skillId: orderTrigger.dataset.tenantSkillOrder,
+          });
+          await refresh(root, controller);
+          setFeedback(root, "Skill 订单已创建。");
+        } catch (error) {
+          setFeedback(root, error instanceof Error ? error.message : String(error), true);
+        }
+        return;
+      }
+
+      const confirmOrderTrigger = target.closest("[data-tenant-skill-confirm-order]");
+      if (confirmOrderTrigger instanceof HTMLElement) {
+        try {
+          await controller.apiClient.confirmTenantSkillOrder(
+            confirmOrderTrigger.dataset.tenantSkillConfirmOrder,
+          );
+          await refresh(root, controller);
+          setFeedback(root, "Skill 订单已确认，钱包余额已更新。");
+        } catch (error) {
+          setFeedback(root, error instanceof Error ? error.message : String(error), true);
+        }
+        return;
+      }
+
+      const freeEnableTrigger = target.closest("[data-tenant-skill-free-enable]");
+      if (freeEnableTrigger instanceof HTMLElement) {
+        try {
+          await controller.apiClient.createTenantSkillOrder({
+            skillId: freeEnableTrigger.dataset.tenantSkillFreeEnable,
+          });
+          await refresh(root, controller);
+          setFeedback(root, "免费 Skill 已启用。");
+        } catch (error) {
+          setFeedback(root, error instanceof Error ? error.message : String(error), true);
+        }
+        return;
+      }
+
+      const enableTrigger = target.closest("[data-tenant-skill-enable]");
+      if (enableTrigger instanceof HTMLElement) {
+        try {
+          await controller.apiClient.enableTenantSkillEntitlement(
+            enableTrigger.dataset.tenantSkillEnable,
+          );
+          await refresh(root, controller);
+          setFeedback(root, "Skill 授权已启用。");
+        } catch (error) {
+          setFeedback(root, error instanceof Error ? error.message : String(error), true);
+        }
+        return;
+      }
+
+      const disableTrigger = target.closest("[data-tenant-skill-disable]");
+      if (disableTrigger instanceof HTMLElement) {
+        try {
+          await controller.apiClient.disableTenantSkillEntitlement(
+            disableTrigger.dataset.tenantSkillDisable,
+          );
+          await refresh(root, controller);
+          setFeedback(root, "Skill 授权已停用。");
+        } catch (error) {
+          setFeedback(root, error instanceof Error ? error.message : String(error), true);
+        }
+        return;
+      }
+
+      const templateSaveTrigger = target.closest("[data-tenant-skill-template-save]");
+      if (templateSaveTrigger instanceof HTMLElement) {
+        const tenantAgentId = String(
+          templateSaveTrigger.dataset.tenantSkillTemplateSave || "",
+        ).trim();
+        try {
+          const skillKeys = Array.from(controller.skillsTemplateDrafts.get(tenantAgentId) || []);
+          await controller.apiClient.saveTenantSkillTemplate({
+            tenantAgentId,
+            skillKeys,
+          });
+          await refresh(root, controller);
+          setFeedback(root, "Tenant Agent 技能模板已保存。");
+        } catch (error) {
+          setFeedback(root, error instanceof Error ? error.message : String(error), true);
+        }
+        return;
+      }
+
+      const overrideSaveTrigger = target.closest("[data-tenant-skill-override-save]");
+      if (overrideSaveTrigger instanceof HTMLElement) {
+        const assignmentId = String(
+          overrideSaveTrigger.dataset.tenantSkillOverrideSave || "",
+        ).trim();
+        const editor = root.querySelector(
+          `[data-tenant-skill-override-editor="${CSS.escape(assignmentId)}"]`,
+        );
+        const overrides = parseSkillOverrideEditorValue(
+          editor instanceof HTMLTextAreaElement ? editor.value : "",
+        );
+        try {
+          await controller.apiClient.saveTenantSkillOverrides({
+            assignmentId,
+            overrides,
+          });
+          await refresh(root, controller);
+          setFeedback(root, "成员技能覆盖已保存。");
+        } catch (error) {
+          setFeedback(root, error instanceof Error ? error.message : String(error), true);
+        }
       }
     },
 
@@ -485,7 +605,9 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         clearSelectionForToggle(
           controller,
           target,
-          getRevokeAssignmentSelectableAssignments(dialog).map((assignment) => assignment.assignmentId),
+          getRevokeAssignmentSelectableAssignments(dialog).map(
+            (assignment) => assignment.assignmentId,
+          ),
           clearRevokeAssignmentSelection,
           setRevokeAssignmentSelected,
         );
@@ -519,11 +641,20 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
         return;
       }
       if (target.hasAttribute("data-tenant-assign-agent-select")) {
-        setAssignAgentSelected(
-          controller,
-          target.dataset.tenantAssignAgentSelect,
-          target.checked,
-        );
+        setAssignAgentSelected(controller, target.dataset.tenantAssignAgentSelect, target.checked);
+        render(root, controller);
+        return;
+      }
+      if (target.hasAttribute("data-tenant-skill-template-toggle")) {
+        const tenantAgentId = String(target.dataset.tenantSkillTemplateToggle || "").trim();
+        const skillKey = String(target.dataset.tenantSkillKey || "").trim();
+        const current = new Set(controller.skillsTemplateDrafts.get(tenantAgentId) || []);
+        if (target.checked) {
+          current.add(skillKey);
+        } else {
+          current.delete(skillKey);
+        }
+        controller.skillsTemplateDrafts.set(tenantAgentId, [...current]);
         render(root, controller);
         return;
       }
