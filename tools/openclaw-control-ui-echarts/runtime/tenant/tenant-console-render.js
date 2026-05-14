@@ -404,20 +404,20 @@ function renderSkillsWorkbenchSkillCard(controller, card, skill) {
   `;
 }
 
-function renderSkillsWorkbenchAgentCard(controller, card) {
+function renderSkillsWorkbenchSelectedAgentPanel(controller, card) {
   const blockedReasons = Array.isArray(card?.blockedReasons) ? card.blockedReasons : [];
   return `
-    <article class="oc-tenant-skill-workbench-agent-card">
-      <header class="oc-tenant-skill-workbench-agent-card__header">
+    <section class="oc-tenant-skill-workbench__selection-panel">
+      <header class="oc-tenant-skill-workbench__selection-header">
         <div>
-          <h3 class="oc-tenant-skill-workbench-agent-card__title">${escapeHtml(
+          <h3 class="oc-tenant-skill-workbench__selection-title">${escapeHtml(
             getWorkbenchAgentTitle(card),
           )}</h3>
-          <p class="oc-tenant-skill-workbench-agent-card__subtitle">${escapeHtml(
+          <p class="oc-tenant-skill-workbench__selection-subtitle">${escapeHtml(
             card?.baseAgentId || card?.tenantAgentId || "-",
           )}</p>
         </div>
-        <div class="oc-tenant-skill-workbench-agent-card__header-actions">
+        <div class="oc-tenant-skill-workbench__selection-actions">
           <span class="data-table-badge data-table-badge--${String(card?.assignmentStatus || "").trim() === "active" ? "direct" : "unknown"}">${escapeHtml(
             String(card?.assignmentStatus || "").trim() === "blocked_missing_skills" ? "已阻断" : "已分配",
           )}</span>
@@ -439,7 +439,7 @@ function renderSkillsWorkbenchAgentCard(controller, card) {
           .map((skill) => renderSkillsWorkbenchSkillCard(controller, card, skill))
           .join("")}
       </div>
-    </article>
+    </section>
   `;
 }
 
@@ -562,9 +562,7 @@ function renderSkillsWorkbench(controller) {
                   )} 的默认技能与成员覆盖。</p>
                 </div>
               </header>
-              <div class="oc-tenant-skill-workbench__agent-list">
-                ${renderSkillsWorkbenchAgentCard(controller, selectedCard)}
-              </div>
+              ${renderSkillsWorkbenchSelectedAgentPanel(controller, selectedCard)}
             `
             : selectedMember
               ? `<div class="callout info">请选择该成员下的 Agent 后查看 skills。</div>`

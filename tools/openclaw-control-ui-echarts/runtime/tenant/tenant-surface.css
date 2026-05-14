@@ -766,7 +766,7 @@
 
 .oc-tenant-skill-workbench__sidebar,
 .oc-tenant-skill-workbench__content,
-.oc-tenant-skill-workbench-agent-card,
+.oc-tenant-skill-workbench__selection-panel,
 .oc-tenant-skill-workbench-skill-card {
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -793,7 +793,7 @@
 
 .oc-tenant-skill-workbench__sidebar-title,
 .oc-tenant-skill-workbench__content-title,
-.oc-tenant-skill-workbench-agent-card__title,
+.oc-tenant-skill-workbench__selection-title,
 .oc-tenant-skill-workbench-skill-card__title {
   margin: 0;
   color: var(--text-strong);
@@ -801,7 +801,7 @@
 
 .oc-tenant-skill-workbench__sidebar-summary,
 .oc-tenant-skill-workbench__content-summary,
-.oc-tenant-skill-workbench-agent-card__subtitle,
+.oc-tenant-skill-workbench__selection-subtitle,
 .oc-tenant-skill-workbench-skill-card__subtitle,
 .oc-tenant-skill-workbench-skill-card__description {
   margin: 0;
@@ -913,13 +913,13 @@
   align-content: start;
 }
 
-.oc-tenant-skill-workbench-agent-card {
+.oc-tenant-skill-workbench__selection-panel {
   display: grid;
   gap: 16px;
   padding: 18px;
 }
 
-.oc-tenant-skill-workbench-agent-card__header {
+.oc-tenant-skill-workbench__selection-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -927,7 +927,7 @@
   flex-wrap: wrap;
 }
 
-.oc-tenant-skill-workbench-agent-card__header-actions {
+.oc-tenant-skill-workbench__selection-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1027,12 +1027,12 @@
     grid-template-columns: 1fr;
   }
 
-  .oc-tenant-skill-workbench-agent-card__header,
+  .oc-tenant-skill-workbench__selection-header,
   .oc-tenant-skill-workbench-skill-card__header {
     flex-direction: column;
   }
 
-  .oc-tenant-skill-workbench-agent-card__header-actions {
+  .oc-tenant-skill-workbench__selection-actions {
     justify-content: flex-start;
   }
 }
