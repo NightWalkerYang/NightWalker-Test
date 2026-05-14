@@ -173,6 +173,11 @@ function readUtf8FileIfExists(filePath, fallback = "") {
   }
 }
 
+function readJsonObjectFileIfExists(filePath) {
+  const raw = readUtf8FileIfExists(filePath, "");
+  return raw ? parseJsonObject(raw) : null;
+}
+
 function roundPoints(value) {
   const numeric = toFiniteNumber(value, 0);
   return Math.round(numeric * 1_000_000) / 1_000_000;
@@ -1334,6 +1339,57 @@ function isSkillCompatibleWithBaseAgent(skill, baseAgentId) {
   );
 }
 
+function resolveDerivedAgentBaseAgentId(db, agentId, params = {}) {
+  const normalizedAgentId = String(agentId || "").trim();
+  if (!normalizedAgentId || normalizedAgentId === SKILL_CATALOG_COMPATIBLE_ANY) {
+    return "";
+  }
+  const assignmentRow = db
+    .prepare(
+      `SELECT ta.agent_id AS baseAgentId
+         FROM user_agent_assignments ua
+         JOIN tenant_agents ta ON ta.id = ua.tenant_agent_id
+        WHERE ua.derived_agent_id = ?
+        ORDER BY ua.created_at DESC
+        LIMIT 1`,
+    )
+    .get(normalizedAgentId);
+  const assignmentBaseAgentId = String(assignmentRow?.baseAgentId || "").trim();
+  if (assignmentBaseAgentId) {
+    return assignmentBaseAgentId;
+  }
+  const metadataPath = path.join(
+    resolveConfigDir(params),
+    "workspace-agents",
+    normalizedAgentId,
+    DERIVED_AGENT_METADATA_FILE,
+  );
+  const metadata = readJsonObjectFileIfExists(metadataPath);
+  return String(metadata?.baseAgentId || "").trim();
+}
+
+function normalizeCompatibleBaseAgentId(db, baseAgentId, params = {}) {
+  const normalizedBaseAgentId = String(baseAgentId || "").trim();
+  if (!normalizedBaseAgentId) {
+    return "";
+  }
+  if (normalizedBaseAgentId === SKILL_CATALOG_COMPATIBLE_ANY) {
+    return SKILL_CATALOG_COMPATIBLE_ANY;
+  }
+  return resolveDerivedAgentBaseAgentId(db, normalizedBaseAgentId, params) || normalizedBaseAgentId;
+}
+
+function normalizeCompatibleBaseAgentIds(db, baseAgentIds = [], params = {}) {
+  const normalizedBaseAgentIds = [
+    ...new Set(
+      (Array.isArray(baseAgentIds) ? baseAgentIds : [])
+        .map((entry) => normalizeCompatibleBaseAgentId(db, entry, params))
+        .filter(Boolean),
+    ),
+  ];
+  return normalizedBaseAgentIds.length ? normalizedBaseAgentIds : [SKILL_CATALOG_COMPATIBLE_ANY];
+}
+
 function storeManagedSkillVersionFile(params = {}) {
   const skillId = String(params.skillId || "").trim();
   const versionId = String(params.versionId || "").trim();
@@ -1364,13 +1420,13 @@ function upsertPlatformSkillCatalogEntry(db, params = {}) {
   }
   const now = nowIso();
   const classification = normalizeSkillClassification(params.classification);
-  const compatibleBaseAgents = Array.isArray(params.compatibleBaseAgents)
-    ? [
-        ...new Set(
-          params.compatibleBaseAgents.map((entry) => String(entry || "").trim()).filter(Boolean),
-        ),
-      ]
-    : [SKILL_CATALOG_COMPATIBLE_ANY];
+  const compatibleBaseAgents = normalizeCompatibleBaseAgentIds(
+    db,
+    Array.isArray(params.compatibleBaseAgents)
+      ? params.compatibleBaseAgents
+      : [SKILL_CATALOG_COMPATIBLE_ANY],
+    params,
+  );
   const existing = getPlatformSkillByKey(db, skillKey);
   if (existing) {
     db.prepare(
@@ -1540,11 +1596,10 @@ function upsertPlatformSkillVersion(db, params = {}) {
   return getPlatformSkillVersionById(db, versionId);
 }
 
-function ensurePlatformSkillAgentBindings(db, skillId, baseAgentIds = []) {
-  const normalizedBaseAgentIds = [
-    ...new Set(baseAgentIds.map((entry) => String(entry || "").trim()).filter(Boolean)),
-  ];
+function ensurePlatformSkillAgentBindings(db, skillId, baseAgentIds = [], params = {}) {
+  const normalizedBaseAgentIds = normalizeCompatibleBaseAgentIds(db, baseAgentIds, params);
   const now = nowIso();
+  db.prepare(`DELETE FROM platform_skill_agent_bindings WHERE skill_id = ?`).run(skillId);
   for (const baseAgentId of normalizedBaseAgentIds) {
     db.prepare(
       `INSERT INTO platform_skill_agent_bindings (
@@ -1576,7 +1631,7 @@ function ensurePlatformSkillAgentBindings(db, skillId, baseAgentIds = []) {
 }
 
 function discoverBundledSkillsForBaseAgent(db, params = {}) {
-  const baseAgentId = String(params.baseAgentId || "").trim();
+  const baseAgentId = normalizeCompatibleBaseAgentId(db, params.baseAgentId, params);
   const workspaceDir = resolveBaseWorkspaceDir(params);
   if (!baseAgentId || !workspaceDir) {
     return [];
@@ -1601,7 +1656,7 @@ function discoverBundledSkillsForBaseAgent(db, params = {}) {
     if (!skill?.id) {
       continue;
     }
-    ensurePlatformSkillAgentBindings(db, skill.id, [baseAgentId]);
+    ensurePlatformSkillAgentBindings(db, skill.id, [baseAgentId], params);
     const version = upsertPlatformSkillVersion(db, {
       ...params,
       skillId: skill.id,
@@ -1679,6 +1734,32 @@ function listTenantSkillsMarketInternal(db, tenantId, params = {}) {
   const baseAgentId = String(params.baseAgentId || "").trim();
   if (!normalizedTenantId) {
     return [];
+  }
+  if (baseAgentId) {
+    const tenantAgentIds = db
+      .prepare(
+        `SELECT id
+           FROM tenant_agents
+          WHERE tenant_id = ? AND agent_id = ?`,
+      )
+      .all(normalizedTenantId, baseAgentId)
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean);
+    if (tenantAgentIds.length) {
+      for (const tenantAgentId of tenantAgentIds) {
+        ensureTenantBundledSkillState(db, {
+          ...params,
+          tenantId: normalizedTenantId,
+          tenantAgentId,
+          baseAgentId,
+        });
+      }
+    } else {
+      discoverBundledSkillsForBaseAgent(db, {
+        ...params,
+        baseAgentId,
+      });
+    }
   }
   const entitlementBySkillId = new Map(
     listTenantSkillEntitlementsInternal(db, normalizedTenantId).map((entry) => [
@@ -2252,7 +2333,7 @@ function listTenantSkillEntitlementsInternal(db, tenantId) {
     }));
 }
 
-function listTenantSkillAssignmentsInternal(db, tenantId) {
+function listTenantSkillAssignmentsInternal(db, tenantId, params = {}) {
   const normalizedTenantId = String(tenantId || "").trim();
   if (!normalizedTenantId) {
     return [];
@@ -2295,6 +2376,9 @@ function listTenantSkillAssignmentsInternal(db, tenantId) {
           tenantId: normalizedTenantId,
           tenantAgentId,
           assignmentId,
+          baseAgentId: String(row?.baseAgentId || "").trim(),
+          configPath: params.configPath,
+          configDir: params.configDir,
         });
         return {
           assignmentId,
@@ -2846,8 +2930,8 @@ export function listTenantSkillEntitlements(db, tenantId) {
   return listTenantSkillEntitlementsInternal(db, tenantId);
 }
 
-export function listTenantSkillAssignments(db, tenantId) {
-  return listTenantSkillAssignmentsInternal(db, tenantId);
+export function listTenantSkillAssignments(db, tenantId, params = {}) {
+  return listTenantSkillAssignmentsInternal(db, tenantId, params);
 }
 
 export function savePlatformSkill(db, params = {}) {
@@ -2893,6 +2977,7 @@ export function savePlatformSkill(db, params = {}) {
     Array.isArray(params.compatibleBaseAgents)
       ? params.compatibleBaseAgents
       : [SKILL_CATALOG_COMPATIBLE_ANY],
+    params,
   );
   updatePlatformSkillAffectedTenantCounts(db, skill.id);
   return {

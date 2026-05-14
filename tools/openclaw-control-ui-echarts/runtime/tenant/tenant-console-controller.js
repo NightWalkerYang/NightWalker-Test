@@ -253,6 +253,110 @@ function memberMatchesWorkbenchSearch(member, query) {
     .some((value) => String(value).toLowerCase().includes(normalizedQuery));
 }
 
+function getFallbackWorkbenchMarketStatus(classification, entitlement) {
+  const normalizedClassification = String(classification || "").trim();
+  const entitlementStatus = String(entitlement?.status || "").trim();
+  if (normalizedClassification === "bundled") {
+    return "无需购买";
+  }
+  if (normalizedClassification === "free") {
+    return entitlement?.enabledByTenant ? "已启用" : "免费可启用";
+  }
+  if (!entitlement) {
+    return "待下单";
+  }
+  if (entitlementStatus === "pending") {
+    return "待确认";
+  }
+  if (entitlementStatus === "active" && entitlement?.enabledByTenant) {
+    return "已启用";
+  }
+  if (entitlementStatus === "active") {
+    return "已购买未启用";
+  }
+  if (entitlementStatus === "disabled") {
+    return "已购买未启用";
+  }
+  return "未授权";
+}
+
+function buildWorkbenchDisplaySkill(params = {}) {
+  const skillKey = String(params.skillKey || "").trim();
+  const marketItem = params.marketItem && typeof params.marketItem === "object" ? params.marketItem : null;
+  const templateRow =
+    params.templateRow && typeof params.templateRow === "object" ? params.templateRow : null;
+  const overrideRow =
+    params.overrideRow && typeof params.overrideRow === "object" ? params.overrideRow : null;
+  const entitlement =
+    params.entitlement && typeof params.entitlement === "object" ? params.entitlement : null;
+  const resolvedSkillKeys = params.resolvedSkillKeys instanceof Set ? params.resolvedSkillKeys : new Set();
+  const templateEnabledSkillKeys =
+    params.templateEnabledSkillKeys instanceof Set ? params.templateEnabledSkillKeys : new Set();
+  const templateBlockedSkillKeys =
+    params.templateBlockedSkillKeys instanceof Set ? params.templateBlockedSkillKeys : new Set();
+  const classification =
+    String(
+      marketItem?.classification ||
+        templateRow?.classification ||
+        overrideRow?.classification ||
+        entitlement?.classification ||
+        "",
+    ).trim() || "bundled";
+  return {
+    ...(marketItem || {}),
+    skillId:
+      String(
+        marketItem?.skillId ||
+          marketItem?.id ||
+          templateRow?.skillId ||
+          overrideRow?.skillId ||
+          entitlement?.skillId ||
+          "",
+      ).trim() || null,
+    skillKey,
+    name:
+      String(
+        marketItem?.name ||
+          templateRow?.name ||
+          overrideRow?.name ||
+          entitlement?.name ||
+          skillKey ||
+          "",
+      ).trim() || skillKey,
+    description:
+      String(
+        marketItem?.description ||
+          templateRow?.description ||
+          overrideRow?.description ||
+          entitlement?.description ||
+          "",
+      ).trim(),
+    classification,
+    marketStatus:
+      String(marketItem?.marketStatus || "").trim() ||
+      getFallbackWorkbenchMarketStatus(classification, entitlement),
+    latestVersionId:
+      String(
+        marketItem?.latestVersionId ||
+          templateRow?.latestVersionId ||
+          overrideRow?.latestVersionId ||
+          entitlement?.latestVersionId ||
+          "",
+      ).trim() || null,
+    currentVersionId:
+      String(entitlement?.currentVersionId || marketItem?.currentVersionId || "").trim() || null,
+    entitlement,
+    templateRow,
+    overrideRow,
+    inResolvedSet: resolvedSkillKeys.has(skillKey),
+    templateEnabled: templateEnabledSkillKeys.has(skillKey),
+    templateBlocked: templateBlockedSkillKeys.has(skillKey),
+    currentOverrideAction: String(overrideRow?.action || "").trim() || "",
+    currentOverrideEnabled: String(overrideRow?.action || "").trim() === "force_add",
+    currentOverrideRemoved: String(overrideRow?.action || "").trim() === "force_remove",
+  };
+}
+
 function buildTenantSkillWorkbenchState(controller) {
   const members = Array.isArray(controller.members) ? controller.members : [];
   const tenantAgents = Array.isArray(controller.tenantAgents) ? controller.tenantAgents : [];
@@ -273,8 +377,18 @@ function buildTenantSkillWorkbenchState(controller) {
       .map((entry) => [String(entry?.skillId || "").trim(), entry])
       .filter(([skillId]) => Boolean(skillId)),
   );
+  const entitlementBySkillKey = new Map(
+    entitlements
+      .map((entry) => [String(entry?.skillKey || "").trim(), entry])
+      .filter(([skillKey]) => Boolean(skillKey)),
+  );
   const marketItemsByBaseAgentId = new Map();
+  const marketItemsBySkillKey = new Map();
   for (const entry of marketItems) {
+    const skillKey = String(entry?.skillKey || "").trim();
+    if (skillKey && !marketItemsBySkillKey.has(skillKey)) {
+      marketItemsBySkillKey.set(skillKey, entry);
+    }
     const baseAgentIds = Array.isArray(entry?.compatibleBaseAgents)
       ? entry.compatibleBaseAgents
       : ["*"];
@@ -312,42 +426,59 @@ function buildTenantSkillWorkbenchState(controller) {
         items.findIndex((candidate) => String(candidate?.id || "").trim() === String(item?.id || "").trim()) ===
         index,
     );
+    const compatibleMarketItemsBySkillKey = new Map(
+      compatibleMarketItems
+        .map((entry) => [String(entry?.skillKey || "").trim(), entry])
+        .filter(([skillKey]) => Boolean(skillKey)),
+    );
     const assignmentRows = Array.isArray(row?.assignments) ? row.assignments : [];
     for (const assignment of assignmentRows) {
       const userId = String(assignment?.userId || "").trim();
       if (!userId) {
         continue;
       }
+      const resolvedSkillKeys = new Set(
+        Array.isArray(assignment?.resolvedSkillKeys) ? assignment.resolvedSkillKeys : [],
+      );
       const overrideRows = Array.isArray(assignment?.overrideRows) ? assignment.overrideRows : [];
       const overrideBySkillKey = new Map(
         overrideRows
           .map((item) => [String(item?.skillKey || "").trim(), item])
           .filter(([skillKey]) => Boolean(skillKey)),
       );
-      const allSkills = compatibleMarketItems.map((marketItem) => {
-        const skillId = String(marketItem?.skillId || marketItem?.id || "").trim();
-        const skillKey = String(marketItem?.skillKey || "").trim();
-        const entitlement = entitlementBySkillId.get(skillId) || null;
-        const templateRow =
-          templateRows.find((item) => String(item?.skillKey || "").trim() === skillKey) || null;
-        const overrideRow = overrideBySkillKey.get(skillKey) || null;
-        const resolvedSkillKeys = new Set(
-          Array.isArray(assignment?.resolvedSkillKeys) ? assignment.resolvedSkillKeys : [],
-        );
-        return {
-          ...marketItem,
-          entitlement,
-          templateRow,
-          overrideRow,
-          inResolvedSet: resolvedSkillKeys.has(skillKey),
-          templateEnabled: templateEnabledSkillKeys.has(skillKey),
-          templateBlocked: templateBlockedSkillKeys.has(skillKey),
-          currentOverrideAction: String(overrideRow?.action || "").trim() || "",
-          currentOverrideEnabled: String(overrideRow?.action || "").trim() === "force_add",
-          currentOverrideRemoved: String(overrideRow?.action || "").trim() === "force_remove",
-        };
-      });
-      const displaySkills = allSkills.filter((skill) => skill?.inResolvedSet);
+      const templateBySkillKey = new Map(
+        templateRows
+          .map((item) => [String(item?.skillKey || "").trim(), item])
+          .filter(([skillKey]) => Boolean(skillKey)),
+      );
+      const displaySkills = [...resolvedSkillKeys]
+        .map((skillKey) =>
+          buildWorkbenchDisplaySkill({
+            skillKey,
+            marketItem:
+              compatibleMarketItemsBySkillKey.get(skillKey) ||
+              marketItemsBySkillKey.get(skillKey) ||
+              null,
+            templateRow: templateBySkillKey.get(skillKey) || null,
+            overrideRow: overrideBySkillKey.get(skillKey) || null,
+            entitlement:
+              entitlementBySkillKey.get(skillKey) ||
+              entitlementBySkillId.get(
+                String(
+                  compatibleMarketItemsBySkillKey.get(skillKey)?.skillId ||
+                    compatibleMarketItemsBySkillKey.get(skillKey)?.id ||
+                    marketItemsBySkillKey.get(skillKey)?.skillId ||
+                    marketItemsBySkillKey.get(skillKey)?.id ||
+                    "",
+                ).trim(),
+              ) ||
+              null,
+            resolvedSkillKeys,
+            templateEnabledSkillKeys,
+            templateBlockedSkillKeys,
+          }),
+        )
+        .filter(Boolean);
       const nextCards = assignmentsByUserId.get(userId) || [];
       nextCards.push({
         assignmentId: String(assignment?.assignmentId || "").trim(),
@@ -361,6 +492,7 @@ function buildTenantSkillWorkbenchState(controller) {
         resolvedSkillKeys: Array.isArray(assignment?.resolvedSkillKeys)
           ? assignment.resolvedSkillKeys
           : [],
+        cardSkills: displaySkills,
         templateRows,
         displaySkills,
       });

@@ -706,6 +706,168 @@ describe("tenant surface", () => {
     expect(document.body.querySelector("[data-oc-tenant-feedback-toast]")).toBeNull();
   });
 
+  it("renders resolved skills from assignment state even when the market response is empty", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-skills-workbench");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/tenant/admin/skills/entitlements")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "entitlement-1",
+                    skillId: "skill-1",
+                    skillKey: "finance-core",
+                    name: "finance-core",
+                    description: "财务核心能力",
+                    classification: "bundled",
+                    status: "active",
+                    enabledByTenant: true,
+                    versionPolicy: "latest",
+                    currentVersionId: "ver-1",
+                    latestVersionId: "ver-1",
+                    blockedReason: null,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/assignments")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    tenantAgentId: "tenant-agent-1",
+                    baseAgentId: "finance",
+                    templateSkillKeys: ["finance-core"],
+                    blockedSkillKeys: [],
+                    assignmentCount: 1,
+                    templateRows: [
+                      {
+                        skillId: "skill-1",
+                        skillKey: "finance-core",
+                        name: "finance-core",
+                        description: "财务核心能力",
+                        classification: "bundled",
+                        latestVersionId: "ver-1",
+                        templateState: "enabled",
+                      },
+                    ],
+                    assignments: [
+                      {
+                        assignmentId: "assignment-1",
+                        userId: "member-1",
+                        username: "alice",
+                        resolvedSkillKeys: ["finance-core"],
+                        overrideRows: [],
+                        overrideSummary: [],
+                        blockedReasons: [],
+                        status: "active",
+                      },
+                    ],
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 1,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-agent-1",
+                    agentId: "finance",
+                    agentName: "财务助手",
+                    description: "财务分析 Agent",
+                    status: "active",
+                    balancePoints: 20,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/market?baseAgentId=finance")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    let root = document.querySelector("[data-oc-tenant-surface-root]");
+    const financeAssignmentButton = root?.querySelector(
+      '[data-tenant-skill-assignment-select="assignment-1"]',
+    );
+    financeAssignmentButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flush();
+
+    root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.textContent).toContain("finance-core");
+    expect(root?.textContent).toContain("财务核心能力");
+    expect(root?.textContent).toContain("无需购买");
+    expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(1);
+  });
+
   it("does not mount tenant management on malformed /chat routes", async () => {
     writeTenantSession({
       token: "tenant-token",

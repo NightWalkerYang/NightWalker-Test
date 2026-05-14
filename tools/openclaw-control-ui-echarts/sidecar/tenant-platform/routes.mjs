@@ -3492,6 +3492,8 @@ export function createTenantPlatformRouter(deps) {
         ok: true,
         data: listTenantSkillsMarket(deps.db, session.tenantId, {
           baseAgentId: String(url.searchParams.get("baseAgentId") || "").trim(),
+          configPath: deps.config?.configPath,
+          configDir: deps.config?.configDir,
         }),
       });
       return;
@@ -3516,7 +3518,10 @@ export function createTenantPlatformRouter(deps) {
       }
       sendJson(request, response, 200, {
         ok: true,
-        data: listTenantSkillAssignments(deps.db, session.tenantId),
+        data: listTenantSkillAssignments(deps.db, session.tenantId, {
+          configPath: deps.config?.configPath,
+          configDir: deps.config?.configDir,
+        }),
       });
       return;
     }

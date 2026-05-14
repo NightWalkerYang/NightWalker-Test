@@ -925,6 +925,124 @@ paid skill body
     }
   });
 
+  it("self-heals bundled skill compatibility from derived-agent ids back to base-agent ids", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "finance-core"), { recursive: true });
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "SKILL.md"),
+        `---
+name: finance-core
+description: bundled finance skill
+---
+
+# finance-core
+
+bundled skill body
+`,
+        "utf8",
+      );
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "compat-heal",
+        name: "兼容关系自愈租户",
+        adminUsername: "compat-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-heal",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedAgentId = String(assignment.derivedAgentId || "").trim();
+      expect(derivedAgentId).toMatch(/^tenant-/);
+
+      db.prepare(
+        `UPDATE platform_skills
+            SET compatible_base_agents_json = ?
+          WHERE skill_key = 'finance-core'`,
+      ).run(JSON.stringify([derivedAgentId]));
+      db.prepare(
+        `DELETE FROM platform_skill_agent_bindings
+          WHERE skill_id = (SELECT id FROM platform_skills WHERE skill_key = 'finance-core')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO platform_skill_agent_bindings (
+           id,
+           skill_id,
+           base_agent_id,
+           status,
+           created_at,
+           updated_at
+         )
+         SELECT
+           'binding-bad-finance-core',
+           id,
+           ?,
+           'active',
+           '2026-05-14T00:00:00.000Z',
+           '2026-05-14T00:00:00.000Z'
+         FROM platform_skills
+         WHERE skill_key = 'finance-core'`,
+      ).run(derivedAgentId);
+
+      const healedMarket = listTenantSkillsMarket(db, tenant.id, {
+        baseAgentId: "finance",
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      expect(healedMarket.map((entry) => entry.skillKey)).toContain("finance-core");
+      expect(
+        healedMarket.find((entry) => entry.skillKey === "finance-core")?.compatibleBaseAgents,
+      ).toContain("finance");
+      expect(
+        healedMarket.find((entry) => entry.skillKey === "finance-core")?.compatibleBaseAgents,
+      ).not.toContain(derivedAgentId);
+
+      const assignmentRows = listTenantSkillAssignments(db, tenant.id, {
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      expect(assignmentRows[0]?.baseAgentId).toBe("finance");
+      expect(assignmentRows[0]?.templateSkillKeys).toContain("finance-core");
+
+      const skillRow = db
+        .prepare(
+          `SELECT compatible_base_agents_json AS compatibleBaseAgentsJson
+             FROM platform_skills
+            WHERE skill_key = 'finance-core'`,
+        )
+        .get();
+      expect(JSON.parse(String(skillRow?.compatibleBaseAgentsJson || "[]"))).toEqual(["finance"]);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("resolves template and member overrides into the final derived workspace skill set", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
