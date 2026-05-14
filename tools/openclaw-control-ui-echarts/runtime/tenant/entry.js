@@ -79,6 +79,7 @@ import { createTenantViewRegistry } from "./view-registry.js";
 const MANAGEMENT_SECTION_CLASS = "oc-platform-management-section";
 const AGENT_SECTION_CLASS = "oc-tenant-agent-section";
 const STATS_SECTION_CLASS = "oc-tenant-stats-section";
+const TOOLS_SECTION_CLASS = "oc-tenant-tools-section";
 const WALLET_SECTION_CLASS = "oc-tenant-wallet-section";
 const MEMBER_VISUALIZATION_SECTION_CLASS = "oc-member-visualization-section";
 const MEMBER_SANDBOX_SECTION_CLASS = "oc-member-sandbox-section";
@@ -86,6 +87,7 @@ const NAV_SECTION_CLASSES = [
   MANAGEMENT_SECTION_CLASS,
   AGENT_SECTION_CLASS,
   STATS_SECTION_CLASS,
+  TOOLS_SECTION_CLASS,
   WALLET_SECTION_CLASS,
 ];
 const NAV_SECTION_SELECTOR = NAV_SECTION_CLASSES.map((name) => `.${name}`).join(", ");
@@ -323,7 +325,7 @@ function getSectionConfigForSession(session) {
           ],
         },
         {
-          className: "oc-tenant-tools-section",
+          className: TOOLS_SECTION_CLASS,
           label: "工具",
           links: [
             {

@@ -381,6 +381,46 @@ describe("zero-intrusive tenant entry", () => {
     expect(utilityItems[3]?.hidden).toBe(false);
   });
 
+  it("keeps tenant skills routes when clicking the tools sidebar links", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+        edition: "cloud",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+        <section class="nav-section" data-native-group="control"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+    `;
+
+    bootTenantEntry();
+    await flushAsync();
+
+    const marketLink = document.querySelector(".oc-tenant-skills-market-link");
+    expect(marketLink).not.toBeNull();
+
+    marketLink?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    expect(new URL(window.location.href).searchParams.get("ocTenantView")).toBe(
+      "tenant-skills-market",
+    );
+  });
+
   it("hides the wallet section for local-edition tenant admins", () => {
     writeTenantSession({
       token: "tenant-local-token",

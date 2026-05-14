@@ -135,6 +135,85 @@ describe("tenant surface", () => {
     expect(requests.some((url) => url.includes("/tenant/admin/wallet"))).toBe(true);
   });
 
+  it("mounts the tenant skills market section when the route switches to tenant-skills-market", async () => {
+    const requests = [];
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-members");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        if (url.endsWith("/tenant/admin/data-source-binding")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: null,
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/market")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    window.history.pushState({}, "", "/?ocTenantView=tenant-skills-market");
+    await flush();
+
+    const root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-market");
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/market"))).toBe(true);
+  });
+
   it("mounts the native members view into the control-ui content area", async () => {
     writeTenantSession({
       token: "tenant-token",
