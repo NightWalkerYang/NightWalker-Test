@@ -766,7 +766,6 @@
 
 .oc-tenant-skill-workbench__sidebar,
 .oc-tenant-skill-workbench__content,
-.oc-tenant-skill-workbench__selection-panel,
 .oc-tenant-skill-workbench-skill-card {
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -913,10 +912,9 @@
   align-content: start;
 }
 
-.oc-tenant-skill-workbench__selection-panel {
+.oc-tenant-skill-workbench__selection-content {
   display: grid;
   gap: 16px;
-  padding: 18px;
 }
 
 .oc-tenant-skill-workbench__selection-header {
@@ -925,6 +923,7 @@
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+  padding: 0 2px;
 }
 
 .oc-tenant-skill-workbench__selection-actions {

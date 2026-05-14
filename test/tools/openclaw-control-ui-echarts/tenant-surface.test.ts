@@ -526,7 +526,8 @@ describe("tenant surface", () => {
     expect(root?.querySelector('[data-tenant-skill-assignment-select="assignment-3"]')).not.toBeNull();
     expect(root?.textContent).not.toContain("运维核心能力");
     expect(root?.querySelector(".oc-tenant-skill-workbench-agent-card")).toBeNull();
-    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-panel")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-panel")).toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).not.toBeNull();
     expect(
       root?.querySelector('[data-tenant-skill-template-save="tenant-agent-1"]'),
     ).not.toBeNull();
@@ -548,7 +549,8 @@ describe("tenant surface", () => {
     expect(root?.textContent).toContain("ops-core");
     expect(root?.textContent).not.toContain("finance-report");
     expect(root?.querySelector(".oc-tenant-skill-workbench-agent-card")).toBeNull();
-    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-panel")).not.toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-panel")).toBeNull();
+    expect(root?.querySelector(".oc-tenant-skill-workbench__selection-content")).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-template-save="tenant-agent-2"]')).not.toBeNull();
     expect(root?.querySelector('[data-tenant-skill-override-save="assignment-3"]')).not.toBeNull();
 

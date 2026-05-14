@@ -407,7 +407,7 @@ function renderSkillsWorkbenchSkillCard(controller, card, skill) {
 function renderSkillsWorkbenchSelectedAgentPanel(controller, card) {
   const blockedReasons = Array.isArray(card?.blockedReasons) ? card.blockedReasons : [];
   return `
-    <section class="oc-tenant-skill-workbench__selection-panel">
+    <section class="oc-tenant-skill-workbench__selection-content">
       <header class="oc-tenant-skill-workbench__selection-header">
         <div>
           <h3 class="oc-tenant-skill-workbench__selection-title">${escapeHtml(
