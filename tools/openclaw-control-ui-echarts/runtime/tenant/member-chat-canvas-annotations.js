@@ -1091,9 +1091,8 @@ function renderStage(state) {
   </div>`;
 }
 
-function render(state) {
-  const { root, drawerOpen, annotationMode, annotations } = state;
-  const openCount = getOpenAnnotationCount(annotations);
+function refreshCanvasLayout(state) {
+  const { root } = state;
   root.style.setProperty("--oc-member-canvas-width", `${Math.round(state.drawerWidth)}px`);
   const sidebar = findSidebar(document);
   const sidebarWidth =
@@ -1107,6 +1106,12 @@ function render(state) {
     `${Math.max(92, composerHeight + 22)}px`,
   );
   applyDockLayout(state);
+}
+
+function render(state) {
+  const { root, drawerOpen, annotationMode, annotations } = state;
+  const openCount = getOpenAnnotationCount(annotations);
+  refreshCanvasLayout(state);
   root.innerHTML = `
     <button class="oc-member-canvas-annotation-button" ${BUTTON_ATTR}="true" data-active="${drawerOpen ? "true" : "false"}" type="button">
       Canvas
@@ -1493,7 +1498,7 @@ export function mountMemberChatCanvasAnnotations(controller, apiClient) {
   if (activeSurface?.state?.root?.isConnected && activeSurface.state.surfaceKey === surfaceKey) {
     activeSurface.state.controller = controller;
     activeSurface.state.apiClient = apiClient;
-    render(activeSurface.state);
+    refreshCanvasLayout(activeSurface.state);
     return activeSurface;
   }
   activeSurface?.unmount?.();

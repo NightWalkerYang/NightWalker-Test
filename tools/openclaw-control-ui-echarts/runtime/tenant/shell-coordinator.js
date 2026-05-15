@@ -12,6 +12,8 @@ const EMPTY_SHELL_READY = Object.freeze({
   breadcrumb: false,
   content: false,
 });
+const TENANT_SHELL_EXCLUDED_SELECTOR =
+  "[data-oc-member-canvas-annotation-root], [data-oc-member-canvas-annotation-drawer]";
 
 function getRoot(context) {
   if (context?.root instanceof Document || context?.root instanceof Element) {
@@ -44,6 +46,9 @@ export function listTenantShellSidebarRoots(scope = document) {
     ".sidebar-nav, aside[aria-label*='navigation' i], nav",
   )) {
     if (!(candidate instanceof HTMLElement)) {
+      continue;
+    }
+    if (candidate.closest(TENANT_SHELL_EXCLUDED_SELECTOR)) {
       continue;
     }
     const resolved = findTenantShellSidebar(candidate);
@@ -102,13 +107,16 @@ export function isRelevantTenantShellNode(node) {
   if (!(node instanceof Element)) {
     return false;
   }
+  if (node.closest?.(TENANT_SHELL_EXCLUDED_SELECTOR)) {
+    return false;
+  }
   return Boolean(
     node.closest?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
-      findTenantShellUtility(node) ||
-      findTenantShellTopbar(node) ||
-      node.querySelector?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
-      node.querySelector?.(".sidebar-utility-group, .sidebar-shell__footer, footer") ||
-      node.querySelector?.(".topbar-search, [role='search'], button[aria-label*='搜索' i]"),
+    findTenantShellUtility(node) ||
+    findTenantShellTopbar(node) ||
+    node.querySelector?.(".sidebar-nav, aside[aria-label*='navigation' i], nav") ||
+    node.querySelector?.(".sidebar-utility-group, .sidebar-shell__footer, footer") ||
+    node.querySelector?.(".topbar-search, [role='search'], button[aria-label*='搜索' i]"),
   );
 }
 

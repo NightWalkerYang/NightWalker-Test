@@ -201,6 +201,7 @@
 - 成员聊天页会挂载 Canvas 批注入口 `runtime/tenant/member-chat-canvas-annotations.js`；它在原生成员聊天页右侧提供浅色 Canvas 侧栏，加载当前成员可访问的大屏 HTML iframe，打开时会把原生聊天内容区向左让位，支持拖拽左侧边缘横向调整宽度，也支持放大模式把 Canvas 扩展到除左侧栏与底部原生对话栏以外的页面区域
 - Canvas 批注链路支持批注模式开关、同源 iframe 内模块自动识别点击、手动区域矩形框选、选区附近浮动评论输入条、批注线程、resolve/reopen，以及单条/全部未解决批注回填到原生聊天输入框的动作；自动识别只作为同源/受控大屏页面的增强能力，无法识别时仍保留拖拽框选兜底
 - 这条 Canvas 批注链路的原生壳接入和输入框回填必须继续复用 `runtime/framework/dom-compat.js` 暴露的内容区、侧边栏和 composer 定位能力；批注锚点第一版绑定当前大屏预览 iframe 的矩形坐标、成员会话、Agent run、`pageId` / `/echarts-view/?token=...`，不做任意跨域页面 DOM 锚定
+- Canvas 批注根节点与抽屉属于业务 overlay：`dom-compat` 和 tenant shell scanner 必须显式排除 `[data-oc-member-canvas-annotation-root]` / `[data-oc-member-canvas-annotation-drawer]` 及其子树，不能把抽屉里的 `aside` / `nav` / `footer` 等结构误识别成原生侧栏或壳重建信号
 
 当前成员聊天历史加载规则已经调整为：
 

@@ -788,6 +788,64 @@ describe("zero-intrusive tenant entry", () => {
     expect(sections[0]?.textContent).toContain("销售数据可视化");
   });
 
+  it("ignores Canvas annotation subtree mutations when scanning member shell sections", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+      },
+    });
+    document.body.innerHTML = `
+      <button class="topbar-search"><span class="topbar-search__label">搜索</span></button>
+      <nav class="sidebar-nav">
+        <section class="nav-section" data-native-group="chat"></section>
+      </nav>
+      <div class="sidebar-utility-group">
+        <a class="sidebar-utility-link">版本 v2026.4.1</a>
+      </div>
+      <div data-oc-member-canvas-annotation-root="true"></div>
+    `;
+    const requestPaths = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = readRequestUrl(input);
+        requestPaths.push(url.pathname);
+        return jsonResponse([]);
+      }),
+    );
+
+    bootTenantEntry();
+    await flushAsync();
+    await flushAsync();
+    const initialVisualizationRequests = requestPaths.filter((path) =>
+      path.endsWith("/member/visualizations"),
+    ).length;
+    const initialSandboxRequests = requestPaths.filter((path) =>
+      path.endsWith("/member/sandboxes"),
+    ).length;
+
+    document.querySelector("[data-oc-member-canvas-annotation-root]")?.insertAdjacentHTML(
+      "beforeend",
+      `
+        <aside>
+          <nav><button type="button">Canvas</button></nav>
+          <footer>annotation footer</footer>
+        </aside>
+      `,
+    );
+    await flushAsync();
+    await flushAsync();
+
+    expect(requestPaths.filter((path) => path.endsWith("/member/visualizations"))).toHaveLength(
+      initialVisualizationRequests,
+    );
+    expect(requestPaths.filter((path) => path.endsWith("/member/sandboxes"))).toHaveLength(
+      initialSandboxRequests,
+    );
+  });
+
   it("prefers the tenant-admin sidebar when both platform and tenant sessions exist on a tenant view", () => {
     writeTenantSession({
       token: "platform-token",

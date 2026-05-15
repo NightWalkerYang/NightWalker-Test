@@ -419,4 +419,21 @@ describe("member chat canvas annotations", () => {
     expect(document.body.textContent).toContain("Canvas 批注");
     expect(document.querySelector("[data-oc-member-canvas-annotation-drawer]")).not.toBeNull();
   });
+
+  it("does not redraw the open Canvas drawer on same-surface remounts", async () => {
+    const controller = createController();
+    const apiClient = createApiClient();
+    const surface = mountMemberChatCanvasAnnotations(controller, apiClient);
+    document.querySelector<HTMLElement>("[data-oc-member-canvas-annotation-button]")?.click();
+    await flush();
+
+    const drawer = document.querySelector("[data-oc-member-canvas-annotation-drawer]");
+    const frame = document.querySelector("[data-oc-member-canvas-annotation-frame]");
+
+    const remounted = mountMemberChatCanvasAnnotations(controller, apiClient);
+
+    expect(remounted).toBe(surface);
+    expect(document.querySelector("[data-oc-member-canvas-annotation-drawer]")).toBe(drawer);
+    expect(document.querySelector("[data-oc-member-canvas-annotation-frame]")).toBe(frame);
+  });
 });

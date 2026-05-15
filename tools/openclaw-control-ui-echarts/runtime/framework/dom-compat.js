@@ -158,7 +158,7 @@ const SIDEBAR_FOOTER_HINT_SELECTORS = [
 ];
 
 const SHELL_EXCLUDED_ROOT_SELECTOR =
-  "dialog, [role='dialog'], [aria-modal='true'], [data-oc-update-log-root], .oc-update-log-dialog";
+  "dialog, [role='dialog'], [aria-modal='true'], [data-oc-update-log-root], .oc-update-log-dialog, [data-oc-member-canvas-annotation-root], [data-oc-member-canvas-annotation-drawer]";
 
 const BRAND_TITLE_HINT_SELECTORS = [
   ".sidebar-brand__title",
