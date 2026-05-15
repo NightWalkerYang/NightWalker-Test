@@ -38,23 +38,71 @@ function normalizeVisualizationBaseHref(baseHref) {
   }
 }
 
-function injectBaseHrefIntoHtmlDocument(html, baseHref) {
+function isRewritableVisualizationUrl(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized || normalized.startsWith("#") || normalized.startsWith("//")) {
+    return false;
+  }
+  return !/^(?:[a-z][a-z0-9+.-]*:)/i.test(normalized);
+}
+
+function resolveVisualizationAssetUrl(value, baseHref) {
+  if (!isRewritableVisualizationUrl(value)) {
+    return value;
+  }
+  try {
+    const normalizedValue = String(value || "").trim();
+    const normalizedBaseHref = String(baseHref || "").trim();
+    if (
+      normalizedValue.startsWith("/") &&
+      !normalizedValue.startsWith(normalizedBaseHref) &&
+      !normalizedValue.startsWith("/workspace-downloads/") &&
+      !normalizedValue.startsWith("/workspace-agent-downloads/") &&
+      !normalizedValue.startsWith("/tenant-platform-api/")
+    ) {
+      return `${normalizedBaseHref.replace(/\/+$/, "")}/${normalizedValue.replace(/^\/+/, "")}`;
+    }
+    const resolved = new URL(normalizedValue, new URL(normalizedBaseHref, window.location.origin));
+    if (resolved.origin !== window.location.origin) {
+      return value;
+    }
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return value;
+  }
+}
+
+function rewriteSrcsetAttribute(value, baseHref) {
+  return String(value || "")
+    .split(",")
+    .map((candidate) => {
+      const trimmed = candidate.trim();
+      if (!trimmed) {
+        return trimmed;
+      }
+      const parts = trimmed.split(/\s+/);
+      const url = parts.shift() || "";
+      return [resolveVisualizationAssetUrl(url, baseHref), ...parts].join(" ");
+    })
+    .join(", ");
+}
+
+function rewriteVisualizationAssetUrls(html, baseHref) {
   const normalizedBaseHref = normalizeVisualizationBaseHref(baseHref);
+  const htmlText = String(html || "").replace(/<base\b[^>]*>/gi, "");
   if (!normalizedBaseHref) {
-    return String(html || "");
+    return htmlText;
   }
-  const baseTag = `<base href="${escapeHtmlAttribute(normalizedBaseHref)}" />`;
-  const htmlText = String(html || "");
-  if (/<base\b[^>]*href\s*=/i.test(htmlText)) {
-    return htmlText.replace(/<base\b[^>]*href\s*=\s*(["'])[^"']*\1[^>]*>/i, baseTag);
-  }
-  if (/<head\b[^>]*>/i.test(htmlText)) {
-    return htmlText.replace(/<head\b[^>]*>/i, (match) => `${match}\n${baseTag}`);
-  }
-  if (/<html\b[^>]*>/i.test(htmlText)) {
-    return htmlText.replace(/<html\b[^>]*>/i, (match) => `${match}\n<head>${baseTag}</head>`);
-  }
-  return `<!doctype html><html><head>${baseTag}</head><body>${htmlText}</body></html>`;
+  return htmlText.replace(
+    /\b(src|href|action|poster|data-src|data-href|srcset)\s*=\s*(["'])([^"']*)\2/gi,
+    (match, attrName, quote, attrValue) => {
+      const rewritten =
+        String(attrName).toLowerCase() === "srcset"
+          ? rewriteSrcsetAttribute(attrValue, normalizedBaseHref)
+          : resolveVisualizationAssetUrl(attrValue, normalizedBaseHref);
+      return `${attrName}=${quote}${escapeHtmlAttribute(rewritten)}${quote}`;
+    },
+  );
 }
 
 function clearVisualizationHost() {
@@ -123,7 +171,7 @@ function createVisualizationFrame(html, baseHref = "") {
   frame.style.width = "100%";
   frame.style.height = "100%";
   frame.style.minHeight = "100vh";
-  frame.srcdoc = injectBaseHrefIntoHtmlDocument(html, baseHref);
+  frame.srcdoc = rewriteVisualizationAssetUrls(html, baseHref);
   return frame;
 }
 

@@ -66,9 +66,7 @@ describe("public echarts view surface", () => {
     expect(document.title).toBe("销售数据可视化");
     const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
     expect(frame).not.toBeNull();
-    expect(frame?.getAttribute("srcdoc")).toContain(
-      '<base href="/workspace-agent-downloads/tenant-agent-1/Echarts/" />',
-    );
+    expect(frame?.getAttribute("srcdoc")).not.toContain("<base ");
     expect(frame?.getAttribute("srcdoc")).toContain(
       '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/chart.png" alt="chart">',
     );
@@ -77,7 +75,7 @@ describe("public echarts view surface", () => {
     expect(document.body.textContent).not.toContain("可视化展示");
   });
 
-  it("injects the workspace base href so relative visualization assets keep loading", async () => {
+  it("rewrites visualization asset hrefs without injecting a CSP-blocked base tag", async () => {
     const baseHref = "/workspace-agent-downloads/tenant-agent-1/Echarts/";
     window.history.replaceState({}, "", "/echarts-view/?token=member-visualization-token");
     stubVisualizationResolve(
@@ -87,8 +85,10 @@ describe("public echarts view surface", () => {
            <title>苏博泰克官网简版</title>
          </head>
          <body>
+           <script src="/assets/vendor/echarts.min.js"></script>
            <header class="brand">
              <img src="./assets/logo.png" alt="logo">
+             <link href="styles/page.css" rel="stylesheet">
            </header>
          </body>
        </html>`,
@@ -100,8 +100,16 @@ describe("public echarts view surface", () => {
 
     const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
     const srcdoc = frame?.getAttribute("srcdoc") || "";
-    expect(srcdoc).toContain('<base href="/workspace-agent-downloads/tenant-agent-1/Echarts/" />');
-    expect(srcdoc).toContain('<img src="./assets/logo.png" alt="logo">');
+    expect(srcdoc).not.toContain("<base ");
+    expect(srcdoc).toContain(
+      '<script src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/vendor/echarts.min.js"></script>',
+    );
+    expect(srcdoc).toContain(
+      '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/logo.png" alt="logo">',
+    );
+    expect(srcdoc).toContain(
+      '<link href="/workspace-agent-downloads/tenant-agent-1/Echarts/styles/page.css" rel="stylesheet">',
+    );
   });
 
   it("falls back to the stored token when the public route opens without a query token", async () => {

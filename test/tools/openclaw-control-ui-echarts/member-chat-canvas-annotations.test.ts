@@ -38,7 +38,7 @@ function createApiClient() {
       },
     ]),
     resolveMemberVisualization: vi.fn(async () => ({
-      html: '<!doctype html><html><head><title>销售大屏</title></head><body><section class="dashboard-card">顶部概览卡片</section></body></html>',
+      html: '<!doctype html><html><head><title>销售大屏</title><script src="/assets/vendor/echarts.min.js"></script></head><body><section class="dashboard-card"><img src="./assets/logo.png" alt="logo">顶部概览卡片</section></body></html>',
       baseHref: "/workspace-agent-downloads/tenant-agent-1/Echarts/",
     })),
     listMemberAnnotations: vi.fn(async () => []),
@@ -111,8 +111,12 @@ describe("member chat canvas annotations", () => {
         .querySelector<HTMLElement>('[data-testid="chat-shell"]')
         ?.getAttribute("data-oc-member-canvas-docked"),
     ).toBe("true");
+    expect(document.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).not.toContain("<base ");
     expect(document.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).toContain(
-      '<base href="/workspace-agent-downloads/tenant-agent-1/Echarts/" />',
+      '<script src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/vendor/echarts.min.js"></script>',
+    );
+    expect(document.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).toContain(
+      '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/logo.png" alt="logo">',
     );
 
     const overlay = document.querySelector<HTMLElement>(

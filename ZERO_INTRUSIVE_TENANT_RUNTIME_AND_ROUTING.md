@@ -124,7 +124,7 @@
 
 - `baseHref`
 
-并把它注入 iframe 文档的 `<base href="...">`。
+并用它在写入 iframe `srcdoc` 前改写 HTML 里的资源 URL，不再注入 `<base href="...">`。
 
 原因：
 
@@ -132,14 +132,15 @@
   - `./assets/logo.png`
   - `./assets/hero.jpg`
   - `./styles/theme.css`
-- 如果 `srcdoc` 文档里没有正确的 `<base>`，这些相对路径会按 `/echarts-view/` 自身解析
+- 如果 `srcdoc` 文档里的相对路径不提前改写，这些路径会按 `/echarts-view/` 自身解析
 - 最终浏览器就会去请求错误地址并稳定报 `404`
+- 服务器 Control UI CSP 使用 `base-uri 'none'`，因此 iframe `srcdoc` 里不能依赖 `<base>`，否则真实部署会拦截 base URI 并导致大屏空白或资源缺失
 
 实现约束：
 
 - `baseHref` 必须保持 same-origin，并指向当前成员派生工作区的 `workspace-agent-downloads/.../Echarts/`
-- 已经被 sidecar 改写成绝对 same-origin 路径的资源保持原样，不应二次改坏
-- 如果源 HTML 已经自带 `<base href>`, 浏览器端应以 sidecar 返回的 `baseHref` 覆盖它，避免旧 HTML 把资源重新指回错误目录
+- 已经被 sidecar 改写成 `workspace-downloads` / `workspace-agent-downloads` / `tenant-platform-api` 的 same-origin 路径保持原样，不应二次改坏
+- 源 HTML 里已有的 `<base>` 必须移除；浏览器端改写 `src` / `href` / `action` / `poster` / `data-src` / `data-href` / `srcset` 这些资源属性来承接 `baseHref`
 
 ## preboot 真实职责
 
