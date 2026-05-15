@@ -735,6 +735,7 @@ export function renderTenantConsole(root, controller) {
     isWalletOrders ||
     isWalletLedger ||
     isWalletFlow ||
+    isSkillsWorkbenchRoute ||
     isSkillsMarket;
 
   if (controller.section === "agent-assignment") {
@@ -803,7 +804,7 @@ export function renderTenantConsole(root, controller) {
   root.dataset.ocTenantEmbedded = "true";
   root.dataset.ocTenantSection = controller.section;
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${usesScrollableShell ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${usesScrollableShell ? "oc-tenant-list-view--scrollable" : ""} ${isSkillsWorkbenchRoute ? "oc-tenant-list-view--skills-workbench" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
     </section>

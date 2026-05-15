@@ -332,24 +332,38 @@ describe("tenant surface", () => {
     const root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
     const listView = root?.querySelector(".oc-tenant-list-view");
-    expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(false);
+    expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(true);
+    expect(listView?.classList.contains("oc-tenant-list-view--skills-workbench")).toBe(true);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
   });
 
-  it("keeps skills workbench cards inside a dedicated scroll region", () => {
+  it("keeps skills workbench cards accessible through the tenant scroll shell", () => {
     const css = readFileSync(
       "tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.css",
       "utf8",
     );
 
     expect(css).toMatch(
-      /\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*calc\(100vh - 160px\);[\s\S]*min-height:\s*320px;[\s\S]*max-height:\s*980px;[\s\S]*align-items:\s*stretch;/,
+      /\.oc-tenant-list-view--scrollable\s*\{[\s\S]*max-height:\s*calc\(100vh - 20px\);[\s\S]*overflow-y:\s*auto;/,
     );
     expect(css).toMatch(
-      /\.oc-tenant-skill-workbench__content\s*\{[\s\S]*min-height:\s*0;[\s\S]*overflow-y:\s*auto;[\s\S]*scrollbar-gutter:\s*stable;/,
+      /\.oc-tenant-list-view--skills-workbench\s*\{[\s\S]*max-height:\s*calc\(100vh - 160px\);/,
     );
     expect(css).toMatch(
-      /@media \(max-width: 900px\)\s*\{[\s\S]*\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*auto;[\s\S]*\.oc-tenant-skill-workbench__member-nav,\s*[\r\n\s]*\.oc-tenant-skill-workbench__content\s*\{[\s\S]*overflow:\s*visible;/,
+      /\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*auto;[\s\S]*min-height:\s*320px;[\s\S]*align-items:\s*start;/,
+    );
+    expect(css).toMatch(
+      /\.oc-tenant-skill-workbench__content\s*\{[\s\S]*min-height:\s*0;[\s\S]*overflow:\s*visible;/,
+    );
+    expect(css).toMatch(
+      /\.oc-tenant-skill-workbench__sidebar\s*\{[\s\S]*max-height:\s*min\(720px, calc\(100vh - 160px\)\);[\s\S]*overflow:\s*hidden;[\s\S]*position:\s*sticky;/,
+    );
+    expect(css).not.toMatch(
+      /\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*calc\(100vh - 160px\);/,
+    );
+    expect(css).not.toMatch(/\.oc-tenant-skill-workbench__content\s*\{[\s\S]*overflow-y:\s*auto;/);
+    expect(css).toMatch(
+      /@media \(max-width: 900px\)\s*\{[\s\S]*\.oc-tenant-list-view--skills-workbench\s*\{[\s\S]*max-height:\s*none;[\s\S]*overflow-y:\s*visible;/,
     );
   });
 
@@ -593,7 +607,8 @@ describe("tenant surface", () => {
     let root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
     const listView = root?.querySelector(".oc-tenant-list-view");
-    expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(false);
+    expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(true);
+    expect(listView?.classList.contains("oc-tenant-list-view--skills-workbench")).toBe(true);
     expect(root?.textContent).toContain("alice");
     expect(root?.textContent).toContain("财务助手");
     expect(root?.querySelector(".oc-tenant-skill-workbench__member-section")).not.toBeNull();

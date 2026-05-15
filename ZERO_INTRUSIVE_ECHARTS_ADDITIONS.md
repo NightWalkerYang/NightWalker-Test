@@ -476,6 +476,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - Unified `/login` now validates account status during both new logins and auto-authentication; if the account is not active, it intercepts the process and displays a "账号未启用，请联系管理员。" alert.
 - Tenant-admin member management now exposes an operation column with member password changes plus an enable/disable switch, backed by zero-intrusive tenant-member update routes in the sidecar.
 - The native "Update available" notification banner is now hidden through the injected framework styles layer to maintain a clean production UI.
+- Tenant-admin Skills workbench now uses the tenant page scroll shell while letting the selected Agent skill cards expand naturally, so large skill sets are reachable instead of being clipped by the old fixed viewport-height workbench panel.
 
 ## Important Notes
 
