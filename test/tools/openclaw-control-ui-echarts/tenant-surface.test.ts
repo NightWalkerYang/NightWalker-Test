@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
 import { bootTenantSurface } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.js";
@@ -333,6 +334,23 @@ describe("tenant surface", () => {
     const listView = root?.querySelector(".oc-tenant-list-view");
     expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(false);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
+  });
+
+  it("keeps skills workbench cards inside a dedicated scroll region", () => {
+    const css = readFileSync(
+      "tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.css",
+      "utf8",
+    );
+
+    expect(css).toMatch(
+      /\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*calc\(100vh - 160px\);[\s\S]*min-height:\s*320px;[\s\S]*max-height:\s*980px;[\s\S]*align-items:\s*stretch;/,
+    );
+    expect(css).toMatch(
+      /\.oc-tenant-skill-workbench__content\s*\{[\s\S]*min-height:\s*0;[\s\S]*overflow-y:\s*auto;[\s\S]*scrollbar-gutter:\s*stable;/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 900px\)\s*\{[\s\S]*\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*auto;[\s\S]*\.oc-tenant-skill-workbench__member-nav,\s*[\r\n\s]*\.oc-tenant-skill-workbench__content\s*\{[\s\S]*overflow:\s*visible;/,
+    );
   });
 
   it("renders the merged tenant skills workbench for workbench and legacy routes", async () => {
