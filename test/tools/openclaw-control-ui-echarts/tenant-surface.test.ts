@@ -347,13 +347,13 @@ describe("tenant surface", () => {
       /\.oc-tenant-list-view--scrollable\s*\{[\s\S]*max-height:\s*calc\(100vh - 20px\);[\s\S]*overflow-y:\s*auto;/,
     );
     expect(css).toMatch(
-      /\.oc-tenant-list-view--skills-workbench\s*\{[\s\S]*max-height:\s*calc\(100vh - 160px\);/,
+      /\.oc-tenant-list-view--skills-workbench\s*\{[\s\S]*max-height:\s*none;[\s\S]*overflow-y:\s*visible;[\s\S]*padding-bottom:\s*40px;/,
     );
     expect(css).toMatch(
       /\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*auto;[\s\S]*min-height:\s*320px;[\s\S]*align-items:\s*start;/,
     );
     expect(css).toMatch(
-      /\.oc-tenant-skill-workbench__content\s*\{[\s\S]*min-height:\s*0;[\s\S]*overflow:\s*visible;/,
+      /\.oc-tenant-skill-workbench__content\s*\{[\s\S]*min-height:\s*320px;[\s\S]*overflow:\s*visible;/,
     );
     expect(css).toMatch(
       /\.oc-tenant-skill-workbench__sidebar\s*\{[\s\S]*max-height:\s*min\(720px, calc\(100vh - 160px\)\);[\s\S]*overflow:\s*hidden;[\s\S]*position:\s*sticky;/,
@@ -361,7 +361,11 @@ describe("tenant surface", () => {
     expect(css).not.toMatch(
       /\.oc-tenant-skill-workbench\s*\{[\s\S]*height:\s*calc\(100vh - 160px\);/,
     );
+    expect(css).not.toMatch(
+      /\.oc-tenant-list-view--skills-workbench\s*\{[\s\S]*max-height:\s*calc\(100vh - 160px\);/,
+    );
     expect(css).not.toMatch(/\.oc-tenant-skill-workbench__content\s*\{[\s\S]*overflow-y:\s*auto;/);
+    expect(css).not.toMatch(/\.oc-tenant-skill-workbench__content\s*\{[\s\S]*min-height:\s*0;/);
     expect(css).toMatch(
       /@media \(max-width: 900px\)\s*\{[\s\S]*\.oc-tenant-list-view--skills-workbench\s*\{[\s\S]*max-height:\s*none;[\s\S]*overflow-y:\s*visible;/,
     );
