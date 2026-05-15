@@ -829,7 +829,8 @@
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 20px;
-  min-height: calc(100vh - 160px);
+  min-height: 0;
+  align-items: start;
 }
 
 .oc-tenant-skill-workbench__sidebar,
@@ -850,8 +851,6 @@
   gap: 16px;
   align-content: stretch;
   min-height: 0;
-  max-height: calc(100vh - 220px);
-  overflow: hidden;
 }
 
 .oc-tenant-skill-workbench__sidebar-header {
@@ -880,6 +879,7 @@
   display: grid;
   gap: 12px;
   min-height: 0;
+  max-height: min(70vh, calc(100vh - 260px));
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-gutter: stable;
@@ -951,6 +951,7 @@
   display: grid;
   gap: 16px;
   align-content: start;
+  min-width: 0;
   padding: 4px 0 0;
 }
 
@@ -1051,6 +1052,10 @@
     max-height: none;
   }
 
+  .oc-tenant-skill-workbench__member-nav {
+    max-height: none;
+  }
+
   .oc-tenant-skill-workbench__member-section > .nav-section__items:not([hidden]) {
     padding-left: 8px;
   }
@@ -1064,7 +1069,6 @@
   .oc-tenant-skill-workbench-skill-card__header {
     flex-direction: column;
   }
-
 }
 
 @media (max-width: 900px) {

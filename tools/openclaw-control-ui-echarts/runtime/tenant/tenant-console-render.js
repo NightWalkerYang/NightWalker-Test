@@ -727,6 +727,15 @@ export function renderTenantConsole(root, controller) {
   const isSkillsWorkbench = controller.section === "skills-workbench";
   const isSkillsEntitlements = controller.section === "skills-entitlements";
   const isSkillsAssignments = controller.section === "skills-assignments";
+  const isSkillsWorkbenchRoute = isSkillsWorkbench || isSkillsEntitlements || isSkillsAssignments;
+  const usesScrollableShell =
+    isUsageStats ||
+    isOverview ||
+    isWallet ||
+    isWalletOrders ||
+    isWalletLedger ||
+    isWalletFlow ||
+    isSkillsMarket;
 
   if (controller.section === "agent-assignment") {
     pruneRevokeAssignmentSelection(controller);
@@ -744,10 +753,8 @@ export function renderTenantConsole(root, controller) {
     isWalletOrders ||
     isWalletLedger ||
     isWalletFlow ||
-    isSkillsWorkbench ||
-    isSkillsMarket ||
-    isSkillsEntitlements ||
-    isSkillsAssignments
+    isSkillsWorkbenchRoute ||
+    isSkillsMarket
       ? null
       : paginate(
           isOwnedAgents ? filterTenantAgents(controller) : filterMembers(controller),
@@ -796,7 +803,7 @@ export function renderTenantConsole(root, controller) {
   root.dataset.ocTenantEmbedded = "true";
   root.dataset.ocTenantSection = controller.section;
   root.innerHTML = `
-    <section class="oc-tenant-list-view ${isUsageStats || isOverview || isWallet || isWalletOrders || isWalletLedger || isWalletFlow || isSkillsWorkbench || isSkillsMarket || isSkillsEntitlements || isSkillsAssignments ? "oc-tenant-list-view--scrollable" : ""}">
+    <section class="oc-tenant-list-view ${usesScrollableShell ? "oc-tenant-list-view--scrollable" : ""}">
       ${renderToolbar(controller)}
       ${contentMarkup}
     </section>

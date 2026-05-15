@@ -330,6 +330,8 @@ describe("tenant surface", () => {
 
     const root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
+    const listView = root?.querySelector(".oc-tenant-list-view");
+    expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(false);
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
   });
 
@@ -572,6 +574,8 @@ describe("tenant surface", () => {
 
     let root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-workbench");
+    const listView = root?.querySelector(".oc-tenant-list-view");
+    expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(false);
     expect(root?.textContent).toContain("alice");
     expect(root?.textContent).toContain("财务助手");
     expect(root?.querySelector(".oc-tenant-skill-workbench__member-section")).not.toBeNull();
