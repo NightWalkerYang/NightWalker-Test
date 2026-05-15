@@ -38,7 +38,7 @@ function createApiClient() {
       },
     ]),
     resolveMemberVisualization: vi.fn(async () => ({
-      html: "<!doctype html><html><head><title>销售大屏</title></head><body><section>顶部概览卡片</section></body></html>",
+      html: '<!doctype html><html><head><title>销售大屏</title></head><body><section class="dashboard-card">顶部概览卡片</section></body></html>',
       baseHref: "/workspace-agent-downloads/tenant-agent-1/Echarts/",
     })),
     listMemberAnnotations: vi.fn(async () => []),
@@ -79,8 +79,8 @@ afterEach(() => {
 describe("member chat canvas annotations", () => {
   it("opens a light Canvas drawer, annotates the preview, and backfills the comment", async () => {
     document.body.innerHTML = `
-      <main data-testid="chat-shell">
-        <form data-testid="chat-composer">
+      <main class="content content--chat" data-testid="chat-shell">
+        <form class="agent-chat__input" data-testid="chat-composer">
           <textarea placeholder="Type a message below"></textarea>
           <button type="submit">Send</button>
         </form>
@@ -106,6 +106,11 @@ describe("member chat canvas annotations", () => {
     expect(document.body.textContent).toContain("销售大屏");
     expect(document.body.textContent).toContain("0 条注释");
     expect(document.querySelector("[data-oc-member-canvas-annotation-drawer]")).not.toBeNull();
+    expect(
+      document
+        .querySelector<HTMLElement>('[data-testid="chat-shell"]')
+        ?.getAttribute("data-oc-member-canvas-docked"),
+    ).toBe("true");
     expect(document.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).toContain(
       '<base href="/workspace-agent-downloads/tenant-agent-1/Echarts/" />',
     );
@@ -158,6 +163,208 @@ describe("member chat canvas annotations", () => {
     document.querySelector<HTMLElement>('[data-action="all-prompts"]')?.click();
     expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       ["请一起处理这些未解决的标注反馈：", "1. 顶部卡片层级不清晰"].join("\n"),
+    );
+  });
+
+  it("supports docked resizing and fullscreen mode", async () => {
+    document.body.innerHTML = `
+      <main class="content content--chat" data-testid="chat-shell">
+        <form class="agent-chat__input" data-testid="chat-composer">
+          <textarea placeholder="Type a message below"></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </main>
+    `;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
+    const composer = document.querySelector<HTMLElement>('[data-testid="chat-composer"]');
+    composer!.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 760,
+        top: 760,
+        left: 0,
+        right: 820,
+        bottom: 880,
+        width: 820,
+        height: 120,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const apiClient = createApiClient();
+    mountMemberChatCanvasAnnotations(createController(), apiClient);
+
+    document.querySelector<HTMLElement>("[data-oc-member-canvas-annotation-button]")?.click();
+    await flush();
+
+    const root = document.querySelector<HTMLElement>("[data-oc-member-canvas-annotation-root]");
+    const dockTarget = document.querySelector<HTMLElement>('[data-testid="chat-shell"]');
+    expect(root?.style.getPropertyValue("--oc-member-canvas-width")).toContain("560px");
+    expect(dockTarget?.style.getPropertyValue("--oc-member-canvas-right-offset")).toContain(
+      "580px",
+    );
+    expect(root?.style.getPropertyValue("--oc-member-composer-bottom-space")).toContain("142px");
+
+    document
+      .querySelector<HTMLElement>("[data-oc-member-canvas-resize-handle]")
+      ?.dispatchEvent(pointer("pointerdown", 700, 60));
+    window.dispatchEvent(pointer("pointermove", 600, 60));
+    window.dispatchEvent(pointer("pointerup", 600, 60));
+    await flush();
+
+    expect(root?.style.getPropertyValue("--oc-member-canvas-width")).toContain("660px");
+    expect(dockTarget?.style.getPropertyValue("--oc-member-canvas-right-offset")).toContain(
+      "680px",
+    );
+
+    document.querySelector<HTMLElement>('[data-action="toggle-fullscreen"]')?.click();
+    await flush();
+
+    expect(
+      document.querySelector<HTMLElement>("[data-oc-member-canvas-annotation-drawer]")?.dataset
+        .fullscreen,
+    ).toBe("true");
+    expect(dockTarget?.getAttribute("data-oc-member-canvas-fullscreen")).toBe("true");
+  });
+
+  it("creates a draft from an automatically detected iframe module", async () => {
+    document.body.innerHTML = `
+      <main class="content content--chat" data-testid="chat-shell">
+        <form data-testid="chat-composer">
+          <textarea placeholder="Type a message below"></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </main>
+    `;
+    const apiClient = createApiClient();
+    mountMemberChatCanvasAnnotations(createController(), apiClient);
+    document.querySelector<HTMLElement>("[data-oc-member-canvas-annotation-button]")?.click();
+    await flush();
+
+    const frame = document.querySelector<HTMLIFrameElement>("iframe");
+    const overlay = document.querySelector<HTMLElement>(
+      "[data-oc-member-canvas-annotation-overlay]",
+    );
+    expect(frame).not.toBeNull();
+    expect(overlay).not.toBeNull();
+    Object.defineProperty(overlay, "clientWidth", { configurable: true, value: 480 });
+    Object.defineProperty(overlay, "clientHeight", { configurable: true, value: 620 });
+    const frameDocument = frame!.contentDocument!;
+    frameDocument.open();
+    frameDocument.write(
+      '<!doctype html><html><body><section class="dashboard-card">顶部概览卡片</section></body></html>',
+    );
+    frameDocument.close();
+    const card = frameDocument.querySelector<HTMLElement>(".dashboard-card")!;
+    card.getBoundingClientRect = () =>
+      ({
+        x: 40,
+        y: 50,
+        top: 50,
+        left: 40,
+        right: 260,
+        bottom: 190,
+        width: 220,
+        height: 140,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    Object.defineProperty(frame!.contentWindow, "innerWidth", { configurable: true, value: 480 });
+    Object.defineProperty(frame!.contentWindow, "innerHeight", { configurable: true, value: 620 });
+    frame!.dispatchEvent(new Event("load"));
+    card.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    const draft = document.querySelector<HTMLInputElement>("[data-draft-text]");
+    expect(draft).not.toBeNull();
+    expect(document.querySelector<HTMLIFrameElement>("iframe")).toBe(frame);
+    draft!.value = "自动识别到顶部概览卡片";
+    draft!.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector<HTMLElement>('[data-action="save-draft"]')?.click();
+    await flush();
+
+    expect(apiClient.createMemberAnnotation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rect: { x: 40, y: 50, width: 220, height: 140, pageWidth: 480, pageHeight: 620 },
+        text: "自动识别到顶部概览卡片",
+      }),
+    );
+  });
+
+  it("creates a draft from a smart overlay click on the iframe module", async () => {
+    document.body.innerHTML = `
+      <main class="content content--chat" data-testid="chat-shell">
+        <form data-testid="chat-composer">
+          <textarea placeholder="Type a message below"></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </main>
+    `;
+    const apiClient = createApiClient();
+    mountMemberChatCanvasAnnotations(createController(), apiClient);
+    document.querySelector<HTMLElement>("[data-oc-member-canvas-annotation-button]")?.click();
+    await flush();
+
+    const frame = document.querySelector<HTMLIFrameElement>("iframe");
+    const overlay = document.querySelector<HTMLElement>(
+      "[data-oc-member-canvas-annotation-overlay]",
+    );
+    expect(frame).not.toBeNull();
+    expect(overlay).not.toBeNull();
+    Object.defineProperty(overlay, "clientWidth", { configurable: true, value: 480 });
+    Object.defineProperty(overlay, "clientHeight", { configurable: true, value: 620 });
+    overlay!.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 480,
+        bottom: 620,
+        width: 480,
+        height: 620,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const frameDocument = frame!.contentDocument!;
+    frameDocument.open();
+    frameDocument.write(
+      '<!doctype html><html><body><section class="dashboard-card">顶部概览卡片</section></body></html>',
+    );
+    frameDocument.close();
+    const card = frameDocument.querySelector<HTMLElement>(".dashboard-card")!;
+    card.getBoundingClientRect = () =>
+      ({
+        x: 40,
+        y: 50,
+        top: 50,
+        left: 40,
+        right: 260,
+        bottom: 190,
+        width: 220,
+        height: 140,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    Object.defineProperty(frameDocument, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => card),
+    });
+    Object.defineProperty(frame!.contentWindow, "innerWidth", { configurable: true, value: 480 });
+    Object.defineProperty(frame!.contentWindow, "innerHeight", { configurable: true, value: 620 });
+    frame!.dispatchEvent(new Event("load"));
+
+    overlay!.dispatchEvent(pointer("pointermove", 90, 100));
+    expect(document.querySelector<HTMLElement>('[data-smart="true"]')).not.toBeNull();
+    overlay!.dispatchEvent(pointer("pointerdown", 90, 100));
+    window.dispatchEvent(pointer("pointerup", 90, 100));
+
+    const draft = document.querySelector<HTMLInputElement>("[data-draft-text]");
+    expect(draft).not.toBeNull();
+    draft!.value = "覆盖层智能识别顶部概览卡片";
+    draft!.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector<HTMLElement>('[data-action="save-draft"]')?.click();
+    await flush();
+
+    expect(apiClient.createMemberAnnotation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rect: { x: 40, y: 50, width: 220, height: 140, pageWidth: 480, pageHeight: 620 },
+        text: "覆盖层智能识别顶部概览卡片",
+      }),
     );
   });
 

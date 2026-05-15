@@ -1,4 +1,11 @@
 import {
+  findChatComposer,
+  findChatComposerTextarea,
+  findChatSurface,
+  findContentMountRoot,
+  findSidebar,
+} from "../framework/dom-compat.js";
+import {
   backfillChatComposerPrompt,
   formatMultiAnnotationPrompt,
   formatSingleAnnotationPrompt,
@@ -13,6 +20,103 @@ const OVERLAY_ATTR = "data-oc-member-canvas-annotation-overlay";
 const RECT_ATTR = "data-oc-member-canvas-annotation-rect";
 const DRAFT_ATTR = "data-oc-member-canvas-annotation-draft";
 const FRAME_ATTR = "data-oc-member-canvas-annotation-frame";
+const RESIZE_ATTR = "data-oc-member-canvas-resize-handle";
+const DOCKED_ATTR = "data-oc-member-canvas-docked";
+const FULLSCREEN_ATTR = "data-oc-member-canvas-fullscreen";
+const WIDTH_STORAGE_KEY = "openclaw:tenant-member-canvas-width:v1";
+const DEFAULT_DRAWER_WIDTH = 560;
+const MIN_DRAWER_WIDTH = 380;
+const MIN_MAIN_WIDTH = 420;
+
+function clampNumber(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return min;
+  }
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function getMaxDrawerWidth() {
+  return Math.max(MIN_DRAWER_WIDTH, Math.round((window.innerWidth || 1200) - MIN_MAIN_WIDTH));
+}
+
+function normalizeDrawerWidth(value) {
+  return clampNumber(value, MIN_DRAWER_WIDTH, getMaxDrawerWidth());
+}
+
+function readStoredDrawerWidth() {
+  try {
+    const stored = window.localStorage?.getItem(WIDTH_STORAGE_KEY);
+    return stored ? normalizeDrawerWidth(stored) : normalizeDrawerWidth(DEFAULT_DRAWER_WIDTH);
+  } catch {
+    return normalizeDrawerWidth(DEFAULT_DRAWER_WIDTH);
+  }
+}
+
+function writeStoredDrawerWidth(width) {
+  try {
+    window.localStorage?.setItem(WIDTH_STORAGE_KEY, String(Math.round(width)));
+  } catch {}
+}
+
+function setElementStyleValue(element, property, value) {
+  if (element instanceof HTMLElement) {
+    element.style.setProperty(property, value);
+  }
+}
+
+function clearElementStyleValue(element, property) {
+  if (element instanceof HTMLElement) {
+    element.style.removeProperty(property);
+  }
+}
+
+function resolveDockTarget() {
+  return findChatSurface(document) || findContentMountRoot(document) || null;
+}
+
+function applyDockLayout(state) {
+  const dockTarget = resolveDockTarget();
+  if (state.dockTarget && state.dockTarget !== dockTarget) {
+    state.dockTarget.removeAttribute(DOCKED_ATTR);
+    state.dockTarget.removeAttribute(FULLSCREEN_ATTR);
+    clearElementStyleValue(state.dockTarget, "--oc-member-canvas-width");
+    clearElementStyleValue(state.dockTarget, "--oc-member-canvas-right-offset");
+  }
+  state.dockTarget = dockTarget;
+  if (!(dockTarget instanceof HTMLElement)) {
+    return;
+  }
+  if (!state.drawerOpen) {
+    dockTarget.removeAttribute(DOCKED_ATTR);
+    dockTarget.removeAttribute(FULLSCREEN_ATTR);
+    clearElementStyleValue(dockTarget, "--oc-member-canvas-width");
+    clearElementStyleValue(dockTarget, "--oc-member-canvas-right-offset");
+    return;
+  }
+  dockTarget.setAttribute(DOCKED_ATTR, "true");
+  dockTarget.setAttribute(FULLSCREEN_ATTR, state.fullscreen ? "true" : "false");
+  setElementStyleValue(
+    dockTarget,
+    "--oc-member-canvas-width",
+    `${Math.round(state.drawerWidth)}px`,
+  );
+  setElementStyleValue(
+    dockTarget,
+    "--oc-member-canvas-right-offset",
+    state.fullscreen ? "0px" : `${Math.round(state.drawerWidth + 20)}px`,
+  );
+}
+
+function clearDockLayout(state) {
+  if (state?.dockTarget instanceof HTMLElement) {
+    state.dockTarget.removeAttribute(DOCKED_ATTR);
+    state.dockTarget.removeAttribute(FULLSCREEN_ATTR);
+    clearElementStyleValue(state.dockTarget, "--oc-member-canvas-width");
+    clearElementStyleValue(state.dockTarget, "--oc-member-canvas-right-offset");
+  }
+  state.dockTarget = null;
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -39,6 +143,14 @@ function ensureStyle() {
       z-index: 999990;
       color: #172033;
       font-family: inherit;
+      --oc-member-canvas-width: ${DEFAULT_DRAWER_WIDTH}px;
+    }
+    [${DOCKED_ATTR}="true"] {
+      margin-right: var(--oc-member-canvas-right-offset, 0px) !important;
+      transition: margin-right 160ms ease;
+    }
+    [${FULLSCREEN_ATTR}="true"] {
+      margin-right: 0 !important;
     }
     .oc-member-canvas-annotation-button {
       position: fixed;
@@ -66,7 +178,7 @@ function ensureStyle() {
       top: 58px;
       right: 14px;
       bottom: 14px;
-      width: min(560px, calc(100vw - 28px));
+      width: min(var(--oc-member-canvas-width), calc(100vw - 28px));
       z-index: 999996;
       pointer-events: auto;
       display: grid;
@@ -77,6 +189,38 @@ function ensureStyle() {
       border-radius: 22px;
       background: #f8fafc;
       box-shadow: 0 22px 58px rgba(15, 23, 42, 0.22);
+    }
+    .oc-member-canvas-annotation-drawer[data-fullscreen="true"] {
+      left: calc((var(--oc-member-sidebar-width, 0px)) + 8px);
+      right: 8px;
+      top: 8px;
+      bottom: var(--oc-member-composer-bottom-space, 92px);
+      width: auto;
+      border-radius: 18px;
+    }
+    .oc-member-canvas-annotation-resize {
+      position: absolute;
+      left: -8px;
+      top: 16px;
+      bottom: 16px;
+      width: 14px;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: ew-resize;
+    }
+    .oc-member-canvas-annotation-resize::after {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 42%;
+      width: 3px;
+      height: 56px;
+      border-radius: 999px;
+      background: rgba(100, 116, 139, 0.36);
+    }
+    .oc-member-canvas-annotation-drawer[data-fullscreen="true"] .oc-member-canvas-annotation-resize {
+      display: none;
     }
     .oc-member-canvas-annotation-drawer header {
       display: flex;
@@ -131,6 +275,15 @@ function ensureStyle() {
       color: #1d4ed8;
       background: #eff6ff;
     }
+    .oc-member-canvas-annotation-icon-button {
+      width: 36px;
+      height: 36px;
+      padding: 0 !important;
+      display: grid;
+      place-items: center;
+      font-size: 17px !important;
+      line-height: 1;
+    }
     .oc-member-canvas-annotation-select {
       min-width: 0;
       width: 100%;
@@ -160,7 +313,7 @@ function ensureStyle() {
     .oc-member-canvas-annotation-frame {
       display: block;
       width: 100%;
-      height: 620px;
+      height: 100%;
       min-height: 520px;
       border: 0;
       background: #ffffff;
@@ -187,6 +340,10 @@ function ensureStyle() {
       border-color: #ef4444;
       border-style: dashed;
       background: rgba(239, 68, 68, 0.12);
+    }
+    .oc-member-canvas-annotation-rect[data-smart="true"] {
+      border-color: #f97316;
+      background: rgba(249, 115, 22, 0.1);
     }
     .oc-member-canvas-annotation-marker {
       position: absolute;
@@ -286,6 +443,9 @@ function ensureStyle() {
       }
       .oc-member-canvas-annotation-button {
         right: 14px;
+      }
+      [${DOCKED_ATTR}="true"] {
+        margin-right: 0 !important;
       }
     }
   `;
@@ -434,6 +594,290 @@ function normalizePreviewRect(start, end, base) {
   };
 }
 
+function getFrameAndOverlay(state) {
+  const frame = state.root.querySelector(`iframe[${FRAME_ATTR}]`);
+  const overlay = state.root.querySelector(`[${OVERLAY_ATTR}]`);
+  return {
+    frame: frame instanceof HTMLIFrameElement ? frame : null,
+    overlay: overlay instanceof HTMLElement ? overlay : null,
+  };
+}
+
+function isElementNode(value) {
+  return Boolean(
+    value &&
+    value.nodeType === 1 &&
+    typeof value.tagName === "string" &&
+    typeof value.getBoundingClientRect === "function",
+  );
+}
+
+function isUsefulFrameElement(element) {
+  if (!isElementNode(element)) {
+    return false;
+  }
+  const tag = element.tagName.toLowerCase();
+  if (["html", "body", "script", "style", "link", "meta", "head"].includes(tag)) {
+    return false;
+  }
+  const rect = element.getBoundingClientRect();
+  const width = Number(rect.width || 0);
+  const height = Number(rect.height || 0);
+  if (width < 28 || height < 24) {
+    return false;
+  }
+  if (width * height < 1200) {
+    return false;
+  }
+  return true;
+}
+
+function scoreFrameElement(element) {
+  if (!isUsefulFrameElement(element)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const tag = element.tagName.toLowerCase();
+  const signal = [
+    element.getAttribute("role"),
+    element.getAttribute("aria-label"),
+    element.getAttribute("data-testid"),
+    element.getAttribute("class"),
+    element.getAttribute("id"),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const rect = element.getBoundingClientRect();
+  let score = 20;
+  if (["section", "article", "main", "aside", "nav", "header", "footer"].includes(tag)) {
+    score += 32;
+  }
+  if (["div", "li", "table", "canvas", "svg"].includes(tag)) {
+    score += 18;
+  }
+  if (
+    /(card|panel|chart|module|widget|section|table|grid|item|overview|概览|图表|卡片|模块)/i.test(
+      signal,
+    )
+  ) {
+    score += 42;
+  }
+  if (element.querySelector("canvas, svg, table")) {
+    score += 24;
+  }
+  score += Math.min(36, Math.round((rect.width * rect.height) / 12000));
+  return score;
+}
+
+function findSmartFrameElement(target) {
+  let current = isElementNode(target) ? target : null;
+  let best = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  let depth = 0;
+  while (current && depth < 8) {
+    if (isElementNode(current)) {
+      const score = scoreFrameElement(current);
+      if (score > bestScore) {
+        best = current;
+        bestScore = score;
+      }
+    }
+    current = current.parentElement;
+    depth += 1;
+  }
+  return best;
+}
+
+function mapFrameRectToOverlayRect(frame, overlay, element) {
+  const frameWindow = frame.contentWindow;
+  const frameRect = element.getBoundingClientRect();
+  const overlayWidth = overlay.clientWidth || overlay.getBoundingClientRect().width || 1;
+  const overlayHeight = overlay.clientHeight || overlay.getBoundingClientRect().height || 1;
+  const viewportWidth =
+    frameWindow?.innerWidth || frame.contentDocument?.documentElement?.clientWidth || overlayWidth;
+  const viewportHeight =
+    frameWindow?.innerHeight ||
+    frame.contentDocument?.documentElement?.clientHeight ||
+    overlayHeight;
+  const scaleX = overlayWidth / Math.max(1, viewportWidth);
+  const scaleY = overlayHeight / Math.max(1, viewportHeight);
+  return {
+    x: Math.round(Math.max(0, frameRect.left * scaleX)),
+    y: Math.round(Math.max(0, frameRect.top * scaleY)),
+    width: Math.round(Math.max(0, frameRect.width * scaleX)),
+    height: Math.round(Math.max(0, frameRect.height * scaleY)),
+    pageWidth: Math.round(overlayWidth),
+    pageHeight: Math.round(overlayHeight),
+  };
+}
+
+function findSmartFrameElementAtOverlayPoint(state, point, overlay) {
+  const frame = state.root.querySelector(`iframe[${FRAME_ATTR}]`);
+  if (!(frame instanceof HTMLIFrameElement) || !(overlay instanceof HTMLElement)) {
+    return null;
+  }
+  const frameDocument = frame.contentDocument;
+  if (!frameDocument || typeof frameDocument.elementFromPoint !== "function") {
+    return null;
+  }
+  const overlayWidth = overlay.clientWidth || overlay.getBoundingClientRect().width || 1;
+  const overlayHeight = overlay.clientHeight || overlay.getBoundingClientRect().height || 1;
+  const viewportWidth =
+    frame.contentWindow?.innerWidth || frameDocument.documentElement?.clientWidth || overlayWidth;
+  const viewportHeight =
+    frame.contentWindow?.innerHeight ||
+    frameDocument.documentElement?.clientHeight ||
+    overlayHeight;
+  const frameTarget = frameDocument.elementFromPoint(
+    (point.x / Math.max(1, overlayWidth)) * viewportWidth,
+    (point.y / Math.max(1, overlayHeight)) * viewportHeight,
+  );
+  return findSmartFrameElement(frameTarget);
+}
+
+function getSmartOverlayRectAtPoint(state, point, overlay) {
+  const frame = state.root.querySelector(`iframe[${FRAME_ATTR}]`);
+  const target = findSmartFrameElementAtOverlayPoint(state, point, overlay);
+  if (!(frame instanceof HTMLIFrameElement) || !(overlay instanceof HTMLElement) || !target) {
+    return null;
+  }
+  const rect = mapFrameRectToOverlayRect(frame, overlay, target);
+  return rect.width >= 12 && rect.height >= 12 ? rect : null;
+}
+
+function updateSmartHoverRectElement(state) {
+  const overlay = state.root.querySelector(`[${OVERLAY_ATTR}]`);
+  if (!(overlay instanceof HTMLElement)) {
+    return;
+  }
+  const existing = overlay.querySelector(`[${RECT_ATTR}][data-smart="true"]`);
+  if (!state.smartHoverRect || state.selecting || state.draft) {
+    existing?.remove();
+    return;
+  }
+  const rectElement =
+    existing instanceof HTMLElement
+      ? existing
+      : Object.assign(document.createElement("div"), {
+          className: "oc-member-canvas-annotation-rect",
+        });
+  rectElement.setAttribute(RECT_ATTR, "true");
+  rectElement.dataset.smart = "true";
+  rectElement.setAttribute("style", buildRectStyle(state.smartHoverRect));
+  if (!existing) {
+    overlay.append(rectElement);
+  }
+}
+
+function bindFrameSmartSelection(state) {
+  const { frame, overlay } = getFrameAndOverlay(state);
+  if (!(frame instanceof HTMLIFrameElement) || !(overlay instanceof HTMLElement)) {
+    return;
+  }
+  if (state.boundFrameDocument && state.onFramePointerMove) {
+    state.boundFrameDocument.removeEventListener("pointermove", state.onFramePointerMove, true);
+    state.boundFrameDocument.removeEventListener("click", state.onFrameClick, true);
+  }
+  const frameDocument = frame.contentDocument;
+  if (!frameDocument) {
+    return;
+  }
+  state.boundFrame = frame;
+  state.boundFrameDocument = frameDocument;
+  state.onFramePointerMove = (event) => {
+    if (!state.annotationMode || state.selecting || state.draft) {
+      return;
+    }
+    const target = findSmartFrameElement(event.target);
+    if (!target) {
+      if (state.smartHoverRect) {
+        state.smartHoverRect = null;
+        updateSmartHoverRectElement(state);
+      }
+      return;
+    }
+    const rect = mapFrameRectToOverlayRect(frame, overlay, target);
+    if (
+      !state.smartHoverRect ||
+      Math.abs(state.smartHoverRect.x - rect.x) > 2 ||
+      Math.abs(state.smartHoverRect.y - rect.y) > 2 ||
+      Math.abs(state.smartHoverRect.width - rect.width) > 2 ||
+      Math.abs(state.smartHoverRect.height - rect.height) > 2
+    ) {
+      state.smartHoverRect = rect;
+      updateSmartHoverRectElement(state);
+    }
+  };
+  state.onFrameClick = (event) => {
+    if (!state.annotationMode || state.selecting || state.draft) {
+      return;
+    }
+    const target = findSmartFrameElement(event.target);
+    if (!target) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = mapFrameRectToOverlayRect(frame, overlay, target);
+    if (rect.width < 12 || rect.height < 12) {
+      return;
+    }
+    state.smartHoverRect = null;
+    state.draft = { rect, text: "" };
+    render(state);
+  };
+  frameDocument.addEventListener("pointermove", state.onFramePointerMove, true);
+  frameDocument.addEventListener("click", state.onFrameClick, true);
+}
+
+function clearFrameSmartSelection(state) {
+  if (state?.boundFrameDocument && state.onFramePointerMove) {
+    state.boundFrameDocument.removeEventListener("pointermove", state.onFramePointerMove, true);
+  }
+  if (state?.boundFrameDocument && state.onFrameClick) {
+    state.boundFrameDocument.removeEventListener("click", state.onFrameClick, true);
+  }
+  state.boundFrame = null;
+  state.boundFrameDocument = null;
+  state.onFramePointerMove = null;
+  state.onFrameClick = null;
+}
+
+function restoreStablePreviewFrame(state) {
+  const frame = state.root.querySelector(`iframe[${FRAME_ATTR}]`);
+  const html = state.visualizationDocument?.html || "";
+  if (!(frame instanceof HTMLIFrameElement) || !html) {
+    return;
+  }
+  if (state.previewFrame instanceof HTMLIFrameElement && state.previewFrameHtml === html) {
+    frame.replaceWith(state.previewFrame);
+    bindFrameSmartSelection(state);
+    return;
+  }
+  state.previewFrame = frame;
+  state.previewFrameHtml = html;
+  frame.srcdoc = html;
+  frame.addEventListener(
+    "load",
+    () => {
+      bindFrameSmartSelection(state);
+    },
+    { once: true },
+  );
+  bindFrameSmartSelection(state);
+}
+
+function findComposerLayoutElement() {
+  const composer = findChatComposer(document);
+  if (composer instanceof HTMLElement) {
+    return composer;
+  }
+  const textarea = findChatComposerTextarea(document);
+  return textarea instanceof HTMLElement
+    ? textarea.closest("form, [data-oc-chat-composer], [class*='composer'], [class*='chat-input']")
+    : null;
+}
+
 function makePromptAndBackfill(annotations) {
   const prompt = formatMultiAnnotationPrompt(annotations);
   if (!prompt) {
@@ -503,8 +947,12 @@ async function loadSelectedVisualization(state) {
   const token = getVisualizationToken(visualization);
   state.draft = null;
   state.selecting = null;
+  state.smartHoverRect = null;
   state.visualizationDocument = null;
   state.annotations = [];
+  state.previewFrame = null;
+  state.previewFrameHtml = "";
+  clearFrameSmartSelection(state);
   if (!visualization || !token) {
     return;
   }
@@ -568,6 +1016,13 @@ function renderStage(state) {
         )
         .join("")}
       ${
+        state.smartHoverRect && !state.selecting && !state.draft
+          ? `<div class="oc-member-canvas-annotation-rect" ${RECT_ATTR}="true" data-smart="true" style="${buildRectStyle(
+              state.smartHoverRect,
+            )}"></div>`
+          : ""
+      }
+      ${
         state.selecting || state.draft
           ? `<div class="oc-member-canvas-annotation-rect" ${RECT_ATTR}="true" data-draft="true" style="${buildRectStyle(
               (state.selecting && state.selecting.rect) || state.draft?.rect || {},
@@ -589,19 +1044,36 @@ function renderStage(state) {
 function render(state) {
   const { root, drawerOpen, annotationMode, annotations } = state;
   const openCount = getOpenAnnotationCount(annotations);
+  root.style.setProperty("--oc-member-canvas-width", `${Math.round(state.drawerWidth)}px`);
+  const sidebar = findSidebar(document);
+  const sidebarWidth =
+    sidebar instanceof HTMLElement ? Math.round(sidebar.getBoundingClientRect().width || 0) : 0;
+  const composer = findComposerLayoutElement();
+  const composerHeight =
+    composer instanceof HTMLElement ? Math.round(composer.getBoundingClientRect().height || 0) : 0;
+  root.style.setProperty("--oc-member-sidebar-width", `${sidebarWidth}px`);
+  root.style.setProperty(
+    "--oc-member-composer-bottom-space",
+    `${Math.max(92, composerHeight + 22)}px`,
+  );
+  applyDockLayout(state);
   root.innerHTML = `
     <button class="oc-member-canvas-annotation-button" ${BUTTON_ATTR}="true" data-active="${drawerOpen ? "true" : "false"}" type="button">
       Canvas
     </button>
     ${
       drawerOpen
-        ? `<aside class="oc-member-canvas-annotation-drawer" ${DRAWER_ATTR}="true">
+        ? `<aside class="oc-member-canvas-annotation-drawer" ${DRAWER_ATTR}="true" data-fullscreen="${state.fullscreen ? "true" : "false"}">
+            <button class="oc-member-canvas-annotation-resize" ${RESIZE_ATTR}="true" type="button" aria-label="拖动调整 Canvas 宽度"></button>
             <header>
               <div class="oc-member-canvas-annotation-title">
                 <strong>Canvas 批注</strong>
-                <span>在大屏预览上框选区域，输入批注后点击上箭头保存。</span>
+                <span>移动鼠标自动识别模块，点击模块或拖拽框选后添加批注。</span>
               </div>
-              <button type="button" data-action="close">关闭</button>
+              <div class="oc-member-canvas-annotation-actions">
+                <button class="oc-member-canvas-annotation-icon-button" type="button" data-action="toggle-fullscreen" aria-label="${state.fullscreen ? "退出全屏 Canvas" : "放大全屏 Canvas"}">${state.fullscreen ? "↙" : "↗"}</button>
+                <button type="button" data-action="close">关闭</button>
+              </div>
             </header>
             <div class="oc-member-canvas-annotation-actions">
               ${renderVisualizationSelect(state)}
@@ -645,10 +1117,7 @@ function render(state) {
         : ""
     }
   `;
-  const frame = root.querySelector(`iframe[${FRAME_ATTR}]`);
-  if (frame instanceof HTMLIFrameElement && state.visualizationDocument?.html) {
-    frame.srcdoc = state.visualizationDocument.html;
-  }
+  restoreStablePreviewFrame(state);
   const draftInput = root.querySelector("[data-draft-text]");
   if (draftInput instanceof HTMLInputElement && state.draft) {
     draftInput.focus();
@@ -665,6 +1134,14 @@ function bindRoot(state) {
     if (state.onWindowPointerUp) {
       window.removeEventListener("pointerup", state.onWindowPointerUp, true);
       state.onWindowPointerUp = null;
+    }
+    if (state.onWindowResizePointerMove) {
+      window.removeEventListener("pointermove", state.onWindowResizePointerMove, true);
+      state.onWindowResizePointerMove = null;
+    }
+    if (state.onWindowResizePointerUp) {
+      window.removeEventListener("pointerup", state.onWindowResizePointerUp, true);
+      state.onWindowResizePointerUp = null;
     }
   };
 
@@ -708,8 +1185,15 @@ function bindRoot(state) {
     }
     const point = resolveOverlayPoint(event, overlay);
     const rect = normalizePreviewRect(state.selecting.start, point, state.selecting.base || point);
+    const smartRect = state.selecting.smartRect;
     state.selecting = null;
     if (rect.width < 12 || rect.height < 12) {
+      if (smartRect) {
+        state.smartHoverRect = null;
+        state.draft = { rect: smartRect, text: "" };
+        render(state);
+        return;
+      }
       render(state);
       return;
     }
@@ -771,6 +1255,15 @@ function bindRoot(state) {
     if (action === "close") {
       state.drawerOpen = false;
       state.draft = null;
+      state.fullscreen = false;
+      clearPointerListeners();
+      render(state);
+      return;
+    }
+    if (action === "toggle-fullscreen") {
+      state.fullscreen = !state.fullscreen;
+      state.draft = null;
+      state.smartHoverRect = null;
       clearPointerListeners();
       render(state);
       return;
@@ -855,6 +1348,30 @@ function bindRoot(state) {
 
   state.root.addEventListener("pointerdown", (event) => {
     const target = event.target;
+    if (target instanceof HTMLElement && target.matches(`[${RESIZE_ATTR}]`)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startWidth = state.drawerWidth;
+      clearPointerListeners();
+      state.onWindowResizePointerMove = (moveEvent) => {
+        const delta = startX - moveEvent.clientX;
+        state.drawerWidth = normalizeDrawerWidth(startWidth + delta);
+        state.root.style.setProperty(
+          "--oc-member-canvas-width",
+          `${Math.round(state.drawerWidth)}px`,
+        );
+        applyDockLayout(state);
+      };
+      state.onWindowResizePointerUp = () => {
+        writeStoredDrawerWidth(state.drawerWidth);
+        clearPointerListeners();
+        render(state);
+      };
+      window.addEventListener("pointermove", state.onWindowResizePointerMove, true);
+      window.addEventListener("pointerup", state.onWindowResizePointerUp, true);
+      return;
+    }
     if (
       !state.annotationMode ||
       !(target instanceof HTMLElement) ||
@@ -863,11 +1380,13 @@ function bindRoot(state) {
       return;
     }
     const point = resolveOverlayPoint(event, target);
+    const smartRect = getSmartOverlayRectAtPoint(state, point, target);
     state.draft = null;
     state.selecting = {
       start: point,
       base: { width: point.width, height: point.height },
       rect: normalizePreviewRect(point, point, point),
+      smartRect,
     };
     clearPointerListeners();
     state.onWindowPointerMove = updateSelection;
@@ -878,6 +1397,28 @@ function bindRoot(state) {
   });
 
   state.root.addEventListener("pointermove", (event) => {
+    const target = event.target;
+    if (
+      state.annotationMode &&
+      !state.selecting &&
+      !state.draft &&
+      target instanceof HTMLElement &&
+      target.matches(`[${OVERLAY_ATTR}]`)
+    ) {
+      const rect = getSmartOverlayRectAtPoint(state, resolveOverlayPoint(event, target), target);
+      if (
+        (!rect && state.smartHoverRect) ||
+        (rect &&
+          (!state.smartHoverRect ||
+            Math.abs(state.smartHoverRect.x - rect.x) > 2 ||
+            Math.abs(state.smartHoverRect.y - rect.y) > 2 ||
+            Math.abs(state.smartHoverRect.width - rect.width) > 2 ||
+            Math.abs(state.smartHoverRect.height - rect.height) > 2))
+      ) {
+        state.smartHoverRect = rect;
+        updateSmartHoverRectElement(state);
+      }
+    }
     updateSelection(event);
   });
 
@@ -916,6 +1457,8 @@ export function mountMemberChatCanvasAnnotations(controller, apiClient) {
     apiClient,
     surfaceKey,
     drawerOpen: false,
+    fullscreen: false,
+    drawerWidth: readStoredDrawerWidth(),
     annotationMode: true,
     visualizationsLoaded: false,
     visualizations: [],
@@ -924,11 +1467,21 @@ export function mountMemberChatCanvasAnnotations(controller, apiClient) {
     loading: false,
     error: "",
     selecting: null,
+    smartHoverRect: null,
     draft: null,
     annotations: [],
+    dockTarget: null,
+    boundFrame: null,
+    boundFrameDocument: null,
+    previewFrame: null,
+    previewFrameHtml: "",
     clearPointerListeners: null,
     onWindowPointerMove: null,
     onWindowPointerUp: null,
+    onWindowResizePointerMove: null,
+    onWindowResizePointerUp: null,
+    onFramePointerMove: null,
+    onFrameClick: null,
   };
   bindRoot(state);
   render(state);
@@ -936,6 +1489,8 @@ export function mountMemberChatCanvasAnnotations(controller, apiClient) {
     state,
     unmount() {
       state.clearPointerListeners?.();
+      clearFrameSmartSelection(state);
+      clearDockLayout(state);
       root.remove();
       if (window._ocMemberChatCanvasAnnotationSurface === surface) {
         delete window._ocMemberChatCanvasAnnotationSurface;
