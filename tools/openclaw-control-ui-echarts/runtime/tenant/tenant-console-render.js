@@ -114,14 +114,9 @@ function renderToolbar(controller) {
   if (controller.section === "skills-workbench") {
     return `
       <div class="data-table-toolbar oc-tenant-table-toolbar">
-        <label class="data-table-search">
-          <input
-            type="search"
-            placeholder="搜索成员、Agent 或 Skill"
-            value="${escapeHtml(getSearchValue(controller))}"
-            data-tenant-search
-          />
-        </label>
+        <div class="oc-tenant-wallet-toolbar__summary">
+          成员技能工作台
+        </div>
       </div>
     `;
   }
@@ -465,6 +460,14 @@ function renderSkillsWorkbenchTree(controller) {
   );
   return `
     <div class="oc-tenant-skill-workbench__member-nav">
+      <label class="data-table-search oc-tenant-skill-workbench__member-search">
+        <input
+          type="search"
+          placeholder="搜索用户名称"
+          value="${escapeHtml(getSearchValue(controller))}"
+          data-tenant-search
+        />
+      </label>
       ${
         members.length
           ? members

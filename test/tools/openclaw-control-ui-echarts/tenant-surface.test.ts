@@ -334,6 +334,12 @@ describe("tenant surface", () => {
     const listView = root?.querySelector(".oc-tenant-list-view");
     expect(listView?.classList.contains("oc-tenant-list-view--scrollable")).toBe(true);
     expect(listView?.classList.contains("oc-tenant-list-view--skills-workbench")).toBe(true);
+    expect(root?.querySelector(".oc-tenant-table-toolbar [data-tenant-search]")).toBeNull();
+    const memberSearch = root?.querySelector(
+      ".oc-tenant-skill-workbench__member-search [data-tenant-search]",
+    );
+    expect(memberSearch).not.toBeNull();
+    expect((memberSearch as HTMLInputElement | null)?.placeholder).toBe("搜索用户名称");
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
   });
 
@@ -968,6 +974,169 @@ describe("tenant surface", () => {
     expect(root?.textContent).toContain("财务核心能力");
     expect(root?.textContent).toContain("无需购买");
     expect(root?.querySelectorAll(".oc-tenant-skill-workbench-skill-card").length).toBe(1);
+  });
+
+  it("filters the skills workbench member tree by username from the sidebar search", async () => {
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-skills-workbench");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/tenant/admin/skills/entitlements")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/assignments")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    tenantAgentId: "tenant-agent-1",
+                    baseAgentId: "finance",
+                    templateSkillKeys: [],
+                    blockedSkillKeys: [],
+                    assignmentCount: 2,
+                    templateRows: [],
+                    assignments: [
+                      {
+                        assignmentId: "assignment-1",
+                        userId: "member-1",
+                        username: "alice",
+                        resolvedSkillKeys: [],
+                        overrideRows: [],
+                        overrideSummary: [],
+                        blockedReasons: [],
+                        status: "active",
+                      },
+                      {
+                        assignmentId: "assignment-2",
+                        userId: "member-2",
+                        username: "bob",
+                        resolvedSkillKeys: [],
+                        overrideRows: [],
+                        overrideSummary: [],
+                        blockedReasons: [],
+                        status: "active",
+                      },
+                    ],
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/members")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "member-1",
+                    username: "alice",
+                    status: "active",
+                    assignedAgentCount: 1,
+                    createdAt: "2026-04-03T08:00:00.000Z",
+                  },
+                  {
+                    id: "member-2",
+                    username: "bob",
+                    status: "active",
+                    assignedAgentCount: 1,
+                    createdAt: "2026-04-04T08:00:00.000Z",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/tenant-agents")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "tenant-agent-1",
+                    agentId: "finance",
+                    agentName: "财务助手",
+                    description: "财务分析 Agent",
+                    status: "active",
+                    balancePoints: 20,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (url.includes("/tenant/admin/skills/market?baseAgentId=finance")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const root = document.querySelector("[data-oc-tenant-surface-root]");
+    const memberSearch = root?.querySelector(
+      ".oc-tenant-skill-workbench__member-search [data-tenant-search]",
+    );
+    expect(root?.querySelectorAll("[data-tenant-skill-member-toggle]")).toHaveLength(2);
+    expect(root?.textContent).toContain("alice");
+    expect(root?.textContent).toContain("bob");
+    expect(root?.querySelector(".oc-tenant-table-toolbar [data-tenant-search]")).toBeNull();
+
+    if (memberSearch instanceof HTMLInputElement) {
+      memberSearch.focus();
+      memberSearch.value = "ali";
+      memberSearch.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    await flush();
+
+    const updatedRoot = document.querySelector("[data-oc-tenant-surface-root]");
+    const updatedSearch = updatedRoot?.querySelector(
+      ".oc-tenant-skill-workbench__member-search [data-tenant-search]",
+    );
+    expect(updatedRoot?.querySelectorAll("[data-tenant-skill-member-toggle]")).toHaveLength(1);
+    expect(
+      updatedRoot?.querySelector('[data-tenant-skill-member-toggle="member-1"]'),
+    ).not.toBeNull();
+    expect(updatedRoot?.querySelector('[data-tenant-skill-member-toggle="member-2"]')).toBeNull();
+    expect(document.activeElement).toBe(updatedSearch);
   });
 
   it("does not mount tenant management on malformed /chat routes", async () => {

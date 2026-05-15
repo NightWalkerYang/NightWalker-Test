@@ -353,6 +353,7 @@
 - `tenant-surface.test.ts`
   - 租户 runtime surface 未因 Skills 页面新增而回归
   - `tenant-skills-workbench` 与旧 `tenant-skills-entitlements` / `tenant-skills-assignments` 别名路由统一落到成员技能工作台
+  - `tenant-skills-workbench` 已移除页面顶部搜索框，左侧成员栏新增“搜索用户名称”输入，并仅按用户名过滤成员树
 
 ## 18. bootstrap 过滤 hook 已落地
 

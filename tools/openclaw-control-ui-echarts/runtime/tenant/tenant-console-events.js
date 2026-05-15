@@ -685,6 +685,9 @@ export function createTenantConsoleEventHandlers({ render, refresh }) {
           }, REMOTE_SEARCH_DEBOUNCE_MS);
           return;
         }
+        if (controller.section === "skills-workbench") {
+          rebuildSkillsWorkbenchState(controller);
+        }
         render(root, controller);
       }
     },

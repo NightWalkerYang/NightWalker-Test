@@ -66,7 +66,6 @@ export function isRemoteSearchSection(section) {
   return (
     section === "usage-stats" ||
     section === "skills-market" ||
-    section === "skills-workbench" ||
     section === "skills-entitlements" ||
     section === "skills-assignments" ||
     section === "wallet-orders" ||
@@ -225,28 +224,6 @@ function getWorkbenchCardTitle(card) {
   );
 }
 
-function cardMatchesWorkbenchSearch(card, query) {
-  const normalizedQuery = String(query || "")
-    .trim()
-    .toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-  const skillValues = Array.isArray(card?.cardSkills)
-    ? card.cardSkills.flatMap((skill) => [skill?.name, skill?.skillKey, skill?.description])
-    : [];
-  return [
-    getWorkbenchCardTitle(card),
-    card?.tenantAgent?.description,
-    card?.baseAgentId,
-    card?.tenantAgentId,
-    ...(Array.isArray(card?.resolvedSkillKeys) ? card.resolvedSkillKeys : []),
-    ...skillValues,
-  ]
-    .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(normalizedQuery));
-}
-
 function memberMatchesWorkbenchSearch(member, query) {
   const normalizedQuery = String(query || "")
     .trim()
@@ -254,7 +231,7 @@ function memberMatchesWorkbenchSearch(member, query) {
   if (!normalizedQuery) {
     return true;
   }
-  return [member?.username, member?.status, member?.userId]
+  return [member?.username, member?.userId]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(normalizedQuery));
 }
@@ -543,15 +520,12 @@ function buildTenantSkillWorkbenchState(controller) {
   const filteredMembers = memberItems
     .map((member) => {
       const memberMatch = memberMatchesWorkbenchSearch(member, activeSearch);
-      const matchedCards = activeSearch
-        ? member.cards.filter((card) => cardMatchesWorkbenchSearch(card, activeSearch))
-        : member.cards;
-      if (!memberMatch && !matchedCards.length) {
+      if (!memberMatch) {
         return null;
       }
       return {
         ...member,
-        treeCards: activeSearch && !memberMatch ? matchedCards : member.cards,
+        treeCards: member.cards,
       };
     })
     .filter(Boolean);

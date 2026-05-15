@@ -892,6 +892,14 @@
   line-height: 1.6;
 }
 
+.oc-tenant-skill-workbench__member-search {
+  margin-bottom: 4px;
+}
+
+.oc-tenant-skill-workbench__member-search input {
+  width: 100%;
+}
+
 .oc-tenant-skill-workbench__member-nav {
   display: grid;
   gap: 12px;
