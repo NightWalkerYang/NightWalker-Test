@@ -421,24 +421,6 @@ function renderSkillsWorkbenchSelectedAgentPanel(member, card) {
   const cardSkills = Array.isArray(card?.displaySkills) ? card.displaySkills : [];
   return `
     <section class="oc-tenant-skill-workbench__selection-content">
-      <div class="oc-tenant-skill-workbench__context-bar">
-        <div class="oc-tenant-skill-workbench__context-copy">
-          <p class="oc-tenant-skill-workbench__context-kicker">当前 Agent Skills</p>
-          <h3 class="oc-tenant-skill-workbench__selection-title">${escapeHtml(
-            getWorkbenchAgentTitle(card),
-          )}</h3>
-          <p class="oc-tenant-skill-workbench__context-meta">${escapeHtml(
-            member?.username || member?.userId || "-",
-          )} · ${escapeHtml(card?.baseAgentId || card?.tenantAgentId || "-")} · ${formatNumber(
-            cardSkills.length,
-          )} 个 skill</p>
-        </div>
-        <span class="data-table-badge data-table-badge--${String(card?.assignmentStatus || "").trim() === "active" ? "direct" : "unknown"}">${escapeHtml(
-          String(card?.assignmentStatus || "").trim() === "blocked_missing_skills"
-            ? "已阻断"
-            : "已分配",
-        )}</span>
-      </div>
       ${
         cardSkills.length
           ? `<div class="oc-tenant-skill-workbench-skill-grid">
