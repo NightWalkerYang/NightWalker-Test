@@ -35,6 +35,7 @@ import {
   buildManagedNodeDesiredState,
   deleteTenantMember,
   deletePlatformUpdateLog,
+  createCanvasAnnotation,
   createTenantMember,
   createTenantPaymentOrder,
   createTenantSkillOrder,
@@ -45,6 +46,7 @@ import {
   deactivateSyncSchedule,
   discoverPlatformSkills,
   getBootstrapStatus,
+  getCanvasAnnotationForMember,
   getDataSourceById,
   getManagedNodeLeaseState,
   getManagedNodeSyncCheckpoint,
@@ -56,6 +58,7 @@ import {
   listAssignedAgentsForUser,
   listAssignedAgentSandboxesForUser,
   listAssignedAgentVisualizationsForUser,
+  listCanvasAnnotations,
   listActiveSyncSchedules,
   listDataSources,
   listManagedNodes,
@@ -82,6 +85,7 @@ import {
   registerTenantAgentSession,
   revokePlatformTenantAgents,
   revokeTenantAgentAssignments,
+  appendCanvasAnnotationThreadMessage,
   syncTenantUsageRecords,
   bindTenantDataSource,
   updatePlatformUpdateLog,
@@ -100,6 +104,7 @@ import {
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
+  setCanvasAnnotationStatus,
   transferTenantWalletToAgent,
   upsertTenantAgent,
   hideTenantAgentSession,
@@ -532,6 +537,25 @@ function normalizeMemberOrgScopeModeValue(value) {
     .trim()
     .toLowerCase();
   return normalized === "all" || normalized === "custom" ? normalized : "none";
+}
+
+function readAssignedTenantAgentForMember(deps, session, tenantAgentId, configAgents) {
+  const normalizedTenantAgentId = String(tenantAgentId || "").trim();
+  if (!normalizedTenantAgentId) {
+    return null;
+  }
+  return (
+    listAssignedAgentsForUser(
+      deps.db,
+      {
+        tenantId: session.tenantId,
+        userId: session.userId,
+        configPath: deps.config.configPath,
+        configDir: deps.config.configDir,
+      },
+      configAgents,
+    ).find((item) => String(item.tenantAgentId || "").trim() === normalizedTenantAgentId) || null
+  );
 }
 
 function readTenantMemberOrgScope(db, tenantId, userId, dataSourceId) {
@@ -4678,6 +4702,7 @@ export function createTenantPlatformRouter(deps) {
           : item.visualizationName;
         return {
           id: `${item.derivedAgentId}:${item.visualizationRelativePath}`,
+          tenantAgentId: item.tenantAgentId,
           agentId: item.derivedAgentId,
           baseAgentId: item.baseAgentId,
           agentName: item.agentName,
@@ -5136,6 +5161,41 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "GET" && relativePath === "/member/annotations") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      const tenantAgentId = String(url.searchParams.get("tenantAgentId") || "").trim();
+      const openclawSessionKey = String(url.searchParams.get("openclawSessionKey") || "").trim();
+      const pageId = String(url.searchParams.get("pageId") || "").trim();
+      if (!tenantAgentId || !openclawSessionKey || !pageId) {
+        sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+        return;
+      }
+      const assignment = readAssignedTenantAgentForMember(
+        deps,
+        session,
+        tenantAgentId,
+        configAgents,
+      );
+      if (!assignment) {
+        sendJson(request, response, 200, { ok: true, data: [] });
+        return;
+      }
+      sendJson(request, response, 200, {
+        ok: true,
+        data: listCanvasAnnotations(deps.db, {
+          tenantId: session.tenantId,
+          tenantAgentId,
+          userId: session.userId,
+          openclawSessionKey,
+          pageId,
+        }),
+      });
+      return;
+    }
+
     if (request.method === "GET" && relativePath === "/member/sessions/history") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["member"])) {
@@ -5253,6 +5313,57 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "POST" && relativePath === "/member/annotations") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const tenantAgentId = String(body.tenantAgentId || "").trim();
+        const openclawSessionKey = String(body.openclawSessionKey || "").trim();
+        const pageId = String(body.pageId || "").trim();
+        const entryUrl = String(body.entryUrl || "").trim();
+        if (!tenantAgentId || !openclawSessionKey || !pageId || !entryUrl) {
+          sendJson(request, response, 400, { ok: false, error: "missing_fields" });
+          return;
+        }
+        const assignment = readAssignedTenantAgentForMember(
+          deps,
+          session,
+          tenantAgentId,
+          configAgents,
+        );
+        if (!assignment) {
+          sendJson(request, response, 403, { ok: false, error: "agent_assignment_not_found" });
+          return;
+        }
+        sendJson(request, response, 200, {
+          ok: true,
+          data: createCanvasAnnotation(deps.db, {
+            tenantId: session.tenantId,
+            tenantAgentId,
+            userId: session.userId,
+            openclawSessionKey,
+            runId: String(body.runId || "").trim(),
+            messageId: String(body.messageId || "").trim(),
+            pageId,
+            entryUrl,
+            revisionId: String(body.revisionId || "").trim(),
+            rect: body.rect,
+            authorRole: "user",
+            text: body.text,
+          }),
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     if (request.method === "POST" && relativePath === "/member/image-uploads") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["member"])) {
@@ -5351,6 +5462,39 @@ export function createTenantPlatformRouter(deps) {
       return;
     }
 
+    if (request.method === "POST" && relativePath === "/member/annotations/thread") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const annotationId = String(body.annotationId || "").trim();
+        const existing = getCanvasAnnotationForMember(deps.db, {
+          annotationId,
+          tenantId: session.tenantId,
+          userId: session.userId,
+        });
+        if (!existing) {
+          throw new Error("annotation_not_found");
+        }
+        sendJson(request, response, 200, {
+          ok: true,
+          data: appendCanvasAnnotationThreadMessage(deps.db, {
+            annotationId,
+            role: "user",
+            text: body.text,
+          }),
+        });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     if (request.method === "POST" && relativePath === "/member/sessions/hide") {
       const session = requireSession(request, response, deps);
       if (!session || !requireRole(request, response, session, ["member"])) {
@@ -5368,6 +5512,38 @@ export function createTenantPlatformRouter(deps) {
           openclawSessionKey,
         });
         sendJson(request, response, 200, { ok: true });
+      } catch (error) {
+        sendJson(request, response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && relativePath === "/member/annotations/status") {
+      const session = requireSession(request, response, deps);
+      if (!session || !requireRole(request, response, session, ["member"])) {
+        return;
+      }
+      try {
+        const body = await readJsonBody(request);
+        const annotationId = String(body.annotationId || "").trim();
+        const existing = getCanvasAnnotationForMember(deps.db, {
+          annotationId,
+          tenantId: session.tenantId,
+          userId: session.userId,
+        });
+        if (!existing) {
+          throw new Error("annotation_not_found");
+        }
+        sendJson(request, response, 200, {
+          ok: true,
+          data: setCanvasAnnotationStatus(deps.db, {
+            annotationId,
+            status: body.status,
+          }),
+        });
       } catch (error) {
         sendJson(request, response, 400, {
           ok: false,

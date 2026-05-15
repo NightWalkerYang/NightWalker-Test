@@ -978,6 +978,123 @@ function ensureSchemaCompatibility(db) {
   ensurePlatformUpdateLogSchemaCompatibility(db);
   ensureDataSourceSchemaCompatibility(db);
   ensureSkillMarketplaceSchemaCompatibility(db);
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS canvas_annotations (
+       id TEXT PRIMARY KEY,
+       tenant_id TEXT NOT NULL,
+       tenant_agent_id TEXT NOT NULL,
+       user_id TEXT NOT NULL,
+       openclaw_session_key TEXT NOT NULL,
+       run_id TEXT,
+       message_id TEXT,
+       page_id TEXT NOT NULL,
+       entry_url TEXT NOT NULL,
+       revision_id TEXT,
+       rect_json TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'open',
+       author_role TEXT NOT NULL DEFAULT 'user',
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+       FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS canvas_annotation_thread_messages (
+       id TEXT PRIMARY KEY,
+       annotation_id TEXT NOT NULL,
+       role TEXT NOT NULL DEFAULT 'user',
+       text TEXT NOT NULL,
+       created_at TEXT NOT NULL,
+       FOREIGN KEY (annotation_id) REFERENCES canvas_annotations(id) ON DELETE CASCADE
+     );`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_canvas_annotations_member_page
+       ON canvas_annotations (user_id, tenant_agent_id, page_id, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_canvas_annotations_session
+       ON canvas_annotations (openclaw_session_key, updated_at DESC);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_canvas_annotation_thread_annotation
+       ON canvas_annotation_thread_messages (annotation_id, created_at ASC);`,
+  );
+}
+
+function normalizeCanvasAnnotationStatus(value) {
+  return String(value || "").trim().toLowerCase() === "resolved" ? "resolved" : "open";
+}
+
+function normalizeCanvasAnnotationRole(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "assistant" || normalized === "system" ? normalized : "user";
+}
+
+function normalizeCanvasAnnotationRect(rect) {
+  const candidate = rect && typeof rect === "object" ? rect : {};
+  return {
+    x: toFiniteNumber(candidate.x, 0),
+    y: toFiniteNumber(candidate.y, 0),
+    width: toFiniteNumber(candidate.width, 0),
+    height: toFiniteNumber(candidate.height, 0),
+    pageWidth: toFiniteNumber(candidate.pageWidth, 0),
+    pageHeight: toFiniteNumber(candidate.pageHeight, 0),
+  };
+}
+
+function readCanvasAnnotationThread(db, annotationId) {
+  return db
+    .prepare(
+      `SELECT id,
+              role,
+              text,
+              created_at AS createdAt
+         FROM canvas_annotation_thread_messages
+        WHERE annotation_id = ?
+        ORDER BY created_at ASC, id ASC`,
+    )
+    .all(annotationId)
+    .map((row) => ({
+      ...row,
+      role: normalizeCanvasAnnotationRole(row.role),
+    }));
+}
+
+function readCanvasAnnotationById(db, annotationId) {
+  const row = db
+    .prepare(
+      `SELECT id,
+              tenant_id AS tenantId,
+              tenant_agent_id AS tenantAgentId,
+              user_id AS userId,
+              openclaw_session_key AS openclawSessionKey,
+              run_id AS runId,
+              message_id AS messageId,
+              page_id AS pageId,
+              entry_url AS entryUrl,
+              revision_id AS revisionId,
+              rect_json AS rectJson,
+              status,
+              author_role AS authorRole,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+         FROM canvas_annotations
+        WHERE id = ?`,
+    )
+    .get(annotationId);
+  if (!row) {
+    throw new Error("annotation_not_found");
+  }
+  return {
+    ...row,
+    rect: normalizeCanvasAnnotationRect(parseJsonObject(row.rectJson)),
+    status: normalizeCanvasAnnotationStatus(row.status),
+    authorRole: normalizeCanvasAnnotationRole(row.authorRole),
+    thread: readCanvasAnnotationThread(db, row.id),
+  };
 }
 
 function normalizeSegment(value, fallback = "x", maxLength = 24) {
@@ -9499,6 +9616,234 @@ export function listTenantAgentSessions(db, params) {
        ORDER BY updated_at DESC`,
     )
     .all(params.userId, params.tenantAgentId);
+}
+
+export function createCanvasAnnotation(db, params) {
+  const now = nowIso();
+  const annotationId = createId("annotation");
+  const threadId = createId("annotation_thread");
+  const rect = normalizeCanvasAnnotationRect(params.rect);
+  const status = normalizeCanvasAnnotationStatus(params.status);
+  const authorRole = normalizeCanvasAnnotationRole(params.authorRole);
+  const text = String(params.text || "").trim();
+  if (!String(params.tenantId || "").trim()) {
+    throw new Error("tenant_id_required");
+  }
+  if (!String(params.tenantAgentId || "").trim()) {
+    throw new Error("tenant_agent_id_required");
+  }
+  if (!String(params.userId || "").trim()) {
+    throw new Error("user_id_required");
+  }
+  if (!String(params.openclawSessionKey || "").trim()) {
+    throw new Error("openclaw_session_key_required");
+  }
+  if (!String(params.pageId || "").trim()) {
+    throw new Error("page_id_required");
+  }
+  if (!String(params.entryUrl || "").trim()) {
+    throw new Error("entry_url_required");
+  }
+  if (!text) {
+    throw new Error("annotation_text_required");
+  }
+
+  runInTransaction(db, () => {
+    db.prepare(
+      `INSERT INTO canvas_annotations (
+         id,
+         tenant_id,
+         tenant_agent_id,
+         user_id,
+         openclaw_session_key,
+         run_id,
+         message_id,
+         page_id,
+         entry_url,
+         revision_id,
+         rect_json,
+         status,
+         author_role,
+         created_at,
+         updated_at
+       ) VALUES (
+         @id,
+         @tenantId,
+         @tenantAgentId,
+         @userId,
+         @openclawSessionKey,
+         @runId,
+         @messageId,
+         @pageId,
+         @entryUrl,
+         @revisionId,
+         @rectJson,
+         @status,
+         @authorRole,
+         @createdAt,
+         @updatedAt
+       )`,
+    ).run({
+      id: annotationId,
+      tenantId: String(params.tenantId || "").trim(),
+      tenantAgentId: String(params.tenantAgentId || "").trim(),
+      userId: String(params.userId || "").trim(),
+      openclawSessionKey: String(params.openclawSessionKey || "").trim(),
+      runId: String(params.runId || "").trim() || null,
+      messageId: String(params.messageId || "").trim() || null,
+      pageId: String(params.pageId || "").trim(),
+      entryUrl: String(params.entryUrl || "").trim(),
+      revisionId: String(params.revisionId || "").trim() || null,
+      rectJson: stringifyJsonObject(rect),
+      status,
+      authorRole,
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.prepare(
+      `INSERT INTO canvas_annotation_thread_messages (
+         id,
+         annotation_id,
+         role,
+         text,
+         created_at
+       ) VALUES (
+         @id,
+         @annotationId,
+         @role,
+         @text,
+         @createdAt
+       )`,
+    ).run({
+      id: threadId,
+      annotationId,
+      role: authorRole,
+      text,
+      createdAt: now,
+    });
+  });
+  return readCanvasAnnotationById(db, annotationId);
+}
+
+export function appendCanvasAnnotationThreadMessage(db, params) {
+  const annotationId = String(params.annotationId || "").trim();
+  const text = String(params.text || "").trim();
+  if (!annotationId) {
+    throw new Error("annotation_id_required");
+  }
+  if (!text) {
+    throw new Error("annotation_text_required");
+  }
+  runInTransaction(db, () => {
+    const existing = db.prepare("SELECT id FROM canvas_annotations WHERE id = ?").get(annotationId);
+    if (!existing) {
+      throw new Error("annotation_not_found");
+    }
+    const now = nowIso();
+    db.prepare(
+      `INSERT INTO canvas_annotation_thread_messages (
+         id,
+         annotation_id,
+         role,
+         text,
+         created_at
+       ) VALUES (
+         @id,
+         @annotationId,
+         @role,
+         @text,
+         @createdAt
+       )`,
+    ).run({
+      id: createId("annotation_thread"),
+      annotationId,
+      role: normalizeCanvasAnnotationRole(params.role),
+      text,
+      createdAt: now,
+    });
+    db.prepare(
+      `UPDATE canvas_annotations
+          SET updated_at = @updatedAt
+        WHERE id = @id`,
+    ).run({
+      id: annotationId,
+      updatedAt: now,
+    });
+  });
+  return readCanvasAnnotationById(db, annotationId);
+}
+
+export function getCanvasAnnotationForMember(db, params) {
+  const annotationId = String(params.annotationId || "").trim();
+  const tenantId = String(params.tenantId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!annotationId || !tenantId || !userId) {
+    return null;
+  }
+  const row = db
+    .prepare(
+      `SELECT id
+         FROM canvas_annotations
+        WHERE id = @annotationId
+          AND tenant_id = @tenantId
+          AND user_id = @userId
+        LIMIT 1`,
+    )
+    .get({
+      annotationId,
+      tenantId,
+      userId,
+    });
+  return row?.id ? readCanvasAnnotationById(db, row.id) : null;
+}
+
+export function setCanvasAnnotationStatus(db, params) {
+  const annotationId = String(params.annotationId || "").trim();
+  if (!annotationId) {
+    throw new Error("annotation_id_required");
+  }
+  const status = normalizeCanvasAnnotationStatus(params.status);
+  db.prepare(
+    `UPDATE canvas_annotations
+        SET status = @status,
+            updated_at = @updatedAt
+      WHERE id = @id`,
+  ).run({
+    id: annotationId,
+    status,
+    updatedAt: nowIso(),
+  });
+  return readCanvasAnnotationById(db, annotationId);
+}
+
+export function listCanvasAnnotations(db, params) {
+  const tenantId = String(params.tenantId || "").trim();
+  const tenantAgentId = String(params.tenantAgentId || "").trim();
+  const userId = String(params.userId || "").trim();
+  const openclawSessionKey = String(params.openclawSessionKey || "").trim();
+  const pageId = String(params.pageId || "").trim();
+  if (!tenantId || !tenantAgentId || !userId || !openclawSessionKey || !pageId) {
+    return [];
+  }
+  const rows = db
+    .prepare(
+      `SELECT id
+         FROM canvas_annotations
+        WHERE tenant_id = @tenantId
+          AND tenant_agent_id = @tenantAgentId
+          AND user_id = @userId
+          AND openclaw_session_key = @openclawSessionKey
+          AND page_id = @pageId
+        ORDER BY updated_at DESC, created_at DESC`,
+    )
+    .all({
+      tenantId,
+      tenantAgentId,
+      userId,
+      openclawSessionKey,
+      pageId,
+    });
+  return rows.map((row) => readCanvasAnnotationById(db, row.id));
 }
 
 function normalizePaymentAmount(value) {

@@ -9,6 +9,9 @@ import {
   syncMemberChatSurface,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js";
 import {
+  writeEchartsViewPendingPrompt,
+} from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js";
+import {
   writeSelectedTenantAgent,
   writeTenantSession,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/tenant-context.js";
@@ -2186,6 +2189,77 @@ describe("member chat surface", () => {
     expect(document.querySelector("[data-oc-member-chat-toast]")?.textContent).toContain(
       "积分不足请联系管理员。",
     );
+  });
+
+  it("consumes pending echarts-view prompt back into the member chat composer", async () => {
+    installTenantApiFetchStub({
+      sessions: [
+        {
+          openclawSessionKey:
+            "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+          title: "本周分析",
+          updatedAt: new Date().toISOString(),
+          hiddenAt: null,
+        },
+      ],
+    });
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 88,
+    });
+    writeEchartsViewPendingPrompt({
+      token: "viz-token",
+      tenantAgentId: "tenant-agent-1",
+      openclawSessionKey:
+        "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+      pendingPrompt: "请根据以下批注修改当前大屏：1. 顶部图表留白不足",
+      returnChatHref:
+        "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/chat?tenantAgentId=tenant-agent-1&session=agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
+    );
+    document.body.innerHTML = `
+      <nav aria-label="breadcrumb">
+        <a href="/">苏博泰克</a>
+        <a href="/chat">聊天</a>
+      </nav>
+      <aside aria-label="navigation sidebar"></aside>
+      <section class="composer-host">
+        <textarea aria-label="发送消息"></textarea>
+        <div role="toolbar" aria-label="chat actions">
+          <button type="button" aria-label="Send message">send</button>
+          <button type="button" title="New session">+</button>
+        </div>
+      </section>
+    `;
+    const app = createAppStub();
+    app.sessionKey =
+      "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest";
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const textarea = document.querySelector("textarea");
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    expect((textarea as HTMLTextAreaElement).value).toContain("请根据以下批注修改当前大屏");
+    expect((textarea as HTMLTextAreaElement).value).toContain("顶部图表留白不足");
   });
 
   it("hides deleted sessions from the sidebar while keeping the current session usable", async () => {

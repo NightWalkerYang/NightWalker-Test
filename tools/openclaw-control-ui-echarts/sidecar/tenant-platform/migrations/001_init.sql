@@ -326,6 +326,36 @@ CREATE TABLE IF NOT EXISTS tenant_agent_sessions (
   FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS canvas_annotations (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  tenant_agent_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  openclaw_session_key TEXT NOT NULL,
+  run_id TEXT,
+  message_id TEXT,
+  page_id TEXT NOT NULL,
+  entry_url TEXT NOT NULL,
+  revision_id TEXT,
+  rect_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  author_role TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_agent_id) REFERENCES tenant_agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS canvas_annotation_thread_messages (
+  id TEXT PRIMARY KEY,
+  annotation_id TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user',
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (annotation_id) REFERENCES canvas_annotations(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS tenant_usage_records (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -442,6 +472,15 @@ CREATE INDEX IF NOT EXISTS idx_user_agent_assignments_user
 
 CREATE INDEX IF NOT EXISTS idx_tenant_agent_sessions_user_agent
   ON tenant_agent_sessions (user_id, tenant_agent_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_annotations_member_page
+  ON canvas_annotations (user_id, tenant_agent_id, page_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_annotations_session
+  ON canvas_annotations (openclaw_session_key, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_annotation_thread_annotation
+  ON canvas_annotation_thread_messages (annotation_id, created_at ASC);
 
 CREATE INDEX IF NOT EXISTS idx_tenant_usage_records_tenant_day
   ON tenant_usage_records (tenant_id, usage_day, message_timestamp DESC);

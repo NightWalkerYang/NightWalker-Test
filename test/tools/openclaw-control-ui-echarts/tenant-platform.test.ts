@@ -15,8 +15,10 @@ import {
 import {
   openTenantPlatformDb,
   closeTenantPlatformDb,
+  appendCanvasAnnotationThreadMessage,
   createPlatformUpdateLog,
   createBootstrapPlatformAdmin,
+  createCanvasAnnotation,
   createTenantPaymentOrder,
   deleteTenantMember,
   deletePlatformUpdateLog,
@@ -48,6 +50,7 @@ import {
   listTenantSkillEntitlements,
   listTenantSkillsMarket,
   listAssignedAgentVisualizationsForUser,
+  listCanvasAnnotations,
   listAssignedAgentSandboxesForUser,
   getTenantOverview,
   getTenantWalletDashboard,
@@ -60,6 +63,7 @@ import {
   updateTenantMemberLimit,
   updateTenantMemberPassword,
   updateTenantMemberStatus,
+  setCanvasAnnotationStatus,
   getTenantDataSourceBinding,
   bindTenantDataSource,
 } from "../../../tools/openclaw-control-ui-echarts/sidecar/tenant-platform/db.mjs";
@@ -273,6 +277,109 @@ describe("tenant platform database foundation", () => {
     }
   });
 
+  it("creates, replies to, lists, resolves, and reopens member canvas annotations", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const tenant = createTenantWithAdmin(db, {
+        code: "alpha",
+        name: "租户 Alpha",
+        adminUsername: "alpha-admin",
+        adminPassword: "secret",
+        memberLimit: 8,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-a",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析助手",
+        rateMultiplier: 1,
+        status: "active",
+        balancePoints: 100,
+      });
+
+      const created = createCanvasAnnotation(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        userId: member.id,
+        openclawSessionKey:
+          "agent:finance:tenant:tenant-1:tenant-agent:tenant-agent-1:user:member-1:chat:001",
+        runId: "run-1",
+        messageId: "message-1",
+        pageId: "page-1",
+        entryUrl: "/echarts-view?token=abc",
+        revisionId: "rev-1",
+        rect: {
+          x: 10,
+          y: 20,
+          width: 200,
+          height: 120,
+          pageWidth: 1440,
+          pageHeight: 900,
+        },
+        authorRole: "user",
+        text: "顶部筛选器和图表太挤了",
+      });
+
+      expect(created).toMatchObject({
+        status: "open",
+        pageId: "page-1",
+        messageId: "message-1",
+      });
+      expect(created.thread).toHaveLength(1);
+      expect(created.thread[0]?.text).toBe("顶部筛选器和图表太挤了");
+
+      const replied = appendCanvasAnnotationThreadMessage(db, {
+        annotationId: created.id,
+        role: "user",
+        text: "保持整体风格不变",
+      });
+      expect(replied.thread).toHaveLength(2);
+      expect(replied.thread[1]?.text).toBe("保持整体风格不变");
+
+      const resolved = setCanvasAnnotationStatus(db, {
+        annotationId: created.id,
+        status: "resolved",
+      });
+      expect(resolved.status).toBe("resolved");
+
+      const reopened = setCanvasAnnotationStatus(db, {
+        annotationId: created.id,
+        status: "open",
+      });
+      expect(reopened.status).toBe("open");
+
+      const listed = listCanvasAnnotations(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        userId: member.id,
+        openclawSessionKey:
+          "agent:finance:tenant:tenant-1:tenant-agent:tenant-agent-1:user:member-1:chat:001",
+        pageId: "page-1",
+      });
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toMatchObject({
+        id: created.id,
+        status: "open",
+        entryUrl: "/echarts-view?token=abc",
+      });
+      expect(listed[0]?.thread).toHaveLength(2);
+      expect(listed[0]?.rect).toMatchObject({
+        width: 200,
+        pageWidth: 1440,
+      });
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
   it("serves health checks on both root and api-base-prefixed paths", async () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
@@ -464,6 +571,198 @@ describe("tenant platform database foundation", () => {
         sandboxEnabled: true,
         orgScopeCount: 0,
       });
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("serves member annotation routes with tenant/member isolation", async () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "tenant-annotation",
+        name: "租户 Annotation",
+        adminUsername: "tenant-annotation-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-annotation",
+        password: "secret",
+      });
+      const outsiderTenant = createTenantWithAdmin(db, {
+        code: "tenant-outsider",
+        name: "租户 Outsider",
+        adminUsername: "tenant-outsider-admin",
+        adminPassword: "secret",
+        memberLimit: 5,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const outsiderMember = createTenantMember(db, {
+        tenantId: outsiderTenant.id,
+        username: "member-outsider",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析助手",
+        rateMultiplier: 1,
+        status: "active",
+        balancePoints: 100,
+      });
+      assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+
+      const sessionToken = issueSessionToken(
+        {
+          role: "member",
+          userId: member.id,
+          username: member.username,
+          tenantId: tenant.id,
+          edition: tenant.deploymentMode,
+        },
+        "test-secret",
+      );
+      const outsiderSessionToken = issueSessionToken(
+        {
+          role: "member",
+          userId: outsiderMember.id,
+          username: outsiderMember.username,
+          tenantId: outsiderTenant.id,
+          edition: outsiderTenant.deploymentMode,
+        },
+        "test-secret",
+      );
+      const handler = createTenantPlatformRouter({
+        db,
+        config: {
+          ...sandbox.config,
+          apiBasePath: "/tenant-platform-api/v1",
+          sessionSecret: "test-secret",
+          localEdition: false,
+        },
+      });
+      const openclawSessionKey =
+        "agent:finance:tenant:tenant-annotation:tenant-agent:tenant-agent-1:user:member-annotation:chat:001";
+
+      const createResponse = await callTenantPlatformRoute(handler, {
+        method: "POST",
+        url: "/tenant-platform-api/v1/member/annotations",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          tenantAgentId,
+          openclawSessionKey,
+          runId: "run-1",
+          messageId: "message-1",
+          pageId: "page-1",
+          entryUrl: "/echarts-view?token=abc",
+          revisionId: "rev-1",
+          rect: {
+            x: 10,
+            y: 20,
+            width: 160,
+            height: 90,
+            pageWidth: 1440,
+            pageHeight: 900,
+          },
+          text: "顶部图表太拥挤",
+        }),
+      });
+      expect(createResponse.statusCode).toBe(200);
+      expect(createResponse.payload?.ok).toBe(true);
+      expect(createResponse.payload?.data).toMatchObject({
+        status: "open",
+        pageId: "page-1",
+        openclawSessionKey,
+      });
+
+      const annotationId = String(createResponse.payload?.data?.id || "").trim();
+      expect(annotationId).not.toBe("");
+
+      const listResponse = await callTenantPlatformRoute(handler, {
+        url:
+          "/tenant-platform-api/v1/member/annotations?" +
+          new URLSearchParams({
+            tenantAgentId,
+            openclawSessionKey,
+            pageId: "page-1",
+          }).toString(),
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(listResponse.statusCode).toBe(200);
+      expect(listResponse.payload?.data).toHaveLength(1);
+
+      const replyResponse = await callTenantPlatformRoute(handler, {
+        method: "POST",
+        url: "/tenant-platform-api/v1/member/annotations/thread",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          annotationId,
+          text: "保持整体风格不变",
+        }),
+      });
+      expect(replyResponse.statusCode).toBe(200);
+      expect(replyResponse.payload?.data?.thread).toHaveLength(2);
+
+      const resolveResponse = await callTenantPlatformRoute(handler, {
+        method: "POST",
+        url: "/tenant-platform-api/v1/member/annotations/status",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          origin: "http://127.0.0.1:18789",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          annotationId,
+          status: "resolved",
+        }),
+      });
+      expect(resolveResponse.statusCode).toBe(200);
+      expect(resolveResponse.payload?.data?.status).toBe("resolved");
+
+      const outsiderListResponse = await callTenantPlatformRoute(handler, {
+        url:
+          "/tenant-platform-api/v1/member/annotations?" +
+          new URLSearchParams({
+            tenantAgentId,
+            openclawSessionKey,
+            pageId: "page-1",
+          }).toString(),
+        headers: {
+          authorization: `Bearer ${outsiderSessionToken}`,
+          origin: "http://127.0.0.1:18789",
+        },
+      });
+      expect(outsiderListResponse.statusCode).toBe(200);
+      expect(outsiderListResponse.payload?.data).toEqual([]);
     } finally {
       closeTenantPlatformDb(db);
     }

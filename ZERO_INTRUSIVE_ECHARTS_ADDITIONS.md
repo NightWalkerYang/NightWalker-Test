@@ -26,6 +26,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 - `docs/superpowers/plans/2026-05-09-sandbox-prediction-evidence-v1.md`
 - `docs/superpowers/plans/2026-05-11-tenant-runtime-structure-refactor.md`
+- `docs/superpowers/plans/2026-05-14-canvas-annotation-workflow.md`
 
 ### Design Specs
 
@@ -175,6 +176,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-access-guard.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/preboot.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/api-client.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/echarts-view-annotations.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/auth-surface.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/topbar-meta.css`
@@ -193,6 +195,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-session-title.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-sidebar.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-storage.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-annotations.js`
+- `tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-canvas-annotations.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/page.css`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/login-page.js`
 - `tools/openclaw-control-ui-echarts/runtime/tenant/platform-login-page.js`
@@ -282,6 +286,8 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-view-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/echarts-view-context.test.ts`
+- `test/tools/openclaw-control-ui-echarts/echarts-view-annotations.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/lufeng-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/local-runtime-common.test.ts`
@@ -290,6 +296,9 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/member-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/feedback-toast.test.ts`
 - `test/tools/openclaw-control-ui-echarts/member-chat-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/member-chat-annotations.test.ts`
+- `test/tools/openclaw-control-ui-echarts/member-chat-canvas-annotations.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-api-client-annotations.test.ts`
 - `test/tools/openclaw-control-ui-echarts/package-local-runtime.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`

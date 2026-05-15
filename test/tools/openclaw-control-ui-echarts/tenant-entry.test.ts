@@ -519,6 +519,7 @@ describe("zero-intrusive tenant entry", () => {
       {
         id: "tenant-agent-1:销售数据可视化_index.html",
         href: "/echarts-view/?token=member-visualization-token",
+        tenantAgentId: "tenant-agent-1",
         agentId: "tenant-agent-1",
         agentName: "苏博泰克财务分析助手",
         visualizationName: "销售数据可视化",
@@ -548,6 +549,9 @@ describe("zero-intrusive tenant entry", () => {
     expect(visualizationItems).toHaveLength(1);
     expect(visualizationItems[0]?.textContent).toContain("销售数据可视化");
     expect(visualizationItems[0]?.getAttribute("href")).toContain("echarts-view/?token=");
+    expect(visualizationItems[0]?.getAttribute("data-oc-tenant-agent-id")).toBe(
+      "tenant-agent-1",
+    );
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "member",
     );

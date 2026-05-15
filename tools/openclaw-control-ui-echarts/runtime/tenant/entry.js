@@ -1,5 +1,5 @@
 import { ECHARTS_VIEW_ROUTE, isEchartsViewPublicPath } from "../echarts-view/context.js";
-import { writeEchartsViewToken } from "../echarts-view/context.js";
+import { writeEchartsViewRuntimeContext, writeEchartsViewToken } from "../echarts-view/context.js";
 import { isLufengPublicPath } from "../lufeng/context.js";
 import {
   SANDBOX_VIEW_ROUTE,
@@ -61,6 +61,7 @@ import {
   TENANT_WALLET_FLOW_ROUTE,
   TENANT_WALLET_FLOW_VIEW,
   TENANT_WALLET_SUMMARY_EVENT,
+  buildTenantMemberChatRoute,
   isTenantLoginView,
   clearPlatformSession,
   clearTenantSession,
@@ -433,6 +434,9 @@ function buildMemberVisualizationLinks(visualizations) {
     text: item.visualizationName || item.title || item.visualizationFileName || "",
     icon: ICONS.chart,
     activePath: ECHARTS_VIEW_ROUTE,
+    tenantAgentId: item.tenantAgentId,
+    pageId: item.id,
+    visualizationName: item.visualizationName,
   }));
 }
 
@@ -447,7 +451,42 @@ function buildMemberSandboxLinks(sandboxes) {
   }));
 }
 
-function openPublicRoute(destination) {
+function writeMemberVisualizationRouteContext(destination, sourceLink = null) {
+  if (!(destination instanceof URL) || !isEchartsViewPublicPath(destination.pathname)) {
+    return;
+  }
+  const token = destination.searchParams.get("token")?.trim() || "";
+  if (!token) {
+    return;
+  }
+  const session = readSessionForCurrentView();
+  const selectedAgent = readSelectedTenantAgent();
+  const linkedTenantAgentId =
+    sourceLink instanceof HTMLElement ? String(sourceLink.dataset.ocTenantAgentId || "").trim() : "";
+  const tenantAgentId = linkedTenantAgentId || String(selectedAgent?.id || "").trim();
+  const currentUrl = new URL(window.location.href, document.baseURI);
+  const currentSessionKey = currentUrl.searchParams.get("session")?.trim() || "";
+  const canReturnToCurrentSession =
+    tenantAgentId &&
+    currentSessionKey &&
+    String(selectedAgent?.id || "").trim() === tenantAgentId &&
+    normalizeTenantPathname(currentUrl.pathname) === "/chat";
+  const returnChatHref = tenantAgentId
+    ? buildTenantMemberChatRoute(tenantAgentId, canReturnToCurrentSession ? currentSessionKey : "")
+    : "";
+  writeEchartsViewRuntimeContext({
+    token,
+    tenantAgentId,
+    openclawSessionKey: canReturnToCurrentSession ? currentSessionKey : "",
+    pageId: sourceLink instanceof HTMLElement ? String(sourceLink.dataset.ocPageId || "").trim() : "",
+    visualizationName:
+      sourceLink instanceof HTMLElement ? String(sourceLink.dataset.ocVisualizationName || "").trim() : "",
+    returnChatHref,
+    role: String(session?.session?.role || "").trim(),
+  });
+}
+
+function openPublicRoute(destination, sourceLink = null) {
   if (!(destination instanceof URL)) {
     return false;
   }
@@ -456,6 +495,7 @@ function openPublicRoute(destination) {
     if (token) {
       writeEchartsViewToken(token);
     }
+    writeMemberVisualizationRouteContext(destination, sourceLink);
     window.location.assign(destination.href);
     return true;
   }
@@ -873,7 +913,7 @@ function ensureManagementSectionHandlers(section) {
       return;
     }
     const destination = new URL(link.href, document.baseURI);
-    if (openPublicRoute(destination)) {
+    if (openPublicRoute(destination, link)) {
       event.preventDefault();
       return;
     }
@@ -929,7 +969,7 @@ function ensureSidebarRouteHandlers(container) {
       if (destination.origin !== window.location.origin || !destination.pathname.startsWith("/")) {
         return;
       }
-      if (openPublicRoute(destination)) {
+      if (openPublicRoute(destination, link)) {
         event.preventDefault();
         return;
       }
@@ -963,6 +1003,15 @@ function createNavSection(session, spec) {
     }
     if (link.activePath) {
       item.setAttribute("data-oc-platform-path", link.activePath);
+    }
+    if (link.tenantAgentId) {
+      item.dataset.ocTenantAgentId = String(link.tenantAgentId || "").trim();
+    }
+    if (link.pageId) {
+      item.dataset.ocPageId = String(link.pageId || "").trim();
+    }
+    if (link.visualizationName) {
+      item.dataset.ocVisualizationName = String(link.visualizationName || "").trim();
     }
     item.classList.toggle(
       "nav-item--active",

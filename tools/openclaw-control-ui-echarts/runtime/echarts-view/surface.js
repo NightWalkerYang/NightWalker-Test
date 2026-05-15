@@ -1,4 +1,5 @@
 import { createTenantApiClient } from "../tenant/api-client.js";
+import { mountEchartsViewAnnotations } from "../tenant/echarts-view-annotations.js";
 import {
   isEchartsViewPublicPath,
   normalizeEchartsViewRouteUrl,
@@ -310,6 +311,11 @@ export async function bootEchartsViewSurface() {
     );
     installEchartsViewFrameNavigationBridge(frame);
     document.body.append(frame);
+    await mountEchartsViewAnnotations({
+      apiClient: createTenantApiClient(),
+      frame,
+      visualization: visualizationDocument,
+    });
     return visualizationDocument;
   } catch {
     clearVisualizationHost();

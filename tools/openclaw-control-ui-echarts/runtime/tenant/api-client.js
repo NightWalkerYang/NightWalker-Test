@@ -467,6 +467,31 @@ export function createTenantApiClient() {
     resolveMemberVisualization(token) {
       return requestJson(withQuery("/member/visualizations/resolve", { token }));
     },
+    listMemberAnnotations({
+      tenantAgentId = "",
+      openclawSessionKey = "",
+      pageId = "",
+      status = "",
+    } = {}) {
+      return requestJson(
+        withQuery("/member/annotations", {
+          tenantAgentId,
+          openclawSessionKey,
+          pageId,
+          status,
+        }),
+        { cache: "no-store" },
+      );
+    },
+    createMemberAnnotation(body) {
+      return requestJson("/member/annotations", { method: "POST", body });
+    },
+    replyMemberAnnotation(body) {
+      return requestJson("/member/annotations/thread", { method: "POST", body });
+    },
+    updateMemberAnnotationStatus(body) {
+      return requestJson("/member/annotations/status", { method: "POST", body });
+    },
     resolveMemberSandbox(token) {
       return requestJson(withQuery("/member/sandboxes/resolve", { token }));
     },

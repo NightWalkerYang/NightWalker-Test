@@ -24,6 +24,12 @@ import {
   loadSessionUsageTimeseries,
 } from "../framework/rpc-compat.js";
 import { createTenantApiClient } from "./api-client.js";
+import { consumePendingPromptIntoMemberChat } from "./echarts-view-annotations.js";
+import {
+  MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR,
+  mountMemberChatCanvasAnnotations,
+  unmountMemberChatCanvasAnnotations,
+} from "./member-chat-canvas-annotations.js";
 import {
   awaitWithTimeout,
   CHAT_FAILSAFE_MESSAGE,
@@ -662,6 +668,7 @@ function isMemberChatSelfMutation(node) {
     node.closest?.(
       `[${SECTION_ATTR}], [${TOP_ACTION_ATTR}], [${DELETE_DIALOG_ROOT_ATTR}], [${TOAST_ROOT_ATTR}]`,
     ),
+    node.closest?.(`[${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}]`),
   );
 }
 
@@ -957,6 +964,7 @@ async function syncMemberChatSurface() {
       document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
       document.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`)?.remove();
       document.querySelector(`[${TOAST_ROOT_ATTR}]`)?.remove();
+      unmountMemberChatCanvasAnnotations();
       return;
     }
 
@@ -1036,6 +1044,8 @@ async function syncMemberChatSurface() {
       getActiveController: getActiveMemberChatController,
       isAssistantSilentReply,
     });
+    mountMemberChatCanvasAnnotations(controller, createTenantApiClient());
+    consumePendingPromptIntoMemberChat(document);
     void syncMemberUsageRecords(
       controller,
       currentSessionKey,
@@ -1176,6 +1186,7 @@ export function resetMemberChatSurfaceForTests() {
   document.querySelector(`[${TOP_ACTION_ATTR}]`)?.remove();
   document.querySelector(`[${DELETE_DIALOG_ROOT_ATTR}]`)?.remove();
   document.querySelector(`[${TOAST_ROOT_ATTR}]`)?.remove();
+  unmountMemberChatCanvasAnnotations();
   delete window._ocMemberChatSurfaceController;
   delete window.__openclawMemberChatSurfaceBooted;
   resetTenantRouteSyncForTests();
