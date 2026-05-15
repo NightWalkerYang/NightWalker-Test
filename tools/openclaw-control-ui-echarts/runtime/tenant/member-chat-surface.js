@@ -667,8 +667,7 @@ function isMemberChatSelfMutation(node) {
   return Boolean(
     node.closest?.(
       `[${SECTION_ATTR}], [${TOP_ACTION_ATTR}], [${DELETE_DIALOG_ROOT_ATTR}], [${TOAST_ROOT_ATTR}]`,
-    ),
-    node.closest?.(`[${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}]`),
+    ) || node.closest?.(`[${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}]`),
   );
 }
 

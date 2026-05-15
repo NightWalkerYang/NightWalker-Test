@@ -3,14 +3,13 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { writeEchartsViewPendingPrompt } from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js";
+import { MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-canvas-annotations.js";
 import {
   bootMemberChatSurface,
   resetMemberChatSurfaceForTests,
   syncMemberChatSurface,
 } from "../../../tools/openclaw-control-ui-echarts/runtime/tenant/member-chat-surface.js";
-import {
-  writeEchartsViewPendingPrompt,
-} from "../../../tools/openclaw-control-ui-echarts/runtime/echarts-view/context.js";
 import {
   writeSelectedTenantAgent,
   writeTenantSession,
@@ -362,6 +361,59 @@ describe("member chat surface", () => {
     expect(items instanceof HTMLElement ? window.getComputedStyle(items).display : "").toBe("none");
     expect(items?.textContent).toContain("新建会话");
     expect(items?.textContent).toContain("本周分析");
+  });
+
+  it("ignores Canvas annotation drawer mutations when watching for chat shell remounts", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const initialSessionListCalls = app.client.request.mock.calls.filter(
+      ([method]) => method === "sessions.list",
+    ).length;
+    const canvasRoot = document.createElement("div");
+    canvasRoot.setAttribute(MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR, "true");
+    document.body.append(canvasRoot);
+    canvasRoot.innerHTML = `
+      <aside>
+        <nav class="sidebar-nav">
+          <button type="button">Canvas 内部按钮</button>
+        </nav>
+      </aside>
+    `;
+    await flush();
+
+    expect(
+      app.client.request.mock.calls.filter(([method]) => method === "sessions.list").length,
+    ).toBe(initialSessionListCalls);
   });
 
   it("heals a direct member chat route when the stored selected Agent is stale", async () => {
