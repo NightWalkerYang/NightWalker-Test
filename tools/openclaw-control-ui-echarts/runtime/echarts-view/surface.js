@@ -56,6 +56,8 @@ function resolveVisualizationAssetUrl(value, baseHref) {
     if (
       normalizedValue.startsWith("/") &&
       !normalizedValue.startsWith(normalizedBaseHref) &&
+      !normalizedValue.startsWith("/assets/vendor/") &&
+      !normalizedValue.startsWith("/assets/runtime/") &&
       !normalizedValue.startsWith("/workspace-downloads/") &&
       !normalizedValue.startsWith("/workspace-agent-downloads/") &&
       !normalizedValue.startsWith("/tenant-platform-api/")

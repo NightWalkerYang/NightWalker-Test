@@ -113,7 +113,7 @@ describe("member chat canvas annotations", () => {
     ).toBe("true");
     expect(document.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).not.toContain("<base ");
     expect(document.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).toContain(
-      '<script src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/vendor/echarts.min.js"></script>',
+      '<script src="/assets/vendor/echarts.min.js"></script>',
     );
     expect(document.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).toContain(
       '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/logo.png" alt="logo">',

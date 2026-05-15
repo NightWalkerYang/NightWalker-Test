@@ -101,9 +101,7 @@ describe("public echarts view surface", () => {
     const frame = document.querySelector(`iframe#oc-echarts-view-frame`);
     const srcdoc = frame?.getAttribute("srcdoc") || "";
     expect(srcdoc).not.toContain("<base ");
-    expect(srcdoc).toContain(
-      '<script src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/vendor/echarts.min.js"></script>',
-    );
+    expect(srcdoc).toContain('<script src="/assets/vendor/echarts.min.js"></script>');
     expect(srcdoc).toContain(
       '<img src="/workspace-agent-downloads/tenant-agent-1/Echarts/assets/logo.png" alt="logo">',
     );

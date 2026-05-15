@@ -139,7 +139,7 @@
 实现约束：
 
 - `baseHref` 必须保持 same-origin，并指向当前成员派生工作区的 `workspace-agent-downloads/.../Echarts/`
-- 已经被 sidecar 改写成 `workspace-downloads` / `workspace-agent-downloads` / `tenant-platform-api` 的 same-origin 路径保持原样，不应二次改坏
+- 已经被 sidecar 改写成 `assets/vendor` / `assets/runtime` / `workspace-downloads` / `workspace-agent-downloads` / `tenant-platform-api` 的 same-origin 路径保持原样，不应二次改坏
 - 源 HTML 里已有的 `<base>` 必须移除；浏览器端改写 `src` / `href` / `action` / `poster` / `data-src` / `data-href` / `srcset` 这些资源属性来承接 `baseHref`
 
 ## preboot 真实职责

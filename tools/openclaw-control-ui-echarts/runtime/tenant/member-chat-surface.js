@@ -664,10 +664,13 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
 }
 
 function isMemberChatSelfMutation(node) {
+  const canvasRootSelector = `[${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}]`;
   return Boolean(
     node.closest?.(
       `[${SECTION_ATTR}], [${TOP_ACTION_ATTR}], [${DELETE_DIALOG_ROOT_ATTR}], [${TOAST_ROOT_ATTR}]`,
-    ) || node.closest?.(`[${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}]`),
+    ) ||
+    node.closest?.(canvasRootSelector) ||
+    node.querySelector?.(canvasRootSelector),
   );
 }
 
@@ -1142,6 +1145,9 @@ export function bootMemberChatSurface() {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (!(node instanceof Element)) {
+          continue;
+        }
+        if (isMemberChatSelfMutation(node)) {
           continue;
         }
         if (isMemberChatShellAnchor(node)) {

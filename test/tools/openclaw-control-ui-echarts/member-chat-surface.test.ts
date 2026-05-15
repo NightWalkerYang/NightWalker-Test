@@ -414,6 +414,21 @@ describe("member chat surface", () => {
     expect(
       app.client.request.mock.calls.filter(([method]) => method === "sessions.list").length,
     ).toBe(initialSessionListCalls);
+
+    const nestedCanvasRoot = document.createElement("div");
+    nestedCanvasRoot.innerHTML = `
+      <aside ${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}="true">
+        <nav class="sidebar-nav">
+          <button type="button">Canvas 内部重绘按钮</button>
+        </nav>
+      </aside>
+    `;
+    document.body.append(nestedCanvasRoot);
+    await flush();
+
+    expect(
+      app.client.request.mock.calls.filter(([method]) => method === "sessions.list").length,
+    ).toBe(initialSessionListCalls);
   });
 
   it("heals a direct member chat route when the stored selected Agent is stale", async () => {
