@@ -340,6 +340,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(statsItems[1]?.textContent).toContain("耗量统计");
     expect(statsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
     expect(toolsSection).not.toBeNull();
+    expect(toolsSection?.textContent).toContain("技能");
     expect(toolsItems).toHaveLength(2);
     expect(toolsItems[0]?.textContent).toContain("市场");
     expect(toolsItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-skills-market");
@@ -549,9 +550,7 @@ describe("zero-intrusive tenant entry", () => {
     expect(visualizationItems).toHaveLength(1);
     expect(visualizationItems[0]?.textContent).toContain("销售数据可视化");
     expect(visualizationItems[0]?.getAttribute("href")).toContain("echarts-view/?token=");
-    expect(visualizationItems[0]?.getAttribute("data-oc-tenant-agent-id")).toBe(
-      "tenant-agent-1",
-    );
+    expect(visualizationItems[0]?.getAttribute("data-oc-tenant-agent-id")).toBe("tenant-agent-1");
     expect(document.querySelector("[data-oc-platform-topbar-meta]")?.textContent).toContain(
       "member",
     );

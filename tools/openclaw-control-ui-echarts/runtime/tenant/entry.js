@@ -329,7 +329,7 @@ function getSectionConfigForSession(session) {
         },
         {
           className: TOOLS_SECTION_CLASS,
-          label: "工具",
+          label: "技能",
           links: [
             {
               className: "oc-tenant-skills-market-link",
@@ -462,7 +462,9 @@ function writeMemberVisualizationRouteContext(destination, sourceLink = null) {
   const session = readSessionForCurrentView();
   const selectedAgent = readSelectedTenantAgent();
   const linkedTenantAgentId =
-    sourceLink instanceof HTMLElement ? String(sourceLink.dataset.ocTenantAgentId || "").trim() : "";
+    sourceLink instanceof HTMLElement
+      ? String(sourceLink.dataset.ocTenantAgentId || "").trim()
+      : "";
   const tenantAgentId = linkedTenantAgentId || String(selectedAgent?.id || "").trim();
   const currentUrl = new URL(window.location.href, document.baseURI);
   const currentSessionKey = currentUrl.searchParams.get("session")?.trim() || "";
@@ -478,9 +480,12 @@ function writeMemberVisualizationRouteContext(destination, sourceLink = null) {
     token,
     tenantAgentId,
     openclawSessionKey: canReturnToCurrentSession ? currentSessionKey : "",
-    pageId: sourceLink instanceof HTMLElement ? String(sourceLink.dataset.ocPageId || "").trim() : "",
+    pageId:
+      sourceLink instanceof HTMLElement ? String(sourceLink.dataset.ocPageId || "").trim() : "",
     visualizationName:
-      sourceLink instanceof HTMLElement ? String(sourceLink.dataset.ocVisualizationName || "").trim() : "",
+      sourceLink instanceof HTMLElement
+        ? String(sourceLink.dataset.ocVisualizationName || "").trim()
+        : "",
     returnChatHref,
     role: String(session?.session?.role || "").trim(),
   });
