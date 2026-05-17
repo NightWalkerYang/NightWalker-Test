@@ -13,6 +13,9 @@
   const MEMBER_DRAFT_ROUTE_LOCK_STORAGE_KEY =
     "openclaw:tenant-platform:member-chat:draft-route-lock:v1";
   const TENANT_VIEW_QUERY_KEY = "ocTenantView";
+  const TENANT_BOOT_LOCK_ATTR = "data-oc-tenant-boot-lock";
+  const TENANT_BOOT_LOCK_WINDOW_KEY = "__OPENCLAW_TENANT_BOOT_LOCK__";
+  const TENANT_BOOT_LOCK_TIMEOUT_MS = 15000;
   const LOGIN_VIEW = "login";
   const TENANT_AGENT_SELECTOR_VIEW = "tenant-agent-selector";
   const ROOT_ONLY_TENANT_VIEWS = new Set([
@@ -168,6 +171,79 @@
   const isSelectorHostPath = (pathname) => {
     const normalized = normalizePath(pathname);
     return normalized === "/" || normalized.endsWith("/index.html");
+  };
+
+  const isTenantLoginRoute = (href = window.location.href) => {
+    const url = new URL(href, document.baseURI);
+    const view = (url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "").toLowerCase();
+    return normalizePath(url.pathname) === "/login" || view === LOGIN_VIEW;
+  };
+
+  const isBootLockedRootView = (view) => ROOT_ONLY_TENANT_VIEWS.has(String(view || "").trim());
+
+  const resolveTenantBootLockRouteKind = (href = window.location.href) => {
+    try {
+      const url = href instanceof URL ? href : new URL(href, document.baseURI);
+      const pathname = normalizePath(url.pathname);
+      const tenantSession = readTenantSession();
+      const view = (url.searchParams.get(TENANT_VIEW_QUERY_KEY)?.trim() || "").toLowerCase();
+      if (isTenantLoginRoute(url.href)) {
+        return "login";
+      }
+      if (isMemberSelectorRoute(url.href, tenantSession)) {
+        return "member-selector";
+      }
+      if (pathname === "/chat" && tenantSession?.session?.role === "member") {
+        const selectedAgent = readSelectedTenantAgent(url.href);
+        if (String(selectedAgent?.id || "").trim()) {
+          return "member-chat";
+        }
+      }
+      if (isSelectorHostPath(pathname) && isBootLockedRootView(view)) {
+        return view;
+      }
+    } catch {
+      return "";
+    }
+    return "";
+  };
+
+  const releaseTenantBootLock = (reason = "runtime-ready") => {
+    const controller = window[TENANT_BOOT_LOCK_WINDOW_KEY];
+    if (controller?.timeoutId) {
+      window.clearTimeout(controller.timeoutId);
+    }
+    if (controller?.routeKind) {
+      document.documentElement.removeAttribute(TENANT_BOOT_LOCK_ATTR);
+    }
+    window[TENANT_BOOT_LOCK_WINDOW_KEY] = {
+      routeKind: "",
+      timeoutId: 0,
+      reason: String(reason || "runtime-ready").trim() || "runtime-ready",
+      release: releaseTenantBootLock,
+    };
+  };
+
+  const applyTenantBootLock = (href = window.location.href) => {
+    const routeKind = resolveTenantBootLockRouteKind(href);
+    if (!routeKind) {
+      releaseTenantBootLock("route-not-locked");
+      return "";
+    }
+    const previous = window[TENANT_BOOT_LOCK_WINDOW_KEY];
+    if (previous?.timeoutId) {
+      window.clearTimeout(previous.timeoutId);
+    }
+    document.documentElement.setAttribute(TENANT_BOOT_LOCK_ATTR, routeKind);
+    const timeoutId = window.setTimeout(() => {
+      releaseTenantBootLock("failsafe-timeout");
+    }, TENANT_BOOT_LOCK_TIMEOUT_MS);
+    window[TENANT_BOOT_LOCK_WINDOW_KEY] = {
+      routeKind,
+      timeoutId,
+      release: releaseTenantBootLock,
+    };
+    return routeKind;
   };
 
   const isMemberSelectorRoute = (
@@ -670,6 +746,7 @@
     clearPersistedControlUiSession(normalizedCurrent);
   }
   persistRouteState(normalizedCurrent);
+  applyTenantBootLock(normalizedCurrent);
 
   if (!window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__) {
     const originalReplaceState = window.history.replaceState.bind(window.history);
@@ -677,18 +754,31 @@
 
     const wrap = (original) => (state, unused, url) => {
       if (url == null) {
-        return original(state, unused, url);
+        const result = original(state, unused, url);
+        applyTenantBootLock(window.location.href);
+        return result;
       }
       const normalized = resolveMemberRouteUrl(url, window.location.href);
       if (isMemberSelectorRoute(normalized, readTenantSession())) {
         clearPersistedControlUiSession(normalized);
       }
       persistRouteState(normalized);
-      return original(state, unused, normalized.toString());
+      const result = original(state, unused, normalized.toString());
+      applyTenantBootLock(normalized);
+      return result;
     };
 
     window.history.replaceState = wrap(originalReplaceState);
     window.history.pushState = wrap(originalPushState);
     window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__ = true;
+  }
+
+  if (!window.__OPENCLAW_TENANT_PREBOOT_POPSTATE_PATCHED__) {
+    const syncBootLockFromLocation = () => {
+      applyTenantBootLock(window.location.href);
+    };
+    window.addEventListener("popstate", syncBootLockFromLocation);
+    window.addEventListener("hashchange", syncBootLockFromLocation);
+    window.__OPENCLAW_TENANT_PREBOOT_POPSTATE_PATCHED__ = true;
   }
 })();

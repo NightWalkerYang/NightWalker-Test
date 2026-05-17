@@ -9,6 +9,8 @@ import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/r
 afterEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
+  document.documentElement.removeAttribute("data-oc-tenant-boot-lock");
+  delete window.__OPENCLAW_TENANT_BOOT_LOCK__;
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
   delete window.__openclawPlatformSurfaceBooted;
@@ -231,6 +233,7 @@ describe("platform surface", () => {
     const surfaceRoot = document.querySelector("[data-oc-platform-surface-root]");
     const tableBody = surfaceRoot?.querySelector("tbody");
     expect(content?.getAttribute("data-oc-platform-surface-active")).toBe("true");
+    expect(document.documentElement.hasAttribute("data-oc-tenant-boot-lock")).toBe(false);
     expect(surfaceRoot).not.toBeNull();
     expect(document.querySelector(".content-header")).toBeNull();
     expect(document.querySelector("[data-platform-search]")).not.toBeNull();

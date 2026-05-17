@@ -24,6 +24,8 @@ afterEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   document.body.removeAttribute("data-oc-tenant-auth-active");
+  document.documentElement.removeAttribute("data-oc-tenant-boot-lock");
+  delete window.__OPENCLAW_TENANT_BOOT_LOCK__;
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
   resetTenantAuthSurfaceForTests();
@@ -137,6 +139,7 @@ describe("tenant auth surface", () => {
 
     expect(document.body.getAttribute("data-oc-tenant-auth-active")).toBe("true");
     expect(document.querySelector("[data-oc-tenant-auth-root]")).not.toBeNull();
+    expect(document.documentElement.hasAttribute("data-oc-tenant-boot-lock")).toBe(false);
     expect(document.querySelector("openclaw-app")).not.toBeNull();
     expect(document.querySelector(".login-gate__title")?.textContent).toContain("统一登录");
     expect(document.querySelector("[data-tenant-setup-form]")?.hasAttribute("hidden")).toBe(false);

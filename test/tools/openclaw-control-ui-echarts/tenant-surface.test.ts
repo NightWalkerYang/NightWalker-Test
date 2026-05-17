@@ -10,6 +10,8 @@ import { bootTenantSurface } from "../../../tools/openclaw-control-ui-echarts/ru
 afterEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
+  document.documentElement.removeAttribute("data-oc-tenant-boot-lock");
+  delete window.__OPENCLAW_TENANT_BOOT_LOCK__;
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
   delete window.__openclawTenantSurfaceBooted;
@@ -126,6 +128,7 @@ describe("tenant surface", () => {
 
     const root = document.querySelector("[data-oc-tenant-surface-root]");
     expect(root?.getAttribute("data-oc-tenant-section")).toBe("members");
+    expect(document.documentElement.hasAttribute("data-oc-tenant-boot-lock")).toBe(false);
     expect(requests.some((url) => url.includes("/tenant/admin/members"))).toBe(true);
 
     window.history.pushState({}, "", "/?ocTenantView=tenant-owned-agents");

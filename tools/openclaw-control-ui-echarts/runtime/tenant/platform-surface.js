@@ -12,6 +12,7 @@ import {
   PLATFORM_SKILLS_VIEW,
   PLATFORM_TENANTS_VIEW,
   clearPersistedControlUiSession,
+  releaseTenantBootLock,
   readPlatformSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -168,6 +169,7 @@ async function mountCurrentSurface(state) {
   if (root.getAttribute(SECTION_ATTR) !== section) {
     renderShell(root, section);
   }
+  releaseTenantBootLock("platform-surface-shell-ready");
   await mountPlatformConsolePage(root, {
     embedded: true,
     section,

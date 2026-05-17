@@ -21,6 +21,7 @@ import {
   TENANT_WALLET_LEDGER_VIEW,
   TENANT_WALLET_FLOW_VIEW,
   clearPersistedControlUiSession,
+  releaseTenantBootLock,
   readTenantSession,
   readTenantView,
 } from "./tenant-context.js";
@@ -212,6 +213,7 @@ async function mountCurrentSurface(state) {
   if (root.getAttribute(SECTION_ATTR) !== section) {
     renderShell(root, section);
   }
+  releaseTenantBootLock("tenant-surface-shell-ready");
   await mountTenantConsolePage(root, {
     embedded: true,
     section,

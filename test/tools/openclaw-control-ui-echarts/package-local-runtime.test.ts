@@ -167,6 +167,8 @@ describe("package local runtime", () => {
     const expectedRendererRelativePath = `./assets/openclaw-echarts/${expectedFingerprint}/openclaw-echarts-renderer.js`;
     const expectedRendererAbsolutePath = `/assets/openclaw-echarts/${expectedFingerprint}/openclaw-echarts-renderer.js`;
     expect(indexHtml).toContain("data-openclaw-echarts-view-bootstrap");
+    expect(indexHtml).toContain("data-openclaw-tenant-boot-lock-style");
+    expect(indexHtml).toContain("data-oc-tenant-boot-lock");
     expect(indexHtml).toContain(expectedRuntimeBasePath);
     expect(indexHtml).toContain(`${expectedRuntimeBasePath}/tenant/preboot.js`);
     expect(indexHtml).toContain(`${expectedRuntimeBasePath}/branding/auto-token-preboot.js`);

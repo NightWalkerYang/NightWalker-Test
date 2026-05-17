@@ -5,6 +5,8 @@ const TENANT_SESSION_STORAGE_KEY = "openclaw:tenant-platform:tenant-session:v1";
 const API_BASE_STORAGE_KEY = "openclaw:tenant-platform:api-base:v1";
 const TENANT_SELECTED_AGENT_STORAGE_KEY = "openclaw:tenant-platform:selected-agent:v1";
 const TENANT_VIEW_QUERY_KEY = "ocTenantView";
+const TENANT_BOOT_LOCK_GLOBAL_KEY = "__OPENCLAW_TENANT_BOOT_LOCK__";
+export const TENANT_BOOT_LOCK_ATTR = "data-oc-tenant-boot-lock";
 const LOGIN_PATHNAME = "/login";
 export const LOGIN_VIEW = "login";
 export const PLATFORM_LOGIN_VIEW = "platform-login";
@@ -86,6 +88,11 @@ function writeStoredSession(key, session) {
 
 function clearStoredSession(key) {
   safeStorage()?.removeItem(key);
+}
+
+function readTenantBootLockController() {
+  const controller = window[TENANT_BOOT_LOCK_GLOBAL_KEY];
+  return controller && typeof controller === "object" ? controller : null;
 }
 
 export function readPlatformSession() {
@@ -183,6 +190,16 @@ export function clearTenantSession() {
 
 export function clearPlatformSession() {
   clearStoredSession(PLATFORM_SESSION_STORAGE_KEY);
+}
+
+export function releaseTenantBootLock(reason = "runtime-ready") {
+  const normalizedReason = String(reason || "runtime-ready").trim() || "runtime-ready";
+  const controller = readTenantBootLockController();
+  if (typeof controller?.release === "function") {
+    controller.release(normalizedReason);
+    return;
+  }
+  document.documentElement.removeAttribute(TENANT_BOOT_LOCK_ATTR);
 }
 
 function normalizeTenantApiBaseOverride(value) {

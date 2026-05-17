@@ -41,6 +41,14 @@
 - `preboot` 与 `history.pushState/replaceState` patch 都必须继续保留无 `session` 路由
 - 不能退回旧稳定会话
 
+当前真实补充：
+
+- `preboot` 不再只负责路由归一化和成员会话预处理
+- 构建产物已经同步注入首屏 boot lock 样式
+- `preboot` 会在 login、成员选择、平台管理、租户管理、成员聊天这些零侵入接管路由上，先打 `data-oc-tenant-boot-lock`
+- 各 zero-intrusive surface 会在自己的宿主壳 ready 后主动解锁
+- 这样即使网络偏慢，原生 Control UI DOM 也不会先短暂露出并允许点击
+
 ## 3. 平台管理员守卫与平台页已落地
 
 当前真实状态：

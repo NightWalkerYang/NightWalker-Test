@@ -121,6 +121,7 @@ shell 部署路径里的 Control UI 产物构建，必须复用：
 构建阶段还必须对关键注入点做 fail-fast smoke：
 
 - `index.html` 主 bundle 存在且零侵入 preboot 标记位只出现一次
+- 首屏 `tenant boot lock style` 只注入一次，且样式里必须包含 `data-oc-tenant-boot-lock` 选择器
 - `tenant preboot`、`auto-token preboot`、`lufeng preboot`、`echarts-view preboot` 都在主 bundle 前注入
 - `login/index.html`、`login.html`、`/echarts-view/index.html` 这些入口别名存在
 - auto-token 与 lufeng bootstrap 已嵌入当前机器 token
@@ -292,6 +293,7 @@ preflight 至少要拦住这些情况：
 
 - `openclaw-control-ui-build-manifest.json` 缺失或字段损坏
 - `index.html` 缺少关键 bootstrap marker
+- `index.html` 缺少首屏 boot lock style，或 style 里丢了 `data-oc-tenant-boot-lock` 选择器
 - marker 指向的 runtime 脚本、renderer、login 别名页、`/echarts-view/index.html` 缺失
 - 构建 manifest 缺失关键路径字段，导致 preflight 无法确认当前 Control UI 产物结构
 

@@ -115,6 +115,8 @@ describe("upstream sync smoke gate (build output)", () => {
     const expectedRuntimeBasePath = `./assets/openclaw-echarts/${expectedFingerprint}/runtime`;
 
     expect(indexHtml).toContain("data-openclaw-echarts-view-bootstrap");
+    expect(indexHtml).toContain("data-openclaw-tenant-boot-lock-style");
+    expect(indexHtml).toContain("data-oc-tenant-boot-lock");
     expect(indexHtml).toContain("data-openclaw-tenant-preboot");
     expect(indexHtml).toContain("data-openclaw-lufeng-bootstrap");
     expect(indexHtml).toContain("data-openclaw-auto-token-bootstrap");

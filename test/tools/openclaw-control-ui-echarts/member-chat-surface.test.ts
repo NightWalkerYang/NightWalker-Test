@@ -237,6 +237,8 @@ afterEach(() => {
   resetMemberChatSurfaceForTests();
   document.body.innerHTML = "";
   document.head.innerHTML = "";
+  document.documentElement.removeAttribute("data-oc-tenant-boot-lock");
+  delete window.__OPENCLAW_TENANT_BOOT_LOCK__;
   window.localStorage.clear();
   window.sessionStorage.clear();
   window.history.replaceState({}, "", "/");
@@ -300,6 +302,7 @@ describe("member chat surface", () => {
     expect(window.location.search).toContain(
       "session=agent%3Asubotech-finance%3Atenant%3At-1%3Atenant-agent%3Atenant-agent-1%3Auser%3Auser-1%3Achat%3Alatest",
     );
+    expect(document.documentElement.hasAttribute("data-oc-tenant-boot-lock")).toBe(false);
     expect(app.sessionKey).toBe(
       "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
     );

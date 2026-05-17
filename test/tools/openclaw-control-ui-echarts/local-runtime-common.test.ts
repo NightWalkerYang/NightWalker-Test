@@ -287,6 +287,7 @@ OPENCLAW_GATEWAY_PORT=19999
     const indexHtml = [
       "<html>",
       "  <head>",
+      '    <style data-openclaw-tenant-boot-lock-style>:root[data-oc-tenant-boot-lock="login"] body { overflow: hidden; }</style>',
       `    <script type="module" src="${runtimeBase}/echarts-view/preboot.js" data-openclaw-echarts-view-bootstrap></script>`,
       `    <script src="${runtimeBase}/tenant/preboot.js" data-openclaw-tenant-preboot></script>`,
       `    <script src="${runtimeBase}/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="token-a"></script>`,

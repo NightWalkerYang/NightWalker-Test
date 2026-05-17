@@ -157,6 +157,31 @@
 - 避免原生首轮 `chat.history` 直接撞上错误或随机 session
 - 降低成员打开聊天页即卡死的概率
 
+当前还新增了一层首屏 boot lock：
+
+- 构建产物会在主 bundle 前注入一段内联首屏锁样式
+- `runtime/tenant/preboot.js` 会在真正 runtime 启动前，按路由给 `document.documentElement` 打上 `data-oc-tenant-boot-lock`
+- 当前会加锁的至少包括：
+  - `?ocTenantView=login`
+  - `?ocTenantView=tenant-agent-selector`
+  - `?ocTenantView=platform-*`
+  - `?ocTenantView=tenant-*`
+  - 已选中成员 Agent 的 `/chat?tenantAgentId=...`
+- 这层锁的目标不是做 loading 动画，而是确保慢网或慢机上，原生 Control UI DOM 不会先短暂可见、可点击，再被零侵入层覆盖
+
+解锁规则当前为：
+
+- 登录页在 auth shell root 插入并接管后解锁
+- 平台页、租户页、成员选择页在自己的 surface root 已写入宿主内容区后解锁
+- 成员聊天页在侧边栏、breadcrumb、会话钉住与零侵入 chrome 完成后解锁
+- 如果 runtime 异常卡住，preboot 还会保留一个超时 failsafe，避免页面永久白屏
+
+实现边界：
+
+- 这层 boot lock 只允许落在零侵入构建链与零侵入 runtime 里
+- 不能依赖上游 Control UI 内联脚本
+- 也不能把 route-specific 原生 class selector 再散落到各 feature 模块里
+
 ## same-origin API 规则
 
 浏览器侧租户 runtime 默认只允许走：

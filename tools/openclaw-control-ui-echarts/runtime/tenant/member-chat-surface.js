@@ -79,6 +79,7 @@ import {
   createTenantMemberSessionKey,
   hasResolvedSelectedTenantAgent,
   isTenantMemberSessionKey,
+  releaseTenantBootLock,
   readSelectedTenantAgent,
   readTenantSession,
   writeSelectedTenantAgent,
@@ -1041,6 +1042,7 @@ async function syncMemberChatSurface() {
     pinMemberChatSession(app, currentSessionKey, {
       skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
     });
+    releaseTenantBootLock("member-chat-surface-ready");
     window._ocMemberChatSurfaceController = controller;
     bindMemberHistoryPagination(controller, {
       getActiveController: getActiveMemberChatController,

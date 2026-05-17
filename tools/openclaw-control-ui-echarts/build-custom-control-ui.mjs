@@ -19,12 +19,15 @@ const RUNTIME_RENDERER_SCRIPT_PATTERN =
   /<script\s+type="module"\s+src="(?<src>[^"]*openclaw-echarts-renderer\.js[^"]*)"><\/script>/g;
 const BOOTSTRAP_MARKERS = {
   tenantPreboot: "data-openclaw-tenant-preboot",
+  tenantBootLockStyle: "data-openclaw-tenant-boot-lock-style",
   autoToken: "data-openclaw-auto-token-bootstrap",
   lufeng: "data-openclaw-lufeng-bootstrap",
   echartsView: "data-openclaw-echarts-view-bootstrap",
   sandboxView: "data-openclaw-sandbox-view-bootstrap",
 };
 const TENANT_PREBOOT_PATTERN = /^\s*<script[^>]*data-openclaw-tenant-preboot[^>]*><\/script>\s*$/gm;
+const TENANT_BOOT_LOCK_STYLE_PATTERN =
+  /^\s*<style[^>]*data-openclaw-tenant-boot-lock-style[^>]*>[\s\S]*?<\/style>\s*$/gm;
 const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
 const BUILD_MANIFEST_FILENAME = "openclaw-control-ui-build-manifest.json";
 
@@ -195,6 +198,52 @@ function injectTenantPreboot(indexHtml, options = {}) {
     "tenant/preboot.js",
   )}" data-openclaw-tenant-preboot></script>`;
   return injectBeforeMainBundle(indexHtml, scriptTag, TENANT_PREBOOT_PATTERN, "tenant preboot");
+}
+
+function buildTenantBootLockStyleTag() {
+  const style = [
+    "    <style data-openclaw-tenant-boot-lock-style>",
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=""]) {',
+    "        background: var(--bg, #fff);",
+    "      }",
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body {',
+    "        overflow: hidden;",
+    "        background: var(--bg, #fff);",
+    "      }",
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body > :not(script):not(style):not(link[rel=\"stylesheet\"]) {',
+    "        visibility: hidden !important;",
+    "        pointer-events: none !important;",
+    "      }",
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body[data-oc-tenant-auth-active=\"true\" > * ,',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body[data-oc-platform-surface-active=\"fallback\"] > *,',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body[data-oc-tenant-surface-active=\"fallback\"] > * {',
+    "        visibility: visible !important;",
+    "        pointer-events: auto !important;",
+    "      }",
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-member-surface-active=\"true\"],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-platform-surface-active=\"true\"],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-tenant-surface-active=\"true\"],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-tenant-auth-root],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-member-surface-root],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-platform-surface-root],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-platform-surface-fallback],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-tenant-surface-root],',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) [data-oc-tenant-surface-fallback] {',
+    "        visibility: visible !important;",
+    "        pointer-events: auto !important;",
+    "      }",
+    "    </style>",
+  ].join("\n");
+  return style;
+}
+
+function injectTenantBootLockStyle(indexHtml) {
+  return injectBeforeMainBundle(
+    indexHtml,
+    buildTenantBootLockStyleTag(),
+    TENANT_BOOT_LOCK_STYLE_PATTERN,
+    "tenant boot lock style",
+  );
 }
 
 function replaceBrandFavicons(indexHtml) {
@@ -481,6 +530,18 @@ function assertCriticalInjectionAndSmoke({
   if (mainBundlePosition < 0) {
     throw new Error(
       `output smoke failed: main bundle script ${expectedMainBundleScriptSrc} is missing from index.html`,
+    );
+  }
+
+  const bootLockStyleCount = countMarker(indexHtml, BOOTSTRAP_MARKERS.tenantBootLockStyle);
+  if (bootLockStyleCount !== 1) {
+    throw new Error(
+      `output smoke failed: expected exactly 1 '${BOOTSTRAP_MARKERS.tenantBootLockStyle}' marker in index.html, found ${bootLockStyleCount}`,
+    );
+  }
+  if (!indexHtml.includes("data-oc-tenant-boot-lock")) {
+    throw new Error(
+      "output smoke failed: tenant boot lock style is missing the data-oc-tenant-boot-lock selector",
     );
   }
 
@@ -774,11 +835,13 @@ function main() {
     injectAutoGatewayTokenBootstrap(
       injectLufengPublicBootstrap(
         injectTenantPreboot(
-          injectSandboxViewPublicBootstrap(
-            injectEchartsViewPublicBootstrap(outputIndex, {
-              runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath,
-            }),
-            { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
+          injectTenantBootLockStyle(
+            injectSandboxViewPublicBootstrap(
+              injectEchartsViewPublicBootstrap(outputIndex, {
+                runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath,
+              }),
+              { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
+            ),
           ),
           { runtimeAssetBasePath: fingerprintPaths.runtimeAssetBaseRelativePath },
         ),
@@ -863,6 +926,7 @@ function main() {
     deploymentDecision,
     checks: {
       verifiedMarkers: [
+        BOOTSTRAP_MARKERS.tenantBootLockStyle,
         BOOTSTRAP_MARKERS.echartsView,
         BOOTSTRAP_MARKERS.sandboxView,
         BOOTSTRAP_MARKERS.tenantPreboot,

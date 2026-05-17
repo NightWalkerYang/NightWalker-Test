@@ -9,6 +9,8 @@ import { writeTenantSession } from "../../../tools/openclaw-control-ui-echarts/r
 afterEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
+  document.documentElement.removeAttribute("data-oc-tenant-boot-lock");
+  delete window.__OPENCLAW_TENANT_BOOT_LOCK__;
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
   delete window.__openclawMemberSurfaceBooted;
@@ -64,6 +66,7 @@ describe("member surface", () => {
     const content = document.querySelector(".content");
     const surfaceRoot = document.querySelector("[data-oc-member-surface-root]");
     expect(content?.getAttribute("data-oc-member-surface-active")).toBe("true");
+    expect(document.documentElement.hasAttribute("data-oc-tenant-boot-lock")).toBe(false);
     expect(surfaceRoot).not.toBeNull();
     expect(surfaceRoot?.textContent).toContain("苏博泰克财务分析助手");
     expect(surfaceRoot?.querySelector("[data-member-open-chat]")?.textContent).toContain(

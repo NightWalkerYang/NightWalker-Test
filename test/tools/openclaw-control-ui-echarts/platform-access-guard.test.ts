@@ -58,12 +58,15 @@ afterEach(() => {
   window.history.replaceState = ORIGINAL_REPLACE_STATE;
   console.warn = ORIGINAL_CONSOLE_WARN;
   delete window.__OPENCLAW_TENANT_PREBOOT_HISTORY_PATCHED__;
+  delete window.__OPENCLAW_TENANT_PREBOOT_POPSTATE_PATCHED__;
   delete window.__OPENCLAW_TENANT_PREBOOT_WARN_PATCHED__;
+  delete window.__OPENCLAW_TENANT_BOOT_LOCK__;
   delete window.__openclawControlUiResponsivenessWarnCounts;
   delete window.__openclawControlUiDebugWarnCounts;
   delete window.__OPENCLAW_CONTROL_UI_BASE_PATH__;
   delete window.__openclawPlatformAccessGuardBooted;
   document.documentElement.removeAttribute("data-oc-tenant-preboot");
+  document.documentElement.removeAttribute("data-oc-tenant-boot-lock");
   window.history.replaceState({}, "", "/");
   resetPlatformAccessGuardBootstrapForTests();
   resetTenantRouteSyncForTests();
@@ -187,6 +190,9 @@ describe("platform access guard", () => {
 
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("?ocTenantView=platform-tenants");
+    expect(document.documentElement.getAttribute("data-oc-tenant-boot-lock")).toBe(
+      "platform-tenants",
+    );
   });
 
   it("preboot normalizes malformed /chat tenant management routes back to the root host", async () => {
@@ -203,6 +209,36 @@ describe("platform access guard", () => {
 
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("?ocTenantView=tenant-members");
+    expect(document.documentElement.getAttribute("data-oc-tenant-boot-lock")).toBe(
+      "tenant-members",
+    );
+  });
+
+  it("applies a boot lock immediately for the unified login route", async () => {
+    window.history.replaceState({}, "", "/?ocTenantView=login");
+
+    await importTenantPreboot();
+
+    expect(document.documentElement.getAttribute("data-oc-tenant-boot-lock")).toBe("login");
+  });
+
+  it("applies a boot lock when same-page navigation enters the member selector route", async () => {
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        userId: "user-1",
+        tenantId: "tenant-1",
+      },
+    });
+    window.history.replaceState({}, "", "/chat");
+
+    await importTenantPreboot();
+    window.history.pushState({}, "", "/?ocTenantView=tenant-agent-selector");
+
+    expect(document.documentElement.getAttribute("data-oc-tenant-boot-lock")).toBe(
+      "member-selector",
+    );
   });
 
   it("allows tenant admins only on tenant management views", () => {

@@ -7,6 +7,7 @@ const AUTO_TOKEN_MARKER = "data-openclaw-auto-token-bootstrap";
 const LUFENG_TOKEN_MARKER = "data-openclaw-lufeng-bootstrap";
 const ECHARTS_VIEW_TOKEN_MARKER = "data-openclaw-echarts-view-bootstrap";
 const TENANT_PREBOOT_MARKER = "data-openclaw-tenant-preboot";
+const TENANT_BOOT_LOCK_STYLE_MARKER = "data-openclaw-tenant-boot-lock-style";
 const BUILD_MANIFEST_FILENAME = "openclaw-control-ui-build-manifest.json";
 const TENANT_MEMBER_BOOTSTRAP_HOOK_NAME = "tenant-member-bootstrap-filter";
 const MAIN_BUNDLE_PATTERN =
@@ -273,6 +274,12 @@ export function runControlUiPreflight(resolvedRuntime) {
 
   const markers = [
     {
+      marker: TENANT_BOOT_LOCK_STYLE_MARKER,
+      expectedSrc: "",
+      requireToken: false,
+      isInlineStyle: true,
+    },
+    {
       marker: ECHARTS_VIEW_TOKEN_MARKER,
       expectedSrc: `${runtimeAssetBaseRelativePath}/echarts-view/preboot.js`,
       requireToken: false,
@@ -294,13 +301,21 @@ export function runControlUiPreflight(resolvedRuntime) {
     },
   ];
 
-  for (const { marker, expectedSrc, requireToken } of markers) {
+  for (const { marker, expectedSrc, requireToken, isInlineStyle } of markers) {
     const markerCount = countMarker(indexHtml, marker);
     ensurePreflight(
       markerCount === 1,
       "control_ui_preflight_marker_count_mismatch",
       `${marker} expected 1, got ${markerCount}`,
     );
+    if (isInlineStyle) {
+      ensurePreflight(
+        indexHtml.includes("data-oc-tenant-boot-lock"),
+        "control_ui_preflight_boot_lock_style_missing",
+        `${marker} is missing the data-oc-tenant-boot-lock selector`,
+      );
+      continue;
+    }
     const markerSrc = resolveMarkerScriptSrc(indexHtml, marker);
     ensurePreflight(
       markerSrc === expectedSrc,

@@ -1,7 +1,11 @@
 import { observeMountTargets, resolvePrimaryMountRoot } from "../framework/mount-compat.js";
 import { mountMemberConsolePage } from "./member-console-page.js";
 import { bootTenantRouteSync, onTenantRouteChange } from "./route-sync.js";
-import { clearOpenClawChatState, clearPersistedControlUiSession } from "./tenant-context.js";
+import {
+  clearOpenClawChatState,
+  clearPersistedControlUiSession,
+  releaseTenantBootLock,
+} from "./tenant-context.js";
 import { TENANT_AGENT_SELECTOR_VIEW, readTenantSession, readTenantView } from "./tenant-context.js";
 
 const ROOT_ATTR = "data-oc-member-surface-root";
@@ -66,6 +70,7 @@ async function mountCurrentSurface(content) {
   }
   content.setAttribute(ACTIVE_ATTR, "true");
   const root = ensureRoot(content);
+  releaseTenantBootLock("member-surface-shell-ready");
   await mountMemberConsolePage(root);
   return root;
 }

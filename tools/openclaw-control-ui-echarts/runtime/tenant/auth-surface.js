@@ -6,6 +6,7 @@ import {
   clearPersistedControlUiSession,
   isTenantLoginView,
   isTenantMemberSessionKey,
+  releaseTenantBootLock,
   readPlatformSession,
   readSelectedTenantAgent,
   readTenantSession,
@@ -144,6 +145,7 @@ async function syncTenantAuthSurface() {
     clearUnderlyingNativeChatState();
     ensureStyle();
     const root = ensureRoot();
+    releaseTenantBootLock("auth-surface-shell-ready");
     const result = await mountTenantLoginPage(root);
     if (!isActiveRun(runId)) {
       clearAuthSurface();
