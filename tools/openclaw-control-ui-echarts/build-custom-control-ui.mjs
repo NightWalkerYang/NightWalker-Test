@@ -214,7 +214,7 @@ function buildTenantBootLockStyleTag() {
     "        visibility: hidden !important;",
     "        pointer-events: none !important;",
     "      }",
-    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body[data-oc-tenant-auth-active=\"true\" > * ,',
+    '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body[data-oc-tenant-auth-active=\"true\"] > *,',
     '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body[data-oc-platform-surface-active=\"fallback\"] > *,',
     '      :root[data-oc-tenant-boot-lock]:not([data-oc-tenant-boot-lock=\"\"]) body[data-oc-tenant-surface-active=\"fallback\"] > * {',
     "        visibility: visible !important;",

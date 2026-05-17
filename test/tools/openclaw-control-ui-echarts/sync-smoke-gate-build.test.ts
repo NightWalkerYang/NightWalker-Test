@@ -117,6 +117,7 @@ describe("upstream sync smoke gate (build output)", () => {
     expect(indexHtml).toContain("data-openclaw-echarts-view-bootstrap");
     expect(indexHtml).toContain("data-openclaw-tenant-boot-lock-style");
     expect(indexHtml).toContain("data-oc-tenant-boot-lock");
+    expect(indexHtml).toContain('body[data-oc-tenant-auth-active="true"] > *');
     expect(indexHtml).toContain("data-openclaw-tenant-preboot");
     expect(indexHtml).toContain("data-openclaw-lufeng-bootstrap");
     expect(indexHtml).toContain("data-openclaw-auto-token-bootstrap");
