@@ -775,6 +775,12 @@ describe("tenant platform database foundation", () => {
       const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
       fs.mkdirSync(path.join(baseWorkspace, "memory"), { recursive: true });
       fs.mkdirSync(path.join(baseWorkspace, "skills", "finance-core"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "finance-core", "scripts", "nested"), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "finance-core", "references"), {
+        recursive: true,
+      });
       fs.mkdirSync(path.join(baseWorkspace, "sessions"), { recursive: true });
       fs.writeFileSync(path.join(baseWorkspace, "MEMORY.md"), "# 母 Agent 记忆", "utf8");
       fs.writeFileSync(
@@ -793,6 +799,21 @@ description: bundled finance skill
 
 bundled skill body
 `,
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "scripts", "tool.py"),
+        "print('finance-core tool')\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "scripts", "nested", "helper.txt"),
+        "nested helper\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "references", "config.json"),
+        '{"mode":"strict"}\n',
         "utf8",
       );
       fs.writeFileSync(
@@ -879,6 +900,24 @@ bundled skill body
       expect(
         fs.readFileSync(path.join(derivedWorkspace, "skills", "finance-core", "SKILL.md"), "utf8"),
       ).toContain("bundled skill body");
+      expect(
+        fs.readFileSync(
+          path.join(derivedWorkspace, "skills", "finance-core", "scripts", "tool.py"),
+          "utf8",
+        ),
+      ).toContain("finance-core tool");
+      expect(
+        fs.readFileSync(
+          path.join(derivedWorkspace, "skills", "finance-core", "scripts", "nested", "helper.txt"),
+          "utf8",
+        ),
+      ).toContain("nested helper");
+      expect(
+        fs.readFileSync(
+          path.join(derivedWorkspace, "skills", "finance-core", "references", "config.json"),
+          "utf8",
+        ),
+      ).toContain('"mode":"strict"');
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "README.md"))).toBe(false);
       expect(fs.readFileSync(path.join(derivedWorkspace, "hooks", "README.md"), "utf8")).toContain(
         "hook docs",
@@ -916,6 +955,18 @@ bundled skill body
       expect(agents[0]?.agentName).toBe("财务分析助手");
       expect(agents[0]?.emoji).toBe("💼");
       expect(agents[0]?.balancePoints).toBe(42);
+      expect(
+        fs.readFileSync(
+          path.join(derivedWorkspace, "skills", "finance-core", "scripts", "tool.py"),
+          "utf8",
+        ),
+      ).toContain("finance-core tool");
+      expect(
+        fs.readFileSync(
+          path.join(derivedWorkspace, "skills", "finance-core", "references", "config.json"),
+          "utf8",
+        ),
+      ).toContain('"mode":"strict"');
 
       const visualizationDir = path.join(
         sandbox.config.configDir,
@@ -1464,6 +1515,104 @@ description: gamma skill
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"))).toBe(true);
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "beta", "SKILL.md"))).toBe(false);
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "gamma", "SKILL.md"))).toBe(true);
+    } finally {
+      closeTenantPlatformDb(db);
+    }
+  });
+
+  it("removes non-resolved skill directories during derived workspace reconcile", () => {
+    const sandbox = createTempSandbox();
+    const db = openTenantPlatformDb(sandbox.config);
+    try {
+      const baseWorkspace = path.join(sandbox.config.configDir, "workspace-agents", "finance");
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "alpha"), { recursive: true });
+      fs.mkdirSync(path.join(baseWorkspace, "skills", "beta"), { recursive: true });
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "alpha", "SKILL.md"),
+        `---
+name: alpha
+description: alpha skill
+---
+
+# alpha
+`,
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "beta", "SKILL.md"),
+        `---
+name: beta
+description: beta skill
+---
+
+# beta
+`,
+        "utf8",
+      );
+
+      createBootstrapPlatformAdmin(db, {
+        username: "platform-root",
+        password: "secret",
+      });
+      const tenant = createTenantWithAdmin(db, {
+        code: "skill-prune",
+        name: "租户 Skill Prune",
+        adminUsername: "skill-prune-admin",
+        adminPassword: "secret",
+        memberLimit: 3,
+        deploymentMode: "cloud",
+        licenseExpiresAt: null,
+        renewalCode: null,
+      });
+      const member = createTenantMember(db, {
+        tenantId: tenant.id,
+        username: "member-prune",
+        password: "secret",
+      });
+      const tenantAgentId = upsertTenantAgent(db, {
+        tenantId: tenant.id,
+        agentId: "finance",
+        description: "财务分析",
+        rateMultiplier: 1,
+        balancePoints: 0,
+        status: "active",
+      });
+      const assignment = assignTenantAgentToUser(db, {
+        tenantId: tenant.id,
+        userId: member.id,
+        tenantAgentId,
+        configPath: sandbox.config.configPath,
+        configDir: sandbox.config.configDir,
+      });
+      const derivedWorkspace = path.join(
+        sandbox.config.configDir,
+        "workspace-agents",
+        String(assignment.derivedAgentId),
+      );
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"))).toBe(true);
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "beta", "SKILL.md"))).toBe(true);
+
+      saveTenantAgentSkillTemplateSet(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        skillKeys: ["alpha"],
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
+
+      const assignedAgents = listAssignedAgentsForUser(
+        db,
+        {
+          tenantId: tenant.id,
+          userId: member.id,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        },
+        readOpenClawAgentCatalog(sandbox.config.configPath),
+      );
+      expect(assignedAgents).toHaveLength(1);
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"))).toBe(true);
+      expect(fs.existsSync(path.join(derivedWorkspace, "skills", "beta"))).toBe(false);
     } finally {
       closeTenantPlatformDb(db);
     }

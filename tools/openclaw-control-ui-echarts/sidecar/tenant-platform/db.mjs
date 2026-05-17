@@ -1025,11 +1025,17 @@ function ensureSchemaCompatibility(db) {
 }
 
 function normalizeCanvasAnnotationStatus(value) {
-  return String(value || "").trim().toLowerCase() === "resolved" ? "resolved" : "open";
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "resolved"
+    ? "resolved"
+    : "open";
 }
 
 function normalizeCanvasAnnotationRole(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   return normalized === "assistant" || normalized === "system" ? normalized : "user";
 }
 
@@ -2420,7 +2426,10 @@ function listTenantSkillEntitlementsInternal(db, tenantId) {
               ps.classification,
               ps.status AS skillStatus,
               ps.price_points AS pricePoints,
-              ps.latest_version_id AS latestVersionId
+              ps.latest_version_id AS latestVersionId,
+              ps.source_type AS sourceType,
+              ps.source_root AS sourceRoot,
+              ps.source_workspace_dir AS sourceWorkspaceDir
          FROM tenant_skill_entitlements tse
          JOIN platform_skills ps ON ps.id = tse.skill_id
         WHERE tse.tenant_id = ?
@@ -2447,6 +2456,9 @@ function listTenantSkillEntitlementsInternal(db, tenantId) {
       skillStatus: String(row.skillStatus || "").trim() || "active",
       pricePoints: normalizeNonNegativePoints(row.pricePoints),
       latestVersionId: String(row.latestVersionId || "").trim() || null,
+      sourceType: String(row.sourceType || "").trim() || "workspace",
+      sourceRoot: String(row.sourceRoot || "").trim() || "",
+      sourceWorkspaceDir: String(row.sourceWorkspaceDir || "").trim() || "",
     }));
 }
 
@@ -2474,7 +2486,7 @@ function listTenantSkillAssignmentsInternal(db, tenantId, params = {}) {
     const templates = listTenantAgentSkillTemplates(db, tenantAgentId);
     const assignmentRows = db
       .prepare(
-      `SELECT ua.id,
+        `SELECT ua.id,
               ua.user_id AS userId,
               ua.derived_agent_id AS derivedAgentId,
               ua.status,
@@ -2570,12 +2582,17 @@ function ensureTenantBundledSkillState(db, params = {}) {
       currentVersionId: skill.latestVersionId,
       enabledByTenant: true,
     });
-    ensureTenantAgentSkillTemplate(db, {
-      tenantAgentId,
-      skillId: skill.id,
-      templateState: SKILL_TEMPLATE_STATE_ENABLED,
-      sourceType: "base_default",
-    });
+    const existingTemplate = listTenantAgentSkillTemplates(db, tenantAgentId).find(
+      (entry) => entry.skillId === skill.id,
+    );
+    if (!existingTemplate) {
+      ensureTenantAgentSkillTemplate(db, {
+        tenantAgentId,
+        skillId: skill.id,
+        templateState: SKILL_TEMPLATE_STATE_ENABLED,
+        sourceType: "base_default",
+      });
+    }
   }
   return discoveredBundledSkills;
 }
@@ -4949,24 +4966,172 @@ function removePathIfExists(targetPath) {
   return true;
 }
 
+function ensureDirectoryExists(targetPath) {
+  const normalizedTargetPath = String(targetPath || "").trim();
+  if (!normalizedTargetPath) {
+    return "";
+  }
+  fs.mkdirSync(normalizedTargetPath, { recursive: true });
+  return normalizedTargetPath;
+}
+
+function listDirectoryEntriesSafe(targetPath) {
+  const normalizedTargetPath = String(targetPath || "").trim();
+  if (!normalizedTargetPath || !fs.existsSync(normalizedTargetPath)) {
+    return [];
+  }
+  try {
+    return fs.readdirSync(normalizedTargetPath, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+function copyDirectoryEntryOverlay(sourcePath, targetPath) {
+  const normalizedSourcePath = String(sourcePath || "").trim();
+  const normalizedTargetPath = String(targetPath || "").trim();
+  if (!normalizedSourcePath || !normalizedTargetPath || !fs.existsSync(normalizedSourcePath)) {
+    return false;
+  }
+  const sourceStats = fs.statSync(normalizedSourcePath);
+  const targetExists = fs.existsSync(normalizedTargetPath);
+  const targetStats = targetExists ? fs.lstatSync(normalizedTargetPath) : null;
+  if (
+    targetStats &&
+    ((sourceStats.isDirectory() && !targetStats.isDirectory()) ||
+      (!sourceStats.isDirectory() && targetStats.isDirectory()))
+  ) {
+    removePathIfExists(normalizedTargetPath);
+  }
+  if (sourceStats.isDirectory()) {
+    ensureDirectoryExists(normalizedTargetPath);
+    for (const entry of listDirectoryEntriesSafe(normalizedSourcePath)) {
+      copyDirectoryEntryOverlay(
+        path.join(normalizedSourcePath, entry.name),
+        path.join(normalizedTargetPath, entry.name),
+      );
+    }
+    return true;
+  }
+  ensureDirectoryExists(path.dirname(normalizedTargetPath));
+  fs.copyFileSync(normalizedSourcePath, normalizedTargetPath);
+  return true;
+}
+
+function copyDirectoryTreeOverlay(sourceDir, targetDir) {
+  const normalizedSourceDir = String(sourceDir || "").trim();
+  const normalizedTargetDir = String(targetDir || "").trim();
+  if (!normalizedSourceDir || !normalizedTargetDir || !fs.existsSync(normalizedSourceDir)) {
+    return false;
+  }
+  ensureDirectoryExists(normalizedTargetDir);
+  for (const entry of listDirectoryEntriesSafe(normalizedSourceDir)) {
+    copyDirectoryEntryOverlay(
+      path.join(normalizedSourceDir, entry.name),
+      path.join(normalizedTargetDir, entry.name),
+    );
+  }
+  return true;
+}
+
+function resolveSkillSourceDirectoryFromVersion(version) {
+  const skillMdPath = String(version?.skillMdPath || "").trim();
+  if (!skillMdPath) {
+    return "";
+  }
+  const skillDir = path.dirname(skillMdPath);
+  const normalizedSkillDir = String(skillDir || "").trim();
+  if (!normalizedSkillDir || !fs.existsSync(normalizedSkillDir)) {
+    return "";
+  }
+  const stats = fs.statSync(normalizedSkillDir);
+  if (!stats.isDirectory()) {
+    return "";
+  }
+  const canonicalSkillMdPath = path.join(normalizedSkillDir, "SKILL.md");
+  if (!fs.existsSync(canonicalSkillMdPath)) {
+    return "";
+  }
+  return normalizedSkillDir;
+}
+
+function resolveSkillSourceDirectoryFromEntry(entry) {
+  const skillKey = normalizeSkillKey(entry?.skillKey);
+  const sourceRoot = String(entry?.entitlement?.sourceRoot || "").trim();
+  const sourceWorkspaceDir = String(entry?.entitlement?.sourceWorkspaceDir || "").trim();
+  const candidates = [
+    sourceRoot,
+    sourceWorkspaceDir && skillKey ? path.join(sourceWorkspaceDir, skillKey) : "",
+    resolveSkillSourceDirectoryFromVersion(entry?.version),
+  ];
+  for (const candidate of candidates) {
+    const normalizedCandidate = String(candidate || "").trim();
+    if (!normalizedCandidate) {
+      continue;
+    }
+    if (!fs.existsSync(normalizedCandidate)) {
+      continue;
+    }
+    const stats = fs.statSync(normalizedCandidate);
+    if (!stats.isDirectory()) {
+      continue;
+    }
+    if (!fs.existsSync(path.join(normalizedCandidate, "SKILL.md"))) {
+      continue;
+    }
+    return normalizedCandidate;
+  }
+  return "";
+}
+
+function materializeResolvedSkillDirectory(skillDir, entry) {
+  const normalizedSkillDir = String(skillDir || "").trim();
+  const skillMdContent = String(entry?.version?.skillMdContent || "");
+  if (!normalizedSkillDir || !skillMdContent) {
+    return false;
+  }
+  const sourceSkillDir = resolveSkillSourceDirectoryFromEntry(entry);
+  if (sourceSkillDir) {
+    copyDirectoryTreeOverlay(sourceSkillDir, normalizedSkillDir);
+  } else {
+    ensureDirectoryExists(normalizedSkillDir);
+  }
+  fs.writeFileSync(path.join(normalizedSkillDir, "SKILL.md"), skillMdContent, "utf8");
+  return true;
+}
+
 function materializeResolvedSkillsIntoWorkspace(workspaceDir, resolvedEntries = []) {
   const normalizedWorkspaceDir = String(workspaceDir || "").trim();
   if (!normalizedWorkspaceDir) {
     return [];
   }
   const skillsRoot = path.join(normalizedWorkspaceDir, "skills");
-  removePathIfExists(skillsRoot);
-  fs.mkdirSync(skillsRoot, { recursive: true });
-  const resolvedSkillKeys = [];
+  ensureDirectoryExists(skillsRoot);
+  const resolvedEntriesByKey = new Map();
   for (const entry of resolvedEntries) {
     const skillKey = normalizeSkillKey(entry?.skillKey);
     const skillMdContent = String(entry?.version?.skillMdContent || "").trim();
-    if (!skillKey || !skillMdContent) {
+    if (!skillKey || !skillMdContent || resolvedEntriesByKey.has(skillKey)) {
       continue;
     }
+    resolvedEntriesByKey.set(skillKey, entry);
+  }
+  const resolvedSkillKeySet = new Set(resolvedEntriesByKey.keys());
+  for (const existingEntry of listDirectoryEntriesSafe(skillsRoot)) {
+    if (!existingEntry.isDirectory()) {
+      continue;
+    }
+    if (resolvedSkillKeySet.has(existingEntry.name)) {
+      continue;
+    }
+    removePathIfExists(path.join(skillsRoot, existingEntry.name));
+  }
+  const resolvedSkillKeys = [];
+  for (const [skillKey, entry] of resolvedEntriesByKey.entries()) {
     const skillDir = path.join(skillsRoot, skillKey);
-    fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(path.join(skillDir, "SKILL.md"), `${entry.version.skillMdContent}`, "utf8");
+    if (!materializeResolvedSkillDirectory(skillDir, entry)) {
+      continue;
+    }
     resolvedSkillKeys.push(skillKey);
   }
   return resolvedSkillKeys;
@@ -7858,7 +8023,7 @@ function getTenantMemberRow(db, tenantId, userId) {
   return (
     db
       .prepare(
-      `SELECT u.id, u.username, u.status,
+        `SELECT u.id, u.username, u.status,
               tm.role, tm.created_at AS createdAt,
               COUNT(DISTINCT ua.tenant_agent_id) AS assignedAgentCount
        FROM users u

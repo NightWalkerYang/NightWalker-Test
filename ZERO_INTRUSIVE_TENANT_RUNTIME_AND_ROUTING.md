@@ -354,6 +354,14 @@
 
 不能靠删文件来规避串台。
 
+当前 Skills 真实物化规则还包括：
+
+- sidecar reconcile 只允许清理派生工作区 `skills/` 下“不在最终 resolved 集合里”的 skill 目录
+- 对仍然 resolved 的 bundled/base workspace skill，优先从母 Agent 对应 skill 目录整树复制到派生工作区同名目录
+- 复制后仍会把 `SKILL.md` 回刷到当前 resolved version 内容，确保版本真值与 sidecar 解析一致
+- 对 managed skill，当前落库真值仍只有 `SKILL.md`，因此当前只物化该文件；代码结构已预留以后扩成完整 managed skill 目录快照
+- resolved skill 目录内部的脚本、`references/`、子目录等附属文件不能在 reconcile 时被清空；只有不再 resolved 的整个 skill 目录才允许被删除
+
 真正的修复点是：
 
 - 运行时只对“租户成员普通聊天会话”的 `agent:bootstrap`

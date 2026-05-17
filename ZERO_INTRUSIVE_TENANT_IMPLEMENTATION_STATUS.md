@@ -235,7 +235,10 @@
 
 - `skills/` 不再盲目整树复制
 - sidecar 先根据租户模板 + 成员 override 解析最终 skill 集
-- 再重建派生工作区里的 `skills/<skillKey>/SKILL.md`
+- 再按最终 resolved 集合 reconcile 派生工作区 `skills/`
+- bundled/base workspace skill 会优先从母 Agent 对应 skill 目录整树物化到派生工作区
+- managed skill 当前仍以 `SKILL.md` 为存储真值，因此先只物化该文件
+- reconcile 只删除不再 resolved 的 skill 目录，不会清空仍然 resolved skill 目录内部的脚本、`references/`、子目录等附属文件
 - 最后同步 derived agent config 的 `skills` allowlist
 - 这意味着物理文件层和 runtime 可见层都已经落地
 

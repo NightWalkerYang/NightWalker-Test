@@ -459,8 +459,12 @@
 ## 当前技能隔离真实规则
 
 - 基础顶层 `.md` 和 `memory/` 继续按派生工作区逻辑保留
-- `skills/` 不再整树盲拷贝
-- sidecar 先按最终 skill 集重建派生工作区 `skills/`
+- `skills/` 不再整树盲拷贝整个母工作区，也不再先整目录删除后只回写 `SKILL.md`
+- sidecar 会按最终 skill 集 reconcile 派生工作区 `skills/`：
+  - 删除不在 resolved 集合里的 skill 目录
+  - 对仍然 resolved 的 bundled/base workspace skill，按 `platform_skill_versions.skill_md_path` 反推母 skill 目录并整树复制
+  - 复制后回刷 `skills/<skillKey>/SKILL.md` 为当前 resolved version 的 `skill_md_content`
+  - 对当前只存 `SKILL.md` 的 managed skill，先只物化该文件
 - 然后在 runtime derived agent config 里显式写 `skills: [...]`
 - 两层都生效，任何一层单独成功都不算完成
 
