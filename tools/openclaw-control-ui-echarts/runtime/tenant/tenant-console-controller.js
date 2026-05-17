@@ -66,6 +66,7 @@ export function isRemoteSearchSection(section) {
   return (
     section === "usage-stats" ||
     section === "skills-market" ||
+    section === "skills-owned" ||
     section === "skills-entitlements" ||
     section === "skills-assignments" ||
     section === "wallet-orders" ||
@@ -95,6 +96,7 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
       "owned-agents": "",
       "usage-stats": "",
       "skills-market": "",
+      "skills-owned": "",
       "skills-workbench": "",
       "skills-entitlements": "",
       "skills-assignments": "",
@@ -109,6 +111,7 @@ export function createTenantConsoleControllerState(session, apiClient, stateFact
       "owned-agents": 1,
       "usage-stats": 1,
       "skills-market": 1,
+      "skills-owned": 1,
       "skills-workbench": 1,
       "skills-entitlements": 1,
       "skills-assignments": 1,
@@ -732,6 +735,12 @@ export async function refreshTenantConsole(root, controller, helpers) {
 
   if (controller.section === "skills-market") {
     controller.skillsMarketItems = await controller.apiClient.listTenantSkillsMarket();
+    helpers.render(root, controller);
+    return;
+  }
+
+  if (controller.section === "skills-owned") {
+    controller.skillsEntitlementItems = await controller.apiClient.listTenantSkillEntitlements();
     helpers.render(root, controller);
     return;
   }

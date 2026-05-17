@@ -176,14 +176,16 @@
 }
 
 .oc-tenant-agent-grid,
-.oc-tenant-skill-market-grid {
+.oc-tenant-skill-market-grid,
+.oc-tenant-owned-skill-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
 }
 
 .oc-tenant-agent-card,
-.oc-tenant-skill-market-card {
+.oc-tenant-skill-market-card,
+.oc-tenant-owned-skill-card {
   display: grid;
   gap: 14px;
   padding: 18px;
@@ -213,6 +215,7 @@
 .oc-tenant-agent-card__identity,
 .oc-tenant-agent-detail__hero,
 .oc-tenant-skill-market-card__header,
+.oc-tenant-owned-skill-card__header,
 .oc-tenant-skill-market-detail__hero {
   display: flex;
   align-items: center;
@@ -248,13 +251,15 @@
 
 .oc-tenant-agent-card__copy,
 .oc-tenant-agent-detail__hero-copy,
-.oc-tenant-skill-market-card__copy {
+.oc-tenant-skill-market-card__copy,
+.oc-tenant-owned-skill-card__copy {
   min-width: 0;
 }
 
 .oc-tenant-agent-card__title,
 .oc-tenant-agent-detail__name,
 .oc-tenant-skill-market-card__title,
+.oc-tenant-owned-skill-card__title,
 .oc-tenant-skill-market-detail__title {
   margin: 0;
   font-size: 16px;
@@ -265,6 +270,7 @@
 .oc-tenant-agent-card__subtitle,
 .oc-tenant-agent-detail__subtitle,
 .oc-tenant-skill-market-card__subtitle,
+.oc-tenant-owned-skill-card__subtitle,
 .oc-tenant-skill-market-detail__subtitle {
   margin-top: 4px;
   color: var(--muted);
@@ -274,6 +280,7 @@
 
 .oc-tenant-agent-card__description,
 .oc-tenant-skill-market-card__description,
+.oc-tenant-owned-skill-card__description,
 .oc-tenant-skill-market-detail__description {
   margin: 0;
   min-height: 40px;
@@ -285,6 +292,7 @@
 .oc-tenant-agent-card__meta,
 .oc-tenant-agent-detail__grid,
 .oc-tenant-skill-market-card__meta,
+.oc-tenant-owned-skill-card__meta,
 .oc-tenant-skill-market-detail__grid {
   display: grid;
   gap: 10px;
@@ -295,6 +303,7 @@
 .oc-tenant-agent-card__meta div,
 .oc-tenant-agent-detail__grid div,
 .oc-tenant-skill-market-card__meta div,
+.oc-tenant-owned-skill-card__meta div,
 .oc-tenant-skill-market-detail__grid div {
   min-width: 0;
 }
@@ -302,6 +311,7 @@
 .oc-tenant-agent-card__meta dt,
 .oc-tenant-agent-detail__grid dt,
 .oc-tenant-skill-market-card__meta dt,
+.oc-tenant-owned-skill-card__meta dt,
 .oc-tenant-skill-market-detail__grid dt {
   color: var(--muted);
   font-size: 12px;
@@ -310,6 +320,7 @@
 .oc-tenant-agent-card__meta dd,
 .oc-tenant-agent-detail__grid dd,
 .oc-tenant-skill-market-card__meta dd,
+.oc-tenant-owned-skill-card__meta dd,
 .oc-tenant-skill-market-detail__grid dd {
   margin: 4px 0 0;
   color: var(--text-strong);

@@ -4,6 +4,10 @@ Docs: https://docs.openclaw.ai
 
 ## 2026.5.6
 
+### Changes
+
+- Tenant Control UI: add an `已有技能` page under the tenant-admin `技能` group so tenant admins can review the skills their tenant already owns.
+
 ### Fixes
 
 - Docker/build: honor build-time npm and Debian mirror overrides in Compose-driven gateway builds and stop failing the image when Matrix's native addon cannot be downloaded during build, deferring that bootstrap to Matrix runtime instead.

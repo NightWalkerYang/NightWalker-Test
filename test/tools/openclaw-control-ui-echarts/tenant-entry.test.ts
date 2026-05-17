@@ -341,11 +341,13 @@ describe("zero-intrusive tenant entry", () => {
     expect(statsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-usage-stats");
     expect(toolsSection).not.toBeNull();
     expect(toolsSection?.textContent).toContain("技能");
-    expect(toolsItems).toHaveLength(2);
+    expect(toolsItems).toHaveLength(3);
     expect(toolsItems[0]?.textContent).toContain("市场");
     expect(toolsItems[0]?.getAttribute("href")).toContain("ocTenantView=tenant-skills-market");
-    expect(toolsItems[1]?.textContent).toContain("技能分配");
-    expect(toolsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-skills-workbench");
+    expect(toolsItems[1]?.textContent).toContain("已有技能");
+    expect(toolsItems[1]?.getAttribute("href")).toContain("ocTenantView=tenant-skills-owned");
+    expect(toolsItems[2]?.textContent).toContain("技能分配");
+    expect(toolsItems[2]?.getAttribute("href")).toContain("ocTenantView=tenant-skills-workbench");
     expect(walletSection).not.toBeNull();
     expect(walletItems).toHaveLength(4);
     expect(walletItems[0]?.textContent).toContain("钱包充值");
@@ -415,6 +417,20 @@ describe("zero-intrusive tenant entry", () => {
 
     expect(new URL(window.location.href).searchParams.get("ocTenantView")).toBe(
       "tenant-skills-market",
+    );
+
+    const ownedLink = document.querySelector(".oc-tenant-skills-owned-link");
+    expect(ownedLink).not.toBeNull();
+    ownedLink?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushAsync();
+
+    expect(new URL(window.location.href).searchParams.get("ocTenantView")).toBe(
+      "tenant-skills-owned",
     );
   });
 

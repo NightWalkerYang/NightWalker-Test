@@ -343,6 +343,101 @@ describe("tenant surface", () => {
     expect(requests.some((url) => url.includes("/tenant/admin/skills/assignments"))).toBe(true);
   });
 
+  it("mounts the tenant owned skills section when the route switches to tenant-skills-owned", async () => {
+    const requests = [];
+    writeTenantSession({
+      token: "tenant-token",
+      session: {
+        role: "tenant_admin",
+        username: "tenant-admin",
+      },
+    });
+    window.history.replaceState({}, "", "/?ocTenantView=tenant-skills-owned");
+    document.body.innerHTML = `
+      <div class="content">
+        <div class="native-placeholder">native content</div>
+      </div>
+    `;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/tenant/admin/skills/entitlements")) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                ok: true,
+                data: [
+                  {
+                    id: "entitlement-1",
+                    skillId: "skill-1",
+                    skillKey: "finance-core",
+                    name: "财务核心 Skill",
+                    description: "财务基础分析能力。",
+                    classification: "bundled",
+                    status: "active",
+                    acquireType: "bundled",
+                    enabledByTenant: true,
+                    currentVersionId: "version-1",
+                    latestVersionId: "version-1",
+                    pricePoints: 0,
+                    blockedReason: null,
+                    updatedAt: "2026-05-01T08:00:00.000Z",
+                  },
+                  {
+                    id: "entitlement-2",
+                    skillId: "skill-2",
+                    skillKey: "risk-audit",
+                    name: "风险审计 Skill",
+                    description: "识别经营风险。",
+                    classification: "paid",
+                    status: "active",
+                    acquireType: "purchase",
+                    enabledByTenant: false,
+                    currentVersionId: "version-2",
+                    latestVersionId: "version-2",
+                    pricePoints: 80,
+                    blockedReason: null,
+                    updatedAt: "2026-05-02T08:00:00.000Z",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }),
+    );
+
+    await bootTenantSurface();
+    await flush();
+
+    const root = document.querySelector("[data-oc-tenant-surface-root]");
+    expect(root?.getAttribute("data-oc-tenant-section")).toBe("skills-owned");
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/entitlements"))).toBe(true);
+    expect(requests.some((url) => url.includes("/tenant/admin/skills/market"))).toBe(false);
+    expect(root?.querySelectorAll(".oc-tenant-owned-skill-card")).toHaveLength(2);
+    expect(root?.textContent).toContain("财务核心 Skill");
+    expect(root?.textContent).toContain("已启用");
+    expect(root?.textContent).toContain("风险审计 Skill");
+    expect(root?.textContent).toContain("已授权");
+    expect(root?.textContent).toContain("80 积分");
+
+    const search = root?.querySelector("[data-tenant-search]") as HTMLInputElement | null;
+    expect(search?.placeholder).toBe("搜索技能名称、标识或授权状态");
+    search!.value = "风险";
+    search?.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await flush();
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+    await flush();
+
+    expect(root?.querySelectorAll(".oc-tenant-owned-skill-card")).toHaveLength(1);
+    expect(root?.textContent).not.toContain("财务核心 Skill");
+    expect(root?.textContent).toContain("风险审计 Skill");
+  });
+
   it("keeps skills workbench cards accessible through the tenant scroll shell", () => {
     const css = readFileSync(
       "tools/openclaw-control-ui-echarts/runtime/tenant/tenant-surface.css",

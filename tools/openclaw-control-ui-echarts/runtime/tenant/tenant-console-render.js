@@ -98,6 +98,20 @@ function restoreRenderFocusState(root, state) {
 }
 
 function renderToolbar(controller) {
+  if (controller.section === "skills-owned") {
+    return `
+      <div class="data-table-toolbar oc-tenant-table-toolbar">
+        <label class="data-table-search">
+          <input
+            type="search"
+            placeholder="搜索技能名称、标识或授权状态"
+            value="${escapeHtml(getSearchValue(controller))}"
+            data-tenant-search
+          />
+        </label>
+      </div>
+    `;
+  }
   if (
     controller.section === "skills-market" ||
     controller.section === "skills-entitlements" ||
@@ -699,6 +713,117 @@ function renderSkillsMarketCards(controller) {
   `;
 }
 
+function getOwnedSkillStatusLabel(entry) {
+  const status = String(entry?.status || "").trim();
+  if (status === "active" && entry?.enabledByTenant) {
+    return "已启用";
+  }
+  if (status === "active") {
+    return "已授权";
+  }
+  if (status === "pending") {
+    return "待确认";
+  }
+  if (status === "disabled") {
+    return "已停用";
+  }
+  if (status === "revoked") {
+    return "已撤回";
+  }
+  return status || "-";
+}
+
+function getOwnedSkillStatusVariant(entry) {
+  return String(entry?.status || "").trim() === "active" && entry?.enabledByTenant
+    ? "direct"
+    : "unknown";
+}
+
+function filterOwnedSkills(controller) {
+  const rows = Array.isArray(controller.skillsEntitlementItems)
+    ? controller.skillsEntitlementItems
+    : [];
+  const query = getSearchValue(controller).trim().toLowerCase();
+  if (!query) {
+    return rows;
+  }
+  return rows.filter((entry) => {
+    const haystack = [
+      entry?.name,
+      entry?.skillKey,
+      entry?.description,
+      entry?.classification,
+      entry?.status,
+      entry?.acquireType,
+      getOwnedSkillStatusLabel(entry),
+    ]
+      .map((value) => String(value || "").toLowerCase())
+      .join(" ");
+    return haystack.includes(query);
+  });
+}
+
+function renderOwnedSkillCards(controller) {
+  const rows = filterOwnedSkills(controller);
+  if (!rows.length) {
+    return `<div class="callout info oc-tenant-agent-empty">当前租户暂无已授权技能。</div>`;
+  }
+  return `
+    <div class="oc-tenant-owned-skill-grid">
+      ${rows
+        .map(
+          (entry) => `
+            <article class="oc-tenant-owned-skill-card">
+              <div class="oc-tenant-owned-skill-card__header">
+                <div class="oc-tenant-owned-skill-card__copy">
+                  <h3 class="oc-tenant-owned-skill-card__title">${escapeHtml(
+                    entry?.name || entry?.skillKey || "-",
+                  )}</h3>
+                  <p class="oc-tenant-owned-skill-card__subtitle">${escapeHtml(
+                    entry?.skillKey || entry?.skillId || "-",
+                  )}</p>
+                </div>
+                <span class="data-table-badge data-table-badge--${getOwnedSkillStatusVariant(
+                  entry,
+                )}">${escapeHtml(getOwnedSkillStatusLabel(entry))}</span>
+              </div>
+              <p class="oc-tenant-owned-skill-card__description">${escapeHtml(
+                entry?.description || "暂无说明",
+              )}</p>
+              <dl class="oc-tenant-owned-skill-card__meta">
+                <div>
+                  <dt>类型</dt>
+                  <dd>${escapeHtml(getSkillMarketClassificationLabel(entry?.classification))}</dd>
+                </div>
+                <div>
+                  <dt>获取方式</dt>
+                  <dd>${escapeHtml(entry?.acquireType || "-")}</dd>
+                </div>
+                <div>
+                  <dt>当前版本</dt>
+                  <dd>${escapeHtml(entry?.currentVersionId || entry?.latestVersionId || "-")}</dd>
+                </div>
+                <div>
+                  <dt>价格</dt>
+                  <dd>${formatCredits(entry?.pricePoints || 0)} 积分</dd>
+                </div>
+                <div>
+                  <dt>更新时间</dt>
+                  <dd>${escapeHtml(formatDateTime(entry?.updatedAt || entry?.createdAt))}</dd>
+                </div>
+                <div>
+                  <dt>阻断原因</dt>
+                  <dd>${escapeHtml(entry?.blockedReason || "-")}</dd>
+                </div>
+              </dl>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 export function renderTenantConsole(root, controller) {
   const focusState = captureRenderFocusState(root);
   const isUsageStats = controller.section === "usage-stats";
@@ -709,6 +834,7 @@ export function renderTenantConsole(root, controller) {
   const isWalletFlow = controller.section === "wallet-flow";
   const isOwnedAgents = controller.section === "owned-agents";
   const isSkillsMarket = controller.section === "skills-market";
+  const isSkillsOwned = controller.section === "skills-owned";
   const isSkillsWorkbench = controller.section === "skills-workbench";
   const isSkillsEntitlements = controller.section === "skills-entitlements";
   const isSkillsAssignments = controller.section === "skills-assignments";
@@ -721,7 +847,8 @@ export function renderTenantConsole(root, controller) {
     isWalletLedger ||
     isWalletFlow ||
     isSkillsWorkbenchRoute ||
-    isSkillsMarket;
+    isSkillsMarket ||
+    isSkillsOwned;
 
   if (controller.section === "agent-assignment") {
     pruneRevokeAssignmentSelection(controller);
@@ -740,7 +867,8 @@ export function renderTenantConsole(root, controller) {
     isWalletLedger ||
     isWalletFlow ||
     isSkillsWorkbenchRoute ||
-    isSkillsMarket
+    isSkillsMarket ||
+    isSkillsOwned
       ? null
       : paginate(
           isOwnedAgents ? filterTenantAgents(controller) : filterMembers(controller),
@@ -756,26 +884,28 @@ export function renderTenantConsole(root, controller) {
       ? renderTenantOverview(controller)
       : isSkillsWorkbench
         ? renderSkillsWorkbench(controller)
-        : isSkillsMarket
-          ? renderSkillsMarketCards(controller)
-          : isSkillsEntitlements || isSkillsAssignments
-            ? renderSkillsWorkbench(controller)
-            : isWallet
-              ? renderTenantWalletPage(controller)
-              : isWalletOrders
-                ? renderWalletOrdersList(controller, renderPagination)
-                : isWalletLedger
-                  ? renderWalletLedgerList(controller, renderPagination)
-                  : isWalletFlow
-                    ? renderWalletFlowList(controller, renderPagination)
-                    : isOwnedAgents
-                      ? `
+        : isSkillsOwned
+          ? renderOwnedSkillCards(controller)
+          : isSkillsMarket
+            ? renderSkillsMarketCards(controller)
+            : isSkillsEntitlements || isSkillsAssignments
+              ? renderSkillsWorkbench(controller)
+              : isWallet
+                ? renderTenantWalletPage(controller)
+                : isWalletOrders
+                  ? renderWalletOrdersList(controller, renderPagination)
+                  : isWalletLedger
+                    ? renderWalletLedgerList(controller, renderPagination)
+                    : isWalletFlow
+                      ? renderWalletFlowList(controller, renderPagination)
+                      : isOwnedAgents
+                        ? `
                   <div class="data-table-wrapper">
                     ${renderOwnedAgentsCards(pagination.items, controller)}
                     ${renderPagination(pagination)}
                   </div>
                 `
-                      : `
+                        : `
                   <div class="data-table-wrapper">
                     ${
                       controller.section === "agent-assignment"
@@ -801,6 +931,7 @@ export function renderTenantConsole(root, controller) {
       isWalletLedger ||
       isWalletFlow ||
       isSkillsWorkbench ||
+      isSkillsOwned ||
       isSkillsMarket ||
       isSkillsEntitlements ||
       isSkillsAssignments
@@ -827,6 +958,7 @@ export function renderTenantConsole(root, controller) {
     !isWalletOrders &&
     !isWalletLedger &&
     !isWalletFlow &&
+    !isSkillsOwned &&
     !isSkillsMarket &&
     !isSkillsEntitlements &&
     !isSkillsAssignments

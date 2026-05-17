@@ -357,6 +357,7 @@
 - 顶栏搜索位改为租户管理员状态条
 - `tenant-skills-workbench` 不能再使用路由级 `100vh` / `calc(100vh - ...)` 高度上限；右侧选中 Agent 的 skill 卡片和 skills grid 必须自然展开并参与原生内容区页面流滚动，避免滚到底仍裁掉底部卡片。
 - `tenant-skills-workbench` 页面顶部不再保留独立搜索框；成员筛选入口收口到左侧成员栏顶部，仅按用户名搜索，避免把右侧 Agent / skill 明细过滤和左侧成员导航混在一个输入框里。
+- `tenant-skills-owned` 是租户管理员只读查看本租户已有技能的页面；入口位于 `技能` 分组下的 `已有技能`，数据复用租户 skill entitlements，页面只展示当前租户已经拥有的技能授权。
 
 ### 租户成员
 
