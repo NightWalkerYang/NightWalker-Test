@@ -4856,6 +4856,13 @@ function syncDerivedAgentRuntimeConfigEntry(params = {}) {
   }
   const derivedWorkspace = buildDerivedAgentWorkspacePath({ ...params, derivedAgentId });
   const derivedAgentDir = path.join(resolveConfigDir(params), "agents", derivedAgentId, "agent");
+  const existingIndex = nextList.findIndex(
+    (entry) =>
+      String(entry?.id || "")
+        .trim()
+        .toLowerCase() === derivedAgentId.toLowerCase(),
+  );
+  const existingEntry = existingIndex >= 0 ? nextList[existingIndex] : null;
   const nextEntry = {
     ...cloneJsonValue(nextList[baseIndex]),
     id: derivedAgentId,
@@ -4863,17 +4870,11 @@ function syncDerivedAgentRuntimeConfigEntry(params = {}) {
     agentDir: derivedAgentDir,
     skills: Array.isArray(params.skills)
       ? [...new Set(params.skills.map((entry) => normalizeSkillKey(entry)).filter(Boolean))]
-      : cloneJsonValue(nextList[baseIndex]?.skills),
+      : cloneJsonValue(existingEntry?.skills ?? nextList[baseIndex]?.skills),
   };
-  const existingIndex = nextList.findIndex(
-    (entry) =>
-      String(entry?.id || "")
-        .trim()
-        .toLowerCase() === derivedAgentId.toLowerCase(),
-  );
   if (existingIndex >= 0) {
     nextList[existingIndex] = {
-      ...cloneJsonValue(nextList[existingIndex]),
+      ...cloneJsonValue(existingEntry),
       ...nextEntry,
     };
   } else {
@@ -5234,6 +5235,49 @@ function ensureTenantDerivedWorkspace(params) {
     resolvedSkillKeys,
     resolvedVersionIds: resolvedSkillState.resolvedEntries.map((entry) => entry.versionId),
     blockedReasons: resolvedSkillState.blockedReasons,
+  };
+}
+
+function ensureTenantDerivedWorkspaceMetadata(params = {}) {
+  const derivedAgentId = String(params.derivedAgentId || "").trim();
+  if (!derivedAgentId) {
+    throw new Error("derived_agent_id_required");
+  }
+
+  const canonicalWorkspace = buildDerivedAgentWorkspacePath({ ...params, derivedAgentId });
+  const runtimeWorkspace = buildDerivedAgentRuntimeWorkspacePath({ ...params, derivedAgentId });
+  fs.mkdirSync(canonicalWorkspace, { recursive: true });
+
+  const metadataPath = path.join(canonicalWorkspace, DERIVED_AGENT_METADATA_FILE);
+  if (!fs.existsSync(metadataPath)) {
+    const sourceWorkspace = resolveBaseWorkspaceDir(params);
+    fs.writeFileSync(
+      metadataPath,
+      JSON.stringify(
+        {
+          tenantId: params.tenantId,
+          userId: params.userId,
+          tenantAgentId: params.tenantAgentId,
+          baseAgentId: params.baseAgentId,
+          derivedAgentId,
+          sourceWorkspace: sourceWorkspace || null,
+          createdAt: nowIso(),
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+  }
+
+  const linked = ensureDerivedWorkspaceAlias(runtimeWorkspace, canonicalWorkspace);
+  if (!linked) {
+    fs.mkdirSync(runtimeWorkspace, { recursive: true });
+  }
+
+  return {
+    canonicalWorkspace,
+    runtimeWorkspace,
   };
 }
 
@@ -8775,7 +8819,6 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
     .all(params.userId)
     .map((row) => {
       let resolvedAgentId = String(row.derivedAgentId || "").trim();
-      let workspace = null;
       if (!resolvedAgentId) {
         resolvedAgentId = deriveTenantMemberAgentId({
           tenantId: row.tenantId,
@@ -8784,54 +8827,24 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
           baseAgentId: row.baseAgentId,
         });
       }
-      workspace = ensureTenantDerivedWorkspace({
-        db,
+      const workspaceMetadata = ensureTenantDerivedWorkspaceMetadata({
         tenantId: row.tenantId,
         userId: row.userId,
         tenantAgentId: row.tenantAgentId,
         baseAgentId: row.baseAgentId,
         derivedAgentId: resolvedAgentId,
-        assignmentId: row.assignmentId,
         configPath: params.configPath,
         configDir: params.configDir,
-      });
-      upsertTenantAgentSkillSnapshot(db, {
-        assignmentId: row.assignmentId,
-        tenantId: row.tenantId,
-        tenantAgentId: row.tenantAgentId,
-        userId: row.userId,
-        derivedAgentId: resolvedAgentId,
-        resolvedSkillKeys: workspace?.resolvedSkillKeys || [],
-        resolvedVersionIds: workspace?.resolvedVersionIds || [],
-        blockedReasons: workspace?.blockedReasons || [],
       });
       syncDerivedAgentRuntimeConfigEntry({
         baseAgentId: row.baseAgentId,
         derivedAgentId: resolvedAgentId,
-        skills: workspace?.resolvedSkillKeys,
         configPath: params.configPath,
         configDir: params.configDir,
       });
-      if (Array.isArray(workspace?.blockedReasons) && workspace.blockedReasons.length) {
-        setAssignmentStatus(db, {
-          assignmentId: row.assignmentId,
-          status: ASSIGNMENT_STATUS_BLOCKED_MISSING_SKILLS,
-          derivedAgentId: resolvedAgentId,
-          derivedWorkspaceDir:
-            workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
-        });
-        return null;
-      }
-      setAssignmentStatus(db, {
-        assignmentId: row.assignmentId,
-        status: ASSIGNMENT_STATUS_ACTIVE,
-        derivedAgentId: resolvedAgentId,
-        derivedWorkspaceDir:
-          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
-      });
       if (
         String(row.derivedAgentId || "").trim() !== resolvedAgentId ||
-        String(row.derivedWorkspaceDir || "").trim() !== workspace.canonicalWorkspace
+        String(row.derivedWorkspaceDir || "").trim() !== workspaceMetadata.canonicalWorkspace
       ) {
         db.prepare(
           `UPDATE user_agent_assignments
@@ -8841,7 +8854,7 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
         ).run({
           assignmentId: row.assignmentId,
           derivedAgentId: resolvedAgentId,
-          derivedWorkspaceDir: workspace.canonicalWorkspace,
+          derivedWorkspaceDir: workspaceMetadata.canonicalWorkspace,
         });
       }
       syncDerivedAgentExecApprovals({
@@ -8852,15 +8865,13 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
       });
       syncDerivedAgentTenantAnalyticsProfile(db, {
         tenantId: row.tenantId,
-        derivedWorkspaceDir:
-          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
-        workspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        derivedWorkspaceDir: workspaceMetadata.canonicalWorkspace,
+        workspaceDir: workspaceMetadata.canonicalWorkspace,
       });
       syncDerivedAgentK3CloudProfile(db, {
         tenantId: row.tenantId,
-        derivedWorkspaceDir:
-          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
-        workspaceDir: workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        derivedWorkspaceDir: workspaceMetadata.canonicalWorkspace,
+        workspaceDir: workspaceMetadata.canonicalWorkspace,
       });
 
       const baseAgentId = String(row.baseAgentId || "").trim();
@@ -8876,15 +8887,14 @@ export function listAssignedAgentsForUser(db, params, configAgents = []) {
       return {
         ...row,
         derivedAgentId: resolvedAgentId,
-        derivedWorkspaceDir:
-          workspace?.canonicalWorkspace || String(row.derivedWorkspaceDir || "").trim(),
+        derivedWorkspaceDir: workspaceMetadata.canonicalWorkspace,
         agentId,
         baseAgentId,
         agentName: displayName || baseAgentId || agentId,
         displayName,
         emoji: configEntry?.emoji ?? null,
         avatar: configEntry?.avatar ?? null,
-        blockedSkillReasons: workspace?.blockedReasons || [],
+        blockedSkillReasons: [],
       };
     })
     .filter(Boolean);

@@ -235,7 +235,8 @@
 
 - `skills/` 不再盲目整树复制
 - sidecar 先根据租户模板 + 成员 override 解析最终 skill 集
-- 再按最终 resolved 集合 reconcile 派生工作区 `skills/`
+- 成员分配、模板变更、成员 override 变更、购买确认、启停、重分类、resync 这类显式写操作才会按最终 resolved 集合 reconcile 派生工作区 `skills/`
+- 成员聊天、`GET /member/agents`、只读查看成员 Agent、可视化/沙盒/批注/上传等 read/helper 路径不再触发 skills 目录同步
 - bundled/base workspace skill 会优先从母 Agent 对应 skill 目录整树物化到派生工作区
 - managed skill 当前仍以 `SKILL.md` 为存储真值，因此先只物化该文件
 - reconcile 只删除不再 resolved 的 skill 目录，不会清空仍然 resolved skill 目录内部的脚本、`references/`、子目录等附属文件

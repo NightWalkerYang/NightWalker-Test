@@ -918,6 +918,44 @@ bundled skill body
           "utf8",
         ),
       ).toContain('"mode":"strict"');
+
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "SKILL.md"),
+        `---
+name: finance-core
+description: bundled finance skill changed upstream
+---
+
+# finance-core
+
+bundled skill body changed upstream
+`,
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "scripts", "tool.py"),
+        "print('finance-core tool changed upstream')\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(baseWorkspace, "skills", "finance-core", "references", "config.json"),
+        '{"mode":"changed-upstream"}\n',
+        "utf8",
+      );
+
+      listAssignedAgentsForUser(
+        db,
+        {
+          tenantId: tenant.id,
+          userId: member.id,
+          configPath: sandbox.config.configPath,
+          configDir: sandbox.config.configDir,
+        },
+        catalog,
+      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "finance-core", "SKILL.md"), "utf8"),
+      ).toContain("bundled skill body");
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "README.md"))).toBe(false);
       expect(fs.readFileSync(path.join(derivedWorkspace, "hooks", "README.md"), "utf8")).toContain(
         "hook docs",
@@ -967,6 +1005,9 @@ bundled skill body
           "utf8",
         ),
       ).toContain('"mode":"strict"');
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "finance-core", "SKILL.md"), "utf8"),
+      ).not.toContain("changed upstream");
 
       const visualizationDir = path.join(
         sandbox.config.configDir,
@@ -1515,6 +1556,12 @@ description: gamma skill
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"))).toBe(true);
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "beta", "SKILL.md"))).toBe(false);
       expect(fs.existsSync(path.join(derivedWorkspace, "skills", "gamma", "SKILL.md"))).toBe(true);
+      expect(
+        JSON.parse(fs.readFileSync(sandbox.config.configPath, "utf8"))?.agents?.list?.find(
+          (entry) =>
+            String(entry?.id || "").trim() === String(assignment.derivedAgentId || "").trim(),
+        )?.skills,
+      ).toEqual(["alpha", "gamma"]);
     } finally {
       closeTenantPlatformDb(db);
     }
@@ -1618,7 +1665,7 @@ description: beta skill
     }
   });
 
-  it("re-syncs skills and hooks but preserves derived top-level md files after first bootstrap", () => {
+  it("keeps read paths from re-syncing skills while explicit template saves still refresh them", () => {
     const sandbox = createTempSandbox();
     const db = openTenantPlatformDb(sandbox.config);
     try {
@@ -1736,6 +1783,27 @@ alpha skill v2
         readOpenClawAgentCatalog(sandbox.config.configPath),
       );
       expect(assignedAgents).toHaveLength(1);
+
+      expect(fs.readFileSync(path.join(derivedWorkspace, "AGENTS.md"), "utf8")).toContain(
+        "child agents custom",
+      );
+      expect(fs.readFileSync(path.join(derivedWorkspace, "IDENTITY.md"), "utf8")).toContain(
+        "child identity custom",
+      );
+      expect(
+        fs.readFileSync(path.join(derivedWorkspace, "skills", "alpha", "SKILL.md"), "utf8"),
+      ).toContain("child");
+      expect(fs.readFileSync(path.join(derivedWorkspace, "hooks", "README.md"), "utf8")).toContain(
+        "child hook custom",
+      );
+
+      saveTenantAgentSkillTemplateSet(db, {
+        tenantId: tenant.id,
+        tenantAgentId,
+        skillKeys: ["alpha"],
+        configDir: sandbox.config.configDir,
+        configPath: sandbox.config.configPath,
+      });
 
       expect(fs.readFileSync(path.join(derivedWorkspace, "AGENTS.md"), "utf8")).toContain(
         "child agents custom",

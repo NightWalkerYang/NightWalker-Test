@@ -465,6 +465,7 @@
   - 对仍然 resolved 的 bundled/base workspace skill，按 `platform_skill_versions.skill_md_path` 反推母 skill 目录并整树复制
   - 复制后回刷 `skills/<skillKey>/SKILL.md` 为当前 resolved version 的 `skill_md_content`
   - 对当前只存 `SKILL.md` 的 managed skill，先只物化该文件
+- 这层 skill 目录 reconcile 只发生在成员分配或显式 skills 管理写操作中；成员 read/list/chat/helper 路径只允许补齐派生 Agent 元数据，不再触发 `skills/` 物理目录同步
 - 然后在 runtime derived agent config 里显式写 `skills: [...]`
 - 两层都生效，任何一层单独成功都不算完成
 

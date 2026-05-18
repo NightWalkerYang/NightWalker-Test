@@ -356,6 +356,9 @@
 
 当前 Skills 真实物化规则还包括：
 
+- skills 物化只允许发生在成员分配、模板变更、成员 override 变更、购买确认、启停、重分类、resync 这类显式写操作里
+- 成员使用 Agent、进入聊天、`GET /member/agents`、租户后台只读查看、可视化/沙盒/批注/上传等 read/helper 路径不允许再触发 skill 目录 reconcile
+- 这些只读路径最多只允许补齐 `derived_agent_id`、`derived_workspace_dir`、runtime agent entry、approval/profile 这类轻量元数据
 - sidecar reconcile 只允许清理派生工作区 `skills/` 下“不在最终 resolved 集合里”的 skill 目录
 - 对仍然 resolved 的 bundled/base workspace skill，优先从母 Agent 对应 skill 目录整树复制到派生工作区同名目录
 - 复制后仍会把 `SKILL.md` 回刷到当前 resolved version 内容，确保版本真值与 sidecar 解析一致
