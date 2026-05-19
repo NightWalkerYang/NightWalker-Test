@@ -57,23 +57,6 @@ jobs:
           cp local-runtime/openclaw.local.example.json5 . || true
           touch data/.gitkeep
 
-      - name: Generate icons
-        shell: bash
-        run: |
-          cd tools/openclaw-control-ui-echarts/desktop/src-tauri
-          mkdir -p icons
-          python3 -c "
-          import struct, zlib, os
-          def make_png(w, h, r, g, b):
-              px = bytes([r,g,b,255])
-              raw = b''.join(b'\x00' + px*w for _ in range(h))
-              def c(t,d):
-                  x=t+d; return struct.pack('>I',len(d))+x+struct.pack('>I',zlib.crc32(x)&0xffffffff)
-              return b'\x89PNG\r\n\x1a\n'+c(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+c(b'IDAT',zlib.compress(raw))+c(b'IEND',b'')
-          for n,d in [('icon.png',256),('128x128.png',256),('128x128@2x.png',256),('32x32.png',32),('icon.ico',32)]:
-              open(f'icons/{n}','wb').write(make_png(d,d,27,110,243))
-          "
-
       - name: Install frontend dependencies
         working-directory: tools/openclaw-control-ui-echarts/desktop
         run: npm install
