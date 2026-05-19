@@ -256,15 +256,6 @@ fn write_runtime_env_mode(app: AppHandle, cloud_endpoint: Option<String>) -> Res
     fs::write(&env_path, lines.join("\n") + "\n").map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn navigate_to(app: AppHandle, url: String) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    let parsed: tauri::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    window.navigate(parsed).map_err(|e| e.to_string())
-}
-
 fn main() {
     tauri::Builder::default()
         .manage(RuntimeState::default())
@@ -273,7 +264,6 @@ fn main() {
             get_desktop_config,
             set_desktop_config,
             write_runtime_env_mode,
-            navigate_to,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

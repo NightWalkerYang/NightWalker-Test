@@ -40,9 +40,7 @@ async function saveConfig(mode, cloudEndpoint) {
 }
 
 function openControlUi(url) {
-  invoke("navigate_to", { url }).catch(() => {
-    window.location.replace(url);
-  });
+  window.location.replace(url);
 }
 
 async function bootRuntime(mode, cloudEndpoint) {
