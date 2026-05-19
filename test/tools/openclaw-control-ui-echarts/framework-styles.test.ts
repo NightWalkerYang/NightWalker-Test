@@ -25,6 +25,8 @@ describe("zero-intrusive framework styles", () => {
     expect(styles).toContain(".oc-text-logo--badge");
     expect(styles).toContain(".oc-image-logo");
     expect(styles).toContain(".oc-image-logo--sidebar");
+    expect(styles).toContain(".oc-text-logo--avatar");
+    expect(styles).toContain(".oc-image-logo--avatar");
     expect(styles).toContain("object-fit: contain;");
     expect(styles).toContain('[data-oc-chat-avatar="true"]');
     expect(styles).toContain("display: none;");

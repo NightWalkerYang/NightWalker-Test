@@ -224,7 +224,9 @@ export function getFrameworkStyles() {
       box-shadow: none;
     }
 
-    ${chatSurfaceRoot} ${chatAvatarRoot} {
+    ${chatSurfaceRoot} ${chatAvatarRoot},
+    ${chatSurfaceRoot} .oc-text-logo--avatar,
+    ${chatSurfaceRoot} .oc-image-logo--avatar {
       display: none;
     }
 
