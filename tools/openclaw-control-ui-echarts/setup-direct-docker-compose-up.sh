@@ -15,6 +15,7 @@ TENANT_PLATFORM_RUNTIME_NODE_MODULES_CONTAINER_PATH="/app/tools/openclaw-control
 TENANT_PLATFORM_RUNTIME_PYTHON_HOST_MOUNT="./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages"
 TENANT_PLATFORM_RUNTIME_PYTHON_CONTAINER_PATH="/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages"
 SANDBOX_SIMULATION_STARTER_MOUNT="./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro"
+DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT_MOUNT="./tools/openclaw-control-ui-echarts:/app/tools/openclaw-control-ui-echarts-src:ro"
 TENANT_PLATFORM_RUNTIME_PACKAGE_SPECS=("pg@8.20.0")
 TENANT_PLATFORM_APT_PACKAGES='python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5'
 
@@ -446,11 +447,15 @@ services:
         OPENCLAW_DOCKER_APT_PACKAGES: $TENANT_PLATFORM_APT_PACKAGES
     ports: !override
       - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+    environment:
+      OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT: /app/tools/openclaw-control-ui-echarts-src
     volumes:
       - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro
+      - $DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT_MOUNT
       - \${OPENCLAW_WORKSPACE_DIR}:/app/dist/control-ui/workspace-downloads:ro
       - \${OPENCLAW_CONFIG_DIR}/workspace-agents:/app/dist/control-ui/workspace-agent-downloads:ro
       - ./docs/reference/templates:/app/docs/reference/templates:ro
+    entrypoint: ["node", "/app/tools/openclaw-control-ui-echarts-src/local-runtime/start-gateway.mjs"]
 EOF
 
   local mount=""

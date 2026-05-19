@@ -57,6 +57,15 @@ describe("tenant platform runtime deps", () => {
     expect(override).toContain(
       "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages:ro",
     );
+    expect(override).toContain(
+      "OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT: /app/tools/openclaw-control-ui-echarts-src",
+    );
+    expect(override).toContain(
+      "./tools/openclaw-control-ui-echarts:/app/tools/openclaw-control-ui-echarts-src:ro",
+    );
+    expect(override).toContain(
+      'entrypoint: ["node", "/app/tools/openclaw-control-ui-echarts-src/local-runtime/start-gateway.mjs"]',
+    );
     expect(override).toContain('      - "host.docker.internal:host-gateway"');
     expect(override).toContain("${OPENCLAW_WORKSPACE_DIR}:/srv/workspace-downloads:ro");
     expect(override).toContain(
@@ -97,6 +106,15 @@ describe("tenant platform runtime deps", () => {
     );
     expect(script).toContain(
       "./tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/node_modules:/app/tools/openclaw-control-ui-echarts/node_modules:ro",
+    );
+    expect(script).toContain(
+      "OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT: /app/tools/openclaw-control-ui-echarts-src",
+    );
+    expect(script).toContain(
+      "./tools/openclaw-control-ui-echarts:/app/tools/openclaw-control-ui-echarts-src:ro",
+    );
+    expect(script).toContain(
+      'entrypoint: ["node", "/app/tools/openclaw-control-ui-echarts-src/local-runtime/start-gateway.mjs"]',
     );
     expect(script).toContain(
       "PYTHONPATH: /app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages",

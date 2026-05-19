@@ -92,6 +92,8 @@ const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
 const MEMBER_SESSION_LIST_TIMEOUT_MS = 6_000;
 const MEMBER_SESSION_TITLE_HISTORY_TIMEOUT_MS = 4_000;
 const MEMBER_CHAT_HISTORY_TIMEOUT_MS = 6_000;
+// Temporarily hide the /chat Canvas entry without deleting the underlying module.
+const MEMBER_CHAT_CANVAS_ENTRY_ENABLED = false;
 let memberChatSurfaceSyncing = false;
 let memberChatSurfaceSyncQueued = false;
 let memberChatSurfaceSuppressNextRouteSync = false;
@@ -1048,7 +1050,11 @@ async function syncMemberChatSurface() {
       getActiveController: getActiveMemberChatController,
       isAssistantSilentReply,
     });
-    mountMemberChatCanvasAnnotations(controller, createTenantApiClient());
+    if (MEMBER_CHAT_CANVAS_ENTRY_ENABLED) {
+      mountMemberChatCanvasAnnotations(controller, createTenantApiClient());
+    } else {
+      unmountMemberChatCanvasAnnotations();
+    }
     consumePendingPromptIntoMemberChat(document);
     void syncMemberUsageRecords(
       controller,

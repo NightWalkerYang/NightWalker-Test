@@ -151,6 +151,22 @@ shell 部署路径里的 Control UI 产物构建，必须复用：
 - 如果它不是当前 checkout 构建出来的产物，部署会把旧 upstream UI 当成新版本继续覆盖
 - 这会同时带来页面 `版本` 漂移和零侵入入口注入漂移
 
+对 direct-docker 零侵入覆盖层还要额外注意：
+
+- `tools/openclaw-control-ui-echarts/generated/control-ui/` 本身是本地生成产物，不受 `git pull` 自动刷新保护
+- 当前 `docker-compose.override.yml` 会把这个目录直接挂到 `/app/dist/control-ui`
+- 所以“已经拉到最新仓库代码”不等于“已经部署了最新零侵入 overlay”
+- 更新零侵入源码后，必须重新执行：
+  - `node tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs`
+  - 或 `bash tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh`
+
+当前真实补充约束：
+
+- direct-docker 路径现在会把 `tools/openclaw-control-ui-echarts/` 源码目录只读挂进 gateway 容器
+- gateway 启动前会校验已挂载的 `generated/control-ui/openclaw-control-ui-build-manifest.json` 里的 `runtimeFingerprint`
+- 如果它和当前零侵入源码计算出来的指纹不一致，会直接 fail-fast
+- 也就是说，旧 overlay 不会再被静默继续部署；必须先重建 `generated/control-ui`
+
 唯一例外：
 
 - 镜像已经由其他机器预构建并导入当前服务器

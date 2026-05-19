@@ -1,8 +1,10 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_GATEWAY_TOKEN = "local-runtime-shared-token";
+const DEFAULT_DIRECT_DOCKER_PACKAGE_ROOT = "/app";
 const AUTO_TOKEN_MARKER = "data-openclaw-auto-token-bootstrap";
 const LUFENG_TOKEN_MARKER = "data-openclaw-lufeng-bootstrap";
 const ECHARTS_VIEW_TOKEN_MARKER = "data-openclaw-echarts-view-bootstrap";
@@ -18,6 +20,34 @@ function normalizeLine(line) {
   return String(line ?? "")
     .replace(/^\uFEFF/, "")
     .trim();
+}
+
+function normalizePosixPath(value) {
+  return String(value ?? "").replace(/\\/g, "/");
+}
+
+function collectFilesRecursively(rootDir) {
+  const files = [];
+  const walk = (currentDir) => {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      files.push({
+        fullPath,
+        relativePath: normalizePosixPath(path.relative(rootDir, fullPath)),
+      });
+    }
+  };
+  walk(rootDir);
+  return files;
 }
 
 function unquoteEnvValue(value) {
@@ -210,6 +240,37 @@ function readControlUiBuildManifest(controlUiRoot) {
   return { manifestPath, manifest };
 }
 
+function computeRuntimeAssetFingerprint(toolRoot) {
+  const normalizedToolRoot = path.resolve(String(toolRoot || ""));
+  const runtimeScriptPath = path.join(normalizedToolRoot, "openclaw-echarts-renderer.js");
+  const runtimeDir = path.join(normalizedToolRoot, "runtime");
+  const staticDir = path.join(normalizedToolRoot, "static");
+  const vendorDir = path.join(normalizedToolRoot, "vendor");
+
+  ensurePreflight(
+    fs.existsSync(runtimeScriptPath) && fs.statSync(runtimeScriptPath).isFile(),
+    "control_ui_preflight_source_missing",
+    `${runtimeScriptPath} missing`,
+  );
+  for (const directory of [runtimeDir, staticDir, vendorDir]) {
+    ensurePreflight(
+      fs.existsSync(directory) && fs.statSync(directory).isDirectory(),
+      "control_ui_preflight_source_missing",
+      `${directory} missing`,
+    );
+  }
+
+  const hash = crypto.createHash("sha256");
+  hash.update(fs.readFileSync(runtimeScriptPath));
+  for (const directory of [runtimeDir, staticDir, vendorDir]) {
+    for (const file of collectFilesRecursively(directory)) {
+      hash.update(`\nfile:${file.relativePath}\n`);
+      hash.update(fs.readFileSync(file.fullPath));
+    }
+  }
+  return hash.digest("hex").slice(0, 16);
+}
+
 function readManifestString(manifest, key, label) {
   const value = String(manifest?.[key] ?? "").trim();
   ensurePreflight(
@@ -377,6 +438,53 @@ export function runControlUiPreflight(resolvedRuntime) {
   };
 }
 
+export function runDirectDockerControlUiFreshnessPreflight({
+  controlUiRoot,
+  toolRoot,
+  gatewayToken,
+}) {
+  const normalizedControlUiRoot = path.resolve(String(controlUiRoot || ""));
+  const normalizedToolRoot = path.resolve(String(toolRoot || ""));
+  const { manifestPath, manifest } = readControlUiBuildManifest(normalizedControlUiRoot);
+  const runtimeFingerprint = readManifestString(
+    manifest,
+    "runtimeFingerprint",
+    "runtimeFingerprint",
+  );
+  const expectedRuntimeFingerprint = computeRuntimeAssetFingerprint(normalizedToolRoot);
+
+  ensurePreflight(
+    runtimeFingerprint === expectedRuntimeFingerprint,
+    "control_ui_preflight_runtime_fingerprint_mismatch",
+    [
+      `${manifestPath} runtimeFingerprint=${runtimeFingerprint} does not match current zero-intrusive source fingerprint ${expectedRuntimeFingerprint}.`,
+      `Mounted source root: ${normalizedToolRoot}.`,
+      "Rebuild via node tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs or bash tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh.",
+    ].join(" "),
+  );
+
+  const expectedGatewayToken = String(gatewayToken ?? "").trim();
+  if (expectedGatewayToken) {
+    const indexHtml = fs.readFileSync(path.join(normalizedControlUiRoot, "index.html"), "utf8");
+    for (const marker of [AUTO_TOKEN_MARKER, LUFENG_TOKEN_MARKER]) {
+      const markerToken = resolveMarkerGatewayToken(indexHtml, marker);
+      ensurePreflight(
+        markerToken === expectedGatewayToken,
+        "control_ui_preflight_marker_token_mismatch",
+        [
+          `${marker} token does not match the current OPENCLAW_GATEWAY_TOKEN.`,
+          "Rebuild via node tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.mjs or bash tools/openclaw-control-ui-echarts/setup-direct-docker-compose-up.sh.",
+        ].join(" "),
+      );
+    }
+  }
+
+  return {
+    runtimeFingerprint,
+    expectedRuntimeFingerprint,
+  };
+}
+
 export function parseRuntimeEnvFile(text) {
   const env = {};
   for (const rawLine of String(text ?? "").split(/\r?\n/)) {
@@ -480,6 +588,59 @@ export function resolveRuntimeEnv(rootDir, processEnv = process.env) {
     workspaceAgentsDir: path.join(configDir, "workspace-agents"),
     tenantPlatformStateDir,
     logsDir: path.join(absoluteRootDir, "logs"),
+  };
+}
+
+export function prepareDirectDockerGatewayRuntime(processEnv = process.env) {
+  const packageRoot = path.resolve(
+    String(processEnv.OPENCLAW_DIRECT_DOCKER_PACKAGE_ROOT || DEFAULT_DIRECT_DOCKER_PACKAGE_ROOT),
+  );
+  const env = {
+    ...processEnv,
+    OPENCLAW_GATEWAY_BIND: String(processEnv.OPENCLAW_GATEWAY_BIND || "lan").trim(),
+    OPENCLAW_GATEWAY_PORT: String(processEnv.OPENCLAW_GATEWAY_PORT || "18789").trim(),
+    OPENCLAW_GATEWAY_TOKEN: String(processEnv.OPENCLAW_GATEWAY_TOKEN || "").trim(),
+  };
+  const gatewayEntry = path.join(packageRoot, "dist", "index.js");
+  const controlUiIndexPath = path.join(packageRoot, "dist", "control-ui", "index.html");
+
+  ensurePreflight(
+    fs.existsSync(gatewayEntry) && fs.statSync(gatewayEntry).isFile(),
+    "missing_direct_docker_gateway_entry",
+    gatewayEntry,
+  );
+  ensurePreflight(
+    fs.existsSync(controlUiIndexPath) && fs.statSync(controlUiIndexPath).isFile(),
+    "missing_control_ui_index",
+    controlUiIndexPath,
+  );
+
+  const resolved = {
+    env,
+    packageRoot,
+    gatewayEntry,
+    controlUiIndexPath,
+  };
+  const controlUiPreflight = shouldSkipControlUiPreflight(env) ? null : runControlUiPreflight(resolved);
+  let overlayFreshnessPreflight = null;
+  if (!shouldSkipControlUiPreflight(env)) {
+    const sourceRoot = String(env.OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT || "").trim();
+    ensurePreflight(
+      !!sourceRoot,
+      "control_ui_preflight_direct_docker_source_root_missing",
+      "OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT is required for direct-docker control-ui freshness checks.",
+    );
+    overlayFreshnessPreflight = runDirectDockerControlUiFreshnessPreflight({
+      controlUiRoot: path.dirname(controlUiIndexPath),
+      toolRoot: sourceRoot,
+      gatewayToken: env.OPENCLAW_GATEWAY_TOKEN,
+    });
+  }
+
+  return {
+    ...resolved,
+    controlUiPreflight,
+    overlayFreshnessPreflight,
   };
 }
 

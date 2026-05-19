@@ -26,6 +26,8 @@ const tenantPlatformRuntimePythonContainerPath =
   "/app/tools/openclaw-control-ui-echarts/generated/tenant-platform-runtime/python-packages";
 const sandboxSimulationStarterMount =
   "./tools/openclaw-sandbox-simulation-starter:/app/tools/openclaw-sandbox-simulation-starter:ro";
+const directDockerControlUiSourceRootMount =
+  "./tools/openclaw-control-ui-echarts:/app/tools/openclaw-control-ui-echarts-src:ro";
 const tenantPlatformRuntimePackageSpecs = Object.freeze(["pg@8.20.0"]);
 const tenantPlatformAptPackages =
   "python3-pip python3-venv python3-dev build-essential libblas3 liblapack3 libgfortran5 libpq5";
@@ -337,11 +339,15 @@ export function buildOverrideContent(extraMounts) {
     `        OPENCLAW_DOCKER_APT_PACKAGES: ${tenantPlatformAptPackages}`,
     "    ports: !override",
     '      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"',
+    "    environment:",
+    "      OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT: /app/tools/openclaw-control-ui-echarts-src",
     "    volumes:",
     "      - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro",
+    `      - ${directDockerControlUiSourceRootMount}`,
     "      - ${OPENCLAW_WORKSPACE_DIR}:/app/dist/control-ui/workspace-downloads:ro",
     "      - ${OPENCLAW_CONFIG_DIR}/workspace-agents:/app/dist/control-ui/workspace-agent-downloads:ro",
     "      - ./docs/reference/templates:/app/docs/reference/templates:ro",
+    "    entrypoint: [\"node\", \"/app/tools/openclaw-control-ui-echarts-src/local-runtime/start-gateway.mjs\"]",
   ];
 
   for (const mount of extraMounts) {

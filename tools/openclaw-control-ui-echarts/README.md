@@ -194,6 +194,14 @@ That script:
 7. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
 8. runs `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy` so the new bind mounts are actually applied instead of leaving the old gateway/proxy containers running
 
+Important deployment detail:
+
+- `tools/openclaw-control-ui-echarts/generated/control-ui` is a generated local artifact, not a git-tracked source tree
+- `git pull` does not refresh that directory by itself
+- if you update zero-intrusive runtime code and skip this setup helper, Docker can keep mounting an older generated overlay even though the repo checkout is newer
+- the direct-docker helper now mounts `tools/openclaw-control-ui-echarts/` into the gateway container read-only and runs a startup preflight that compares the mounted overlay manifest fingerprint against the current zero-intrusive source fingerprint
+- when they differ, gateway startup now fails fast and tells you to rerun the setup helper instead of silently serving stale overlay assets
+
 Because the mount replaces the container's default Control UI asset directory, this path does not need `gateway.controlUi.root`.
 
 The shell variant also works when the host has no `dist/control-ui` yet:

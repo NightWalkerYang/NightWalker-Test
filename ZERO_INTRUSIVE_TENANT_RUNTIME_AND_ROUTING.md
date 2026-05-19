@@ -223,10 +223,10 @@
 - 这四层兼容契约不只给成员聊天发送链路使用；`runtime/lufeng/surface.js`、平台/租户/成员 surface、tenant entry 的 utility/search 探测、品牌替换、知识图谱入口，也已经把 DOM/mount/app/RPC 的高脆弱依赖收口到这四层
 - `runtime/framework/styles.js` 与 platform/member/tenant/topbar/lufeng 相关样式现在已经开始优先消费这些 `data-oc-*` 标记，并把旧 upstream class 仅保留为兼容兜底；当前剩余脆弱点主要集中在 compat 内部仍需跟随 upstream 演进维护的壳结构假设、少量聊天内容区内部 class 语义，以及成员聊天里尚未完全去私有化、但已集中封装的少量 `openclaw-app` 私有状态访问
 - 当前聊天壳已经彻底移除旧的 `oc-chat-ambient` 整屏 SVG / blur / 持续动画背景；成员聊天路由仍保留更轻量的输入区、消息气泡、tool run 卡片阴影收敛，优先保证长聊天滚动时的帧稳定性
-- 成员聊天页会挂载 Canvas 批注入口 `runtime/tenant/member-chat-canvas-annotations.js`；它在原生成员聊天页右侧提供浅色 Canvas 侧栏，加载当前成员可访问的大屏 HTML iframe，打开时会把原生聊天内容区向左让位，支持拖拽左侧边缘横向调整宽度，也支持放大模式把 Canvas 扩展到除左侧栏与底部原生对话栏以外的页面区域
-- Canvas 批注链路支持批注模式开关、同源 iframe 内模块自动识别点击、手动区域矩形框选、选区附近浮动评论输入条、批注线程、resolve/reopen，以及单条/全部未解决批注回填到原生聊天输入框的动作；自动识别只作为同源/受控大屏页面的增强能力，无法识别时仍保留拖拽框选兜底
-- 这条 Canvas 批注链路的原生壳接入和输入框回填必须继续复用 `runtime/framework/dom-compat.js` 暴露的内容区、侧边栏和 composer 定位能力；批注锚点第一版绑定当前大屏预览 iframe 的矩形坐标、成员会话、Agent run、`pageId` / `/echarts-view/?token=...`，不做任意跨域页面 DOM 锚定
-- Canvas 批注根节点与抽屉属于业务 overlay：`dom-compat` 和 tenant shell scanner 必须显式排除 `[data-oc-member-canvas-annotation-root]` / `[data-oc-member-canvas-annotation-drawer]` 及其子树，不能把抽屉里的 `aside` / `nav` / `footer` 等结构误识别成原生侧栏或壳重建信号
+- 成员聊天 Canvas 批注模块仍保留在 `runtime/tenant/member-chat-canvas-annotations.js`，但当前 `/chat` 页右上角 Canvas 入口已临时隐藏，不默认挂载按钮或抽屉
+- 底层 Canvas 批注链路仍保留批注模式开关、同源 iframe 内模块自动识别点击、手动区域矩形框选、选区附近浮动评论输入条、批注线程、resolve/reopen，以及单条/全部未解决批注回填到原生聊天输入框的动作；自动识别只作为同源/受控大屏页面的增强能力，无法识别时仍保留拖拽框选兜底
+- 这条 Canvas 批注链路恢复对外入口时，原生壳接入和输入框回填仍必须继续复用 `runtime/framework/dom-compat.js` 暴露的内容区、侧边栏和 composer 定位能力；批注锚点第一版绑定当前大屏预览 iframe 的矩形坐标、成员会话、Agent run、`pageId` / `/echarts-view/?token=...`，不做任意跨域页面 DOM 锚定
+- Canvas 批注根节点与抽屉仍属于业务 overlay：`dom-compat` 和 tenant shell scanner 必须显式排除 `[data-oc-member-canvas-annotation-root]` / `[data-oc-member-canvas-annotation-drawer]` 及其子树，不能把抽屉里的 `aside` / `nav` / `footer` 等结构误识别成原生侧栏或壳重建信号
 
 当前成员聊天历史加载规则已经调整为：
 

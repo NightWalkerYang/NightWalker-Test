@@ -1,8 +1,18 @@
 import { spawn } from "node:child_process";
-import { prepareLocalRuntime, resolveRuntimePackageRoot } from "./runtime-common.mjs";
+import {
+  prepareDirectDockerGatewayRuntime,
+  prepareLocalRuntime,
+  resolveRuntimePackageRoot,
+} from "./runtime-common.mjs";
 
+const directDockerSourceRoot = String(
+  process.env.OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT || "",
+).trim();
+const isDirectDockerMode = Boolean(directDockerSourceRoot);
 const rootDir = resolveRuntimePackageRoot(import.meta.url);
-const runtime = prepareLocalRuntime(rootDir);
+const runtime = isDirectDockerMode
+  ? prepareDirectDockerGatewayRuntime(process.env)
+  : prepareLocalRuntime(rootDir);
 const deploymentDecision = runtime?.controlUiPreflight?.deploymentDecision;
 if (deploymentDecision && typeof deploymentDecision === "object") {
   const mode = String(deploymentDecision.mode ?? "").trim();
@@ -22,16 +32,26 @@ if (deploymentDecision && typeof deploymentDecision === "object") {
 }
 const child = spawn(
   process.execPath,
-  [
-    runtime.openclawEntry,
-    "gateway",
-    "run",
-    "--bind",
-    runtime.env.OPENCLAW_GATEWAY_BIND,
-    "--port",
-    runtime.env.OPENCLAW_GATEWAY_PORT,
-    ...process.argv.slice(2),
-  ],
+  isDirectDockerMode
+    ? [
+        runtime.gatewayEntry,
+        "gateway",
+        "--bind",
+        runtime.env.OPENCLAW_GATEWAY_BIND,
+        "--port",
+        runtime.env.OPENCLAW_GATEWAY_PORT,
+        ...process.argv.slice(2),
+      ]
+    : [
+        runtime.openclawEntry,
+        "gateway",
+        "run",
+        "--bind",
+        runtime.env.OPENCLAW_GATEWAY_BIND,
+        "--port",
+        runtime.env.OPENCLAW_GATEWAY_PORT,
+        ...process.argv.slice(2),
+      ],
   {
     cwd: runtime.packageRoot,
     env: runtime.env,

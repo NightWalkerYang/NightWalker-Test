@@ -307,6 +307,7 @@ describe("member chat surface", () => {
       "agent:subotech-finance:tenant:t-1:tenant-agent:tenant-agent-1:user:user-1:chat:latest",
     );
     expect(app.tab).toBe("chat");
+    expect(document.querySelector(`[${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}]`)).toBeNull();
   });
 
   it("collapses the member session section when clicking the session chevron", async () => {
