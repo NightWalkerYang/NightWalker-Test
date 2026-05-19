@@ -50,19 +50,20 @@ function openControlUi(url) {
 async function bootRuntime(mode, cloudEndpoint) {
   showSection("boot");
   const isConnected = mode === "connected";
-  setStatus(
-    isConnected ? "正在启动服务（连接模式）" : "正在启动本地服务",
-    "正在配置运行环境。",
-  );
 
+  if (isConnected) {
+    const url = (cloudEndpoint || DEFAULT_CLOUD_ENDPOINT).replace(/\/$/, "");
+    setStatus("连接云端", "正在连接到 " + url);
+    openButton.hidden = false;
+    openButton.addEventListener("click", () => openControlUi(url));
+    openControlUi(url);
+    return;
+  }
+
+  setStatus("正在启动本地服务", "正在配置运行环境。");
   try {
-    await invoke("write_runtime_env_mode", {
-      cloudEndpoint: isConnected ? (cloudEndpoint || DEFAULT_CLOUD_ENDPOINT) : null,
-    });
-    setStatus(
-      isConnected ? "正在启动服务（连接模式）" : "正在启动本地服务",
-      "正在启动 Gateway 和租户服务。",
-    );
+    await invoke("write_runtime_env_mode", { cloudEndpoint: null });
+    setStatus("正在启动本地服务", "正在启动 Gateway 和租户服务。");
     const result = await invoke("start_openclaw_runtime");
     const url = result?.controlUiUrl || "http://127.0.0.1:18789";
     setStatus("服务已就绪", "正在打开控制台。");

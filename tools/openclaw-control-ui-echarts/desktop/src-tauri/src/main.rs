@@ -265,6 +265,10 @@ fn main() {
             set_desktop_config,
             write_runtime_env_mode,
         ])
+        .on_navigation(|url| {
+            let scheme = url.scheme();
+            scheme == "https" || scheme == "http" || scheme == "tauri"
+        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let state = window.state::<RuntimeState>();
