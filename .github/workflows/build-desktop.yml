@@ -14,13 +14,16 @@ jobs:
         include:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: OpenClaw_latest_x64-setup.msi
+            rename: OpenClaw_latest_x64-setup.msi
+            glob: "**/*.msi"
           - platform: macos-latest
             target: aarch64-apple-darwin
-            artifact: OpenClaw_latest_aarch64.dmg
+            rename: OpenClaw_latest_aarch64.dmg
+            glob: "**/*.dmg"
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact: OpenClaw_latest_amd64.deb
+            rename: OpenClaw_latest_amd64.deb
+            glob: "**/*.deb"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -68,12 +71,41 @@ jobs:
         with:
           projectPath: tools/openclaw-control-ui-echarts/desktop
 
+      - name: Prepare release artifact
+        shell: bash
+        run: |
+          mkdir -p release-out
+          find tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle -name "$(echo '${{ matrix.glob }}' | sed 's/\*\*\///')" | head -1 | while read f; do
+            cp "$f" "release-out/${{ matrix.rename }}"
+          done
+          ls -la release-out/
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.platform }}
-          path: |
-            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.msi
-            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.dmg
-            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.deb
-            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.AppImage
+          path: release-out/${{ matrix.rename }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Deploy to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          source: "artifacts/desktop-windows-latest/*,artifacts/desktop-macos-latest/*,artifacts/desktop-ubuntu-22.04/*"
+          target: /home/root-ai/openclaw/open-claw/tools/openclaw-control-ui-echarts/desktop/download-page/releases/
+          strip_components: 2
+          overwrite: true
