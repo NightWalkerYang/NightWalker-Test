@@ -184,3 +184,9 @@ extensions/**/.openclaw-runtime-deps-stamp.json
 # Output dir for scripts/run-opengrep.sh (local opengrep scans)
 /.opengrep-out/
 /.crabbox-artifacts
+
+# Desktop shell runtime artifacts
+tools/openclaw-control-ui-echarts/runtime.env
+tools/openclaw-control-ui-echarts/openclaw.local.example.json5
+tools/openclaw-control-ui-echarts/desktop/download-page/releases/
+tools/openclaw-control-ui-echarts/desktop/src-tauri/target/
