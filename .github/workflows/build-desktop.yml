@@ -1,0 +1,96 @@
+name: Build Desktop App
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: OpenClaw_latest_x64-setup.msi
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            artifact: OpenClaw_latest_aarch64.dmg
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: OpenClaw_latest_amd64.deb
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: tools/openclaw-control-ui-echarts/desktop/src-tauri
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential \
+            curl wget file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Create build resource stubs
+        shell: bash
+        run: |
+          cd tools/openclaw-control-ui-echarts
+          touch runtime.env
+          mkdir -p scripts data
+          cp desktop/scripts/openclaw-desktop-runtime.mjs scripts/ || true
+          cp local-runtime/openclaw.local.example.json5 . || true
+          touch data/.gitkeep
+
+      - name: Generate icons
+        shell: bash
+        run: |
+          cd tools/openclaw-control-ui-echarts/desktop/src-tauri
+          mkdir -p icons
+          python3 -c "
+          import struct, zlib, os
+          def make_png(w, h, r, g, b):
+              px = bytes([r,g,b,255])
+              raw = b''.join(b'\x00' + px*w for _ in range(h))
+              def c(t,d):
+                  x=t+d; return struct.pack('>I',len(d))+x+struct.pack('>I',zlib.crc32(x)&0xffffffff)
+              return b'\x89PNG\r\n\x1a\n'+c(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+c(b'IDAT',zlib.compress(raw))+c(b'IEND',b'')
+          for n,d in [('icon.png',256),('128x128.png',256),('128x128@2x.png',256),('32x32.png',32),('icon.ico',32)]:
+              open(f'icons/{n}','wb').write(make_png(d,d,27,110,243))
+          "
+
+      - name: Install frontend dependencies
+        working-directory: tools/openclaw-control-ui-echarts/desktop
+        run: npm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: tools/openclaw-control-ui-echarts/desktop
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: |
+            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.msi
+            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.dmg
+            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.deb
+            tools/openclaw-control-ui-echarts/desktop/src-tauri/target/release/bundle/**/*.AppImage

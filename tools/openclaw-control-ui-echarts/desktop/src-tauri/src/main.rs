@@ -268,12 +268,11 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let state = window.state::<RuntimeState>();
-                if let Ok(mut child_guard) = state.child.lock() {
-                    if let Some(child) = child_guard.as_mut() {
-                        let _ = child.kill();
-                    }
-                    *child_guard = None;
+                let mut child_guard = state.child.lock().unwrap();
+                if let Some(child) = child_guard.as_mut() {
+                    let _ = child.kill();
                 }
+                *child_guard = None;
             }
         })
         .run(tauri::generate_context!())
