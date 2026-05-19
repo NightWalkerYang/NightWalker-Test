@@ -41,6 +41,7 @@ const CONTROL_UI_RUNTIME_SCRIPT_SOURCE = path.join(here, "openclaw-echarts-rende
 const CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE = path.join(here, "runtime");
 const CONTROL_UI_STATIC_DIR_SOURCE = path.join(here, "static");
 const CONTROL_UI_VENDOR_DIR_SOURCE = path.join(here, "vendor");
+const DOCKER_LOCAL_PROXY_CONFIG_SOURCE = path.join(here, "docker-local-proxy", "nginx.conf");
 const OFFLINE_BUNDLED_USERSCRIPT_SOURCE = path.join(
   repoRoot,
   "tools",
@@ -344,6 +345,8 @@ function computeRuntimeAssetFingerprint() {
       hash.update(fs.readFileSync(file.fullPath));
     }
   }
+  hash.update("\nfile:docker-local-proxy/nginx.conf\n");
+  hash.update(fs.readFileSync(DOCKER_LOCAL_PROXY_CONFIG_SOURCE));
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -515,6 +518,25 @@ function resolveOutputAssetPath(outputDir, scriptSrc) {
 function ensureOutputFileExists(filePath, label) {
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     throw new Error(`output smoke failed: missing ${label} at ${filePath}`);
+  }
+}
+
+function assertProxyStaticMimeContract(proxyConfigText) {
+  const normalizedConfig = String(proxyConfigText || "");
+  if (!/^\s*include\s+\/etc\/nginx\/mime\.types;/m.test(normalizedConfig)) {
+    throw new Error(
+      "proxy smoke failed: docker-local-proxy/nginx.conf must include /etc/nginx/mime.types so /workspace-agent-downloads/*.js does not fall back to text/plain.",
+    );
+  }
+  if (!/location\s+\/workspace-downloads\//m.test(normalizedConfig)) {
+    throw new Error(
+      "proxy smoke failed: docker-local-proxy/nginx.conf is missing the /workspace-downloads/ location.",
+    );
+  }
+  if (!/location\s+\/workspace-agent-downloads\//m.test(normalizedConfig)) {
+    throw new Error(
+      "proxy smoke failed: docker-local-proxy/nginx.conf is missing the /workspace-agent-downloads/ location.",
+    );
   }
 }
 
@@ -801,7 +823,9 @@ function main() {
   ensureFileExists(CONTROL_UI_RUNTIME_SCRIPT_SOURCE, "Control UI ECharts runtime");
   ensureDirectoryExists(CONTROL_UI_RUNTIME_MODULE_DIR_SOURCE, "Control UI ECharts runtime modules");
   ensureDirectoryExists(CONTROL_UI_STATIC_DIR_SOURCE, "Control UI static overlay assets");
+  ensureFileExists(DOCKER_LOCAL_PROXY_CONFIG_SOURCE, "Direct-docker local proxy config");
   ensureFileExists(OFFLINE_BUNDLED_USERSCRIPT_SOURCE, "Offline bundled ECharts userscript");
+  assertProxyStaticMimeContract(fs.readFileSync(DOCKER_LOCAL_PROXY_CONFIG_SOURCE, "utf8"));
 
   const sourceIndexPath = path.join(sourceDir, "index.html");
   const sourceIndexHtml = fs.readFileSync(sourceIndexPath, "utf8");
@@ -933,6 +957,7 @@ function main() {
         BOOTSTRAP_MARKERS.lufeng,
         BOOTSTRAP_MARKERS.autoToken,
       ],
+      proxyStaticMimeTypesConfigured: true,
       smokeChecksPassed: true,
     },
   };

@@ -57,6 +57,13 @@ function computeExpectedRuntimeFingerprint() {
   const runtimeDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "runtime");
   const staticDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "static");
   const vendorDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "vendor");
+  const proxyConfigPath = path.join(
+    repoRoot,
+    "tools",
+    "openclaw-control-ui-echarts",
+    "docker-local-proxy",
+    "nginx.conf",
+  );
   const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(runtimeScriptPath));
   for (const directory of [runtimeDir, staticDir, vendorDir]) {
@@ -65,6 +72,8 @@ function computeExpectedRuntimeFingerprint() {
       hash.update(fs.readFileSync(file.fullPath));
     }
   }
+  hash.update("\nfile:docker-local-proxy/nginx.conf\n");
+  hash.update(fs.readFileSync(proxyConfigPath));
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -297,6 +306,7 @@ describe("package local runtime", () => {
     expect(buildManifest.runtimeAssetBaseRelativePath).toBe(expectedRuntimeBasePath);
     expect(buildManifest.rendererAssetRelativePath).toBe(expectedRendererRelativePath);
     expect(buildManifest.rendererAssetAbsolutePath).toBe(expectedRendererAbsolutePath);
+    expect(buildManifest.checks?.proxyStaticMimeTypesConfigured).toBe(true);
     expect(buildManifest.checks?.smokeChecksPassed).toBe(true);
     expect(buildManifest.deploymentDecision?.mode).toBe("already-in-sync");
     expect(buildManifest.deploymentDecision?.requiresGatewayImageRebuild).toBe(false);

@@ -52,6 +52,13 @@ function computeExpectedRuntimeFingerprint() {
   const runtimeDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "runtime");
   const staticDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "static");
   const vendorDir = path.join(repoRoot, "tools", "openclaw-control-ui-echarts", "vendor");
+  const proxyConfigPath = path.join(
+    repoRoot,
+    "tools",
+    "openclaw-control-ui-echarts",
+    "docker-local-proxy",
+    "nginx.conf",
+  );
   const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(runtimeScriptPath));
   for (const directory of [runtimeDir, staticDir, vendorDir]) {
@@ -60,6 +67,8 @@ function computeExpectedRuntimeFingerprint() {
       hash.update(fs.readFileSync(file.fullPath));
     }
   }
+  hash.update("\nfile:docker-local-proxy/nginx.conf\n");
+  hash.update(fs.readFileSync(proxyConfigPath));
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -151,5 +160,10 @@ describe("upstream sync smoke gate (build output)", () => {
     );
     expect(knowledgeGraphHtml).toContain(`${expectedRuntimeBasePath}/knowledge-graph/page.css`);
     expect(knowledgeGraphHtml).toContain(`${expectedRuntimeBasePath}/knowledge-graph/page.js`);
+
+    const buildManifest = JSON.parse(
+      fs.readFileSync(path.join(outputDir, "openclaw-control-ui-build-manifest.json"), "utf8"),
+    );
+    expect(buildManifest.checks?.proxyStaticMimeTypesConfigured).toBe(true);
   });
 });

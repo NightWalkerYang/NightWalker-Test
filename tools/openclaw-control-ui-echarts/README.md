@@ -194,6 +194,12 @@ That script:
 7. optionally mounts extra host paths from `OPENCLAW_EXTRA_MOUNTS`
 8. runs `docker compose up -d --force-recreate openclaw-gateway openclaw-tenant-platform openclaw-gateway-proxy` so the new bind mounts are actually applied instead of leaving the old gateway/proxy containers running
 
+The front proxy contract also matters for public visualization pages:
+
+- `tools/openclaw-control-ui-echarts/docker-local-proxy/nginx.conf` must include `/etc/nginx/mime.types`
+- otherwise `/workspace-agent-downloads/.../*.js` can be served as `text/plain`
+- with the gateway's `X-Content-Type-Options: nosniff`, browsers will refuse those rewritten visualization scripts and `/echarts-view` will degrade into a blank screen
+
 Important deployment detail:
 
 - `tools/openclaw-control-ui-echarts/generated/control-ui` is a generated local artifact, not a git-tracked source tree

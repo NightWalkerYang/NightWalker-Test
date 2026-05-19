@@ -51,6 +51,7 @@ function computeCurrentRuntimeFingerprint() {
   const runtimeDir = path.join(toolRoot, "runtime");
   const staticDir = path.join(toolRoot, "static");
   const vendorDir = path.join(toolRoot, "vendor");
+  const proxyConfigPath = path.join(toolRoot, "docker-local-proxy", "nginx.conf");
   const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(runtimeScriptPath));
   for (const directory of [runtimeDir, staticDir, vendorDir]) {
@@ -59,6 +60,8 @@ function computeCurrentRuntimeFingerprint() {
       hash.update(fs.readFileSync(file.fullPath));
     }
   }
+  hash.update("\nfile:docker-local-proxy/nginx.conf\n");
+  hash.update(fs.readFileSync(proxyConfigPath));
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -377,6 +380,207 @@ OPENCLAW_GATEWAY_PORT=19999
     expect(result.deploymentDecision?.mode).toBe("update-zero-intrusive-artifacts-only");
   });
 
+  it("fails direct-docker freshness preflight when proxy MIME config is missing", () => {
+    const rootDir = createTempDir();
+    const packageRoot = path.join(rootDir, "runtime", "node_modules", "openclaw");
+    const controlUiRoot = path.join(packageRoot, "dist", "control-ui");
+    const currentFingerprint = computeCurrentRuntimeFingerprint();
+    fs.mkdirSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "tenant",
+      ),
+      { recursive: true },
+    );
+    fs.mkdirSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "branding",
+      ),
+      { recursive: true },
+    );
+    fs.mkdirSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "lufeng",
+      ),
+      { recursive: true },
+    );
+    fs.mkdirSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "echarts-view",
+      ),
+      { recursive: true },
+    );
+    fs.mkdirSync(path.join(controlUiRoot, "assets", "openclaw-echarts", currentFingerprint), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(controlUiRoot, "login"), { recursive: true });
+    fs.mkdirSync(path.join(controlUiRoot, "echarts-view"), { recursive: true });
+    fs.mkdirSync(path.join(controlUiRoot, "assets"), { recursive: true });
+    fs.writeFileSync(path.join(packageRoot, "dist", "index.js"), "export {};\n");
+    fs.writeFileSync(path.join(controlUiRoot, "assets", "index-realhash.js"), "export {};\n");
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "tenant",
+        "preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "branding",
+        "auto-token-preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "lufeng",
+        "preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "echarts-view",
+        "preboot.js",
+      ),
+      "export {};\n",
+    );
+    fs.writeFileSync(
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "openclaw-echarts-renderer.js",
+      ),
+      "export {};\n",
+    );
+
+    const runtimeBase = `./assets/openclaw-echarts/${currentFingerprint}/runtime`;
+    const rendererRelative = `./assets/openclaw-echarts/${currentFingerprint}/openclaw-echarts-renderer.js`;
+    const rendererAbsolute = `/assets/openclaw-echarts/${currentFingerprint}/openclaw-echarts-renderer.js`;
+    fs.writeFileSync(
+      path.join(controlUiRoot, "index.html"),
+      [
+        "<html>",
+        "  <head>",
+        '    <style data-openclaw-tenant-boot-lock-style>:root[data-oc-tenant-boot-lock="login"] body { overflow: hidden; }</style>',
+        `    <script type="module" src="${runtimeBase}/echarts-view/preboot.js" data-openclaw-echarts-view-bootstrap></script>`,
+        `    <script src="${runtimeBase}/tenant/preboot.js" data-openclaw-tenant-preboot></script>`,
+        `    <script src="${runtimeBase}/lufeng/preboot.js" data-openclaw-lufeng-bootstrap data-gateway-token="token-c"></script>`,
+        `    <script src="${runtimeBase}/branding/auto-token-preboot.js" data-openclaw-auto-token-bootstrap data-gateway-token="token-c"></script>`,
+        '    <script type="module" crossorigin src="./assets/index-realhash.js"></script>',
+        "  </head>",
+        "  <body>",
+        `    <script type="module" src="${rendererRelative}"></script>`,
+        "  </body>",
+        "</html>",
+        "",
+      ].join("\n"),
+    );
+    fs.writeFileSync(path.join(controlUiRoot, "login", "index.html"), '<base href="/" />\n');
+    fs.writeFileSync(path.join(controlUiRoot, "login.html"), '<base href="/" />\n');
+    fs.writeFileSync(
+      path.join(controlUiRoot, "echarts-view", "index.html"),
+      `<script type="module" src="${rendererAbsolute}"></script>\n`,
+    );
+    fs.writeFileSync(
+      path.join(controlUiRoot, "openclaw-control-ui-build-manifest.json"),
+      JSON.stringify(
+        {
+          sourceMainBundleScriptSrc: "./assets/index-realhash.js",
+          runtimeFingerprint: currentFingerprint,
+          runtimeAssetBaseRelativePath: runtimeBase,
+          rendererAssetRelativePath: rendererRelative,
+          rendererAssetAbsolutePath: rendererAbsolute,
+          deploymentDecision: {
+            mode: "update-zero-intrusive-artifacts-only",
+            requiresGatewayImageRebuild: false,
+            reason: "proxy test",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const badToolRoot = createTempDir();
+    fs.cpSync(path.join(process.cwd(), "tools", "openclaw-control-ui-echarts"), badToolRoot, {
+      recursive: true,
+      force: true,
+    });
+    fs.writeFileSync(
+      path.join(badToolRoot, "docker-local-proxy", "nginx.conf"),
+      [
+        "worker_processes auto;",
+        "",
+        "events {",
+        "  worker_connections 1024;",
+        "}",
+        "",
+        "http {",
+        "  server {",
+        "    listen 18789;",
+        "    location /workspace-agent-downloads/ {",
+        "      alias /srv/workspace-agent-downloads/;",
+        "      try_files $uri =404;",
+        "    }",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    expect(() =>
+      runDirectDockerControlUiFreshnessPreflight({
+        controlUiRoot,
+        toolRoot: badToolRoot,
+        gatewayToken: "token-c",
+      }),
+    ).toThrow(/control_ui_preflight_proxy_mime_missing/);
+  });
+
   it("fails direct-docker freshness preflight when generated control-ui is stale", () => {
     const rootDir = createTempDir();
     const packageRoot = path.join(rootDir, "runtime", "node_modules", "openclaw");
@@ -394,14 +598,7 @@ OPENCLAW_GATEWAY_PORT=19999
       { recursive: true },
     );
     fs.mkdirSync(
-      path.join(
-        controlUiRoot,
-        "assets",
-        "openclaw-echarts",
-        "stale-fp",
-        "runtime",
-        "echarts-view",
-      ),
+      path.join(controlUiRoot, "assets", "openclaw-echarts", "stale-fp", "runtime", "echarts-view"),
       { recursive: true },
     );
     fs.mkdirSync(path.join(controlUiRoot, "assets", "openclaw-echarts", "stale-fp"), {
@@ -534,7 +731,14 @@ OPENCLAW_GATEWAY_PORT=19999
     const controlUiRoot = path.join(packageRoot, "dist", "control-ui");
     const currentFingerprint = computeCurrentRuntimeFingerprint();
     fs.mkdirSync(
-      path.join(controlUiRoot, "assets", "openclaw-echarts", currentFingerprint, "runtime", "tenant"),
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "tenant",
+      ),
       { recursive: true },
     );
     fs.mkdirSync(
@@ -549,7 +753,14 @@ OPENCLAW_GATEWAY_PORT=19999
       { recursive: true },
     );
     fs.mkdirSync(
-      path.join(controlUiRoot, "assets", "openclaw-echarts", currentFingerprint, "runtime", "lufeng"),
+      path.join(
+        controlUiRoot,
+        "assets",
+        "openclaw-echarts",
+        currentFingerprint,
+        "runtime",
+        "lufeng",
+      ),
       { recursive: true },
     );
     fs.mkdirSync(

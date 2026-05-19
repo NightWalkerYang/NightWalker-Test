@@ -12,6 +12,7 @@ const TENANT_PREBOOT_MARKER = "data-openclaw-tenant-preboot";
 const TENANT_BOOT_LOCK_STYLE_MARKER = "data-openclaw-tenant-boot-lock-style";
 const BUILD_MANIFEST_FILENAME = "openclaw-control-ui-build-manifest.json";
 const TENANT_MEMBER_BOOTSTRAP_HOOK_NAME = "tenant-member-bootstrap-filter";
+const DIRECT_DOCKER_PROXY_CONFIG_RELATIVE_PATH = path.join("docker-local-proxy", "nginx.conf");
 const MAIN_BUNDLE_PATTERN =
   /^\s*<script type="module" crossorigin src="\.\/assets\/index-[^"]+"><\/script>\s*$/m;
 const DEFAULT_RUNTIME_ASSET_BASE_PATH = "./assets/runtime";
@@ -246,6 +247,7 @@ function computeRuntimeAssetFingerprint(toolRoot) {
   const runtimeDir = path.join(normalizedToolRoot, "runtime");
   const staticDir = path.join(normalizedToolRoot, "static");
   const vendorDir = path.join(normalizedToolRoot, "vendor");
+  const proxyConfigPath = path.join(normalizedToolRoot, DIRECT_DOCKER_PROXY_CONFIG_RELATIVE_PATH);
 
   ensurePreflight(
     fs.existsSync(runtimeScriptPath) && fs.statSync(runtimeScriptPath).isFile(),
@@ -268,7 +270,40 @@ function computeRuntimeAssetFingerprint(toolRoot) {
       hash.update(fs.readFileSync(file.fullPath));
     }
   }
+  ensurePreflight(
+    fs.existsSync(proxyConfigPath) && fs.statSync(proxyConfigPath).isFile(),
+    "control_ui_preflight_proxy_config_missing",
+    `${proxyConfigPath} missing`,
+  );
+  hash.update("\nfile:docker-local-proxy/nginx.conf\n");
+  hash.update(fs.readFileSync(proxyConfigPath));
   return hash.digest("hex").slice(0, 16);
+}
+
+function assertDirectDockerProxySourceContract(toolRoot) {
+  const normalizedToolRoot = path.resolve(String(toolRoot || ""));
+  const proxyConfigPath = path.join(normalizedToolRoot, DIRECT_DOCKER_PROXY_CONFIG_RELATIVE_PATH);
+  ensurePreflight(
+    fs.existsSync(proxyConfigPath) && fs.statSync(proxyConfigPath).isFile(),
+    "control_ui_preflight_proxy_config_missing",
+    `${proxyConfigPath} missing`,
+  );
+  const proxyConfigText = fs.readFileSync(proxyConfigPath, "utf8");
+  ensurePreflight(
+    /^\s*include\s+\/etc\/nginx\/mime\.types;/m.test(proxyConfigText),
+    "control_ui_preflight_proxy_mime_missing",
+    `${proxyConfigPath} must include /etc/nginx/mime.types so /workspace-agent-downloads/*.js does not return text/plain.`,
+  );
+  ensurePreflight(
+    /location\s+\/workspace-downloads\//m.test(proxyConfigText),
+    "control_ui_preflight_proxy_workspace_downloads_missing",
+    `${proxyConfigPath} must expose /workspace-downloads/.`,
+  );
+  ensurePreflight(
+    /location\s+\/workspace-agent-downloads\//m.test(proxyConfigText),
+    "control_ui_preflight_proxy_workspace_agent_downloads_missing",
+    `${proxyConfigPath} must expose /workspace-agent-downloads/.`,
+  );
 }
 
 function readManifestString(manifest, key, label) {
@@ -445,6 +480,7 @@ export function runDirectDockerControlUiFreshnessPreflight({
 }) {
   const normalizedControlUiRoot = path.resolve(String(controlUiRoot || ""));
   const normalizedToolRoot = path.resolve(String(toolRoot || ""));
+  assertDirectDockerProxySourceContract(normalizedToolRoot);
   const { manifestPath, manifest } = readControlUiBuildManifest(normalizedControlUiRoot);
   const runtimeFingerprint = readManifestString(
     manifest,
@@ -621,7 +657,9 @@ export function prepareDirectDockerGatewayRuntime(processEnv = process.env) {
     gatewayEntry,
     controlUiIndexPath,
   };
-  const controlUiPreflight = shouldSkipControlUiPreflight(env) ? null : runControlUiPreflight(resolved);
+  const controlUiPreflight = shouldSkipControlUiPreflight(env)
+    ? null
+    : runControlUiPreflight(resolved);
   let overlayFreshnessPreflight = null;
   if (!shouldSkipControlUiPreflight(env)) {
     const sourceRoot = String(env.OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT || "").trim();

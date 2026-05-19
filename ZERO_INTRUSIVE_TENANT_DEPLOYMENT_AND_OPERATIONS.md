@@ -229,6 +229,9 @@ shell 的 docker fallback 还必须同时把目标机当前 token/config 来源�
 - 代理层还必须显式直出：
   - `/workspace-downloads/`
   - `/workspace-agent-downloads/`
+- 代理层还必须加载标准 MIME 映射：
+  - `include /etc/nginx/mime.types;`
+  - 否则 `/workspace-agent-downloads/.../*.js` 会退回 `text/plain`
 - 其它 HTTP/WebSocket 再转发回 gateway
 
 目的：
@@ -236,6 +239,7 @@ shell 的 docker fallback 还必须同时把目标机当前 token/config 来源�
 - 避免修改 gateway 源码
 - 避开浏览器对 `18801` 跨端口请求的 CSP 限制
 - 避免把零侵入工作区静态资源暴露链路隐式寄托在 gateway 当前静态路由实现上；公共可视化页里的图片、样式、脚本和模型资源必须能被 proxy 稳定同源直出
+- 避免 public `/echarts-view` 里由 sidecar 外置出来的同源脚本在 `X-Content-Type-Options: nosniff` 下被浏览器按 `text/plain` 拒绝执行，最终表现成所有 `*_index.html` 大屏白屏
 
 ## 同源 API 与本地脏值恢复
 

@@ -1,5 +1,5 @@
-import path from "node:path";
 import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildRuntimeExtraDependencySpecs,
@@ -71,6 +71,9 @@ describe("tenant platform runtime deps", () => {
     expect(override).toContain(
       "${OPENCLAW_CONFIG_DIR}/workspace-agents:/srv/workspace-agent-downloads:ro",
     );
+    expect(override).toContain(
+      "./tools/openclaw-control-ui-echarts/docker-local-proxy/nginx.conf:/etc/nginx/nginx.conf:ro",
+    );
   });
 
   it("stages sandbox python deps through a linux python container", () => {
@@ -122,6 +125,9 @@ describe("tenant platform runtime deps", () => {
     expect(script).toContain("npm install --no-save --no-package-lock --ignore-scripts --prefix");
     expect(script).toContain("python3-pandas python3-sqlalchemy python3-psycopg2");
     expect(script).toContain("/var/run/postgresql:/var/run/postgresql:ro");
+    expect(script).toContain(
+      "./tools/openclaw-control-ui-echarts/docker-local-proxy/nginx.conf:/etc/nginx/nginx.conf:ro",
+    );
   });
 
   it("builds host candidates from legacy analytics DSNs that point at unix sockets", () => {
