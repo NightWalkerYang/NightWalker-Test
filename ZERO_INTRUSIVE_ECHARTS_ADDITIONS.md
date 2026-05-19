@@ -74,6 +74,18 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 
 ### Local Runtime Packaging
 
+- `tools/openclaw-control-ui-echarts/desktop/README.md`
+- `tools/openclaw-control-ui-echarts/desktop/package.json`
+- `tools/openclaw-control-ui-echarts/desktop/index.html`
+- `tools/openclaw-control-ui-echarts/desktop/src/main.js`
+- `tools/openclaw-control-ui-echarts/desktop/src/styles.css`
+- `tools/openclaw-control-ui-echarts/desktop/src-tauri/Cargo.toml`
+- `tools/openclaw-control-ui-echarts/desktop/src-tauri/build.rs`
+- `tools/openclaw-control-ui-echarts/desktop/src-tauri/capabilities/default.json`
+- `tools/openclaw-control-ui-echarts/desktop/src-tauri/src/main.rs`
+- `tools/openclaw-control-ui-echarts/desktop/src-tauri/tauri.conf.json`
+- `tools/openclaw-control-ui-echarts/desktop/scripts/openclaw-desktop-runtime.mjs`
+- `tools/openclaw-control-ui-echarts/desktop/download-page/index.html`
 - `tools/openclaw-control-ui-echarts/local-runtime/CUSTOMER_DEPLOYMENT_GUIDE.md`
 - `tools/openclaw-control-ui-echarts/local-runtime/README.md`
 - `tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5`
@@ -285,6 +297,7 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/framework-styles.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-entry.test.ts`
 - `test/tools/openclaw-control-ui-echarts/knowledge-graph-page.test.ts`
+- `test/tools/openclaw-control-ui-echarts/echarts-view-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-view-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-view-context.test.ts`
 - `test/tools/openclaw-control-ui-echarts/echarts-view-annotations.test.ts`
@@ -303,9 +316,12 @@ This file is the inventory for the zero-intrusive layer. When a new zero-intrusi
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-layout.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-auth-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-branding.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-context.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-entry.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-login-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/sandbox-view-bootstrap.test.ts`
 - `test/tools/openclaw-control-ui-echarts/sandbox-view-surface.test.ts`
+- `test/tools/openclaw-control-ui-echarts/tenant-route-sync.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-surface.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-usage-stats-page.test.ts`
 - `test/tools/openclaw-control-ui-echarts/tenant-view-registry.test.ts`
@@ -452,6 +468,7 @@ These are part of the zero-intrusive deployment flow, but they are generated at 
 - File-card parsing now accepts absolute and relative `workspace-<agentId>/...` paths, normalizes them to agent-workspace scope, and keeps download-card behavior compatible with derived member workspaces.
 - The native Control UI now supports a public `/lufeng` finance-chat route that reuses the native control shell, skips login, pins the dedicated finance agent to an isolated `lufeng` session, proactively persists that session's GPT-5.4 override, forces the visible route state to `openai/gpt-5.4`, filters the route-scoped model catalog down to GPT-only entries, strips stale non-GPT history model badges plus stale coding-plan startup errors, trims the sidebar down to the native chat section only, hides assistant avatars (including branded `SPTC` logo avatars), and locks the model/session controls.
 - A non-Docker local runtime package can now be staged with prebuilt gateway assets, the tenant sidecar, launch scripts, runtime env templates, and local-license bootstrap wiring.
+- The non-Docker local runtime package can now optionally stage a Tauri desktop shell template with `--with-desktop-shell`; the shell remains a thin wrapper around the packaged local runtime, starts the existing gateway/tenant sidecar through `start-local-runtime.mjs`, waits on loopback health checks, writes a desktop WebView tenant API override, and then loads the normal Control UI URL without changing OpenClaw core source files.
 - The non-Docker local runtime package now includes a customer-facing deployment guide alongside the operator/runtime templates.
 - The non-Docker local runtime templates now include a practical `runtime.env` and `openclaw.json` starter shape with provider-key placeholders and a portable baseline config seeded from the real deployment shape.
 - The non-Docker local runtime packager now vendors missing runtime-only packages, patches `file-type/core.js` compatibility inside the packaged runtime, and seeds a default `loopback` gateway bind so the packaged local edition boots without extra Control UI origin setup.

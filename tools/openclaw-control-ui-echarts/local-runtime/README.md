@@ -36,6 +36,9 @@
   - 面向客户现场实施人员的部署说明
 - `data/`
   - 运行时数据目录
+- 可选的 `desktop/`
+  - 通过 `package-local-runtime.mjs --with-desktop-shell` 生成
+  - Tauri 桌面壳模板，只负责启动本地运行包并打开 loopback Control UI
 
 ## 客户机器启动步骤
 
@@ -100,6 +103,7 @@
 - 运行包启动前会做 Control UI 预检（manifest + 关键注入点 + 产物 smoke）。
   - 预检失败会直接阻止启动，并给出缺失项（例如注入标记、脚本路径、login/echarts-view 入口）。
   - 如需临时绕过（不建议常态使用），可设置 `OPENCLAW_SKIP_CONTROL_UI_PREFLIGHT=1`。
+- 如需桌面应用，优先使用随包 `desktop/` 模板构建 Tauri 壳；桌面壳仍加载 `http://127.0.0.1:<OPENCLAW_GATEWAY_PORT>`，不要改成 `file://`，否则 WebSocket、租户 API、Service Worker 和工作区下载路径都会偏离现有运行包契约。
 - 因为这是**运行包**，不是源码仓库，交付时只需要打包生成目录，不需要额外交付 Git 历史
 - 如果你想把现有环境的 `openclaw.json` 重新整理成这份可移植基线，可以用 `portable-config.mjs` 重新导出，再覆盖 `openclaw.local.example.json5`
   - 例如：`node tools/openclaw-control-ui-echarts/local-runtime/portable-config.mjs --source ~/.openclaw/openclaw.json --emit example --write tools/openclaw-control-ui-echarts/local-runtime/openclaw.local.example.json5`

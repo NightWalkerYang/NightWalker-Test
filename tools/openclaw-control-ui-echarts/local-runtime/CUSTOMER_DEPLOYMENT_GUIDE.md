@@ -36,9 +36,12 @@
 - `openclaw.local.example.json5`
 - `README-local-runtime.md`
 - `README-customer-deploy.md`
+- 可选 `desktop/`
 - 启动脚本：
   - `start-local-runtime.cmd`
   - `start-local-runtime.sh`
+  - 可选 `start-desktop-shell.cmd`
+  - 可选 `start-desktop-shell.sh`
   - `start-gateway.cmd`
   - `start-gateway.sh`
   - `start-tenant-platform.cmd`
@@ -135,12 +138,24 @@ node tools/openclaw-control-ui-echarts/local-runtime/portable-config.mjs \
 start-local-runtime.cmd
 ```
 
+如果交付包包含桌面壳，也可以使用：
+
+```text
+start-desktop-shell.cmd
+```
+
 ### Linux / macOS
 
 执行：
 
 ```bash
 ./start-local-runtime.sh
+```
+
+如果交付包包含桌面壳，也可以使用：
+
+```bash
+./start-desktop-shell.sh
 ```
 
 ## 六、访问地址

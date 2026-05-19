@@ -432,6 +432,7 @@ export function buildOverrideContent(extraMounts) {
     "      - ./tools/openclaw-control-ui-echarts/docker-local-proxy/nginx.conf:/etc/nginx/nginx.conf:ro",
     "      - ${OPENCLAW_WORKSPACE_DIR}:/srv/workspace-downloads:ro",
     "      - ${OPENCLAW_CONFIG_DIR}/workspace-agents:/srv/workspace-agent-downloads:ro",
+    "      - ./tools/openclaw-control-ui-echarts/desktop/download-page:/srv/download:ro",
     "    ports:",
     '      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"',
     "    restart: unless-stopped",

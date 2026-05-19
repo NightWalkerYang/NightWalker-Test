@@ -1,0 +1,139 @@
+:root {
+  color: #17202a;
+  background: #f4f7fb;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 360px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.desktop-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+}
+
+.desktop-shell__card {
+  width: min(520px, 100%);
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgb(20 40 70 / 10%);
+  padding: 28px;
+}
+
+.desktop-shell__eyebrow {
+  margin: 0 0 8px;
+  color: #47617c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.desktop-shell__card h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.desktop-shell__card p:last-of-type {
+  margin: 16px 0 0;
+  color: #314256;
+  line-height: 1.6;
+}
+
+.desktop-shell__card button:not(.desktop-shell__mode-btn):not(.desktop-shell__link-btn) {
+  margin-top: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: #1b6ef3;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.desktop-shell__mode-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.desktop-shell__mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid #d9e2ef;
+  border-radius: 6px;
+  background: #f8fafc;
+  cursor: pointer;
+  font: inherit;
+  padding: 16px;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.desktop-shell__mode-btn:hover {
+  border-color: #1b6ef3;
+  background: #eef4ff;
+}
+
+.desktop-shell__mode-btn strong {
+  font-size: 16px;
+}
+
+.desktop-shell__mode-btn span {
+  color: #47617c;
+  font-size: 13px;
+}
+
+.desktop-shell__endpoint {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.desktop-shell__endpoint label {
+  font-size: 13px;
+  color: #47617c;
+  font-weight: 600;
+}
+
+.desktop-shell__input {
+  width: 100%;
+  border: 1px solid #d9e2ef;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+}
+
+.desktop-shell__input:focus {
+  outline: none;
+  border-color: #1b6ef3;
+}
+
+.desktop-shell__link-btn {
+  margin-top: 16px;
+  border: 0;
+  background: none;
+  color: #1b6ef3;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
+}

@@ -261,6 +261,20 @@ The staged package includes:
 - `start-tenant-platform`
 - `start-local-runtime`
 
+If you also want a desktop application shell, stage the optional template:
+
+```bash
+node tools/openclaw-control-ui-echarts/package-local-runtime.mjs --with-desktop-shell
+```
+
+That adds:
+
+- `desktop/` with a Tauri 2 template
+- `start-desktop-shell.cmd`
+- `start-desktop-shell.sh`
+
+The desktop shell is deliberately a thin wrapper. It starts the existing local runtime through `scripts/start-local-runtime.mjs`, waits for loopback Gateway and tenant sidecar health checks, stores the desktop-only tenant API override for the WebView, and opens the normal `http://127.0.0.1:<port>` Control UI. It does not use `file://`, fork the Control UI, or add desktop dependencies to the repository root package.
+
 The local runtime scripts automatically:
 
 - force the tenant platform into `local` edition mode

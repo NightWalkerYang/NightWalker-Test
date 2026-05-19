@@ -285,6 +285,14 @@ shell 的 docker fallback 还必须同时把目标机当前 token/config 来源�
 - 本地授权模板
 - runtime.env 与 portable config 基线
 
+如果需要交付桌面应用，当前推荐在同一运行包里追加可选 Tauri 薄壳模板：
+
+- 打包参数：`--with-desktop-shell`
+- 模板目录：`tools/openclaw-control-ui-echarts/desktop/`
+- 打包产物：`desktop/`、`start-desktop-shell.cmd`、`start-desktop-shell.sh`
+
+桌面壳只负责启动既有 `scripts/start-local-runtime.mjs`、等待 loopback 健康检查、写入桌面 WebView 内部的租户 API override，并加载 `http://127.0.0.1:<OPENCLAW_GATEWAY_PORT>`。它不承担 Control UI 构建、不复制租户 runtime 逻辑、不通过 `file://` 打开页面，也不要求修改 OpenClaw 核心 `src/`、`ui/`、`apps/`、`extensions/`。
+
 ## 本地运行包 preflight 规则
 
 当前本地运行包在启动 gateway 或一键本地 runtime 前，必须先校验 Control UI 产物是否仍与当前零侵入契约一致。

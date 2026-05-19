@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Allow the bootstrap page to invoke the local runtime starter command.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

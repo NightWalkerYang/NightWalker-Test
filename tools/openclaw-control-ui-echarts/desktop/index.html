@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw</title>
+  </head>
+  <body>
+    <main id="app" class="desktop-shell">
+      <section id="mode-selector" class="desktop-shell__card" hidden>
+        <p class="desktop-shell__eyebrow">OpenClaw</p>
+        <h1>选择连接模式</h1>
+        <p>选择服务运行方式以开始使用。</p>
+        <div class="desktop-shell__mode-buttons">
+          <button id="btn-connected-mode" type="button" class="desktop-shell__mode-btn">
+            <strong>连接云端</strong>
+            <span>登录账号，使用已购 Agent 和 Skills，按量计费</span>
+          </button>
+          <button id="btn-standalone-mode" type="button" class="desktop-shell__mode-btn">
+            <strong>企业独立部署</strong>
+            <span>本地 License 授权，数据完全自主</span>
+          </button>
+        </div>
+        <div id="cloud-endpoint-input" class="desktop-shell__endpoint" hidden>
+          <label for="input-endpoint">云端服务地址</label>
+          <input id="input-endpoint" type="url" class="desktop-shell__input" value="https://hailstone.cn:18789/" />
+          <button id="btn-confirm-endpoint" type="button">确认连接</button>
+        </div>
+      </section>
+      <section id="boot-status" class="desktop-shell__card" hidden aria-live="polite">
+        <p class="desktop-shell__eyebrow">OpenClaw</p>
+        <h1 id="boot-title">正在启动本地服务</h1>
+        <p id="desktop-shell-status">正在等待 Gateway 就绪。</p>
+        <button id="desktop-shell-open" type="button" hidden>打开控制台</button>
+        <button id="btn-switch-mode" type="button" class="desktop-shell__link-btn">切换模式</button>
+      </section>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

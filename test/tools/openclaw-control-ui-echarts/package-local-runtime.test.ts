@@ -96,6 +96,62 @@ describe("package local runtime", () => {
     ]);
   });
 
+  it("stages the optional desktop shell template when requested", () => {
+    const outputDir = createTempDir();
+    const scriptPath = path.join(
+      process.cwd(),
+      "tools",
+      "openclaw-control-ui-echarts",
+      "package-local-runtime.mjs",
+    );
+    const result = spawnSync(
+      process.execPath,
+      [scriptPath, "--output", outputDir, "--skip-install", "--with-desktop-shell"],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, OPENCLAW_GATEWAY_TOKEN: "desktop-shell-test-token" },
+      },
+    );
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(fs.existsSync(path.join(outputDir, "desktop", "package.json"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "desktop", "src-tauri", "tauri.conf.json"))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(path.join(outputDir, "desktop", "src-tauri", "capabilities", "default.json")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(outputDir, "desktop", "scripts", "openclaw-desktop-runtime.mjs")),
+    ).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "start-desktop-shell.cmd"))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, "start-desktop-shell.sh"))).toBe(true);
+
+    const tauriConfig = JSON.parse(
+      fs.readFileSync(path.join(outputDir, "desktop", "src-tauri", "tauri.conf.json"), "utf8"),
+    );
+    expect(tauriConfig.bundle.resources).toEqual(
+      expect.objectContaining({
+        "../../runtime": "local-runtime/runtime",
+        "../../scripts": "local-runtime/scripts",
+        "../../data": "local-runtime/data",
+        "../../runtime.env": "local-runtime/runtime.env",
+      }),
+    );
+
+    const helperScript = fs.readFileSync(
+      path.join(outputDir, "desktop", "scripts", "openclaw-desktop-runtime.mjs"),
+      "utf8",
+    );
+    expect(helperScript).toContain("start-local-runtime.mjs");
+    expect(helperScript).toContain("/tenant-platform-api/v1/healthz");
+    expect(helperScript).toContain("OPENCLAW_TENANT_PLATFORM_PORT");
+    expect(fs.readFileSync(path.join(outputDir, "desktop", "src", "main.js"), "utf8")).toContain(
+      "openclaw:tenant-platform:api-base:v1",
+    );
+  });
+
   it("builds custom control-ui with stable /login aliases", () => {
     const sourceDir = path.join(createTempDir(), "source-ui");
     const outputDir = path.join(createTempDir(), "output-ui");

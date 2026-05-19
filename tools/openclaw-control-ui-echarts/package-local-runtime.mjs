@@ -1,26 +1,22 @@
 #!/usr/bin/env node
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 const defaultOutputDir = path.join(here, "generated", "local-runtime");
 const localRuntimeTemplateDir = path.join(here, "local-runtime");
+const desktopShellTemplateDir = path.join(here, "desktop");
 const buildCustomControlUiScript = path.join(here, "build-custom-control-ui.mjs");
 const controlUiSourceDir = path.join(repoRoot, "dist", "control-ui");
 const sidecarSourceDir = path.join(here, "sidecar", "tenant-platform");
 const workspaceOverlaySourceDir = path.join(here, "workspace-overlays", "kingdee-cloud");
 const defaultGatewayToken = "local-runtime-shared-token";
-const localRuntimeExtraPackages = [
-  "@aws-sdk/client-bedrock",
-  "jimp",
-  "@jimp/utils",
-  "p-queue",
-];
+const localRuntimeExtraPackages = ["@aws-sdk/client-bedrock", "jimp", "@jimp/utils", "p-queue"];
 const localRuntimePinnedPackageSpecs = ["pg@8.20.0"];
 
 function usage() {
@@ -30,6 +26,8 @@ function usage() {
       "",
       "Options:",
       "  --output <path>    Output directory. Default: tools/openclaw-control-ui-echarts/generated/local-runtime",
+      "  --with-desktop-shell",
+      "                     Also stage the optional Tauri desktop shell template.",
       "  --skip-install     Skip npm runtime install and only stage artifacts/templates.",
       "  --help             Show this help.",
     ].join("\n"),
@@ -39,6 +37,7 @@ function usage() {
 function parseArgs(argv) {
   const options = {
     skipInstall: false,
+    withDesktopShell: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
@@ -48,6 +47,10 @@ function parseArgs(argv) {
     }
     if (value === "--skip-install") {
       options.skipInstall = true;
+      continue;
+    }
+    if (value === "--with-desktop-shell") {
+      options.withDesktopShell = true;
       continue;
     }
     if (value === "--output") {
@@ -145,8 +148,14 @@ function runCommand(command, args, options = {}) {
     );
   }
   if (result.status !== 0) {
+    const output = [result.stderr, result.stdout]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join("\n");
     throw new Error(
-      `${command} ${args.join(" ")} failed with exit code ${result.status ?? "unknown"}`,
+      [`${command} ${args.join(" ")} failed with exit code ${result.status ?? "unknown"}`, output]
+        .filter(Boolean)
+        .join("\n"),
     );
   }
   return result;
@@ -155,11 +164,22 @@ function runCommand(command, args, options = {}) {
 function resolveNpmCliEntry() {
   const candidates = [];
   const npmExecPath = String(process.env.npm_execpath || "").trim();
-  if (npmExecPath) {
+  if (npmExecPath && /(?:^|[\\/])npm-cli\.js$/i.test(npmExecPath)) {
     candidates.push(npmExecPath);
   }
-  candidates.push(path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"));
-  candidates.push(path.join(path.dirname(path.dirname(process.execPath)), "lib", "node_modules", "npm", "bin", "npm-cli.js"));
+  candidates.push(
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  );
+  candidates.push(
+    path.join(
+      path.dirname(path.dirname(process.execPath)),
+      "lib",
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js",
+    ),
+  );
   for (const candidate of candidates) {
     if (candidate && fs.existsSync(candidate)) {
       return candidate;
@@ -191,9 +211,39 @@ function copyTemplateFile(sourceRelativePath, outputPath) {
   fs.copyFileSync(sourcePath, outputPath);
 }
 
+function copyDesktopShellFile(sourceRelativePath, outputPath) {
+  const sourcePath = path.join(desktopShellTemplateDir, sourceRelativePath);
+  ensureFileExists(sourcePath, `Desktop shell template ${sourceRelativePath}`);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.copyFileSync(sourcePath, outputPath);
+}
+
 function writeLauncherScript(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
+}
+
+function createDesktopLaunchers(outputDir) {
+  const shPath = path.join(outputDir, "start-desktop-shell.sh");
+  writeLauncherScript(
+    shPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+node "$(dirname "$0")/desktop/scripts/openclaw-desktop-runtime.mjs" "$@"
+`,
+  );
+  try {
+    fs.chmodSync(shPath, 0o755);
+  } catch {
+    // Windows checkout can ignore chmod.
+  }
+  writeLauncherScript(
+    path.join(outputDir, "start-desktop-shell.cmd"),
+    `@echo off
+setlocal
+node "%~dp0desktop\\scripts\\openclaw-desktop-runtime.mjs" %*
+`,
+  );
 }
 
 function createLaunchers(outputDir) {
@@ -274,16 +324,19 @@ function buildNpmTarball(tempDir) {
 function installRuntimeTarball(outputDir, tarballPath, tempDir) {
   const runtimeDir = path.join(outputDir, "runtime");
   fs.mkdirSync(runtimeDir, { recursive: true });
-  runNpmCommand([
-    "install",
-    "--omit=dev",
-    "--ignore-scripts",
-    "--no-fund",
-    "--no-audit",
-    "--prefix",
-    runtimeDir,
-    tarballPath,
-  ], { env: createPackagingEnv(tempDir) });
+  runNpmCommand(
+    [
+      "install",
+      "--omit=dev",
+      "--ignore-scripts",
+      "--no-fund",
+      "--no-audit",
+      "--prefix",
+      runtimeDir,
+      tarballPath,
+    ],
+    { env: createPackagingEnv(tempDir) },
+  );
   const packageRoot = path.join(runtimeDir, "node_modules", "openclaw");
   ensureFileExists(path.join(packageRoot, "openclaw.mjs"), "Installed OpenClaw entry");
   return packageRoot;
@@ -292,16 +345,19 @@ function installRuntimeTarball(outputDir, tarballPath, tempDir) {
 function installRuntimeExtraPackages(outputDir, tempDir) {
   const runtimeDir = path.join(outputDir, "runtime");
   const extraSpecs = buildRuntimeExtraDependencySpecs(path.join(repoRoot, "node_modules"));
-  runNpmCommand([
-    "install",
-    "--omit=dev",
-    "--ignore-scripts",
-    "--no-fund",
-    "--no-audit",
-    "--prefix",
-    runtimeDir,
-    ...extraSpecs,
-  ], { env: createPackagingEnv(tempDir) });
+  runNpmCommand(
+    [
+      "install",
+      "--omit=dev",
+      "--ignore-scripts",
+      "--no-fund",
+      "--no-audit",
+      "--prefix",
+      runtimeDir,
+      ...extraSpecs,
+    ],
+    { env: createPackagingEnv(tempDir) },
+  );
 }
 
 export function patchFileTypeRuntimeCompat(runtimeDir) {
@@ -341,8 +397,7 @@ export default fileTypeCoreCompat;
   const currentExports =
     packageJson.exports && typeof packageJson.exports === "object" ? packageJson.exports : {};
   const hasConditionalMainSugar =
-    !currentExports["."] &&
-    Object.keys(currentExports).some((key) => !key.startsWith("."));
+    !currentExports["."] && Object.keys(currentExports).some((key) => !key.startsWith("."));
   const normalizedExports = hasConditionalMainSugar
     ? {
         ".": { ...currentExports },
@@ -427,6 +482,35 @@ function stageTemplates(outputDir) {
   createLaunchers(outputDir);
 }
 
+function stageDesktopShell(outputDir) {
+  ensureDirectoryExists(desktopShellTemplateDir, "Desktop shell template directory");
+  const desktopDir = path.join(outputDir, "desktop");
+  copyDesktopShellFile("README.md", path.join(desktopDir, "README.md"));
+  copyDesktopShellFile("package.json", path.join(desktopDir, "package.json"));
+  copyDesktopShellFile("index.html", path.join(desktopDir, "index.html"));
+  copyDesktopShellFile("src/main.js", path.join(desktopDir, "src", "main.js"));
+  copyDesktopShellFile("src/styles.css", path.join(desktopDir, "src", "styles.css"));
+  copyDesktopShellFile("src-tauri/Cargo.toml", path.join(desktopDir, "src-tauri", "Cargo.toml"));
+  copyDesktopShellFile("src-tauri/build.rs", path.join(desktopDir, "src-tauri", "build.rs"));
+  copyDesktopShellFile(
+    "src-tauri/tauri.conf.json",
+    path.join(desktopDir, "src-tauri", "tauri.conf.json"),
+  );
+  copyDesktopShellFile(
+    "src-tauri/capabilities/default.json",
+    path.join(desktopDir, "src-tauri", "capabilities", "default.json"),
+  );
+  copyDesktopShellFile(
+    "src-tauri/src/main.rs",
+    path.join(desktopDir, "src-tauri", "src", "main.rs"),
+  );
+  copyDesktopShellFile(
+    "scripts/openclaw-desktop-runtime.mjs",
+    path.join(desktopDir, "scripts", "openclaw-desktop-runtime.mjs"),
+  );
+  createDesktopLaunchers(outputDir);
+}
+
 function stageDataSkeleton(outputDir) {
   const dirs = [
     path.join(outputDir, "data", ".openclaw", "tenant-platform"),
@@ -454,6 +538,9 @@ function main() {
   ensureControlUiSourceReady();
   ensureDirectoryExists(sidecarSourceDir, "Tenant platform sidecar directory");
   ensureDirectoryExists(localRuntimeTemplateDir, "Local runtime template directory");
+  if (options.withDesktopShell) {
+    ensureDirectoryExists(desktopShellTemplateDir, "Desktop shell template directory");
+  }
 
   if (path.resolve(outputDir) === path.resolve(repoRoot)) {
     throw new Error("Refusing to overwrite the repository root.");
@@ -470,6 +557,9 @@ function main() {
     const { tarballPath } = buildNpmTarball(tempDir);
     stageTemplates(outputDir);
     stageDataSkeleton(outputDir);
+    if (options.withDesktopShell) {
+      stageDesktopShell(outputDir);
+    }
     if (!options.skipInstall) {
       const packageRoot = installRuntimeTarball(outputDir, tarballPath, tempDir);
       installRuntimeExtraPackages(outputDir, tempDir);
