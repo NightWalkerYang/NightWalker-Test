@@ -40,11 +40,9 @@ async function saveConfig(mode, cloudEndpoint) {
 }
 
 function openControlUi(url) {
-  const tenantApiBase =
-    url.replace(/\/$/, "").replace(/:\d+$/, ":18801") +
-    "/tenant-platform-api/v1";
-  window.localStorage.setItem("openclaw:tenant-platform:api-base:v1", tenantApiBase);
-  window.location.replace(url);
+  invoke("navigate_to", { url }).catch(() => {
+    window.location.replace(url);
+  });
 }
 
 async function bootRuntime(mode, cloudEndpoint) {
