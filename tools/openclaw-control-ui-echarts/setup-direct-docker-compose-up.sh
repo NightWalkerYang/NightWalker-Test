@@ -449,6 +449,7 @@ services:
       - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
     environment:
       OPENCLAW_DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT: /app/tools/openclaw-control-ui-echarts-src
+      OPENCLAW_GATEWAY_PORT: "18789"
     volumes:
       - ./tools/openclaw-control-ui-echarts/generated/control-ui:/app/dist/control-ui:ro
       - $DIRECT_DOCKER_CONTROL_UI_SOURCE_ROOT_MOUNT
