@@ -259,6 +259,7 @@ function createSidebarDeps() {
             controller.sessions,
             nextSessionKey,
           ),
+          sameAgent: true,
         });
         renderSidebarSection(controller, createSidebarDeps());
         return true;
@@ -290,6 +291,7 @@ function createSidebarDeps() {
             controller.sessions,
             nextSessionKey,
           ),
+          sameAgent: true,
         });
         renderSidebarSection(controller, createSidebarDeps());
       },
@@ -339,6 +341,7 @@ function createSidebarDeps() {
               controller.sessions,
               fallbackSessionKey,
             ),
+            sameAgent: true,
           });
         }
         renderSidebarSection(controller, createSidebarDeps());
@@ -650,6 +653,7 @@ async function ensureMemberSessionTitle(controller, sessionKey, messagePayload) 
     }
   }
   clearMemberDraftRouteLock(controller.session, controller.selectedAgent);
+  controller.hasDraftSession = false;
   renderSidebarSection(controller, createSidebarDeps());
   const activeController = getActiveMemberChatController();
   if (activeController?.currentSessionKey === normalizedSessionKey) {
@@ -796,7 +800,7 @@ function pinMemberChatSession(app, sessionKey, options = {}) {
       applySessionSettings(app, sessionKey, "member-chat");
     }
 
-    if (previousResolvedSessionKey !== normalizedSessionKey) {
+    if (previousResolvedSessionKey !== normalizedSessionKey && !options.sameAgent) {
       requestIdentityReload(app, "member-chat");
     }
 
@@ -1000,6 +1004,23 @@ async function syncMemberChatSurface() {
       return;
     }
 
+    const existingCtrl = getActiveMemberChatController();
+    if (
+      existingCtrl &&
+      existingCtrl.selectedAgent?.id === selectedAgent?.id &&
+      existingCtrl.currentSessionKey &&
+      !existingCtrl.hasDraftSession &&
+      existingCtrl.currentSessionKey === String(app.__ocPinnedSessionKey || "").trim().toLowerCase() &&
+      (app.__ocPinnedSessionHydratedKey === existingCtrl.currentSessionKey ||
+        app.__ocPinnedSessionHydratingKey === existingCtrl.currentSessionKey)
+    ) {
+      existingCtrl.app = app;
+      existingCtrl.sidebar = sidebar;
+      existingCtrl.breadcrumb = breadcrumb;
+      releaseTenantBootLock("member-chat-surface-ready");
+      return;
+    }
+
     const sessionsFromGateway = await loadMemberSessions(app, selectedAgent, session);
     const currentSessionKey = findTargetSessionKey(
       app,
@@ -1041,8 +1062,11 @@ async function syncMemberChatSurface() {
       createRouteSyncRef(),
       { replace: true },
     );
+    const prevController = getActiveMemberChatController();
+    const isSameAgent = prevController?.selectedAgent?.id === selectedAgent?.id;
     pinMemberChatSession(app, currentSessionKey, {
       skipHydrateHistory: shouldSkipSessionHistoryHydration(controller.sessions, currentSessionKey),
+      sameAgent: isSameAgent,
     });
     releaseTenantBootLock("member-chat-surface-ready");
     window._ocMemberChatSurfaceController = controller;
