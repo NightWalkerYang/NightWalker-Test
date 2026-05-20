@@ -1030,7 +1030,7 @@ async function syncMemberChatSurface() {
     const sidebarDeps = createSidebarDeps();
 
     renderSidebarSection(controller, sidebarDeps);
-    renderTopAction(controller, { escapeHtml });
+    renderTopAction(controller, sidebarDeps);
     syncRouteForSession(
       selectedAgent,
       resolveRouteSessionKey(

@@ -310,6 +310,49 @@ describe("member chat surface", () => {
     expect(document.querySelector(`[${MEMBER_CHAT_CANVAS_ANNOTATION_ROOT_ATTR}]`)).toBeNull();
   });
 
+  it("navigates from the member chat breadcrumb action back to Agent selection", async () => {
+    installTenantApiFetchStub();
+    writeTenantSession({
+      token: "member-token",
+      session: {
+        role: "member",
+        username: "member-user",
+        userId: "user-1",
+        tenantId: "t-1",
+      },
+    });
+    writeSelectedTenantAgent({
+      id: "tenant-agent-1",
+      agentId: "subotech-finance",
+      agentName: "苏博泰克财务分析助手",
+      description: "财务分析",
+      status: "active",
+      balancePoints: 10,
+    });
+    window.history.replaceState({}, "", "/chat?tenantAgentId=tenant-agent-1");
+    document.body.innerHTML = `
+      <div class="dashboard-header__breadcrumb">
+        <span class="dashboard-header__breadcrumb-link">苏博泰克</span>
+        <span class="dashboard-header__breadcrumb-current">聊天</span>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    `;
+    const app = createAppStub();
+    document.body.append(app);
+
+    bootMemberChatSurface();
+    await flush();
+
+    const backButton = document.querySelector("[data-member-chat-back]");
+    expect(backButton).not.toBeNull();
+    backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("?ocTenantView=tenant-agent-selector");
+    expect(document.querySelector("[data-oc-member-chat-top-action]")).toBeNull();
+  });
+
   it("collapses the member session section when clicking the session chevron", async () => {
     installTenantApiFetchStub();
     writeTenantSession({
