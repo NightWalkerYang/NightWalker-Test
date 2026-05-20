@@ -464,6 +464,7 @@ EOF
 
   cat >>"$OVERRIDE_PATH" <<'EOF'
     entrypoint: ["node", "/app/tools/openclaw-control-ui-echarts-src/local-runtime/start-gateway.mjs"]
+    command: []
   openclaw-tenant-platform:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
     environment:
