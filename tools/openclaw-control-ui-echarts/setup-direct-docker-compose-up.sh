@@ -455,7 +455,6 @@ services:
       - \${OPENCLAW_WORKSPACE_DIR}:/app/dist/control-ui/workspace-downloads:ro
       - \${OPENCLAW_CONFIG_DIR}/workspace-agents:/app/dist/control-ui/workspace-agent-downloads:ro
       - ./docs/reference/templates:/app/docs/reference/templates:ro
-    entrypoint: ["node", "/app/tools/openclaw-control-ui-echarts-src/local-runtime/start-gateway.mjs"]
 EOF
 
   local mount=""
@@ -464,6 +463,7 @@ EOF
   done
 
   cat >>"$OVERRIDE_PATH" <<'EOF'
+    entrypoint: ["node", "/app/tools/openclaw-control-ui-echarts-src/local-runtime/start-gateway.mjs"]
   openclaw-tenant-platform:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
     environment:
